@@ -360,14 +360,14 @@ void list_waiting_ordered_add(struct list_head *head,
 };
 
 inline
-void queue_waiting_desc(struct rpc_desc* desc){
+int queue_waiting_desc(struct rpc_desc* desc){
 	struct waiting_desc* wd;
-	int r;
+	int r = 0;
 
 	wd = kmalloc(sizeof(struct waiting_desc), GFP_ATOMIC);
 	if(!wd){
 		r = -ENOMEM;
-		BUG();
+		goto out;
 	};
 
 	rpc_desc_get(desc);
@@ -378,6 +378,8 @@ void queue_waiting_desc(struct rpc_desc* desc){
 	list_add_tail(&wd->list_waiting_desc, &waiting_desc);
 	spin_unlock(&waiting_desc_lock);
 
+out:
+	return r;
 }
 
 inline
@@ -436,8 +438,11 @@ int rpc_handle_new(struct rpc_desc* desc){
 	struct __rpc_synchro *__synchro;
 	int i, r=0;
 
-	if(!desc->__synchro && rpc_synchro_lookup(desc))
-		return r;
+	if (!desc->__synchro) {
+		r = rpc_synchro_lookup(desc);
+		if (r)
+			return r;
+	}
 
 	__synchro = desc->__synchro;
 	if(__synchro){
@@ -453,9 +458,9 @@ int rpc_handle_new(struct rpc_desc* desc){
 
 			wd = kmalloc(sizeof(struct waiting_desc),
 				     GFP_ATOMIC);
-			if(!wd){
-				printk("OOM in rpc_handle_new\n");
-				BUG();
+			if(!wd) {
+				spin_unlock(&__synchro->lock);
+				return -ENOMEM;
 			}
 
 			wd->desc = desc;
@@ -471,7 +476,8 @@ int rpc_handle_new(struct rpc_desc* desc){
 
 	// Is it a disabled rpc ?
 	if(unlikely(test_bit(desc->rpcid, rpc_mask))){
-		queue_waiting_desc(desc);
+		if (queue_waiting_desc(desc))
+			r = -ENOMEM;
 		return r;
 	};
 
@@ -497,7 +503,8 @@ int rpc_handle_new(struct rpc_desc* desc){
 	}else{
 
 		// No available handler
-		queue_waiting_desc(desc);
+		if (queue_waiting_desc(desc))
+			return -ENOMEM;
 
 		if(atomic_inc_return(&new_thread_data.request[smp_processor_id()]) == 1)
 			queue_delayed_work(krg_nb_wq, &new_thread_data.dwork, 0);
