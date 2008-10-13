@@ -39,19 +39,6 @@
 #define ACK_CLEANUP_WINDOW_SIZE__LOWMEM_MODE 20
 #define MAX_CONSECUTIVE_RECV__LOWMEM_MODE 20
 
-struct tipc_ordering_elem {
-	unsigned long seq_id;
-	struct sk_buff *buf;
-	unsigned char const *data;
-	unsigned int size;
-	struct list_head ordering_list;
-};
-
-static struct kmem_cache* tipc_ordering_elem_cachep;
-
-struct list_head tipc_ordering_queue[KERRIGHED_MAX_NODES];
-spinlock_t tipc_ordering_lock[KERRIGHED_MAX_NODES];
-
 struct tx_engine {
 	struct list_head delayed_tx_queue;
 	struct delayed_work delayed_tx_work; /* messages cannot be transmetted immediately */
@@ -68,6 +55,13 @@ static DEFINE_PER_CPU(struct tx_engine, tipc_tx_engine);
 static DEFINE_SPINLOCK(tipc_tx_queue_lock);
 static void tipc_send_ack_worker(struct work_struct *work);
 static DECLARE_DELAYED_WORK(tipc_ack_work, tipc_send_ack_worker);
+
+struct rx_engine {
+	kerrighed_node_t from;
+	struct sk_buff_head rx_queue;
+};
+
+struct rx_engine tipc_rx_engine[KERRIGHED_MAX_NODES];
 
 struct workqueue_struct *krgcom_wq;
 
@@ -1000,12 +994,16 @@ static void tipc_handler(void *usr_handle,
 			 struct tipc_portid const *orig,
 			 struct tipc_name_seq const *dest)
 {
+	struct sk_buff_head *queue;
+	struct sk_buff *__buf;
 	struct __rpc_header *h;
-	struct tipc_ordering_elem *ordering_elem;
 
+	__buf = *buf;
 	h = (struct __rpc_header*)data;
+	BUG_ON(size != __buf->len);
 
-	spin_lock(&tipc_ordering_lock[h->from]);
+	queue = &tipc_rx_engine[h->from].rx_queue;
+	spin_lock(&queue->lock);
 
 	// Update the ack value sent by the other node
 	if (h->link_ack_id > rpc_link_send_ack_id[h->from]){
@@ -1044,73 +1042,53 @@ static void tipc_handler(void *usr_handle,
 
 	// Is-it the next ordered message ?
 	if (h->link_seq_id > rpc_link_recv_seq_id[h->from]) {
-		struct tipc_ordering_elem *elem, *iter;
-		struct list_head *at;
+		struct sk_buff *at;
+		unsigned long seq_id = h->link_seq_id;
 
-		elem = kmem_cache_alloc(tipc_ordering_elem_cachep, GFP_ATOMIC);
-		if (!elem) {
-			printk("OOM in tipc_handler\n");
-			BUG();
-		}
+		/*
+		 * Insert in the ordered list.
+		 * Optimized for in-order reception.
+		 */
+		skb_queue_reverse_walk(queue, at) {
+			struct __rpc_header *ath;
 
-		skb_get(*buf);
-		elem->seq_id = h->link_seq_id;
-		elem->buf = *buf;
-		elem->data = data;
-		elem->size = size;
-
-		at = &tipc_ordering_queue[h->from];
-		list_for_each_entry_reverse(iter, &tipc_ordering_queue[h->from],
-					    ordering_list)
-			if (iter->seq_id < elem->seq_id) {
-				at = &iter->ordering_list;
+			ath = (struct __rpc_header *)at->data;
+			if (ath->link_seq_id < seq_id)
 				break;
-			}else if(iter->seq_id == elem->seq_id){
-
-				kfree_skb(elem->buf);
-				kmem_cache_free(tipc_ordering_elem_cachep,
-						elem);
-
+			else if (ath->link_seq_id == seq_id)
+				/* Duplicate */
 				goto exit;
-			}
-		list_add(&elem->ordering_list, at);
+		}
+		skb_get(__buf);
+		__skb_queue_after(queue, at, __buf);
 		goto exit;
 	}
 
-	tipc_handler_ordered(*buf, data, size);
+	tipc_handler_ordered(__buf, data, size);
 
 	if (h->from == kerrighed_node_id)
 		rpc_link_send_ack_id[kerrighed_node_id] = rpc_link_recv_seq_id[kerrighed_node_id];
 	rpc_link_recv_seq_id[h->from]++;
 
- unqueue:
-	if (list_empty(&tipc_ordering_queue[h->from]))
-		goto exit;
+	while ((__buf = skb_peek(queue))) {
+		h = (struct __rpc_header *)__buf->data;
 
-	ordering_elem = list_entry(tipc_ordering_queue[h->from].next,
-				   struct tipc_ordering_elem,
-				   ordering_list);
-	
-	if (ordering_elem->seq_id <= rpc_link_recv_seq_id[h->from]){
+		BUG_ON(h->link_seq_id < rpc_link_recv_seq_id[h->from]);
+		if (h->link_seq_id > rpc_link_recv_seq_id[h->from])
+			break;
 
-		list_del(&ordering_elem->ordering_list);
-		BUG_ON(tipc_ordering_queue[h->from].next == &ordering_elem->ordering_list);
-		
-		if (ordering_elem->seq_id == rpc_link_recv_seq_id[h->from]){
-			tipc_handler_ordered(ordering_elem->buf, ordering_elem->data,
-					     ordering_elem->size);
+		tipc_handler_ordered(__buf, __buf->data, __buf->len);
+
 		if (h->from == kerrighed_node_id)
 			rpc_link_send_ack_id[kerrighed_node_id] = rpc_link_recv_seq_id[kerrighed_node_id];
 		rpc_link_recv_seq_id[h->from]++;
-		}
-		
-		kfree_skb(ordering_elem->buf);
-		kmem_cache_free(tipc_ordering_elem_cachep, ordering_elem);
-		goto unqueue;
+
+		__skb_unlink(__buf, queue);
+		kfree_skb(__buf);
 	}
 
  exit:
-	spin_unlock(&tipc_ordering_lock[h->from]);
+	spin_unlock(&queue->lock);
 }
 
 static
@@ -1252,16 +1230,12 @@ int comlayer_init(void)
 	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE;
 
 	for (i = 0; i < KERRIGHED_MAX_NODES; i++) {
-		INIT_LIST_HEAD(&tipc_ordering_queue[i]);
-		spin_lock_init(&tipc_ordering_lock[i]);
+		tipc_rx_engine[i].from = i;
+		skb_queue_head_init(&tipc_rx_engine[i].rx_queue);
 		last_cleanup_ack[i] = 0;
 		consecutive_recv[i] = 0;
 		max_consecutive_recv[i] = MAX_CONSECUTIVE_RECV;
 	}
-
-	tipc_ordering_elem_cachep = kmem_cache_create("tipc_ordering_elem",
-						      sizeof(struct tipc_ordering_elem),
-						      0, 0, NULL);
 
 	tipc_net_id = kerrighed_session_id;
 
