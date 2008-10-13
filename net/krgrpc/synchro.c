@@ -110,8 +110,8 @@ int rpc_synchro_lookup_order1(struct rpc_desc *desc){
 	if (!__synchro){
 		__synchro = kmem_cache_alloc(__rpc_synchro_cachep, GFP_ATOMIC);
 		if(!__synchro){
-			printk("OOM in rpc_synchro_lookup\n");
-			BUG();
+			spin_unlock(&__rpc_synchro_tree->lock);
+			return -ENOMEM;
 		}
 
 		__rpc_synchro_init(__synchro, synchro->max);
@@ -137,7 +137,7 @@ int rpc_synchro_lookup_order_generic(struct rpc_desc *desc){
 		return 0;
 	}
 
-	return 1;
+	return -ENOENT;
 #endif
 
 	printk("rpc_synchro_lookup: order > 1 => TODO\n");
@@ -162,6 +162,4 @@ int rpc_synchro_lookup(struct rpc_desc *desc){
 	}else{
 		return rpc_synchro_lookup_order_generic(desc);
 	}
-
-	return 1;
 }

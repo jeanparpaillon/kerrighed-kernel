@@ -59,6 +59,7 @@ static DECLARE_DELAYED_WORK(tipc_ack_work, tipc_send_ack_worker);
 struct rx_engine {
 	kerrighed_node_t from;
 	struct sk_buff_head rx_queue;
+	struct delayed_work run_rx_queue_work;
 };
 
 struct rx_engine tipc_rx_engine[KERRIGHED_MAX_NODES];
@@ -697,14 +698,14 @@ void insert_in_seqid_order(struct rpc_desc_elem* desc_elem,
  *
  * desc->desc_lock must be hold
  */
+static
 inline
-void do_action(struct rpc_desc *desc,
-	       struct __rpc_header *h){
+int do_action(struct rpc_desc *desc, struct __rpc_header *h)
+{
 	switch (desc->state) {
 	case RPC_STATE_NEW:
 		spin_unlock(&desc->desc_lock);
-		rpc_handle_new(desc);
-		break;
+		return rpc_handle_new(desc);
 	case RPC_STATE_WAIT1:
 		if (desc->type == RPC_RQ_CLT
 		    && desc->wait_from != h->from) {
@@ -720,6 +721,7 @@ void do_action(struct rpc_desc *desc,
 		spin_unlock(&desc->desc_lock);			
 		break;
 	}
+	return 0;
 }
 
 void rpc_desc_elem_free(struct rpc_desc_elem *elem)
@@ -744,11 +746,12 @@ void rpc_do_signal(struct rpc_desc *desc,
  * We found the right descriptor, is-there a waiting buffer ?
  */
 inline
-void handle_valid_desc(struct rpc_desc *desc,
-		       struct rpc_desc_recv *desc_recv,
-		       struct rpc_desc_elem* descelem,
-		       struct __rpc_header *h,
-		       struct sk_buff *buf){
+int handle_valid_desc(struct rpc_desc *desc,
+		      struct rpc_desc_recv *desc_recv,
+		      struct rpc_desc_elem* descelem,
+		      struct __rpc_header *h,
+		      struct sk_buff *buf){
+	int err;
 
 	// Update the received_packets map
 	if(descelem->seq_id<sizeof(desc_recv->received_packets)*8)
@@ -770,7 +773,7 @@ void handle_valid_desc(struct rpc_desc *desc,
 				rpc_do_signal(desc, descelem);
 
 				spin_unlock(&desc->desc_lock);
-				return;
+				return 0;
 				
 			} else {
 				insert_in_seqid_order(descelem, desc_recv);
@@ -799,14 +802,34 @@ void handle_valid_desc(struct rpc_desc *desc,
 		rpc_do_signal(desc, descelem);
 
 		spin_unlock(&desc->desc_lock);
-		return;
+		return 0;
 	}
 	
 	insert_in_seqid_order(descelem, desc_recv);
 	atomic_inc(&desc_recv->nbunexpected);
 	
  do_action:
-	do_action(desc, h);
+	err = do_action(desc, h);
+	if (err) {
+		/*
+		 * Keeping this packet at this layer would need to reschedule
+		 * its handling, which lower layers already do without needing
+		 * more metadata. So dropping that packet at this layer is
+		 * simpler and safe.
+		 */
+		spin_lock(&desc->desc_lock);
+		/*
+		 * We expect that only the first packet of a new transaction may
+		 * fail to be handled by do_action(). Otherwise the packet might
+		 * have been unpacked by the handler, or the handler may have
+		 * played with nbunexpected.
+		 */
+		BUG_ON(desc->state != RPC_STATE_NEW || descelem->seq_id > 1);
+		atomic_dec(&desc_recv->nbunexpected);
+		list_del(&descelem->list_desc_elem);
+		spin_unlock(&desc->desc_lock);
+	}
+	return err;
 }
 
 static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
@@ -814,26 +837,20 @@ static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
 	struct rpc_desc *desc;
 
 	desc = rpc_desc_alloc();
-	if (!desc) {
-		printk("tipc_handler_ordered: OOM (desc)\n");
-		BUG();
-	}
+	if (!desc)
+		goto out;
 
 #ifdef CONFIG_KRG_DEBUG
 	desc->debug = h->flags & __RPC_HEADER_FLAGS_DEBUG;
 #endif
 
 	desc->desc_send = rpc_desc_send_alloc();
-	if (!desc->desc_send) {
-		printk("tipc_handler_ordered: OOM (desc_send)\n");
-		BUG();
-	}
+	if (!desc->desc_send)
+		goto err_desc_send;
 
 	desc->desc_recv[0] = rpc_desc_recv_alloc();
-	if (!desc->desc_recv[0]) {
-		printk("tipc_handler_ordered: OOM (desc_recv)\n");
-		BUG();
-	}
+	if (!desc->desc_recv[0])
+		goto err_desc_recv;
 
 	// Since a RPC_RQ_CLT can only be received from one node:
 	// by choice, we decide to use 0 as the corresponding id
@@ -847,16 +864,29 @@ static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
 	desc->thread = NULL;
 
 	if (__rpc_emergency_send_buf_alloc(desc, 0))
-		BUG();
+		goto err_emergency_send;
 
 	desc->state = RPC_STATE_NEW;
 
 	rpc_desc_get(desc);
 
 	BUG_ON(h->desc_id != desc->desc_id);
-	__hashtable_add(desc_srv[h->client], h->desc_id, desc);
+	if (__hashtable_add(desc_srv[h->client], h->desc_id, desc))
+		goto err_hashtable;
 
+out:
 	return desc;
+
+err_hashtable:
+	rpc_desc_put(desc);
+	__rpc_emergency_send_buf_free(desc);
+err_emergency_send:
+	kmem_cache_free(rpc_desc_recv_cachep, desc->desc_recv[0]);
+err_desc_recv:
+	kmem_cache_free(rpc_desc_send_cachep, desc->desc_send);
+err_desc_send:
+	rpc_desc_put(desc);
+	return NULL;
 }
 
 /*
@@ -864,9 +894,9 @@ static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
  * Packets are in the right order, so we have to find the corresponding
  * descriptor (if any).
  */
-static void tipc_handler_ordered(struct sk_buff *buf,
-				 unsigned const char* data,
-				 unsigned int size)
+static int tipc_handler_ordered(struct sk_buff *buf,
+				unsigned const char* data,
+				unsigned int size)
 {
 	unsigned char const* iter;
 	struct __rpc_header *h;
@@ -874,6 +904,7 @@ static void tipc_handler_ordered(struct sk_buff *buf,
 	struct rpc_desc_elem* descelem;
 	struct rpc_desc_recv* desc_recv;
 	struct hashtable_t* desc_ht;
+	int err = 0;
 
 	iter = data;
 	h = (struct __rpc_header*)iter;
@@ -899,8 +930,8 @@ static void tipc_handler_ordered(struct sk_buff *buf,
 			
 			spin_unlock(&rpc_desc_done_lock[h->client]);
 			hashtable_unlock(desc_ht);
+			goto out;
 
-			return;
 		}
 
 		rpc_desc_done_id[h->client] = h->desc_id;
@@ -911,11 +942,22 @@ static void tipc_handler_ordered(struct sk_buff *buf,
 			// requesting desc is already closed (most probably an async request
 			// just discard this packet
 			hashtable_unlock(desc_ht);
-			return;
+			goto out;
 
 		}else{
 
 			desc = server_rpc_desc_setup(h);
+			if (!desc) {
+				/*
+				 * Drop the packet, but not silently.
+				 * tipc_handler() may decide to drop more pending
+				 * packets to decrease memory pressure, or keep
+				 * the packet and retry handling it later.
+				 */
+				hashtable_unlock(desc_ht);
+				err = -ENOMEM;
+				goto out;
+			}
 
 		}
 
@@ -957,16 +999,21 @@ static void tipc_handler_ordered(struct sk_buff *buf,
 	if (!(desc->state & RPC_STATE_MASK_VALID) ||
 	    (desc_recv->flags & RPC_FLAGS_CLOSED)) {
 		hashtable_unlock(desc_ht);
-		rpc_desc_put(desc);
-		return;
+		goto out_put;
 	}
 
 	hashtable_unlock(desc_ht);
 
 	descelem = kmem_cache_alloc(rpc_desc_elem_cachep, GFP_ATOMIC);
 	if (!descelem) {
-		printk("OOM in tipc_handler_ordered\n");
-		BUG();
+		/*
+		 * Same OOM handling as for new rpc_desc above, except that we
+		 * keep the rpc_desc, even if we just created it, because it is
+		 * now visible in the hashtable and it would just add
+		 * complexity to try to free it.
+		 */
+		err = -ENOMEM;
+		goto out_put;
 	}
 
 	skb_get(buf);
@@ -988,22 +1035,34 @@ static void tipc_handler_ordered(struct sk_buff *buf,
 	}
 
 	/* Releases desc->desc_lock */
-	handle_valid_desc(desc, desc_recv, descelem, h, buf);
-		
+	err = handle_valid_desc(desc, desc_recv, descelem, h, buf);
+	if (err)
+		/* Same OOM handling as above */
+		rpc_desc_elem_free(descelem);
+
 out_put:
 	rpc_desc_put(desc);
+out:
+	return err;
 }
 
-static inline void handle_one_packet(kerrighed_node_t node,
-				     struct sk_buff *buf,
-				     unsigned char const *data,
-				     unsigned int size)
+static inline int handle_one_packet(kerrighed_node_t node,
+				    struct sk_buff *buf,
+				    unsigned char const *data,
+				    unsigned int size)
 {
-	tipc_handler_ordered(buf, data, size);
-	if (node == kerrighed_node_id)
-		rpc_link_send_ack_id[node] = rpc_link_recv_seq_id[node];
-	rpc_link_recv_seq_id[node]++;
+	int err;
+
+	err = tipc_handler_ordered(buf, data, size);
+	if (!err) {
+		if (node == kerrighed_node_id)
+			rpc_link_send_ack_id[node] = rpc_link_recv_seq_id[node];
+		rpc_link_recv_seq_id[node]++;
+	}
+	return err;
 }
+
+static void schedule_run_rx_queue(struct rx_engine *engine);
 
 static void run_rx_queue(struct rx_engine *engine)
 {
@@ -1021,11 +1080,28 @@ static void run_rx_queue(struct rx_engine *engine)
 		if (h->link_seq_id > rpc_link_recv_seq_id[node])
 			break;
 
-		handle_one_packet(node, buf, buf->data, buf->len);
+		if (handle_one_packet(node, buf, buf->data, buf->len)) {
+			schedule_run_rx_queue(engine);
+			break;
+		}
 
 		__skb_unlink(buf, queue);
 		kfree_skb(buf);
 	}
+}
+
+static void run_rx_queue_worker(struct work_struct *work)
+{
+	struct rx_engine *engine =
+		container_of(work, struct rx_engine, run_rx_queue_work.work);
+	spin_lock_bh(&engine->rx_queue.lock);
+	run_rx_queue(engine);
+	spin_unlock_bh(&engine->rx_queue.lock);
+}
+
+static void schedule_run_rx_queue(struct rx_engine *engine)
+{
+	queue_delayed_work(krgcom_wq, &engine->run_rx_queue_work, HZ / 2);
 }
 
 /*
@@ -1111,8 +1187,13 @@ static void tipc_handler(void *usr_handle,
 		goto exit;
 	}
 
-	handle_one_packet(h->from, __buf, data, size);
-	run_rx_queue(&tipc_rx_engine[h->from]);
+	if (handle_one_packet(h->from, __buf, data, size)) {
+		skb_get(__buf);
+		__skb_queue_head(queue, __buf);
+		schedule_run_rx_queue(&tipc_rx_engine[h->from]);
+	} else {
+		run_rx_queue(&tipc_rx_engine[h->from]);
+	}
 
  exit:
 	spin_unlock(&queue->lock);
@@ -1259,6 +1340,8 @@ int comlayer_init(void)
 	for (i = 0; i < KERRIGHED_MAX_NODES; i++) {
 		tipc_rx_engine[i].from = i;
 		skb_queue_head_init(&tipc_rx_engine[i].rx_queue);
+		INIT_DELAYED_WORK(&tipc_rx_engine[i].run_rx_queue_work,
+				  run_rx_queue_worker);
 		last_cleanup_ack[i] = 0;
 		consecutive_recv[i] = 0;
 		max_consecutive_recv[i] = MAX_CONSECUTIVE_RECV;
