@@ -809,6 +809,56 @@ void handle_valid_desc(struct rpc_desc *desc,
 	do_action(desc, h);
 }
 
+static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
+{
+	struct rpc_desc *desc;
+
+	desc = rpc_desc_alloc();
+	if (!desc) {
+		printk("tipc_handler_ordered: OOM (desc)\n");
+		BUG();
+	}
+
+#ifdef CONFIG_KRG_DEBUG
+	desc->debug = h->flags & __RPC_HEADER_FLAGS_DEBUG;
+#endif
+
+	desc->desc_send = rpc_desc_send_alloc();
+	if (!desc->desc_send) {
+		printk("tipc_handler_ordered: OOM (desc_send)\n");
+		BUG();
+	}
+
+	desc->desc_recv[0] = rpc_desc_recv_alloc();
+	if (!desc->desc_recv[0]) {
+		printk("tipc_handler_ordered: OOM (desc_recv)\n");
+		BUG();
+	}
+
+	// Since a RPC_RQ_CLT can only be received from one node:
+	// by choice, we decide to use 0 as the corresponding id
+	krgnode_set(0, desc->nodes);
+
+	desc->desc_id = h->desc_id;
+	desc->type = RPC_RQ_SRV;
+	desc->client = h->client;
+	desc->rpcid = h->rpcid;
+	desc->service = rpc_services[h->rpcid];
+	desc->thread = NULL;
+
+	if (__rpc_emergency_send_buf_alloc(desc, 0))
+		BUG();
+
+	desc->state = RPC_STATE_NEW;
+
+	rpc_desc_get(desc);
+
+	BUG_ON(h->desc_id != desc->desc_id);
+	__hashtable_add(desc_srv[h->client], h->desc_id, desc);
+
+	return desc;
+}
+
 /*
  * tipc_handler_ordered
  * Packets are in the right order, so we have to find the corresponding
@@ -865,44 +915,7 @@ static void tipc_handler_ordered(struct sk_buff *buf,
 
 		}else{
 
-			desc = rpc_desc_alloc();
-			if (!desc) {
-				printk("tipc_handler_ordered: OOM (desc)\n");
-				BUG();
-			}
-
-			desc->desc_send = rpc_desc_send_alloc();
-			if (!desc->desc_send) {
-				printk("tipc_handler_ordered: OOM (desc_send)\n");
-				BUG();
-			}
-
-			desc->desc_recv[0] = rpc_desc_recv_alloc();
-			if (!desc->desc_recv[0]) {
-				printk("tipc_handler_ordered: OOM (desc_recv)\n");
-				BUG();
-			}
-
-			// Since a RPC_RQ_CLT can only be received from one node:
-			// by choice, we decide to use 0 as the corresponding id
-			krgnode_set(0, desc->nodes);
-
-			desc->desc_id = h->desc_id;
-			desc->type = RPC_RQ_SRV;
-			desc->client = h->client;
-			desc->rpcid = h->rpcid;
-			desc->service = rpc_services[desc->rpcid];
-			desc->thread = NULL;
-
-			if (__rpc_emergency_send_buf_alloc(desc, 0))
-				BUG();
-
-			desc->state = RPC_STATE_NEW;
-
-			rpc_desc_get(desc);
-
-			BUG_ON(h->desc_id != desc->desc_id);
-			__hashtable_add(desc_ht, h->desc_id, desc);
+			desc = server_rpc_desc_setup(h);
 
 		}
 
