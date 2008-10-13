@@ -981,6 +981,40 @@ out_put:
 	rpc_desc_put(desc);
 }
 
+static inline void handle_one_packet(kerrighed_node_t node,
+				     struct sk_buff *buf,
+				     unsigned char const *data,
+				     unsigned int size)
+{
+	tipc_handler_ordered(buf, data, size);
+	if (node == kerrighed_node_id)
+		rpc_link_send_ack_id[node] = rpc_link_recv_seq_id[node];
+	rpc_link_recv_seq_id[node]++;
+}
+
+static void run_rx_queue(struct rx_engine *engine)
+{
+	struct sk_buff_head *queue;
+	kerrighed_node_t node;
+	struct sk_buff *buf;
+	struct __rpc_header *h;
+
+	node = engine->from;
+	queue = &engine->rx_queue;
+	while ((buf = skb_peek(queue))) {
+		h = (struct __rpc_header *)buf->data;
+
+		BUG_ON(h->link_seq_id < rpc_link_recv_seq_id[node]);
+		if (h->link_seq_id > rpc_link_recv_seq_id[node])
+			break;
+
+		handle_one_packet(node, buf, buf->data, buf->len);
+
+		__skb_unlink(buf, queue);
+		kfree_skb(buf);
+	}
+}
+
 /*
  * tipc_handler
  * receives packets from TIPC and orders them
@@ -1064,28 +1098,8 @@ static void tipc_handler(void *usr_handle,
 		goto exit;
 	}
 
-	tipc_handler_ordered(__buf, data, size);
-
-	if (h->from == kerrighed_node_id)
-		rpc_link_send_ack_id[kerrighed_node_id] = rpc_link_recv_seq_id[kerrighed_node_id];
-	rpc_link_recv_seq_id[h->from]++;
-
-	while ((__buf = skb_peek(queue))) {
-		h = (struct __rpc_header *)__buf->data;
-
-		BUG_ON(h->link_seq_id < rpc_link_recv_seq_id[h->from]);
-		if (h->link_seq_id > rpc_link_recv_seq_id[h->from])
-			break;
-
-		tipc_handler_ordered(__buf, __buf->data, __buf->len);
-
-		if (h->from == kerrighed_node_id)
-			rpc_link_send_ack_id[kerrighed_node_id] = rpc_link_recv_seq_id[kerrighed_node_id];
-		rpc_link_recv_seq_id[h->from]++;
-
-		__skb_unlink(__buf, queue);
-		kfree_skb(__buf);
-	}
+	handle_one_packet(h->from, __buf, data, size);
+	run_rx_queue(&tipc_rx_engine[h->from]);
 
  exit:
 	spin_unlock(&queue->lock);
