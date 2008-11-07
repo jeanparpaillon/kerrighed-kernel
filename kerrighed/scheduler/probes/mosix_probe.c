@@ -43,7 +43,7 @@ MODULE_DESCRIPTION("CPU load probe based on MOSIX algorithms");
 
 /* Speed of the standard processor */
 /* #define STD_SPD 10000 */
-/* Not used. Set this to 1 avoid long overflow in load compuation. */
+/* Not used. Set this to 1 avoid long overflow in load computation. */
 #define STD_SPD 1
 
 /* #define PROCESS_MEAN_LOAD_SCALE 4 */
@@ -64,7 +64,7 @@ MODULE_DESCRIPTION("CPU load probe based on MOSIX algorithms");
 struct mosix_probe_info {
 	struct krg_sched_module_info module_info;
 	unsigned int load;    /**< Estimated load:
-			       * approx. 4 * ticks used in CF ticks */
+			       * approx. #ticks used in CF ticks */
 	unsigned int last_on; /**< load_ticks + 1 when last put on runqueue,
 			       * 0 if not on runqueue */
 	unsigned int ran;     /**< number of ticks used
@@ -79,7 +79,6 @@ to_mosix_probe_info(struct krg_sched_module_info *sched_info)
 }
 
 struct mosix_probe_data mosix_data;
-/* struct mosix_probe_data mosix_data_prev; */
 
 /* Load informations readable from outside in the cluster */
 unsigned long cpu_speed = 1;  /* Speed of each CPU */
@@ -103,10 +102,6 @@ enum mosix_probe_source_t {
 	NR_VALUES,
 };
 static struct scheduler_probe_source *mosix_probe_sources[NR_VALUES + 1];
-
-
-/* static u64 curr_jiffies; */
-/* static u64 prev_jiffies; */
 
 /**
  *  Function to initialize load informations of a process.
@@ -364,8 +359,6 @@ static void kmcb_accumulate_load(unsigned long ticks)
 			mosix_probe_sources[VALUE_NORM_MEAN_LOAD]);
 		scheduler_probe_source_notify_update(
 			mosix_probe_sources[VALUE_NORM_UPPER_LOAD]);
-/*		if (load >= ALARM_THRESHOLD) */
-/*			send_alarm_to_analyzer(); */
 	}
 }
 
@@ -378,13 +371,6 @@ static void mosix_probe_init_variables(void)
 	mosix_data.mosix_single_process_load = CF;
 	mosix_data.mosix_norm_single_process_load =
 		mosix_data.mosix_single_process_load * STD_SPD / cpu_speed;
-
-/*         |+ called each time calc_load is called +| */
-/*         hook_register(&kh_calc_load, kcb_accumulate_load); */
-/*         |+ called when a process is added to the run queue +| */
-/*         hook_register(&kh_process_on, kcb_process_on); */
-/*         |+ called when a process is removed from the run queue +| */
-/*         hook_register(&kh_process_off, kcb_process_off); */
 }
 
 DEFINE_SCHEDULER_PROBE_SOURCE_GET(value_mean_load, unsigned long, value_p, nr)
@@ -398,22 +384,10 @@ DEFINE_SCHEDULER_PROBE_SOURCE_SHOW(value_mean_load, page)
 	return sprintf(page, "%lu\n", mosix_data.mosix_mean_load);
 }
 
-/* DEFINE_SCHEDULER_PROBE_SOURCE_HAS_CHANGED(value_mean_load) */
-/* { */
-/*	int isChanged = 0; */
-/*	if (mosix_data.mosix_mean_load != mosix_data_prev.mosix_mean_load) { */
-/*		isChanged = 1; */
-/*		mosix_data_prev.mosix_mean_load = mosix_data.mosix_mean_load; */
-/*	} */
-
-/*	return isChanged; */
-/* } */
-
 static BEGIN_SCHEDULER_PROBE_SOURCE_TYPE(value_mean_load),
 	.SCHEDULER_PROBE_SOURCE_GET(value_mean_load),
 	.SCHEDULER_PROBE_SOURCE_SHOW(value_mean_load),
 	.SCHEDULER_PROBE_SOURCE_VALUE_TYPE(value_mean_load, unsigned long),
-/*	.SCHEDULER_PROBE_SOURCE_HAS_CHANGED(value_mean_load), */
 END_SCHEDULER_PROBE_SOURCE_TYPE(value_mean_load);
 
 DEFINE_SCHEDULER_PROBE_SOURCE_GET(value_upper_load, unsigned long, value_p, nr)
@@ -427,23 +401,10 @@ DEFINE_SCHEDULER_PROBE_SOURCE_SHOW(value_upper_load, page)
         return sprintf(page, "%lu\n", mosix_data.mosix_upper_load);
 }
 
-/* DEFINE_SCHEDULER_PROBE_SOURCE_HAS_CHANGED(value_upper_load) */
-/* { */
-/*         int isChanged = 0; */
-/*         if (mosix_data.mosix_upper_load != mosix_data_prev.mosix_upper_load) { */
-/*                 isChanged = 1; */
-/*                 mosix_data_prev.mosix_upper_load = mosix_data.mosix_upper_load; */
-/*         } */
-
-/*         return isChanged; */
-
-/* } */
-
 static BEGIN_SCHEDULER_PROBE_SOURCE_TYPE(value_upper_load),
 	.SCHEDULER_PROBE_SOURCE_GET(value_upper_load),
 	.SCHEDULER_PROBE_SOURCE_SHOW(value_upper_load),
 	.SCHEDULER_PROBE_SOURCE_VALUE_TYPE(value_upper_load, unsigned long),
-/*	.SCHEDULER_PROBE_SOURCE_HAS_CHANGED(value_upper_load), */
 END_SCHEDULER_PROBE_SOURCE_TYPE(value_upper_load);
 
 DEFINE_SCHEDULER_PROBE_SOURCE_GET(value_single_process_load,
@@ -458,27 +419,11 @@ DEFINE_SCHEDULER_PROBE_SOURCE_SHOW(value_single_process_load, page)
         return sprintf(page, "%lu\n", mosix_data.mosix_single_process_load);
 }
 
-/* DEFINE_SCHEDULER_PROBE_SOURCE_HAS_CHANGED(value_single_process_load) */
-/* { */
-/*         int isChanged = 0; */
-/*         if (mosix_data.mosix_single_process_load !=  */
-/*		mosix_data_prev.mosix_single_process_load) { */
-
-/*                 isChanged = 1; */
-/*                 mosix_data_prev.mosix_single_process_load =  */
-/*			mosix_data.mosix_single_process_load; */
-/*         } */
-
-/*         return isChanged; */
-
-/* } */
-
 static BEGIN_SCHEDULER_PROBE_SOURCE_TYPE(value_single_process_load),
 	.SCHEDULER_PROBE_SOURCE_GET(value_single_process_load),
 	.SCHEDULER_PROBE_SOURCE_SHOW(value_single_process_load),
 	.SCHEDULER_PROBE_SOURCE_VALUE_TYPE(value_single_process_load,
 					   unsigned long),
-/*	.SCHEDULER_PROBE_SOURCE_HAS_CHANGED(value_single_process_load), */
 END_SCHEDULER_PROBE_SOURCE_TYPE(value_single_process_load);
 
 DEFINE_SCHEDULER_PROBE_SOURCE_GET(value_norm_mean_load,
@@ -493,25 +438,10 @@ DEFINE_SCHEDULER_PROBE_SOURCE_SHOW(value_norm_mean_load, page)
         return sprintf(page, "%lu\n", mosix_data.mosix_norm_mean_load);
 }
 
-/* DEFINE_SCHEDULER_PROBE_SOURCE_HAS_CHANGED(value_norm_mean_load) */
-/* { */
-/*         int isChanged = 0; */
-/*         if (mosix_data.mosix_norm_mean_load !=  */
-/*		mosix_data_prev.mosix_norm_mean_load) { */
-
-/*                 isChanged = 1; */
-/*                 mosix_data_prev.mosix_norm_mean_load =  */
-/*			mosix_data.mosix_norm_mean_load; */
-/*         } */
-
-/*         return isChanged; */
-/* } */
-
 static BEGIN_SCHEDULER_PROBE_SOURCE_TYPE(value_norm_mean_load),
 	.SCHEDULER_PROBE_SOURCE_GET(value_norm_mean_load),
 	.SCHEDULER_PROBE_SOURCE_SHOW(value_norm_mean_load),
 	.SCHEDULER_PROBE_SOURCE_VALUE_TYPE(value_norm_mean_load, unsigned long),
-/*	.SCHEDULER_PROBE_SOURCE_HAS_CHANGED(value_norm_mean_load), */
 END_SCHEDULER_PROBE_SOURCE_TYPE(value_norm_mean_load);
 
 DEFINE_SCHEDULER_PROBE_SOURCE_GET(value_norm_upper_load,
@@ -526,26 +456,11 @@ DEFINE_SCHEDULER_PROBE_SOURCE_SHOW(value_norm_upper_load, page)
         return sprintf(page, "%lu\n", mosix_data.mosix_norm_upper_load);
 }
 
-/* DEFINE_SCHEDULER_PROBE_SOURCE_HAS_CHANGED(value_norm_upper_load) */
-/* { */
-/*         int isChanged = 0; */
-/*         if (mosix_data.mosix_norm_upper_load != */
-/*                 mosix_data_prev.mosix_norm_upper_load) { */
-
-/*                 isChanged = 1; */
-/*                 mosix_data_prev.mosix_norm_upper_load = */
-/*                         mosix_data.mosix_norm_upper_load; */
-/*         } */
-
-/*         return isChanged; */
-/* } */
-
 static BEGIN_SCHEDULER_PROBE_SOURCE_TYPE(value_norm_upper_load),
 	.SCHEDULER_PROBE_SOURCE_GET(value_norm_upper_load),
 	.SCHEDULER_PROBE_SOURCE_SHOW(value_norm_upper_load),
 	.SCHEDULER_PROBE_SOURCE_VALUE_TYPE(value_norm_upper_load,
 					   unsigned long),
-/*	.SCHEDULER_PROBE_SOURCE_HAS_CHANGED(value_norm_upper_load), */
 END_SCHEDULER_PROBE_SOURCE_TYPE(value_norm_upper_load);
 
 DEFINE_SCHEDULER_PROBE_SOURCE_GET(value_norm_single_process_load,
@@ -561,26 +476,11 @@ DEFINE_SCHEDULER_PROBE_SOURCE_SHOW(value_norm_single_process_load, page)
 		       mosix_data.mosix_norm_single_process_load);
 }
 
-/* DEFINE_SCHEDULER_PROBE_SOURCE_HAS_CHANGED(value_norm_single_process_load) */
-/* { */
-/*         int isChanged = 0; */
-/*         if (mosix_data.mosix_norm_single_process_load != */
-/*                 mosix_data_prev.mosix_norm_single_process_load) { */
-
-/*                 isChanged = 1; */
-/*                 mosix_data_prev.mosix_norm_single_process_load = */
-/*                         mosix_data.mosix_norm_single_process_load; */
-/*         } */
-
-/*         return isChanged; */
-/* } */
-
 static BEGIN_SCHEDULER_PROBE_SOURCE_TYPE(value_norm_single_process_load),
 	.SCHEDULER_PROBE_SOURCE_GET(value_norm_single_process_load),
 	.SCHEDULER_PROBE_SOURCE_SHOW(value_norm_single_process_load),
 	.SCHEDULER_PROBE_SOURCE_VALUE_TYPE(value_norm_single_process_load,
 					   unsigned long),
-/*	.SCHEDULER_PROBE_SOURCE_HAS_CHANGED(value_norm_single_process_load), */
 END_SCHEDULER_PROBE_SOURCE_TYPE(value_norm_single_process_load);
 
 DEFINE_SCHEDULER_PROBE_SOURCE_GET_WITH_INPUT(value_process_load,
@@ -616,16 +516,7 @@ static BEGIN_SCHEDULER_PROBE_SOURCE_TYPE(value_process_load),
 	.SCHEDULER_PROBE_SOURCE_PARAM_TYPE(value_process_load, pid_t),
 END_SCHEDULER_PROBE_SOURCE_TYPE(value_process_load);
 
-/* static void measure_mosix(void) */
-/* { */
-/*	curr_jiffies = get_jiffies_64(); */
-/*	load_adder += nr_running(); */
-/*	load_ticks += (curr_jiffies - prev_jiffies); */
-/*	mp_calc_load(); */
-/*	prev_jiffies = curr_jiffies; */
-/* } */
-
-static SCHEDULER_PROBE_TYPE(mosix_probe_type, NULL, NULL /* measure_mosix */);
+static SCHEDULER_PROBE_TYPE(mosix_probe_type, NULL, NULL);
 
 static int mod_info_not_registered;
 static int probe_not_registered;
@@ -678,13 +569,6 @@ int mosix_probe_init(void)
 		printk(KERN_ERR "error: mosix_probe creation failed\n");
 		goto out_kmalloc;
 	}
-
-/*         |+ perform first measurement +| */
-/*         measure_mosix(); */
-/*         mosix_data_prev = mosix_data; */
-
-/*	curr_jiffies = get_jiffies_64(); */
-/*	prev_jiffies = get_jiffies_64(); */
 
 	/*
 	 * We cannot call unregister in init, so the system may have to live
