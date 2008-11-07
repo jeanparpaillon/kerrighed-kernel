@@ -492,6 +492,19 @@ void
 scheduler_probe_source_notify_update(struct scheduler_probe_source *source);
 
 /**
+ * Function that a probe source should call when the value changes and connected
+ * components should be notified immediately.
+ * Must not be called with soft/hard IRQs disabled or spinlocks held.
+ * Does not block unless notified components are buggy.
+ * Notifies even if the probe provides a perform_measurement() method.
+ *
+ * @param source		Source having been updated
+ */
+void
+scheduler_probe_source_immediate_notify_update(
+	struct scheduler_probe_source *source);
+
+/**
  * This function is used for registering probe. This function has to
  * be called at the end of "init_module" function for each probe's module.
  * @author Marko Novak, Louis Rilling

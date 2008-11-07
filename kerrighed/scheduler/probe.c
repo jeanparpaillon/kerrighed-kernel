@@ -308,13 +308,19 @@ void scheduler_probe_source_unlock(struct scheduler_probe_source *probe_source)
 }
 EXPORT_SYMBOL(scheduler_probe_source_unlock);
 
+void scheduler_probe_source_immediate_notify_update(struct scheduler_probe_source *source)
+{
+	scheduler_source_publish(&source->source);
+}
+EXPORT_SYMBOL(scheduler_probe_source_immediate_notify_update);
+
 static void __scheduler_probe_source_notify_update(struct work_struct *work)
 {
 	struct scheduler_probe_source *s =
 		container_of(work,
 			     struct scheduler_probe_source, notify_update_work);
 
-	scheduler_source_publish(&s->source);
+	scheduler_probe_source_immediate_notify_update(s);
 }
 
 /**
