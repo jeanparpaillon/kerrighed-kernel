@@ -63,7 +63,9 @@ static inline void lb_unlock(struct mosix_load_balancer *lb)
 	spin_unlock(&lb->policy.lock);
 }
 
-static struct pid *find_target_task(struct mosix_load_balancer *lb)
+static struct pid *find_target_task(struct mosix_load_balancer *lb,
+				    unsigned long *moved_load)
+
 {
 	struct scheduler *scheduler =
 		scheduler_policy_get_scheduler(&lb->policy);
@@ -107,13 +109,14 @@ static struct pid *find_target_task(struct mosix_load_balancer *lb)
 		}
 	} process_set_while_each_process(p, processes);
 
-	if (second_max_p)
+	if (second_max_p) {
 		p = second_max_p;
-	else {
-		if (max_p)
-			p = max_p;
-		else
-			p = NULL;
+		*moved_load = second_highest_load;
+	} else if (max_p) {
+		p = max_p;
+		*moved_load = highest_load;
+	} else {
+		p = NULL;
 	}
 
 	if (p)
@@ -135,10 +138,11 @@ out:
  *  @author Louis Rilling
  */
 static int get_stable_remote_load(struct mosix_load_balancer *lb,
-				  kerrighed_node_t node, unsigned long *load)
+				  kerrighed_node_t node,
+				  unsigned long moved_load,
+				  unsigned long *load)
 {
 	unsigned long node_load;
-	unsigned long single_process_load;
 	int ret;
 
 	ret = scheduler_port_get_remote_value(&lb->ports[PORT_REMOTE_LOAD],
@@ -148,16 +152,8 @@ static int get_stable_remote_load(struct mosix_load_balancer *lb,
 	if (ret < 1)
 		goto no_load;
 	node_load = lb->tmp_load;
-	ret = scheduler_port_get_remote_value(
-		&lb->ports[PORT_SINGLE_PROCESS_LOAD],
-		node,
-		&lb->tmp_load, 1,
-		NULL, 0);
-	if (ret < 1)
-		goto no_load;
-	single_process_load = lb->tmp_load;
 
-	*load = node_load + single_process_load * lb->stab_factor / 100;
+	*load = node_load + moved_load * lb->stab_factor / 100;
 	return 0;
 
 no_load:
@@ -166,7 +162,8 @@ no_load:
 
 kerrighed_node_t __find_target_node(struct mosix_load_balancer *lb,
 				    const krgnodemask_t *nodes,
-				    unsigned long high_load)
+				    unsigned long high_load,
+				    unsigned long moved_load)
 {
 	unsigned long lowest_remote_load, remote_load;
 	kerrighed_node_t target_node = KERRIGHED_NODE_ID_NONE;
@@ -179,7 +176,7 @@ kerrighed_node_t __find_target_node(struct mosix_load_balancer *lb,
 		if (unlikely(i == kerrighed_node_id))
 			continue;
 
-		ret = get_stable_remote_load(lb, i, &remote_load);
+		ret = get_stable_remote_load(lb, i, moved_load, &remote_load);
 		if (ret)
 			continue;
 		if (remote_load < lowest_remote_load) {
@@ -197,7 +194,8 @@ kerrighed_node_t __find_target_node(struct mosix_load_balancer *lb,
  *  otherwise, return KERRIGHED_NODE_ID_NONE.
  */
 kerrighed_node_t find_target_node(struct mosix_load_balancer *lb,
-				  unsigned long current_load)
+				  unsigned long current_load,
+				  unsigned long moved_load)
 {
 	struct scheduler *s = scheduler_policy_get_scheduler(&lb->policy);
 	krgnodemask_t nodes;
@@ -205,7 +203,8 @@ kerrighed_node_t find_target_node(struct mosix_load_balancer *lb,
 
 	if (s) {
 		scheduler_get_node_set(s, &nodes);
-		target_node = __find_target_node(lb, &nodes, current_load);
+		target_node = __find_target_node(lb, &nodes,
+						 current_load, moved_load);
 		scheduler_put(s);
 	}
 
@@ -216,17 +215,18 @@ static void balance(struct mosix_load_balancer *lb, unsigned long current_load)
 {
 	struct pid *target_pid;
 	struct task_struct *target_task;
+	unsigned long moved_load = 0;
 	kerrighed_node_t target_node;
 
 	lb_lock(lb);
 
 	/* First, try to find a task that could be migrated */
-	target_pid = find_target_task(lb);
+	target_pid = find_target_task(lb, &moved_load);
 	if (!target_pid)
 		goto out;
 
 	/* Second, check whether migrating the task could improve balance */
-	target_node = find_target_node(lb, current_load);
+	target_node = find_target_node(lb, current_load, moved_load);
 	if (target_node == KERRIGHED_NODE_ID_NONE)
 		goto out_put_pid;
 
@@ -275,7 +275,7 @@ static void __expell_all(struct mosix_load_balancer *lb,
 			continue;
 		}
 
-		node = __find_target_node(lb, nodes, ULONG_MAX);
+		node = __find_target_node(lb, nodes, ULONG_MAX, 0);
 		if (node == KERRIGHED_NODE_ID_NONE)
 			node = fallback_node;
 
