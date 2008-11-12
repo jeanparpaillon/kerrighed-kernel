@@ -131,7 +131,7 @@ END_SCHEDULER_PROBE_SOURCE_TYPE(mem_total);
 
 DEFINE_SCHEDULER_PROBE_SOURCE_HAS_CHANGED(mem_free)
 {
-        int isChanged = 0;
+        int isChanged = 1;
 
         if (mem_free_active
 	    && probe_data.ram_free != probe_data_prev.ram_free) {
