@@ -1,5 +1,5 @@
 /*
- *  kerrighed/scheduler/filters/threshold_filter.c
+ *  kerrighed/scheduler/filters/high_threshold_filter.c
  *
  *  Copyright (C) 2007-2008 Louis Rilling - Kerlabs
  */
@@ -13,7 +13,7 @@ MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Louis Rilling <Louis.Rilling@kerlabs.com>");
 MODULE_DESCRIPTION("Filter to propagate updates of values above a threshold");
 
-struct threshold_filter {
+struct high_threshold_filter {
 	struct scheduler_filter filter;
 	unsigned long threshold __attribute__((aligned(sizeof(unsigned long))));
 };
@@ -24,20 +24,21 @@ struct threshold_filter {
  */
 
 static inline
-struct threshold_filter *to_threshold_filter(struct scheduler_filter *filter)
+struct high_threshold_filter *
+to_high_threshold_filter(struct scheduler_filter *filter)
 {
-	return container_of(filter, struct threshold_filter, filter);
+	return container_of(filter, struct high_threshold_filter, filter);
 }
 
 DEFINE_SCHEDULER_FILTER_ATTRIBUTE_SHOW(threshold, filter, attr, page)
 {
-	struct threshold_filter *f = to_threshold_filter(filter);
+	struct high_threshold_filter *f = to_high_threshold_filter(filter);
 	return sprintf(page, "%lu", f->threshold);
 }
 
 DEFINE_SCHEDULER_FILTER_ATTRIBUTE_STORE(threshold, filter, attr, page, count)
 {
-	struct threshold_filter *f = to_threshold_filter(filter);
+	struct high_threshold_filter *f = to_high_threshold_filter(filter);
 	unsigned long new_value;
 	char *last_read;
 
@@ -54,14 +55,14 @@ static BEGIN_SCHEDULER_FILTER_ATTRIBUTE(threshold_attr, threshold, 0666),
 	.SCHEDULER_FILTER_ATTRIBUTE_STORE(threshold),
 END_SCHEDULER_FILTER_ATTRIBUTE(threshold);
 
-static struct scheduler_filter_attribute *threshold_attrs[] = {
+static struct scheduler_filter_attribute *high_threshold_attrs[] = {
 	&threshold_attr,
 	NULL
 };
 
-DEFINE_SCHEDULER_FILTER_UPDATE_VALUE(threshold_filter, filter)
+DEFINE_SCHEDULER_FILTER_UPDATE_VALUE(high_threshold_filter, filter)
 {
-	struct threshold_filter *f = to_threshold_filter(filter);
+	struct high_threshold_filter *f = to_high_threshold_filter(filter);
 	unsigned long value;
 	ssize_t ret;
 
@@ -71,16 +72,18 @@ DEFINE_SCHEDULER_FILTER_UPDATE_VALUE(threshold_filter, filter)
 }
 
 /* Forward declaration */
-static struct scheduler_filter_type threshold_filter_type;
+static struct scheduler_filter_type high_threshold_filter_type;
 
-DEFINE_SCHEDULER_FILTER_NEW(threshold_filter, name)
+DEFINE_SCHEDULER_FILTER_NEW(high_threshold_filter, name)
 {
-	struct threshold_filter *f = kmalloc(sizeof(*f), GFP_KERNEL);
+	struct high_threshold_filter *f = kmalloc(sizeof(*f), GFP_KERNEL);
 	int err;
 
 	if (!f)
 		goto err_f;
-	err = scheduler_filter_init(&f->filter, name, &threshold_filter_type,
+	err = scheduler_filter_init(&f->filter,
+				    name,
+				    &high_threshold_filter_type,
 				    NULL);
 	if (err)
 		goto err_filter;
@@ -94,29 +97,31 @@ err_f:
 	return NULL;
 }
 
-DEFINE_SCHEDULER_FILTER_DESTROY(threshold_filter, filter)
+DEFINE_SCHEDULER_FILTER_DESTROY(high_threshold_filter, filter)
 {
-	struct threshold_filter *f = to_threshold_filter(filter);
+	struct high_threshold_filter *f = to_high_threshold_filter(filter);
 	scheduler_filter_cleanup(filter);
 	kfree(f);
 }
 
-static BEGIN_SCHEDULER_FILTER_TYPE(threshold_filter),
-	.SCHEDULER_FILTER_UPDATE_VALUE(threshold_filter),
-	.SCHEDULER_FILTER_SOURCE_VALUE_TYPE(threshold_filter, unsigned long),
-	.SCHEDULER_FILTER_PORT_VALUE_TYPE(threshold_filter, unsigned long),
-	.SCHEDULER_FILTER_ATTRIBUTES(threshold_filter, threshold_attrs),
-END_SCHEDULER_FILTER_TYPE(threshold_filter);
+static BEGIN_SCHEDULER_FILTER_TYPE(high_threshold_filter),
+	.SCHEDULER_FILTER_UPDATE_VALUE(high_threshold_filter),
+	.SCHEDULER_FILTER_SOURCE_VALUE_TYPE(high_threshold_filter,
+					    unsigned long),
+	.SCHEDULER_FILTER_PORT_VALUE_TYPE(high_threshold_filter, unsigned long),
+	.SCHEDULER_FILTER_ATTRIBUTES(high_threshold_filter,
+				     high_threshold_attrs),
+END_SCHEDULER_FILTER_TYPE(high_threshold_filter);
 
-static int threshold_start(void)
+static int high_threshold_start(void)
 {
-	return scheduler_filter_type_register(&threshold_filter_type);
+	return scheduler_filter_type_register(&high_threshold_filter_type);
 }
 
-static void threshold_exit(void)
+static void high_threshold_exit(void)
 {
-	scheduler_filter_type_unregister(&threshold_filter_type);
+	scheduler_filter_type_unregister(&high_threshold_filter_type);
 }
 
-module_init(threshold_start);
-module_exit(threshold_exit);
+module_init(high_threshold_start);
+module_exit(high_threshold_exit);

@@ -214,7 +214,7 @@ config KRG_SCHED_COMPAT_FORCE
 	def_tristate m if KRG_SCHED_COMPAT
 	select KRG_SCHED_MIGRATION_PROBE
 	select KRG_SCHED_MOSIX_PROBE
-	select KRG_SCHED_THRESHOLD_FILTER
+	select KRG_SCHED_HIGH_THRESHOLD_FILTER
 	select KRG_SCHED_FREQ_LIMIT_FILTER
 	select KRG_SCHED_REMOTE_CACHE_FILTER
 	select KRG_SCHED_MOSIX_LOAD_BALANCER
@@ -261,8 +261,8 @@ config KRG_SCHED_MOSIX_PROBE
 
 	  If unsure, say N.
 
-config KRG_SCHED_THRESHOLD_FILTER
-	tristate "Threshold filter"
+config KRG_SCHED_HIGH_THRESHOLD_FILTER
+	tristate "High-pass threshold filter"
 	depends on m
 	default n
 	help
