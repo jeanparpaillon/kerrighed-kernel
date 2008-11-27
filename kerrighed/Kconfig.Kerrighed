@@ -311,6 +311,16 @@ config KRG_SCHED_DIFF_FILTER
 
 	  If unsure, say N.
 
+config KRG_SCHED_CONSTANT_FILTER
+	tristate "Constant filter"
+	depends on m
+	default n
+	help
+	  Filter producing a constant value, whatever source is connected to it,
+	  if any
+
+	  If unsure, say N.
+
 config KRG_SCHED_ECHO_POLICY
 	tristate "Sample echo policy"
 	depends on m
