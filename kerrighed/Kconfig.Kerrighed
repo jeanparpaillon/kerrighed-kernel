@@ -302,6 +302,15 @@ config KRG_SCHED_REMOTE_CACHE_FILTER
 
 	  If unsure, say N.
 
+config KRG_SCHED_DIFF_FILTER
+	tristate "Diff filter"
+	depends on m
+	default n
+	help
+	  Filter substracting a second source's value to its main source's value
+
+	  If unsure, say N.
+
 config KRG_SCHED_ECHO_POLICY
 	tristate "Sample echo policy"
 	depends on m
