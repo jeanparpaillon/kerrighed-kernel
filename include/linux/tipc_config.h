@@ -38,7 +38,11 @@
 #define _LINUX_TIPC_CONFIG_H_
 
 #include <linux/types.h>
+#ifdef __KERNEL__
 #include <linux/string.h>
+#else
+#include <string.h>
+#endif
 #include <asm/byteorder.h>
 
 /*
@@ -73,12 +77,13 @@
 #define  TIPC_CMD_GET_LINKS         0x0004    /* tx net_addr, rx link_info(s) */
 #define  TIPC_CMD_SHOW_NAME_TABLE   0x0005    /* tx name_tbl_query, rx ultra_string */
 #define  TIPC_CMD_SHOW_PORTS        0x0006    /* tx none, rx ultra_string */
+#define  TIPC_CMD_GET_ROUTES        0x000A    /* tx net_addr, rx route_info(s) */
 #define  TIPC_CMD_SHOW_LINK_STATS   0x000B    /* tx link_name, rx ultra_string */
+#define  TIPC_CMD_SHOW_STATS        0x000F    /* tx unsigned, rx ultra_string */
 
 #if 0
 #define  TIPC_CMD_SHOW_PORT_STATS   0x0008    /* tx port_ref, rx ultra_string */
 #define  TIPC_CMD_RESET_PORT_STATS  0x0009    /* tx port_ref, rx none */
-#define  TIPC_CMD_GET_ROUTES        0x000A    /* tx ?, rx ? */
 #define  TIPC_CMD_GET_LINK_PEER     0x000D    /* tx link_name, rx ? */
 #endif
 
@@ -96,8 +101,11 @@
 #define  TIPC_CMD_GET_MAX_ZONES     0x4007    /* tx none, rx unsigned */
 #define  TIPC_CMD_GET_MAX_CLUSTERS  0x4008    /* tx none, rx unsigned */
 #define  TIPC_CMD_GET_MAX_NODES     0x4009    /* tx none, rx unsigned */
+#if 0
 #define  TIPC_CMD_GET_MAX_SLAVES    0x400A    /* tx none, rx unsigned */
+#endif
 #define  TIPC_CMD_GET_NETID         0x400B    /* tx none, rx unsigned */
+#define  TIPC_CMD_GET_MAX_REMOTES   0x400C    /* tx none, rx unsigned */
 
 #define  TIPC_CMD_ENABLE_BEARER     0x4101    /* tx bearer_config, rx none */
 #define  TIPC_CMD_DISABLE_BEARER    0x4102    /* tx bearer_name, rx none */
@@ -107,10 +115,9 @@
 #define  TIPC_CMD_SET_LOG_SIZE      0x410A    /* tx unsigned, rx none */
 #define  TIPC_CMD_DUMP_LOG          0x410B    /* tx none, rx ultra_string */
 #define  TIPC_CMD_RESET_LINK_STATS  0x410C    /* tx link_name, rx none */
-
-#if 0
 #define  TIPC_CMD_CREATE_LINK       0x4103    /* tx link_create, rx none */
-#define  TIPC_CMD_REMOVE_LINK       0x4104    /* tx link_name, rx none */
+#define  TIPC_CMD_DELETE_LINK       0x4104    /* tx link_name, rx none */
+#if 0
 #define  TIPC_CMD_BLOCK_LINK        0x4105    /* tx link_name, rx none */
 #define  TIPC_CMD_UNBLOCK_LINK      0x4106    /* tx link_name, rx none */
 #endif
@@ -132,8 +139,11 @@
 #define  TIPC_CMD_SET_MAX_ZONES     0x8007    /* tx unsigned, rx none */
 #define  TIPC_CMD_SET_MAX_CLUSTERS  0x8008    /* tx unsigned, rx none */
 #define  TIPC_CMD_SET_MAX_NODES     0x8009    /* tx unsigned, rx none */
+#if 0
 #define  TIPC_CMD_SET_MAX_SLAVES    0x800A    /* tx unsigned, rx none */
+#endif
 #define  TIPC_CMD_SET_NETID         0x800B    /* tx unsigned, rx none */
+#define  TIPC_CMD_SET_MAX_REMOTES   0x800C    /* tx unsigned, rx none */
 
 /*
  * Reserved commands:
@@ -165,6 +175,8 @@
 #define TIPC_TLV_LINK_CONFIG    24	/* struct tipc_link_config */
 #define TIPC_TLV_NAME_TBL_QUERY	25	/* struct tipc_name_table_query */
 #define TIPC_TLV_PORT_REF   	26	/* 32-bit port reference */
+#define TIPC_TLV_CREATE_LINK   	27	/* char[TIPC_MAX_BEARER_NAME + TIPC_MAX_MEDIA_ADDR] */
+#define TIPC_TLV_ROUTE_INFO	28	/* struct tipc_route_info */
 
 /*
  * Maximum sizes of TIPC bearer-related names (including terminating NUL)
@@ -174,6 +186,8 @@
 #define TIPC_MAX_IF_NAME	16	/* format = interface */
 #define TIPC_MAX_BEARER_NAME	32	/* format = media:interface */
 #define TIPC_MAX_LINK_NAME	60	/* format = Z.C.N:interface-Z.C.N:interface */
+#define TIPC_MAX_MEDIA_ADDR	64	/* format = <media-dependent> */
+#define TIPC_MAX_ADDR	        16	/* format = Z.C.N */
 
 /*
  * Link priority limits (min, default, max, media default)
@@ -206,6 +220,12 @@ struct tipc_node_info {
 	__be32 up;			/* 0=down, 1= up */
 };
 
+struct tipc_route_info {
+	__be32 remote_addr;		/* <Z.C.N> of remote cluster/zone */
+	__be32 local_router;    	/* <Z.C.N> of local router */
+	__be32 remote_router;    	/* <Z.C.N> of remote router */
+};
+
 struct tipc_link_info {
 	__be32 dest;			/* network address of peer node */
 	__be32 up;			/* 0=down, 1=up */
@@ -214,7 +234,7 @@ struct tipc_link_info {
 
 struct tipc_bearer_config {
 	__be32 priority;		/* Range [1,31]. Override per link  */
-	__be32 detect_scope;
+	__be32 disc_domain;		/* <Z.C.N> containing desired nodes */     
 	char name[TIPC_MAX_BEARER_NAME];
 };
 
@@ -249,14 +269,9 @@ struct tipc_name_table_query {
 #if 0
 /* prototypes TLV structures for proposed commands */
 struct tipc_link_create {
-	__u32   domain;
+	__be32   domain;
 	struct tipc_media_addr peer_addr;
 	char bearer_name[TIPC_MAX_BEARER_NAME];
-};
-
-struct tipc_route_info {
-	__u32 dest;
-	__u32 router;
 };
 #endif
 
@@ -271,7 +286,7 @@ struct tipc_route_info {
 
 struct tlv_desc {
 	__be16 tlv_len;		/* TLV length (descriptor + value) */
-	__be16 tlv_type;		/* TLV identifier */
+	__be16 tlv_type;	/* TLV identifier */
 };
 
 #define TLV_ALIGNTO 4

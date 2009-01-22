@@ -2,7 +2,7 @@
  * include/linux/tipc.h: Include file for TIPC socket interface
  * 
  * Copyright (c) 2003-2006, Ericsson AB
- * Copyright (c) 2005, Wind River Systems
+ * Copyright (c) 2005-2008, Wind River Systems
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -96,6 +96,7 @@ static inline unsigned int tipc_node(__u32 addr)
 #define TIPC_ZONE_SCOPE		1
 #define TIPC_CLUSTER_SCOPE	2
 #define TIPC_NODE_SCOPE		3
+#define TIPC_NETWORK_SCOPE	4	/* NOT AVAILABLE YET */
 
 /*
  * Limiting values for messages
@@ -107,7 +108,7 @@ static inline unsigned int tipc_node(__u32 addr)
  * Message importance levels
  */
 
-#define TIPC_LOW_IMPORTANCE		0  /* default */
+#define TIPC_LOW_IMPORTANCE		0
 #define TIPC_MEDIUM_IMPORTANCE		1
 #define TIPC_HIGH_IMPORTANCE		2
 #define TIPC_CRITICAL_IMPORTANCE	3
@@ -188,7 +189,7 @@ struct sockaddr_tipc {
 		struct tipc_name_seq nameseq;
 		struct {
 			struct tipc_name name;
-			__u32 domain; /* 0: own zone */
+			__u32 domain;
 		} name;
 	} addr;
 };
@@ -206,7 +207,7 @@ struct sockaddr_tipc {
  */
 
 #define TIPC_IMPORTANCE		127	/* Default: TIPC_LOW_IMPORTANCE */
-#define TIPC_SRC_DROPPABLE	128	/* Default: 0 (resend congested msg) */
+#define TIPC_SRC_DROPPABLE	128	/* Default: based on socket type */
 #define TIPC_DEST_DROPPABLE	129	/* Default: based on socket type */
 #define TIPC_CONN_TIMEOUT	130	/* Default: 8000 (ms)  */
 

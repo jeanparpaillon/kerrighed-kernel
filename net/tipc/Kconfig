@@ -23,91 +23,168 @@ menuconfig TIPC
 if TIPC
 
 config TIPC_ADVANCED
-	bool "TIPC: Advanced configuration"
+	bool "Advanced TIPC configuration"
+	depends on TIPC
 	default n
 	help
-	  Saying Y here will open some advanced configuration
-          for TIPC. Most users do not need to bother, so if
-          unsure, just say N.
+	  Saying Y here will open some advanced configuration for TIPC. 
+	  Most users do not need to bother; if unsure, just say N.
 
-config TIPC_ZONES
-	int "Maximum number of zones in network"
-	depends on TIPC_ADVANCED
-	default "3"
+config TIPC_NETID
+	int "Network identifier"
+	depends on TIPC && TIPC_ADVANCED
+	default "4711"
 	help
-	 Max number of zones inside TIPC network. Max supported value 
-         is 255 zones, minimum is 1
-
-	 Default is 3 zones in a network; setting this to higher
-	 allows more zones but might use more memory.
-
-config TIPC_CLUSTERS
-	int "Maximum number of clusters in a zone"
-	depends on TIPC_ADVANCED
-	default "1"
-	help
-          ***Only 1 (one cluster in a zone) is supported by current code.
-          Any value set here will be overridden.***
-
-          (Max number of clusters inside TIPC zone. Max supported 
-          value is 4095 clusters, minimum is 1.
-
-	  Default is 1; setting this to smaller value might save 
-          some memory, setting it to higher
-	  allows more clusters and might consume more memory.)
-
-config TIPC_NODES
-	int "Maximum number of nodes in cluster"
-	depends on TIPC_ADVANCED
-	default "255"
-	help
-	  Maximum number of nodes inside a TIPC cluster. Maximum 
-          supported value is 2047 nodes, minimum is 8. 
-
-	  Setting this to a smaller value saves some memory, 
-	  setting it to higher allows more nodes.
-
-config TIPC_SLAVE_NODES
-	int "Maximum number of slave nodes in cluster"
-	depends on TIPC_ADVANCED
-	default "0"
-	help
-          ***This capability is not supported by current code.***
+	  Specifies which TIPC network this node belongs to. 
+	  Can range from 1 to 9999; default is 4711.
 	  
-	  Maximum number of slave nodes inside a TIPC cluster. Maximum 
-          supported value is 2047 nodes, minimum is 0. 
-
-	  Setting this to a smaller value saves some memory, 
-	  setting it to higher allows more nodes.
+config TIPC_REMOTE_MNG
+	bool "Enable remote management"
+	depends on TIPC && TIPC_ADVANCED
+	default y
+	help
+ 	  Specifies if this node can be remotely managed from another node
+	  in the TIPC network.  By default, this capability is enabled.
 
 config TIPC_PORTS
-	int "Maximum number of ports in a node"
-	depends on TIPC_ADVANCED
+	int "Maximum number of ports in own node"
+	depends on TIPC && TIPC_ADVANCED
 	default "8191"
 	help
-	  Maximum number of ports within a node. Maximum 
-          supported value is 64535 nodes, minimum is 127. 
+	  Specifies how many ports can be supported by this node. 
+	  Can range from 127 to 65536; default is 8191. 
 
-	  Setting this to a smaller value saves some memory, 
-	  setting it to higher allows more ports.
+	  Setting this to a smaller value saves some memory; 
+	  setting it to a higher value allows more ports.
+
+config TIPC_NODES
+	int "Maximum number of nodes in own cluster"
+	depends on TIPC && TIPC_ADVANCED
+	default "255"
+	help
+	  Specifies how many nodes can be supported in own TIPC cluster. 
+	  Can range from 8 to 4095 nodes; default is 255. 
+
+	  Setting this to a smaller value saves some memory; 
+	  setting it to a higher value allows more nodes.
+
+config TIPC_CLUSTERS
+	int "Maximum number of clusters in own zone"
+	depends on TIPC && TIPC_ADVANCED
+	default "8"
+	help
+	  Specifies how many clusters can be supported in own TIPC zone. 
+	  Can range from 1 to 4095 clusters; default is 8. 
+
+	  Setting this to a smaller value saves some memory; 
+	  setting it to a higher value allows for more clusters.
+
+config TIPC_ZONES
+	int "Maximum number of zones in own network"
+	depends on TIPC && TIPC_ADVANCED
+	default "4"
+	help
+	  Specifies how many zones can be supported in own TIPC network. 
+	  Can range from 1 to 255 zones; default is 4. 
+
+	  Setting this to a smaller value saves some memory; 
+	  setting it to a higher value allows for more zones.
+
+config TIPC_REMOTES
+	int "Maximum number of neighbor nodes in other clusters"
+	depends on TIPC && TIPC_ADVANCED
+	default "8"
+	help
+	  Specifies how many nodes in other clusters this node can establish
+	  links to.  Can range from 0 to 255 nodes; default is 8. 
+
+	  Setting this to a smaller value saves some memory; 
+	  setting it to a higher value allows more inter-cluster links.
+
+config TIPC_PUBL
+	int "Maximum number of name publications by own node"
+	depends on TIPC && TIPC_ADVANCED
+	default "10000"
+	help
+	  Specifies how many concurrent name publications this node can issue.
+	  Can range from 1 to 65535 publications; default is 10000. 
+
+	  Setting this to a smaller value saves some memory; 
+	  setting it to a higher value allows more name publications.
+
+config TIPC_SUBSCR
+	int "Maximum number of name subscriptions by own node"
+	depends on TIPC && TIPC_ADVANCED
+	default "2000"
+	help
+	  Specifies how many concurrent name subscriptions this node can handle.
+	  Can range from 1 to 65535 subscriptions; default is 2000. 
+
+	  Setting this to a smaller value saves some memory; 
+	  setting it to a higher value allows more name subscriptions.
 
 config TIPC_LOG
 	int "Size of log buffer"
-	depends on TIPC_ADVANCED
+	depends on TIPC && TIPC_ADVANCED
 	default 0
 	help
  	  Size (in bytes) of TIPC's internal log buffer, which records the
-	  occurrence of significant events.  Maximum supported value
-	  is 32768 bytes, minimum is 0.
+	  occurrence of significant events.  Can range from 0 to 32768 bytes;
+	  default is 0.
 
 	  There is no need to enable the log buffer unless the node will be
 	  managed remotely via TIPC.
 
+config TIPC_UNICLUSTER_FRIENDLY
+	bool "Inter-operate with uni-cluster nodes"
+	depends on TIPC
+	default y
+	help
+ 	  This allows TIPC to communicate with nodes in its cluster that
+	  pre-date the introduction of multi-cluster TIPC support (that is,
+	  nodes running TIPC 1.6 or earlier).
+
+config TIPC_MULTIPLE_LINKS
+	bool "Enable redundant link support"
+	depends on TIPC
+	default y
+	help
+ 	  This allows TIPC to establish multiple links to neighboring nodes
+	  wherever possible.  In the event of link failure TIPC will redirect
+	  messages on that link to an alternate link if one is available.
+
+config TIPC_CONFIG_SERVICE
+	bool "Enable configuration service"
+	depends on TIPC
+	default y
+	help
+ 	  This allows TIPC to be dynamically configured and monitored
+	  using the tipc-config tool.
+
+config TIPC_SOCKET_API
+	bool "Enable socket support"
+	depends on TIPC
+	default y
+	help
+ 	  This allows TIPC to support sockets of the AF_TIPC address family.
+
+config TIPC_SYSTEM_MSGS
+	bool "Enable system messages"
+	depends on TIPC
+	default y
+	help
+ 	  This allows TIPC to record the occurrence of significant events
+	  in the system log (and, if enabled, TIPC's own internal log buffer).
+	  These events include errors, warnings, and informatory notices, and
+	  can be useful in monitoring the operation of TIPC and in detecting
+	  and diagnosing problems.
+
 config TIPC_DEBUG
-	bool "Enable debugging support"
+	bool "Enable debug messages"
+	depends on TIPC
 	default n
 	help
- 	  This will enable debugging of TIPC.
+ 	  This enables debugging of TIPC.
 
 	  Only say Y here if you are having trouble with TIPC.  It will
 	  enable the display of detailed information about what is going on.
