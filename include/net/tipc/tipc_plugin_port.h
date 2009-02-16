@@ -75,10 +75,17 @@ struct tipc_port {
 };
 
 
+#ifdef CONFIG_KRGRPC
+struct tipc_port *tipc_createport_raw(void *usr_handle,
+			u32 (*dispatcher)(struct tipc_port *, struct sk_buff *),
+			void (*wakeup)(struct tipc_port *),
+			const u32 importance, void* user_port);
+#else
 struct tipc_port *tipc_createport_raw(void *usr_handle,
 			u32 (*dispatcher)(struct tipc_port *, struct sk_buff *),
 			void (*wakeup)(struct tipc_port *),
 			const u32 importance);
+#endif
 
 int tipc_reject_msg(struct sk_buff *buf, u32 err);
 

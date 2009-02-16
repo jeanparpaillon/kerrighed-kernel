@@ -243,8 +243,13 @@ static int tipc_create(struct socket *sock, int protocol)
 
 	/* Allocate TIPC port for socket to use */
 
+#ifdef CONFIG_KRGRPC
 	tp_ptr = tipc_createport_raw(sk, &dispatch, &wakeupdispatch,
-				     TIPC_LOW_IMPORTANCE);
+				     TIPC_LOW_IMPORTANCE, NULL);
+#else
+	tp_ptr = tipc_createport_raw(sk, &dispatch, &wakeupdispatch,
+			 	     TIPC_LOW_IMPORTANCE);
+#endif
 	if (unlikely(!tp_ptr)) {
 		sk_free(sk);
 		return -ENOMEM;
