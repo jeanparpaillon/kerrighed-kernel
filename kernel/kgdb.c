@@ -1588,11 +1588,49 @@ static struct sysrq_key_op sysrq_gdb_op = {
 };
 #endif
 
+static int
+kgdb_notify_reboot(struct notifier_block *this, unsigned long code, void *x)
+{
+	unsigned long flags;
+
+	if (!kgdb_connected)
+		return 0;
+
+	if (code == SYS_RESTART || code == SYS_HALT || code == SYS_POWER_OFF) {
+		local_irq_save(flags);
+		if (kgdb_io_ops->write_char) {
+			/* Do not use put_packet to avoid hanging
+			 * in case the attached debugger disappeared
+			 * or does not respond timely.
+			 */
+			kgdb_io_ops->write_char('$');
+			kgdb_io_ops->write_char('X');
+			kgdb_io_ops->write_char('0');
+			kgdb_io_ops->write_char('0');
+			kgdb_io_ops->write_char('#');
+			kgdb_io_ops->write_char('b');
+			kgdb_io_ops->write_char('8');
+			if (kgdb_io_ops->flush)
+				kgdb_io_ops->flush();
+		}
+		kgdb_connected = 0;
+		local_irq_restore(flags);
+	}
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block kgdb_reboot_notifier = {
+	.notifier_call		= kgdb_notify_reboot,
+	.next			= NULL,
+	.priority		= INT_MAX,
+};
+
 static void kgdb_register_callbacks(void)
 {
 	if (!kgdb_io_module_registered) {
 		kgdb_io_module_registered = 1;
 		kgdb_arch_init();
+		register_reboot_notifier(&kgdb_reboot_notifier);
 #ifdef CONFIG_MAGIC_SYSRQ
 		register_sysrq_key('g', &sysrq_gdb_op);
 #endif
@@ -1611,6 +1649,7 @@ static void kgdb_unregister_callbacks(void)
 	 * break exceptions at the time.
 	 */
 	if (kgdb_io_module_registered) {
+		unregister_reboot_notifier(&kgdb_reboot_notifier);
 		kgdb_io_module_registered = 0;
 		kgdb_arch_exit();
 #ifdef CONFIG_MAGIC_SYSRQ
