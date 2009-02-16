@@ -27,6 +27,17 @@ config KGDB_SERIAL_CONSOLE
 	  Share a serial console with kgdb. Sysrq-g must be used
 	  to break in initially.
 
+config KGDBOE
+	tristate "KGDB: On ethernet"
+	depends on KGDB
+	select NETPOLL
+	select NETPOLL_TRAP
+	help
+	  Uses the NETPOLL API to communicate with the host GDB via UDP.
+	  In order for this to work, the ethernet interface specified must
+	  support the NETPOLL API, and this must be initialized at boot.
+	  See the documentation for syntax.
+
 config KGDB_TESTS
 	bool "KGDB: internal test suite"
 	default n
