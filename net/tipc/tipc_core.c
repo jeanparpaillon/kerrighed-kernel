@@ -48,6 +48,9 @@
 #include "tipc_topsrv.h"
 #include "tipc_cfgsrv.h"
 
+extern int  tipc_ib_media_start(void);
+extern void tipc_ib_media_stop(void);
+
 /* configurable TIPC parameters */
 
 #ifndef CONFIG_TIPC_ADVANCED
@@ -126,6 +129,7 @@ void tipc_core_stop_net(void)
 {
 	tipc_net_stop();
 	tipc_eth_media_stop();
+	tipc_ib_media_stop();
 }
 
 /**
@@ -140,6 +144,9 @@ int tipc_core_start_net(unsigned long addr)
 	    (res = tipc_eth_media_start())) {
 		tipc_core_stop_net();
 	}
+
+	tipc_ib_media_start();
+
 	return res;
 }
 

@@ -51,6 +51,7 @@
 
 #define TIPC_MEDIA_ID_INVALID	0
 #define TIPC_MEDIA_ID_ETH	1
+#define TIPC_MEDIA_ID_IB	2
 
 /**
  * struct tipc_media_addr - destination address used by TIPC bearers
