@@ -1162,6 +1162,8 @@ struct ib_client {
 	struct list_head list;
 };
 
+struct ib_device *__ib_device_get_by_name(const char *name);
+
 struct ib_device *ib_alloc_device(size_t size);
 void ib_dealloc_device(struct ib_device *device);
 

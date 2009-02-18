@@ -104,7 +104,7 @@ static int ib_device_check_mandatory(struct ib_device *device)
 	return 0;
 }
 
-static struct ib_device *__ib_device_get_by_name(const char *name)
+struct ib_device *__ib_device_get_by_name(const char *name)
 {
 	struct ib_device *device;
 
