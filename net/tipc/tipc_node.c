@@ -34,6 +34,11 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef CONFIG_KRG_HOTPLUG
+#include <kerrighed/sys/types.h>
+#include <kerrighed/hotplug.h>
+#endif
+
 #include "tipc_core.h"
 #include "tipc_cfgsrv.h"
 #include "tipc_node.h"
@@ -272,6 +277,10 @@ static void node_established_contact(struct tipc_node *n_ptr)
 {
 	dbg("node_established_contact:-> %x\n", n_ptr->elm.addr);
 
+#ifdef CONFIG_KRG_HOTPLUG
+	krg_node_arrival(tipc_node(n_ptr->elm.addr)-1);
+#endif
+
 	/* Synchronize broadcast acks */
 
 	n_ptr->bclink.acked = tipc_bclink_get_last_sent();
@@ -338,6 +347,10 @@ static void node_cleanup_finished(unsigned long node_addr)
 static void node_lost_contact(struct tipc_node *n_ptr)
 {
 	char addr_string[16];
+
+#ifdef CONFIG_KRG_HOTPLUG
+	krg_node_departure(tipc_node(n_ptr->elm.addr)-1);
+#endif
 
 	tipc_addr_string_fill(addr_string, n_ptr->elm.addr);
 	info("Lost contact with %s\n", addr_string);

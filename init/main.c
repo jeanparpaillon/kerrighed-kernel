@@ -102,6 +102,11 @@ extern void tc_init(void);
 enum system_states system_state __read_mostly;
 EXPORT_SYMBOL(system_state);
 
+#ifdef CONFIG_KRGRPC
+extern void kerrighed_init(void);
+extern void global_pid_init(int, int, int, int);
+#endif
+
 /*
  * Boot command-line arguments
  */
@@ -802,8 +807,21 @@ static void run_init_process(char *init_filename)
 static noinline int init_post(void)
 	__releases(kernel_lock)
 {
+#if defined(CONFIG_KERRIGHED) || defined(CONFIG_KRGRPC)
+	/* 
+	 * In a perfect world we would like to call global_pid_init and
+	 * kerrighed_init just after async_synchronize_full
+	 * Since we use early_kerrighed_* vars and such vars are tagged by
+	 * __initdata, this raise some WARNINGs.
+	 * In order to fix that we move async_synchronise_full just before
+	 * to call init_post
+	 */
+	
+#else
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
+#endif
+
 	free_initmem();
 	unlock_kernel();
 	mark_rodata_ro();
@@ -885,6 +903,13 @@ static int __init kernel_init(void * unused)
 		prepare_namespace();
 	}
 
+#if defined(CONFIG_KERRIGHED) || defined(CONFIG_KRGRPC)
+	/* need to finish all async __init code before freeing the memory */
+	async_synchronize_full();
+
+	kerrighed_init();
+#endif
+
 	/*
 	 * Ok, we have completed the initial bootup, and
 	 * we're essentially up and running. Get rid of the
@@ -894,3 +919,6 @@ static int __init kernel_init(void * unused)
 	init_post();
 	return 0;
 }
+
+#ifdef CONFIG_KRGRPC
+#endif

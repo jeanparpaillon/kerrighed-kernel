@@ -59,6 +59,12 @@
 #include <net/ipconfig.h>
 #include <net/route.h>
 
+#ifdef CONFIG_KRGRPC
+#include <kerrighed/krginit.h>
+#include <kerrighed/hotplug.h>
+#include <kerrighed/krgnodemask.h>
+#endif
+
 #include <asm/uaccess.h>
 #include <net/checksum.h>
 #include <asm/processor.h>
@@ -1388,6 +1394,18 @@ static int __init ip_auto_config(void)
 #ifdef IPCONFIG_DYNAMIC
 	ic_proto_used = ic_got_reply | (ic_proto_enabled & IC_USE_DHCP);
 #endif
+
+#ifdef CONFIG_KRGRPC
+ 	if(ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_AUTONODEID)){
+		kerrighed_node_id = ((unsigned char *)&ic_myaddr)[3];
+		universe[kerrighed_node_id].state = 1;
+		set_krgnode_present(kerrighed_node_id);
+		SET_KRG_INIT_FLAGS(KRG_INITFLAGS_NODEID);
+		printk("Automatic setting of kerrighed_node_id: %d\n",
+			kerrighed_node_id);
+	}
+#endif
+														  
 
 #ifndef IPCONFIG_SILENT
 	/*

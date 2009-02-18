@@ -1,0 +1,56 @@
+#ifndef __KRGSYMS__
+#define __KRGSYMS__
+
+#ifndef __ASSEMBLY__
+
+typedef enum krgsyms_val {
+	KRGSYMS_UNDEF, // Must be the first one
+	KRGSYMS_VM_OPS_SHMEM,
+	KRGSYMS_VM_OPS_FILE_GENERIC,
+	KRGSYMS_VM_OPS_SYSCALL,
+	KRGSYMS_VM_OPS_MEMORY_KDDM_VMOPS,
+	KRGSYMS_VM_OPS_SHM_KDDM_VMOPS,
+	KRGSYMS_ARCH_UNMAP_AREA,
+	KRGSYMS_ARCH_UNMAP_AREA_TOPDOWN,
+	KRGSYMS_ARCH_GET_UNMAP_AREA,
+	KRGSYMS_ARCH_GET_UNMAP_AREA_TOPDOWN,
+
+	/* Bin format structures */
+	KRGSYMS_BINFMTS_AOUT,
+	KRGSYMS_BINFMTS_ELF,
+	KRGSYMS_BINFMTS_ELF_FDPIC,
+	KRGSYMS_BINFMTS_EM86,
+	KRGSYMS_BINFMTS_FLAT,
+	KRGSYMS_BINFMTS_MISC,
+	KRGSYMS_BINFMTS_SCRIPT,
+	KRGSYMS_BINFMTS_SOM,
+
+	/* Restart block functions */
+	KRGSYMS_DO_NO_RESTART_SYSCALL,
+	KRGSYMS_COMPAT_NANOSLEEP_RESTART,
+	KRGSYMS_COMPAT_CLOCK_NANOSLEEP_RESTART,
+	KRGSYMS_CLOCK_NANOSLEEP_RESTART,
+	KRGSYMS_HRTIMER_NANOSLEEP_RESTART,
+	KRGSYMS_POSIX_CPU_NSLEEP_RESTART,
+	KRGSYMS_PROCESS_CPU_NSLEEP_RESTART,
+	KRGSYMS_THREAD_CPU_NSLEEP_RESTART,
+
+	/* KDDM set operations */
+	KRGSYMS_KDDM_TREE_OPS,
+	KRGSYMS_KDDM_PT_OPS,
+
+	KRGSYMS_TABLE_SIZE // Must be the last one
+} krgsyms_val_t;
+
+int krgsyms_register(enum krgsyms_val v, void* p);
+int krgsyms_unregister(enum krgsyms_val v);
+
+enum krgsyms_val krgsyms_export(void* p);
+void* krgsyms_import(enum krgsyms_val v);
+
+int init_krgsyms(void);
+void cleanup_krgsyms(void);
+
+#endif /* __ASSEMBLY__ */
+
+#endif /* __KRGSYMS__ */

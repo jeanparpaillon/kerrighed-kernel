@@ -14,6 +14,10 @@ lib-y := ctype.o string.o vsprintf.o cmdline.o \
 	 proportions.o prio_heap.o ratelimit.o show_mem.o \
 	 is_single_threaded.o plist.o decompress.o
 
+ifdef CONFIG_KRGRPC
+lib-y += hashtable.o unique_id.o
+endif
+
 lib-$(CONFIG_MMU) += ioremap.o
 lib-$(CONFIG_SMP) += cpumask.o
 

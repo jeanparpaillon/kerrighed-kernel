@@ -1,0 +1,18 @@
+#
+# Kerrighed RPC Configuration
+#
+
+config KRGRPC
+	bool "Kerrighed RPC Protocol"
+	depends on TIPC
+	---help---
+	  Cluster-aware Remote Procedure Call (RPC) framework.
+
+	  This protocol is dedicated to distributed operating system services.
+	  User-space application are not supposed to use this protocol.
+
+	  For more informations about KRPC, see http://www.kerrighed.org
+
+	  Currently, if you are not planning to run Kerrighed, say N.
+
+
