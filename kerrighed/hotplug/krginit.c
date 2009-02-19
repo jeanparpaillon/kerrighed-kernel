@@ -383,6 +383,7 @@ int init_kerrighed_upper_layers(void)
 {
 	printk("Init Kerrighed distributed services...\n");
 
+	/* init_arch semble n'appeler qu'une macro de debug */
 	if (init_arch())
 		goto err_arch;
 

@@ -1128,8 +1128,7 @@ void comlayer_enable(void)
 	enable_all_netdev();
 }
 
-static
-void node_reachable(kerrighed_node_t nodeid){
+void krg_node_reachable(kerrighed_node_t nodeid){
 	int cpuid;
 
 	queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
@@ -1141,8 +1140,7 @@ void node_reachable(kerrighed_node_t nodeid){
 	}
 }
 
-static
-void node_unreachable(kerrighed_node_t nodeid){
+void krg_node_unreachable(kerrighed_node_t nodeid){
 }
 
 int comlayer_init(void)

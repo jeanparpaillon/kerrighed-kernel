@@ -7,6 +7,7 @@ else
         KBUILD_DEFCONFIG := $(ARCH)_defconfig
 endif
 
+core-$(CONFIG_KERRIGHED) += arch/x86/kerrighed/
 core-$(CONFIG_KVM) += arch/x86/kvm/
 
 # BITS is used as extension for files which are available in a 32 bit
