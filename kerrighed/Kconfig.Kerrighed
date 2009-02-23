@@ -7,7 +7,7 @@ config KERRIGHED
 	select KRG_TOOLS if !KERRIGHED_DEVEL
 	select KRG_COMMUNICATION_FRAMEWORK if !KERRIGHED_DEVEL
 	select KRG_HOTPLUG if !KERRIGHED_DEVEL
-	select KRG_CTNR if !KERRIGHED_DEVEL
+	select KRG_KDDM if !KERRIGHED_DEVEL
 	select KRG_CAP if !KERRIGHED_DEVEL
 	select KRG_PROCFS if !KERRIGHED_DEVEL
 	select KRG_MM if !KERRIGHED_DEVEL
@@ -91,13 +91,13 @@ config KRG_DISABLE_HEARTBEAT
          If you don't want automatic reconfiguration on a node failure
          just select this option.
 
-config KRG_CTNR
-	bool "KerCtnr"
+config KRG_KDDM
+	bool "Kernel Distributed Data Management (KDDM)"
 	depends on KRG_COMMUNICATION_FRAMEWORK
 	help
 	  Cluster wide data management. This is the general purpose
 	  mechanism used in Kerrighed to implement distributed
-  	  services.
+	  services.
 
 	  If unsure, say Y.
 
@@ -111,7 +111,7 @@ config KRG_CAP
 
 config KRG_PROCFS
 	bool "ProcFS"
-	depends on KRG_CTNR && KERRIGHED
+	depends on KRG_KDDM && KERRIGHED
 	help
 	  Global /proc mechanism.
 
@@ -119,13 +119,13 @@ config KRG_PROCFS
 
 #config KRG_SYNC
 #	bool "KerSync"
-#	depends on KERRIGHED && KRG_CTNR
+#	depends on KERRIGHED && KRG_KDDM
 #	help
 #	  Synchronization library
 
 config KRG_MM
 	bool "KerMM"
-	depends on KERRIGHED && KRG_CTNR
+	depends on KERRIGHED && KRG_KDDM
 	help
 	  Kerrighed's global memory management
 
@@ -150,13 +150,13 @@ config KRG_FAF
 
 config KRG_IPC
 	bool "KerIPC"
-	depends on KERRIGHED && KRG_CTNR && KRG_MM
+	depends on KERRIGHED && KRG_KDDM && KRG_MM
 	help
 	  Kerrighed's global IPC management
 
 config KRG_PROC
 	bool "KerProc"
-	depends on KERRIGHED && KRG_CTNR
+	depends on KERRIGHED && KRG_KDDM
 	help
 	  Low-level global process management: global PIDs, syscalls affecting
 	  remote tasks (including signals), global proc PID entries.

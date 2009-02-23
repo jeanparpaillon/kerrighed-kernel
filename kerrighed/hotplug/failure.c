@@ -40,8 +40,8 @@ static void recovery_worker(struct work_struct *data)
 	//knetdev_failure(&failure_vector);
 	//comm_failure(&failure_vector);
 
-#ifdef CONFIG_KRG_CTNR
-	//ctnr_failure(&failure_vector);
+#ifdef CONFIG_KRG_KDDM
+	//kddm_failure(&failure_vector);
 #endif
 }
 

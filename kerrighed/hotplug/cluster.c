@@ -23,8 +23,8 @@
 #include <kerrighed/workqueue.h>
 #include <kerrighed/krgnodemask.h>
 #include <net/krgrpc/rpc.h>
-#ifdef CONFIG_KRG_CTNR
-#include <ctnr/kddm.h>
+#ifdef CONFIG_KRG_KDDM
+#include <kddm/kddm.h>
 #endif
 #ifdef CONFIG_KRG_PROC
 #include <kerrighed/task.h>

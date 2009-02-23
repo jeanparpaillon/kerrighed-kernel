@@ -375,7 +375,7 @@ int init_kerrighed_upper_layers(void)
 {
 	printk("Init Kerrighed distributed services...\n");
 
-#ifdef CONFIG_KRG_CTNR
+#ifdef CONFIG_KRG_KDDM
 	if (init_kddm())
 		goto err_kddm;
 #endif
@@ -466,7 +466,7 @@ int init_kerrighed_upper_layers(void)
 	cleanup_kermm();
       err_kermm:
 #endif
-#ifdef CONFIG_KRG_CTNR
+#ifdef CONFIG_KRG_KDDM
 	cleanup_kddm();
       err_kddm:
 #endif
