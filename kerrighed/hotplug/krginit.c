@@ -121,6 +121,7 @@ static int __init  parse_node_id(char *str) {
 	int v;
 	get_option(&str, &v);
 	kerrighed_node_id = v;
+	SET_KRG_INIT_FLAGS(KRG_INITFLAGS_NODEID);
 	return 0;
 }
 __setup("node_id=",parse_node_id);
@@ -129,6 +130,7 @@ static int __init  parse_nb_nodes(char *str){
 	int v;
 	get_option(&str, &v);
 	kerrighed_nb_nodes = v;
+	SET_KRG_INIT_FLAGS(KRG_INITFLAGS_NBNODES);
 	return 0;
 }
 __setup("nb_nodes=",parse_nb_nodes);
@@ -137,6 +139,7 @@ static int __init  parse_session_id(char *str){
 	int v;
 	get_option(&str, &v);
 	kerrighed_session_id = v;
+	SET_KRG_INIT_FLAGS(KRG_INITFLAGS_SESSIONID);
 	return 0;
 }
 __setup("session_id=",parse_session_id);
@@ -269,7 +272,6 @@ static void read_kerrighed_nodes(char *_h, char *k)
 				ik += lh;
 
 				kerrighed_node_id = simple_strtoul(ik, &end, 10);
-				check_node_id (kerrighed_node_id);
 				SET_KRG_INIT_FLAGS(KRG_INITFLAGS_NODEID);
 			}
 		}
@@ -287,20 +289,10 @@ static void read_kerrighed_nodes(char *_h, char *k)
 void global_pid_init(void)
 {
 	char *hostname, *kerrighed_nodes;
-	int need_read = 0;
 
-	if(kerrighed_node_id == -1){
-		need_read = 1;
-	} else
-		check_node_id(kerrighed_node_id);
-
-	if (kerrighed_nb_nodes == -1)
-		need_read = 1;
-
-	if (kerrighed_session_id == 0)
-		need_read = 1;
-
-	if (need_read) {
+	if (!ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_NODEID) ||
+	    !ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_NBNODES) ||
+	    !ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_SESSIONID)) {
 		/* first we read the name of the node */
 		hostname = read_from_file("/etc/hostname", 256);
 		if (!hostname) {
@@ -323,6 +315,7 @@ void global_pid_init(void)
 
  out:
 	if (ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_NODEID)) {
+		check_node_id(kerrighed_node_id);
 #ifdef CONFIG_KRG_HOTPLUG
 		universe[kerrighed_node_id].state = 1;
 		set_krgnode_present(kerrighed_node_id);

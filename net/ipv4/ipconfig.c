@@ -1398,16 +1398,11 @@ static int __init ip_auto_config(void)
 #ifdef CONFIG_KRGRPC
  	if(ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_AUTONODEID)){
 		kerrighed_node_id = ((unsigned char *)&ic_myaddr)[3];
-#ifdef CONFIG_KRG_HOTPLUG
-		universe[kerrighed_node_id].state = 1;
-#endif
-		set_krgnode_present(kerrighed_node_id);
 		SET_KRG_INIT_FLAGS(KRG_INITFLAGS_NODEID);
 		printk("Automatic setting of kerrighed_node_id: %d\n",
 			kerrighed_node_id);
 	}
 #endif
-														  
 
 #ifndef IPCONFIG_SILENT
 	/*
