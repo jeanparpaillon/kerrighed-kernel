@@ -156,7 +156,7 @@ void do_krgrpc_handler(struct rpc_desc* desc,
 		BUG();
 	};
 
-#ifdef CONFIG_KRG_DEBUG
+#ifdef CONFIG_KRGRPC_DEBUG
 	snprintf(current->comm, sizeof(current->comm)-1,
 		 "krgrpc(%d:%lu)", desc->rpcid, desc->desc_id);
 
@@ -173,7 +173,7 @@ void do_krgrpc_handler(struct rpc_desc* desc,
 
 	rpc_end(desc, 0);
 			
-#ifdef CONFIG_KRG_DEBUG
+#ifdef CONFIG_KRGRPC_DEBUG
 	if(thread_pool_id<THREADS_VECTOR_WIDTH)
 		snprintf(current->comm, sizeof(current->comm)-1,
 			 "krgrpc/%d:%d", smp_processor_id(), thread_pool_id);
@@ -277,7 +277,7 @@ int thread_pool_run(void* _data){
 		desc = NULL;
 	}
 
-#ifdef CONFIG_KRG_DEBUG
+#ifdef CONFIG_KRGRPC_DEBUG
 	if(j<THREADS_VECTOR_WIDTH)
 		snprintf(current->comm, sizeof(current->comm)-1,
 			 "krgrpc/%d:%d", smp_processor_id(), j);

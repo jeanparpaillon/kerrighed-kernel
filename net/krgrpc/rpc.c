@@ -112,7 +112,7 @@ struct rpc_desc* rpc_desc_alloc(void){
 	atomic_set(&desc->usage, 1);
 	desc->__synchro = NULL;
 
-#ifdef CONFIG_KRG_DEBUG
+#ifdef CONFIG_KRGRPC_DEBUG
 	if(test_thread_flag(TIF_KRG_DEBUG))
 		desc->debug = 1;
 	else
@@ -174,7 +174,7 @@ struct rpc_desc_recv* rpc_desc_recv_alloc(void){
 void test(void){
 }
 
-#ifdef CONFIG_KRG_DEBUG
+#ifdef CONFIG_KRGRPC_DEBUG
 void rpc_force_debug_on(struct rpc_desc* desc){
 	if(!desc){
 		printk("rpc_force_debug: try to debug NULL pointer\n");
@@ -194,7 +194,7 @@ void rpc_force_debug_on(struct rpc_desc* desc){
 };
 #endif
 
-#ifdef CONFIG_KRG_DEBUG
+#ifdef CONFIG_KRGRPC_DEBUG
 void rpc_debug_on(struct rpc_desc* desc){
 	if(desc->debug) return;
 	if(!cap_raised(current->krg_cap_effective, CAP_DEBUG)) return;

@@ -520,7 +520,7 @@ int __rpc_send_ll(struct rpc_desc* desc,
 
 	elem->h.rpcid = desc->rpcid;
 
-#ifdef CONFIG_KRG_DEBUG
+#ifdef CONFIG_KRGRPC_DEBUG
 	if (desc->debug)
 		elem->h.flags |= __RPC_HEADER_FLAGS_DEBUG;
 #endif
@@ -788,7 +788,7 @@ static void tipc_handler_ordered(struct sk_buff *buf,
 		BUG_ON(desc->desc_id != h->desc_id);
 		rpc_desc_get(desc);
 
-#ifdef CONFIG_KRG_DEBUG
+#ifdef CONFIG_KRGRPC_DEBUG
 		desc->debug = h->flags & __RPC_HEADER_FLAGS_DEBUG;
 #endif
 
@@ -821,7 +821,7 @@ static void tipc_handler_ordered(struct sk_buff *buf,
 				BUG();
 			}
 
-#ifdef CONFIG_KRG_DEBUG
+#ifdef CONFIG_KRGRPC_DEBUG
 			desc->debug = h->flags & __RPC_HEADER_FLAGS_DEBUG;
 #endif
 
