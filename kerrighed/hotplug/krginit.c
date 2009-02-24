@@ -517,55 +517,61 @@ static struct kobj_attribute operation =
 			kerrighed_operation_store);
 #endif
 
-static ssize_t kerrighed_node_id_show(struct kobject *obj, struct kobj_attribute *attr,
-					char* page){
+static ssize_t node_id_show(struct kobject *obj, struct kobj_attribute *attr,
+			    char *page)
+{
 	return sprintf(page, "%d\n", kerrighed_node_id);
 }
-static struct kobj_attribute kobj_attr_kerrighed_node_id =
-		__ATTR_RO(kerrighed_node_id);
+static struct kobj_attribute kobj_attr_node_id =
+		__ATTR_RO(node_id);
 
-static ssize_t kerrighed_session_id_show(struct kobject *obj, struct kobj_attribute *attr,
-					char* page){
+static ssize_t session_id_show(struct kobject *obj, struct kobj_attribute *attr,
+			       char *page)
+{
 	return sprintf(page, "%d\n", kerrighed_session_id);
 }
-static struct kobj_attribute kobj_attr_kerrighed_session_id =
-		__ATTR_RO(kerrighed_session_id);
+static struct kobj_attribute kobj_attr_session_id =
+		__ATTR_RO(session_id);
 
-static ssize_t kerrighed_subsession_id_show(struct kobject *obj, struct kobj_attribute *attr,
-					char* page){
+static ssize_t subsession_id_show(struct kobject *obj, struct kobj_attribute *attr,
+				  char *page)
+{
 	return sprintf(page, "%d\n", kerrighed_subsession_id);
 }
-static struct kobj_attribute kobj_attr_kerrighed_subsession_id =
-		__ATTR_RO(kerrighed_subsession_id);
+static struct kobj_attribute kobj_attr_subsession_id =
+		__ATTR_RO(subsession_id);
 
-static ssize_t kerrighed_nb_max_nodes_show(struct kobject *obj, struct kobj_attribute *attr,
-					char* page){
+static ssize_t max_nodes_show(struct kobject *obj, struct kobj_attribute *attr,
+			      char *page)
+{
 	return sprintf(page, "%d\n", KERRIGHED_MAX_NODES);
 }
-static struct kobj_attribute kobj_attr_kerrighed_nb_max_nodes =
-		__ATTR_RO(kerrighed_nb_max_nodes);
+static struct kobj_attribute kobj_attr_max_nodes =
+		__ATTR_RO(max_nodes);
 
-static ssize_t kerrighed_nb_max_subclusters_show(struct kobject *obj, struct kobj_attribute *attr,
-					char* page){
+static ssize_t max_subclusters_show(struct kobject *obj, struct kobj_attribute *attr,
+				    char *page)
+{
 	return sprintf(page, "%d\n", KERRIGHED_MAX_CLUSTERS);
 }
-static struct kobj_attribute kobj_attr_kerrighed_nb_max_subclusters =
-		__ATTR_RO(kerrighed_nb_max_subclusters);
+static struct kobj_attribute kobj_attr_max_subclusters =
+		__ATTR_RO(max_subclusters);
 
-static ssize_t kerrighed_abi_show(struct kobject *obj, struct kobj_attribute *attr,
-					char* page){
+static ssize_t abi_show(struct kobject *obj, struct kobj_attribute *attr,
+			char *page)
+{
 	return sprintf(page, "%s\n", KERRIGHED_ABI);
 }
-static struct kobj_attribute kobj_attr_kerrighed_abi =
-		__ATTR_RO(kerrighed_abi);
+static struct kobj_attribute kobj_attr_abi =
+		__ATTR_RO(abi);
 
 static struct attribute *attrs[] = {
-	&kobj_attr_kerrighed_node_id.attr,
-	&kobj_attr_kerrighed_session_id.attr,
-	&kobj_attr_kerrighed_subsession_id.attr,
-	&kobj_attr_kerrighed_nb_max_nodes.attr,
-	&kobj_attr_kerrighed_nb_max_subclusters.attr,
-	&kobj_attr_kerrighed_abi.attr,
+	&kobj_attr_node_id.attr,
+	&kobj_attr_session_id.attr,
+	&kobj_attr_subsession_id.attr,
+	&kobj_attr_max_nodes.attr,
+	&kobj_attr_max_subclusters.attr,
+	&kobj_attr_abi.attr,
 	NULL
 };
 
