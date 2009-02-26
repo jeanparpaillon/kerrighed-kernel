@@ -5,6 +5,7 @@
 
 typedef enum krgsyms_val {
 	KRGSYMS_UNDEF, // Must be the first one
+	KRGSYMS_VM_OPS_NULL,
 	KRGSYMS_VM_OPS_SHMEM,
 	KRGSYMS_VM_OPS_FILE_GENERIC,
 	KRGSYMS_VM_OPS_SYSCALL,
