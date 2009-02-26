@@ -141,6 +141,7 @@ config KRG_DVFS
 config KRG_FAF
 	bool "File access forwarding"
 	depends on KERRIGHED && KRG_DVFS
+	select EPOLL
 	help
 	  Enable migration of open files and streams for those which
 	  cannot be more efficiently managed by other Kerrighed mechanisms.
