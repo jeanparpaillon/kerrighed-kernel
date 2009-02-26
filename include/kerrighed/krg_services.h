@@ -1,6 +1,7 @@
 #ifndef __KRG_SERVICES__
 #define __KRG_SERVICES__
 
+#include <linux/ioctl.h>
 #include <kerrighed/types.h>
 #include <kerrighed/krgnodemask.h>
 
