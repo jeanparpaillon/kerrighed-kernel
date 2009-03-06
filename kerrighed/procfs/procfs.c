@@ -4,6 +4,11 @@
  *  Copyright (C) 2001-2006, INRIA, Universite de Rennes 1, EDF.
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
+
+#define MODULE_NAME "Proc FS Module "
+
+#include "debug_procfs.h"
+
 #include "proc.h"
 #ifdef CONFIG_KRG_PROC
 #include "proc_pid.h"

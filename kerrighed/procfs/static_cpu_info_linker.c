@@ -7,13 +7,23 @@
 #include <kerrighed/cpu_id.h>
 #include <asm/kerrighed/cpuinfo.h>
 #include <asm/processor.h>
+
+#define MODULE_NAME "Static CPU Info"
+#include "debug_procfs.h"
+
+#ifndef FILE_NONE
+#  if defined(FILE_STATIC_CPU_INFO) || defined(FILE_ALL)
+#     define DEBUG_THIS_MODULE
+#  endif
+#endif
+
+#include <kerrighed/debug.h>
+
 #include <linux/swap.h>
 
 #include <kddm/kddm.h>
 
 #include "static_cpu_info_linker.h"
-
-#include <kerrighed/debug.h>
 
 struct kddm_set *static_cpu_info_kddm_set;
 

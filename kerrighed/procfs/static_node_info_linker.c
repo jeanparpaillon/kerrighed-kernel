@@ -4,12 +4,22 @@
  *  Copyright (C) 2001-2006, INRIA, Universite de Rennes 1, EDF.
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
+
+#define MODULE_NAME "Static Node Info"
+#include "debug_procfs.h"
+
+#ifndef FILE_NONE
+#  if defined(FILE_STATIC_NODE_INFO) || defined(FILE_ALL)
+#     define DEBUG_THIS_MODULE
+#  endif
+#endif
+
+#include <kerrighed/debug.h>
+
 #include <linux/swap.h>
 #include <kddm/kddm.h>
 
 #include "static_node_info_linker.h"
-
-#include <kerrighed/debug.h>
 
 struct kddm_set *static_node_info_kddm_set;
 

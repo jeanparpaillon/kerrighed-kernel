@@ -4,6 +4,18 @@
  *  Copyright (C) 2001-2006, INRIA, Universite de Rennes 1, EDF.
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
+
+#define MODULE_NAME "CPU Dyn Info"
+#include "debug_procfs.h"
+
+#ifndef FILE_NONE
+#  if defined(FILE_DYNAMIC_CPU_INFO) || defined(FILE_ALL)
+#     define DEBUG_THIS_MODULE
+#  endif
+#endif
+
+#include <kerrighed/debug.h>
+
 #include <linux/swap.h>
 #include <linux/kernel_stat.h>
 #include <linux/hardirq.h>
@@ -16,8 +28,6 @@
 
 #include "dynamic_cpu_info_linker.h"
 #include "static_cpu_info_linker.h"
-
-#include <kerrighed/debug.h>
 
 struct kddm_set *dynamic_cpu_info_kddm_set;
 

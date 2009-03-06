@@ -18,6 +18,17 @@
 #include <kerrighed/krgflags.h>
 #include <kerrighed/procfs.h>
 
+#define MODULE_NAME "Distributed /proc    "
+#include "debug_procfs.h"
+
+#ifndef FILE_NONE
+#  if defined(FILE_NAZGUL_PROC) || defined(FILE_ALL)
+#     define DEBUG_THIS_MODULE
+#  endif
+#endif
+
+#include <kerrighed/debug.h>
+
 #include <kerrighed/hotplug.h>
 #include "proc.h"
 #include "static_node_info_linker.h"
@@ -931,6 +942,8 @@ int create_proc_node_info(kerrighed_node_t nodeid)
 	else
 		snprintf(dir_name, 80, "node%d", nodeid);
 
+	DEBUG(DEBUG_KRG_PROCFS, 2, "Creating /proc/nodes/%s\n", dir_name);
+
 	node_procfs = create_proc_entry(dir_name, S_IFDIR | S_IRUGO | S_IWUGO |
 					S_IXUGO, procfs_nodes);
 
@@ -1005,6 +1018,7 @@ int remove_proc_node_info(kerrighed_node_t nodeid)
 	char dir_name[80];
 
 	snprintf(dir_name, 80, "node%d", nodeid);
+	DEBUG(DEBUG_KRG_PROCFS, 2, "Removing /proc/nodes/%s\n", dir_name);
 
 	subdir = procfs_nodes->subdir;
 	if (subdir) {
@@ -1024,6 +1038,8 @@ int remove_proc_node_info(kerrighed_node_t nodeid)
  */
 int krg_procfs_init(void)
 {
+	DEBUG(DEBUG_KRG_PROCFS, 1, "krg_procfs_init\n");
+
 	/* Create the /proc/kerrighed/nodes entry */
 
 #ifdef CONFIG_CLUSTER_WIDE_PROC
@@ -1085,6 +1101,8 @@ int krg_procfs_init(void)
 
 	create_proc_node_info(KERRIGHED_MAX_NODES);
 #endif
+
+	DEBUG(DEBUG_KRG_PROCFS, 1, "krg_procfs_init : done\n");
 
 	return 0;
 }
