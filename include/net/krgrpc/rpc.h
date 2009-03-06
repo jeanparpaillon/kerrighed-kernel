@@ -101,9 +101,6 @@ struct rpc_desc {
 	kerrighed_node_t wait_from;
 	atomic_t usage;
 	struct __rpc_synchro *__synchro;
-#ifdef CONFIG_KRG_DEBUG
-	int debug;
-#endif
 };
 
 struct rpc_data {
@@ -304,34 +301,5 @@ void rpc_connect(void);
 kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc);
 
 extern struct task_struct *first_krgrpc;
-
-#ifdef CONFIG_KRG_DEBUG
-#define DEBUG_RPC(desc, format, args...) if(desc->debug) printk(format, ## args)
-#define DEBUGX_RPC(desc, format, args...) if(desc->debug) printk("%d %s:" format, current->pid, __PRETTY_FUNCTION__, ## args) 
-
-#define DEBUG_TL(format, args...) if(test_thread_flag(TIF_KRG_DEBUG)) printk("%d %s:" format, current->pid, __PRETTY_FUNCTION__, ## args)
-
-#define DEBUG_PKT(h, format, args...) if((h)->flags & __RPC_HEADER_FLAGS_DEBUG) printk(format, ## args)
-
-extern void rpc_debug_on(struct rpc_desc* desc);
-extern void rpc_force_debug_on(struct rpc_desc* desc);
-
-static inline void rpc_debug_off(struct rpc_desc* desc){desc->debug = 0;};
-
-#else // CONFIG_KRG_DEBUG
-
-#define DEBUG_RPC(desc, format, args...)
-#define DEBUGX_RPC(desc, format, args...)
-
-#define DEBUG_TL(format, args...)
-
-#define DEBUG_PKT(h, format, args...)
-
-#define rpc_debug_on(p)
-#define rpc_force_debug_on(p)
-#define rpc_debug_off(p)
-
-#endif // CONFIG_KRG_DEBUG
-
 
 #endif

@@ -12,7 +12,6 @@
 
 #define __RPC_HEADER_FLAGS_SIGNAL    (1<<0)
 #define __RPC_HEADER_FLAGS_SIGACK    (1<<1)
-#define __RPC_HEADER_FLAGS_DEBUG     (1<<2)
 #define __RPC_HEADER_FLAGS_SRV_REPLY (1<<3)
 #define __RPC_HEADER_FLAGS_CANCEL_PACK (1<<4)
 

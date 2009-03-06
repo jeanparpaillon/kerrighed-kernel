@@ -156,31 +156,12 @@ void do_krgrpc_handler(struct rpc_desc* desc,
 		BUG();
 	};
 
-#ifdef CONFIG_KRGRPC_DEBUG
-	snprintf(current->comm, sizeof(current->comm)-1,
-		 "krgrpc(%d:%lu)", desc->rpcid, desc->desc_id);
-
-	if(desc->debug)
-		set_thread_flag(TIF_KRG_DEBUG);
-	else
-		clear_thread_flag(TIF_KRG_DEBUG);
-#endif
-
 	/* Deliver immediately rpc_signals sent before first client's pack() */
 	rpc_signal_deliver_pending(desc, desc->desc_recv[0]);
 	rpc_handlers[desc->service->handler](desc);
 	BUG_ON(signal_pending(current));
 
 	rpc_end(desc, 0);
-			
-#ifdef CONFIG_KRGRPC_DEBUG
-	if(thread_pool_id<THREADS_VECTOR_WIDTH)
-		snprintf(current->comm, sizeof(current->comm)-1,
-			 "krgrpc/%d:%d", smp_processor_id(), thread_pool_id);
-	else
-		snprintf(current->comm, sizeof(current->comm)-1,
-			 "krgrpc/%d", smp_processor_id());
-#endif
 
 	if(__synchro){
 		// check pending_work in the synchro
@@ -276,15 +257,6 @@ int thread_pool_run(void* _data){
 	}else{
 		desc = NULL;
 	}
-
-#ifdef CONFIG_KRGRPC_DEBUG
-	if(j<THREADS_VECTOR_WIDTH)
-		snprintf(current->comm, sizeof(current->comm)-1,
-			 "krgrpc/%d:%d", smp_processor_id(), j);
-	else
-		snprintf(current->comm, sizeof(current->comm)-1,
-			 "krgrpc/%d", smp_processor_id());
-#endif
 
 	while (!kthread_should_stop()) {
 		struct waiting_desc *wd, *wd_safe;

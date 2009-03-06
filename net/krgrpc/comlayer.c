@@ -520,11 +520,6 @@ int __rpc_send_ll(struct rpc_desc* desc,
 
 	elem->h.rpcid = desc->rpcid;
 
-#ifdef CONFIG_KRGRPC_DEBUG
-	if (desc->debug)
-		elem->h.flags |= __RPC_HEADER_FLAGS_DEBUG;
-#endif
-	
 	elem->iov[0].iov_base = &elem->h;
 	elem->iov[0].iov_len = sizeof(elem->h);
 	
@@ -788,10 +783,6 @@ static void tipc_handler_ordered(struct sk_buff *buf,
 		BUG_ON(desc->desc_id != h->desc_id);
 		rpc_desc_get(desc);
 
-#ifdef CONFIG_KRGRPC_DEBUG
-		desc->debug = h->flags & __RPC_HEADER_FLAGS_DEBUG;
-#endif
-
 	} else {
 		
 		spin_lock(&rpc_desc_done_lock[h->client]);
@@ -820,10 +811,6 @@ static void tipc_handler_ordered(struct sk_buff *buf,
 				printk("tipc_handler_ordered: OOM (desc)\n");
 				BUG();
 			}
-
-#ifdef CONFIG_KRGRPC_DEBUG
-			desc->debug = h->flags & __RPC_HEADER_FLAGS_DEBUG;
-#endif
 
 			desc->desc_send = rpc_desc_send_alloc();
 			if (!desc->desc_send) {

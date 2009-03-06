@@ -14,7 +14,3 @@ config KRGRPC
 	  For more informations about KRPC, see http://www.kerrighed.org
 
 	  Currently, if you are not planning to run Kerrighed, say N.
-
-config KRGRPC_DEBUG
-	def_bool KRGRPC && KRG_DEBUG && KRG_CAP
-
