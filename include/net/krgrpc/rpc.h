@@ -301,6 +301,8 @@ void rpc_disable(enum rpcid rpcid);
 
 void rpc_connect(void);
 
+kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc);
+
 extern struct task_struct *first_krgrpc;
 
 #ifdef CONFIG_KRG_DEBUG

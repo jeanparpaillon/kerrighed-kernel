@@ -25,6 +25,11 @@
 /* In __rpc_send, unsure atomicity of rpc_link_seq_id and rpc_desc_set_id */
 static spinlock_t lock_id;
 
+kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc){
+	BUG_ON(!desc);
+	return desc->client;
+}
+
 inline
 int __rpc_send(struct rpc_desc* desc,
 		      unsigned long seq_id, int __flags,
