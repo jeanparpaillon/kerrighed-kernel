@@ -1,4 +1,0 @@
-obj-y := krg_x86.o
-obj-$(CONFIG_KRG_EPM) += ghost.o
-
-EXTRA_CFLAGS += -I$(M)

@@ -75,7 +75,6 @@ deffct(hotplug);
 #ifdef CONFIG_KRGRPC
 deffct(rpc);
 #endif
-deffct(arch);
 #ifdef CONFIG_KRG_STREAM
 deffct(stream);
 #endif
@@ -376,10 +375,6 @@ int init_kerrighed_upper_layers(void)
 {
 	printk("Init Kerrighed distributed services...\n");
 
-	/* init_arch semble n'appeler qu'une macro de debug */
-	if (init_arch())
-		goto err_arch;
-
 #ifdef CONFIG_KRG_CTNR
 	if (init_kddm())
 		goto err_kddm;
@@ -475,8 +470,6 @@ int init_kerrighed_upper_layers(void)
 	cleanup_kddm();
       err_kddm:
 #endif
-	cleanup_arch();
-      err_arch:
 #ifdef CONFIG_KRG_STREAM
 	cleanup_stream();
       err_palantir:
