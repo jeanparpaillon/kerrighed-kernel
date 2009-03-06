@@ -3,16 +3,12 @@
  *
  *  Copyright (C) 2006-2009, Pascal Gallard, Kerlabs.
  */
-
-#define MODULE_NAME " TOOLS "
-
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
 #include <asm/uaccess.h>
 
-#include <kerrighed/debug.h>
 #include <kerrighed/procfs.h>
 #include <kerrighed/krg_syscalls.h>
 #include <kerrighed/krg_services.h>
@@ -54,8 +50,6 @@ static int tools_proc_node_id(void *arg)
         if (copy_to_user((void *)arg, (void *)&node_id, sizeof(int)))
                 r = -EFAULT;
 
-        DEBUG(DEBUG_MISC, 3, "End with error code %d\n", r);
-
         return r;
 }
 
@@ -66,8 +60,6 @@ static int tools_proc_nodes_count(void *arg)
 
         if (copy_to_user((void *)arg, (void *)&nb_nodes, sizeof(int)))
                 r = -EFAULT;
-
-        DEBUG(DEBUG_MISC, 3, "End with error code %d\n", r);
 
         return r;
 }

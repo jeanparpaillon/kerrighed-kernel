@@ -9,10 +9,6 @@
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/types.h>
-
-#define MODULE_NAME "Tools proc"
-#define DEBUG_THIS_MODULE
-
 #include <kerrighed/procfs.h>
 
 #define KRG_VERSION "$Name:  $ ($Date: 2004/11/29 17:44:08 $):1.0-rc4"
