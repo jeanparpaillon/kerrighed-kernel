@@ -56,11 +56,6 @@ void krg_cap_fork(struct task_struct *task, unsigned long clone_flags)
 	new_caps->permitted = caps->inheritable_permitted;
 	new_caps->effective = new_krg_effective;
 
-#ifdef CONFIG_KRGRPC_DEBUG
-	if (cap_raised(new_caps->effective, CAP_DEBUG))
-		set_ti_thread_flag(task_thread_info(task), TIF_KRG_DEBUG);
-#endif
-
 	for (i = 0; i < CAP_SIZE; i++)
 		atomic_set(&task->krg_cap_unavailable_private[i], 0);
 	/* The other fields have been inherited by copy. */
