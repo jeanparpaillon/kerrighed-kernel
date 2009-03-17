@@ -106,8 +106,10 @@ static void handle_read_proc_pid_environ(struct rpc_desc *desc,
 		goto out_err_cancel;
 	}
 	err = unpack_creds(desc, cred);
-	if (err)
+	if (err) {
+		put_cred(cred);
 		goto out_err_cancel;
+	}
 	old_cred = override_creds(cred);
 
 	page = __get_free_page(GFP_TEMPORARY);
