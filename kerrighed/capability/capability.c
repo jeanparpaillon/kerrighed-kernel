@@ -21,7 +21,7 @@
 
 #include <kerrighed/krg_syscalls.h>
 #include <kerrighed/krg_services.h>
-#include <kerrighed/syscalls.h>
+#include <kerrighed/remote_cred.h>
 #ifdef CONFIG_KRG_PROC
 #include <proc/distant_syscalls.h>
 #endif
@@ -98,9 +98,8 @@ void krg_cap_finish_exec(struct linux_binprm *bprm)
 #endif /* 0 */
 }
 
-int krg_set_cap(struct task_struct *tsk,
-		const struct caller_creds *requester_creds,
-		const kernel_krg_cap_t *requested_cap)
+static int krg_set_cap(struct task_struct *tsk,
+		       const kernel_krg_cap_t *requested_cap)
 {
 	kernel_krg_cap_t *caps = &tsk->krg_caps;
 	kernel_cap_t tmp_cap;
@@ -124,7 +123,7 @@ int krg_set_cap(struct task_struct *tsk,
 		goto out;
 
 	res = -EPERM;
-	if (!permissions_ok(tsk, requester_creds))
+	if (!permissions_ok(tsk))
 		goto out;
 
 	task_lock(tsk);
@@ -159,7 +158,6 @@ out:
 }
 
 static int krg_set_father_cap(struct task_struct *tsk,
-			      const struct caller_creds *requester_creds,
 			      const kernel_krg_cap_t *requested_cap)
 {
 	int retval = 0;
@@ -168,8 +166,7 @@ static int krg_set_father_cap(struct task_struct *tsk,
 #ifdef CONFIG_KRG_EPM
 	if (tsk->parent != baby_sitter) {
 #endif
-		retval = krg_set_cap(tsk->parent,
-				     requester_creds, requested_cap);
+		retval = krg_set_cap(tsk->parent, requested_cap);
 		read_unlock(&tasklist_lock);
 #ifdef CONFIG_KRG_EPM
 	} else {
@@ -187,8 +184,7 @@ static int krg_set_father_cap(struct task_struct *tsk,
 			return -EPERM;
 		kh_get_parent(parent_children_obj, tsk->pid,
 			      &parent_pid, &real_parent_pid);
-		retval = kcb_set_pid_cap(real_parent_pid,
-					 requester_creds, requested_cap);
+		retval = kcb_set_pid_cap(real_parent_pid, requested_cap);
 		kh_children_unlock(real_parent_tgid);
 	}
 #endif
@@ -196,9 +192,7 @@ static int krg_set_father_cap(struct task_struct *tsk,
 	return retval;
 }
 
-static int krg_set_pid_cap(pid_t pid,
-			   const struct caller_creds *requester_creds,
-			   const kernel_krg_cap_t *requested_cap)
+static int krg_set_pid_cap(pid_t pid, const kernel_krg_cap_t *requested_cap)
 {
 	struct task_struct *tsk;
 	int retval = -ESRCH;
@@ -206,26 +200,24 @@ static int krg_set_pid_cap(pid_t pid,
 	rcu_read_lock();
 	tsk = find_task_by_pid_ns(pid, &init_pid_ns);
 	if (tsk)
-		retval = krg_set_cap(tsk, requester_creds, requested_cap);
+		retval = krg_set_cap(tsk, requested_cap);
 	rcu_read_unlock();
 #ifdef CONFIG_KRG_PROC
 	if (!tsk)
-		retval = kcb_set_pid_cap(pid, requester_creds, requested_cap);
+		retval = kcb_set_pid_cap(pid, requested_cap);
 #endif
 
 	return retval;
 }
 
-static int krg_get_cap(struct task_struct *tsk,
-		       const struct caller_creds *requester_creds,
-		       kernel_krg_cap_t *resulting_cap)
+static int krg_get_cap(struct task_struct *tsk, kernel_krg_cap_t *resulting_cap)
 {
 	kernel_krg_cap_t *caps = &tsk->krg_caps;
 	int res;
 
 	task_lock(tsk);
 
-	if (resulting_cap && permissions_ok(tsk, requester_creds)) {
+	if (resulting_cap && permissions_ok(tsk)) {
 		*resulting_cap = *caps;
 		res = 0;
 	} else {
@@ -238,7 +230,6 @@ static int krg_get_cap(struct task_struct *tsk,
 }
 
 static int krg_get_father_cap(struct task_struct *son,
-			      const struct caller_creds *requester_creds,
 			      kernel_krg_cap_t *resulting_cap)
 {
 	int retval = 0;
@@ -247,8 +238,7 @@ static int krg_get_father_cap(struct task_struct *son,
 #ifdef CONFIG_KRG_EPM
 	if (son->parent != baby_sitter) {
 #endif
-		retval = krg_get_cap(son->parent,
-				     requester_creds, resulting_cap);
+		retval = krg_get_cap(son->parent, resulting_cap);
 		read_unlock(&tasklist_lock);
 #ifdef CONFIG_KRG_EPM
 	} else {
@@ -263,12 +253,10 @@ static int krg_get_father_cap(struct task_struct *son,
 			kh_parent_children_readlock(son, &real_parent_tgid);
 		if (!parent_children_obj)
 			/* Parent is init. */
-			return krg_get_cap(child_reaper(son),
-					   requester_creds, resulting_cap);
+			return krg_get_cap(child_reaper(son), resulting_cap);
 		kh_get_parent(parent_children_obj, son->pid,
 			      &parent_pid, &real_parent_pid);
-		retval = kcb_get_pid_cap(parent_pid,
-					 requester_creds, resulting_cap);
+		retval = kcb_get_pid_cap(parent_pid, resulting_cap);
 		kh_children_unlock(real_parent_tgid);
 	}
 #endif
@@ -276,9 +264,7 @@ static int krg_get_father_cap(struct task_struct *son,
 	return retval;
 }
 
-static int krg_get_pid_cap(pid_t pid,
-			   const struct caller_creds *requester_creds,
-			   kernel_krg_cap_t *resulting_cap)
+static int krg_get_pid_cap(pid_t pid, kernel_krg_cap_t *resulting_cap)
 {
 	struct task_struct *tsk;
 	int retval = -ESRCH;
@@ -286,11 +272,11 @@ static int krg_get_pid_cap(pid_t pid,
 	rcu_read_lock();
 	tsk = find_task_by_pid_ns(pid, &init_pid_ns);
 	if (tsk)
-		retval = krg_get_cap(tsk, requester_creds, resulting_cap);
+		retval = krg_get_cap(tsk, resulting_cap);
 	rcu_read_unlock();
 #ifdef CONFIG_KRG_PROC
 	if (!tsk)
-		retval = kcb_get_pid_cap(pid, requester_creds, resulting_cap);
+		retval = kcb_get_pid_cap(pid, resulting_cap);
 #endif
 
 	return retval;
@@ -322,11 +308,7 @@ static int proc_set_pid_cap(void __user *arg)
 {
 	struct krg_cap_pid_desc desc;
 	kernel_krg_cap_t caps;
-	struct caller_creds requester_creds;
 	int r = -EFAULT;
-
-	requester_creds.caller_uid = current_uid();
-	requester_creds.caller_euid = current_euid();
 
 	if (copy_from_user(&desc, arg, sizeof(desc)))
 		goto out;
@@ -334,7 +316,7 @@ static int proc_set_pid_cap(void __user *arg)
 	if (user_to_kernel_krg_cap(desc.caps, &caps))
 		goto out;
 
-	r = krg_set_pid_cap(desc.pid, &requester_creds, &caps);
+	r = krg_set_pid_cap(desc.pid, &caps);
 
 out:
 	return r;
@@ -343,15 +325,11 @@ out:
 static int proc_set_father_cap(void __user *arg)
 {
 	kernel_krg_cap_t caps;
-	struct caller_creds requester_creds;
 	int r;
-
-	requester_creds.caller_uid = current_uid();
-	requester_creds.caller_euid = current_euid();
 
 	r = user_to_kernel_krg_cap(arg, &caps);
 	if (!r)
-		r = krg_set_father_cap(current, &requester_creds, &caps);
+		r = krg_set_father_cap(current, &caps);
 
 	return r;
 }
@@ -359,15 +337,11 @@ static int proc_set_father_cap(void __user *arg)
 static int proc_set_cap(void __user *arg)
 {
 	kernel_krg_cap_t caps;
-	struct caller_creds requester_creds;
 	int r;
-
-	requester_creds.caller_uid = current_uid();
-	requester_creds.caller_euid = current_euid();
 
 	r = user_to_kernel_krg_cap(arg, &caps);
 	if (!r)
-		r = krg_set_cap(current, &requester_creds, &caps);
+		r = krg_set_cap(current, &caps);
 
 	return r;
 }
@@ -394,13 +368,9 @@ static int kernel_to_user_krg_cap(const kernel_krg_cap_t *caps,
 static int proc_get_cap(void __user *arg)
 {
 	kernel_krg_cap_t caps;
-	struct caller_creds requester_creds;
 	int r;
 
-	requester_creds.caller_uid = current_uid();
-	requester_creds.caller_euid = current_euid();
-
-	r = krg_get_cap(current, &requester_creds, &caps);
+	r = krg_get_cap(current, &caps);
 	if (!r)
 		r = kernel_to_user_krg_cap(&caps, arg);
 
@@ -410,13 +380,9 @@ static int proc_get_cap(void __user *arg)
 static int proc_get_father_cap(void __user *arg)
 {
 	kernel_krg_cap_t caps;
-	struct caller_creds requester_creds;
 	int r;
 
-	requester_creds.caller_uid = current_uid();
-	requester_creds.caller_euid = current_euid();
-
-	r = krg_get_father_cap(current, &requester_creds, &caps);
+	r = krg_get_father_cap(current, &caps);
 	if (!r)
 		r = kernel_to_user_krg_cap(&caps, arg);
 
@@ -427,18 +393,14 @@ static int proc_get_pid_cap(void __user *arg)
 {
 	struct krg_cap_pid_desc desc;
 	kernel_krg_cap_t caps;
-	struct caller_creds requester_creds;
 	int r = -EFAULT;
-
-	requester_creds.caller_uid = current_uid();
-	requester_creds.caller_euid = current_euid();
 
 	BUG_ON(sizeof(int) != sizeof(pid_t));
 
 	if (copy_from_user(&desc, arg, sizeof(desc)))
 		goto out;
 
-	r = krg_get_pid_cap(desc.pid, &requester_creds, &caps);
+	r = krg_get_pid_cap(desc.pid, &caps);
 
 	if (!r)
 		r = kernel_to_user_krg_cap(&caps, desc.caps);
