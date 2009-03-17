@@ -12,6 +12,9 @@
 #include <linux/pid_namespace.h>
 #include <linux/rcupdate.h>
 #include <kerrighed/capabilities.h>
+#ifdef CONFIG_KRG_PROC
+#include <kerrighed/pid.h>
+#endif
 #ifdef CONFIG_KRG_EPM
 #include <linux/pid_namespace.h>
 #include <kerrighed/sched.h>
@@ -23,7 +26,17 @@
 #include <kerrighed/krg_services.h>
 #include <kerrighed/remote_cred.h>
 #ifdef CONFIG_KRG_PROC
-#include <proc/distant_syscalls.h>
+#include <kerrighed/hotplug.h>
+#include <net/krgrpc/rpc.h>
+#include <net/krgrpc/rpcid.h>
+#endif
+
+#ifdef CONFIG_KRG_PROC
+struct cap_op_msg {
+	pid_t pid;
+};
+
+static void *cluster_started;
 #endif
 
 int can_use_krg_cap(struct task_struct *task, int cap)
@@ -157,6 +170,8 @@ out:
 	return res;
 }
 
+static int remote_set_pid_cap(pid_t pid, const kernel_krg_cap_t *cap);
+
 static int krg_set_father_cap(struct task_struct *tsk,
 			      const kernel_krg_cap_t *requested_cap)
 {
@@ -184,7 +199,7 @@ static int krg_set_father_cap(struct task_struct *tsk,
 			return -EPERM;
 		kh_get_parent(parent_children_obj, tsk->pid,
 			      &parent_pid, &real_parent_pid);
-		retval = kcb_set_pid_cap(real_parent_pid, requested_cap);
+		retval = remote_set_pid_cap(real_parent_pid, requested_cap);
 		kh_children_unlock(real_parent_tgid);
 	}
 #endif
@@ -204,11 +219,99 @@ static int krg_set_pid_cap(pid_t pid, const kernel_krg_cap_t *requested_cap)
 	rcu_read_unlock();
 #ifdef CONFIG_KRG_PROC
 	if (!tsk)
-		retval = kcb_set_pid_cap(pid, requested_cap);
+		retval = remote_set_pid_cap(pid, requested_cap);
 #endif
 
 	return retval;
 }
+
+#ifdef CONFIG_KRG_PROC
+static int handle_set_pid_cap(struct rpc_desc* desc, void *_msg, size_t size)
+{
+	const struct cap_op_msg *msg = _msg;
+	kernel_krg_cap_t cap;
+	const struct cred *old_cred;
+	struct cred *cred;
+	int err;
+
+	err = rpc_unpack_type(desc, cap);
+	if (err)
+		goto err_cancel;
+
+	cred = prepare_creds();
+	if (!cred)
+		goto err_cancel;
+	err = unpack_creds(desc, cred);
+	if (err) {
+		put_cred(cred);
+		goto err_cancel;
+	}
+	old_cred = override_creds(cred);
+
+	err = krg_set_pid_cap(msg->pid, &cap);
+
+	revert_creds(old_cred);
+	put_cred(cred);
+
+out:
+	return err;
+
+err_cancel:
+	rpc_cancel(desc);
+	goto out;
+}
+
+static int remote_set_pid_cap(pid_t pid, const kernel_krg_cap_t *cap)
+{
+	struct cap_op_msg msg;
+	int res = -ESRCH;
+	kerrighed_node_t node;
+	struct rpc_desc *desc;
+	int err;
+
+	if (!cluster_started)
+		goto out;
+
+	node = krg_lock_pid_location(pid);
+	if (node == KERRIGHED_NODE_ID_NONE)
+		goto out;
+
+	msg.pid = pid;
+	err = -ENOMEM;
+	desc = rpc_begin(PROC_SET_PID_CAP, node);
+	if (!desc)
+		goto err;
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto err_cancel;
+	err = rpc_pack_type(desc, *cap);
+	if (err)
+		goto err_cancel;
+	err = pack_creds(desc, current_cred());
+	if (err)
+		goto err_cancel;
+	err = rpc_unpack_type(desc, res);
+	if (err)
+		goto err_cancel;
+
+	rpc_end(desc, 0);
+
+unlock:
+	krg_unlock_pid_location(pid);
+
+out:
+	return res;
+err_cancel:
+	if (err > 0)
+		err = -EPIPE;
+	rpc_cancel(desc);
+	rpc_end(desc, 0);
+err:
+	res = err;
+	goto unlock;
+}
+#endif /* CONFIG_KRG_PROC */
 
 static int krg_get_cap(struct task_struct *tsk, kernel_krg_cap_t *resulting_cap)
 {
@@ -228,6 +331,8 @@ static int krg_get_cap(struct task_struct *tsk, kernel_krg_cap_t *resulting_cap)
 
 	return res;
 }
+
+static int remote_get_pid_cap(pid_t pid, kernel_krg_cap_t *cap);
 
 static int krg_get_father_cap(struct task_struct *son,
 			      kernel_krg_cap_t *resulting_cap)
@@ -256,7 +361,7 @@ static int krg_get_father_cap(struct task_struct *son,
 			return krg_get_cap(child_reaper(son), resulting_cap);
 		kh_get_parent(parent_children_obj, son->pid,
 			      &parent_pid, &real_parent_pid);
-		retval = kcb_get_pid_cap(parent_pid, resulting_cap);
+		retval = remote_get_pid_cap(parent_pid, resulting_cap);
 		kh_children_unlock(real_parent_tgid);
 	}
 #endif
@@ -276,11 +381,109 @@ static int krg_get_pid_cap(pid_t pid, kernel_krg_cap_t *resulting_cap)
 	rcu_read_unlock();
 #ifdef CONFIG_KRG_PROC
 	if (!tsk)
-		retval = kcb_get_pid_cap(pid, resulting_cap);
+		retval = remote_get_pid_cap(pid, resulting_cap);
 #endif
 
 	return retval;
 }
+
+#ifdef CONFIG_KRG_PROC
+static int handle_get_pid_cap(struct rpc_desc *desc, void *_msg, size_t size)
+{
+	const struct cap_op_msg *msg = _msg;
+	kernel_krg_cap_t cap;
+	struct cred *cred;
+	const struct cred *old_cred;
+	int err;
+
+	err = -ENOMEM;
+	cred = prepare_creds();
+	if (!cred)
+		goto err_cancel;
+	err = unpack_creds(desc, cred);
+	if (err) {
+		put_cred(cred);
+		goto err_cancel;
+	}
+	old_cred = override_creds(cred);
+
+	err = krg_get_pid_cap(msg->pid, &cap);
+
+	revert_creds(old_cred);
+	put_cred(cred);
+
+	if (err)
+		goto out;
+
+	err = rpc_pack_type(desc, cap);
+	if (err)
+		goto err_cancel;
+
+out:
+	return err;
+
+err_cancel:
+	rpc_cancel(desc);
+	goto out;
+}
+
+static int remote_get_pid_cap(pid_t pid, kernel_krg_cap_t *cap)
+{
+	kerrighed_node_t node;
+	struct cap_op_msg msg;
+	struct rpc_desc *desc;
+	int err = -ESRCH;
+	int res;
+
+	if (!cluster_started)
+		goto out;
+
+	node = krg_lock_pid_location(pid);
+	if (node == KERRIGHED_NODE_ID_NONE)
+		goto out;
+
+	msg.pid = pid;
+
+	desc = rpc_begin(PROC_GET_PID_CAP, node);
+	if (!desc) {
+		err = -ENOMEM;
+		goto out_unlock;
+	}
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto err_cancel;
+	err = pack_creds(desc, current_cred());
+	if (err)
+		goto err_cancel;
+
+	err = rpc_unpack_type(desc, res);
+	if (err)
+		goto err_cancel;
+	if (res) {
+		err = res;
+		goto out_end;
+	}
+	err = rpc_unpack_type(desc, *cap);
+	if (err)
+		goto err_cancel;
+
+out_end:
+	rpc_end(desc, 0);
+
+out_unlock:
+	krg_unlock_pid_location(pid);
+
+out:
+	return err;
+
+err_cancel:
+	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
+	goto out_end;
+}
+#endif /* CONFIG_KRG_PROC */
 
 /* Kerrighed syscalls interface */
 
@@ -447,6 +650,14 @@ int init_krg_cap(void)
 				  proc_get_supported_cap);
 	if (r != 0)
 		goto unreg_get_pid_cap;
+
+#ifdef CONFIG_KRG_PROC
+	rpc_register_int(PROC_GET_PID_CAP, handle_get_pid_cap, 0);
+	rpc_register_int(PROC_SET_PID_CAP, handle_set_pid_cap, 0);
+
+	hook_register(&cluster_started, (void *)true);
+#endif
+
  out:
 	return r;
 
