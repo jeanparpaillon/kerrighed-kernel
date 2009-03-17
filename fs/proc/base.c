@@ -85,6 +85,9 @@
 #include <kerrighed/krgnodemask.h>
 #include <kddm/kddm.h>
 #endif
+#if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
+#include <kerrighed/pid.h>
+#endif
 #include "internal.h"
 
 /* NOTE:
@@ -257,7 +260,10 @@ out:
 	return NULL;
 }
 
-static int proc_pid_cmdline(struct task_struct *task, char * buffer)
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int proc_pid_cmdline(struct task_struct *task, char * buffer)
 {
 	int res = 0;
 	unsigned int len;
@@ -294,7 +300,11 @@ out:
 	return res;
 }
 
-static int proc_pid_auxv(struct task_struct *task, char *buffer)
+
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int proc_pid_auxv(struct task_struct *task, char *buffer)
 {
 	int res = 0;
 	struct mm_struct *mm = get_task_mm(task);
@@ -318,7 +328,10 @@ static int proc_pid_auxv(struct task_struct *task, char *buffer)
  * Provides a wchan file via kallsyms in a proper one-value-per-file format.
  * Returns the resolved symbol.  If that fails, simply return the address.
  */
-static int proc_pid_wchan(struct task_struct *task, char *buffer)
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int proc_pid_wchan(struct task_struct *task, char *buffer)
 {
 	unsigned long wchan;
 	char symname[KSYM_NAME_LEN];
@@ -339,7 +352,10 @@ static int proc_pid_wchan(struct task_struct *task, char *buffer)
 
 #define MAX_STACK_TRACE_DEPTH	64
 
-static int proc_pid_stack(struct seq_file *m, struct pid_namespace *ns,
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int proc_pid_stack(struct seq_file *m, struct pid_namespace *ns,
 			  struct pid *pid, struct task_struct *task)
 {
 	struct stack_trace trace;
@@ -370,7 +386,10 @@ static int proc_pid_stack(struct seq_file *m, struct pid_namespace *ns,
 /*
  * Provides /proc/PID/schedstat
  */
-static int proc_pid_schedstat(struct task_struct *task, char *buffer)
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int proc_pid_schedstat(struct task_struct *task, char *buffer)
 {
 	return sprintf(buffer, "%llu %llu %lu\n",
 			(unsigned long long)task->se.sum_exec_runtime,
@@ -447,7 +466,10 @@ static const struct file_operations proc_lstats_operations = {
 
 /* The badness from the OOM killer */
 unsigned long badness(struct task_struct *p, unsigned long uptime);
-static int proc_oom_score(struct task_struct *task, char *buffer)
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int proc_oom_score(struct task_struct *task, char *buffer)
 {
 	unsigned long points;
 	struct timespec uptime;
@@ -484,7 +506,10 @@ static const struct limit_names lnames[RLIM_NLIMITS] = {
 };
 
 /* Display limits for a process */
-static int proc_pid_limits(struct task_struct *task, char *buffer)
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int proc_pid_limits(struct task_struct *task, char *buffer)
 {
 	unsigned int i;
 	int count = 0;
@@ -529,7 +554,10 @@ static int proc_pid_limits(struct task_struct *task, char *buffer)
 }
 
 #ifdef CONFIG_HAVE_ARCH_TRACEHOOK
-static int proc_pid_syscall(struct task_struct *task, char *buffer)
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int proc_pid_syscall(struct task_struct *task, char *buffer)
 {
 	long nr;
 	unsigned long args[6], sp, pc;
@@ -647,7 +675,10 @@ static int proc_fd_access_allowed(struct inode *inode)
 	return allowed;
 }
 
-static int proc_setattr(struct dentry *dentry, struct iattr *attr)
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int proc_setattr(struct dentry *dentry, struct iattr *attr)
 {
 	int error;
 	struct inode *inode = dentry->d_inode;
@@ -661,7 +692,10 @@ static int proc_setattr(struct dentry *dentry, struct iattr *attr)
 	return error;
 }
 
-static const struct inode_operations proc_def_inode_operations = {
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+const struct inode_operations proc_def_inode_operations = {
 	.setattr	= proc_setattr,
 };
 
@@ -1426,7 +1460,10 @@ out:
 	return ERR_PTR(error);
 }
 
-static int do_proc_readlink(struct path *path, char __user *buffer, int buflen)
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int do_proc_readlink(struct path *path, char __user *buffer, int buflen)
 {
 	char *tmp = (char*)__get_free_page(GFP_TEMPORARY);
 	char *pathname;
@@ -2532,13 +2569,19 @@ static int proc_tid_io_accounting(struct task_struct *task, char *buffer)
 	return do_io_accounting(task, buffer, 0);
 }
 
-static int proc_tgid_io_accounting(struct task_struct *task, char *buffer)
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int proc_tgid_io_accounting(struct task_struct *task, char *buffer)
 {
 	return do_io_accounting(task, buffer, 1);
 }
 #endif /* CONFIG_TASK_IO_ACCOUNTING */
 
-static int proc_pid_personality(struct seq_file *m, struct pid_namespace *ns,
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int proc_pid_personality(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *task)
 {
 	seq_printf(m, "%08x\n", task->personality);
@@ -2793,7 +2836,15 @@ struct dentry *proc_pid_lookup(struct inode *dir, struct dentry * dentry, struct
 		get_task_struct(task);
 	rcu_read_unlock();
 	if (!task)
-		goto out;
+#if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
+	{
+		if (kh_proc_pid_lookup && (tgid & GLOBAL_PID_MASK))
+			result = kh_proc_pid_lookup(dir, dentry, tgid);
+#endif
+                goto out;
+#if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
+	}
+#endif
 
 	result = proc_pid_instantiate(dir, dentry, task, NULL);
 	put_task_struct(task);
@@ -2805,10 +2856,14 @@ out:
  * Find the first task with tgid >= tgid
  *
  */
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
 struct tgid_iter {
 	unsigned int tgid;
 	struct task_struct *task;
 };
+#else
+/* moved into include/linux/procfs_internal.h */
+#endif
 static struct tgid_iter next_tgid(struct pid_namespace *ns, struct tgid_iter iter)
 {
 	struct pid *pid;
@@ -2846,7 +2901,10 @@ retry:
 
 #define TGID_OFFSET (FIRST_PROCESS_ENTRY + ARRAY_SIZE(proc_base_stuff))
 
-static int proc_pid_fill_cache(struct file *filp, void *dirent, filldir_t filldir,
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
+static
+#endif
+int proc_pid_fill_cache(struct file *filp, void *dirent, filldir_t filldir,
 	struct tgid_iter iter)
 {
 	char name[PROC_NUMBUF];
@@ -2875,6 +2933,13 @@ int proc_pid_readdir(struct file * filp, void * dirent, filldir_t filldir)
 	ns = filp->f_dentry->d_sb->s_fs_info;
 	iter.task = NULL;
 	iter.tgid = filp->f_pos - TGID_OFFSET;
+#if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
+	if (kh_proc_pid_readdir && ns == &init_pid_ns) {
+		/* All filling is done by kh_proc_pid_readdir */
+		if (kh_proc_pid_readdir(filp, dirent, filldir, TGID_OFFSET))
+			goto out;
+	} else
+#endif
 	for (iter = next_tgid(ns, iter);
 	     iter.task;
 	     iter.tgid += 1, iter = next_tgid(ns, iter)) {
@@ -2884,7 +2949,11 @@ int proc_pid_readdir(struct file * filp, void * dirent, filldir_t filldir)
 			goto out;
 		}
 	}
+#if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
+	filp->f_pos = KERRIGHED_PID_MAX_LIMIT + TGID_OFFSET;
+#else
 	filp->f_pos = PID_MAX_LIMIT + TGID_OFFSET;
+#endif
 out:
 	put_task_struct(reaper);
 out_no_task:

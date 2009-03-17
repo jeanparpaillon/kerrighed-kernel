@@ -279,9 +279,10 @@ union proc_op {
 struct proc_distant_pid_info;
 
 union proc_distant_op {
-	int (*proc_get_link)(struct inode *,
-			     struct dentry **, struct vfsmount **);
+	int (*proc_get_link)(struct inode *, struct path *);
 	int (*proc_read)(struct proc_distant_pid_info *task, char *page);
+	int (*proc_show)(struct file *file, struct proc_distant_pid_info *task,
+			 char *buf, size_t count);
 };
 
 struct task_kddm_object;

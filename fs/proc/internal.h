@@ -52,12 +52,16 @@ do {						\
 
 extern int proc_tid_stat(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *task);
+#if !defined(CONFIG_KRG_PROCFS) || !defined(CONFIG_KRG_PROC)
 extern int proc_tgid_stat(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *task);
 extern int proc_pid_status(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *task);
 extern int proc_pid_statm(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *task);
+#else /* CONFIG_KRG_PROCFS && CONFIG_KRG_PROC */
+/* moved into include/linux/procfs_internal.h */
+#endif /* CONFIG_KRG_PROCFS && CONFIG_KRG_PROC */
 extern loff_t mem_lseek(struct file *file, loff_t offset, int orig);
 
 extern const struct file_operations proc_maps_operations;

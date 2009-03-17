@@ -6,7 +6,7 @@
  */
 #include "proc.h"
 #ifdef CONFIG_KRG_PROC
-#include "proc_pid_info.h"
+#include "proc_pid.h"
 #endif
 #include "static_node_info_linker.h"
 #include "static_cpu_info_linker.h"
@@ -24,7 +24,7 @@ int init_procfs(void)
 	dynamic_cpu_info_init();
 
 #ifdef CONFIG_KRG_PROC
-	proc_pid_info_init();
+	proc_pid_init();
 #endif
 
 	krg_procfs_init();
@@ -40,6 +40,6 @@ void cleanup_procfs(void)
 	krg_procfs_finalize();
 
 #ifdef CONFIG_KRG_PROC
-	proc_pid_info_finalize();
+	proc_pid_finalize();
 #endif
 }

@@ -5,6 +5,7 @@
  *  Copyright (C) 2006-2007 Pascal Gallard - Kerlabs, Louis Rilling - Kerlabs
  */
 
+#include <linux/kernel.h>
 #ifdef CONFIG_KRG_EPM
 #include <linux/types.h>
 #include <linux/sched.h>

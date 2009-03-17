@@ -59,7 +59,7 @@ static void proc_delete_inode(struct inode *inode)
 	/* Stop tracking associated processes */
 	put_pid(PROC_I(inode)->pid);
 #if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
-	KRGFCT(kh_task_put)(PROC_I(inode)->distant_proc.task_obj);
+	krg_task_put(PROC_I(inode)->distant_proc.task_obj);
 	PROC_I(inode)->distant_proc.task_obj = NULL;
 #endif
 
