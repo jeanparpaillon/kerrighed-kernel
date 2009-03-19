@@ -28,6 +28,15 @@
 #include <linux/pid_namespace.h>
 #include <linux/nsproxy.h>
 #include <trace/sched.h>
+#ifdef CONFIG_KRG_PROC
+#include <net/krgrpc/rpc.h>
+#include <net/krgrpc/rpcid.h>
+#include <kerrighed/pid.h>
+#include <kerrighed/remote_cred.h>
+#include <kerrighed/krgnodemask.h>
+#include <kerrighed/krginit.h>
+#include <kerrighed/remote_syscall.h>
+#endif
 
 #include <asm/param.h>
 #include <asm/uaccess.h>
@@ -1120,6 +1129,109 @@ retry:
 	return error;
 }
 
+#ifdef CONFIG_KRG_PROC
+struct kill_info_msg {
+	int sig;
+	struct siginfo info;
+	pid_t pid;
+	pid_t session;
+};
+
+static int handle_kill_proc_info(struct rpc_desc *desc, void *_msg, size_t size)
+{
+	struct kill_info_msg msg;
+	struct task_struct *p;
+	struct cred *tmp_cred;
+	const struct cred *old_cred, *cred, *tcred;
+	int retval;
+
+	retval = krg_handle_remote_syscall_begin(desc, _msg, size,
+						 &msg, &old_cred);
+	if (retval < 0)
+		goto out;
+	retval = -ENOMEM;
+	tmp_cred = prepare_creds();
+	if (!tmp_cred)
+		goto out_end;
+
+	rcu_read_lock();
+
+	p = find_task_by_pid_ns(msg.pid, &init_pid_ns);
+	BUG_ON(!p);
+
+	/*
+	 * Have to do the job of check_kill_permission() twice regarding
+	 * euid/uid, CAP_KILL, process session, and security checking,
+	 * since we can't reliably override current's session
+	 */
+	cred = current_cred();
+	tcred = __task_cred(p);
+	if (!SI_FROMKERNEL(&msg.info)
+	    && (cred->euid ^ tcred->suid)
+	    && (cred->euid ^ tcred->uid)
+	    && (cred->uid ^ tcred->suid)
+	    && (cred->uid ^ tcred->uid)
+	    && !capable(CAP_KILL)
+	    && (msg.sig != SIGCONT
+		|| msg.session != task_session_nr_ns(p, &init_pid_ns))) {
+		retval = -EPERM;
+	} else {
+		cap_raise(tmp_cred->cap_effective, CAP_KILL);
+		cred = override_creds(tmp_cred);
+		retval = kill_pid_info(msg.sig, &msg.info, task_pid(p));
+		revert_creds(cred);
+	}
+
+	rcu_read_unlock();
+
+	put_cred(tmp_cred);
+out_end:
+	krg_handle_remote_syscall_end(old_cred);
+
+out:
+	return retval;
+}
+
+static void make_kill_info_msg(struct kill_info_msg *msg, int sig,
+			       struct siginfo *info, pid_t pid)
+{
+	msg->sig = sig;
+	msg->pid = pid;
+	msg->session = task_session_nr_ns(current, &init_pid_ns);
+
+	switch ((unsigned long)info) {
+	case (unsigned long)SEND_SIG_NOINFO:
+		msg->info.si_signo = sig;
+		msg->info.si_errno = 0;
+		msg->info.si_code = SI_USER;
+		msg->info.si_pid = current->tgid;
+		msg->info.si_uid = current_uid();
+		break;
+	case (unsigned long)SEND_SIG_PRIV:
+		msg->info.si_signo = sig;
+		msg->info.si_errno = 0;
+		msg->info.si_code = SI_KERNEL;
+		msg->info.si_pid = 0;
+		msg->info.si_uid = 0;
+		break;
+	case (unsigned long)SEND_SIG_FORCED:
+		BUG();
+	default:
+		copy_siginfo(&msg->info, info);
+		break;
+	}
+}
+
+static int krg_kill_proc_info(int sig, struct siginfo *info, pid_t pid)
+{
+	struct kill_info_msg msg;
+
+	make_kill_info_msg(&msg, sig, info, pid);
+	return krg_remote_syscall_simple(PROC_KILL_PROC_INFO, pid,
+					 &msg, sizeof(msg));
+}
+#endif /* CONFIG_KRG_PROC */
+
 int
 kill_proc_info(int sig, struct siginfo *info, pid_t pid)
 {
@@ -1127,6 +1239,10 @@ kill_proc_info(int sig, struct siginfo *info, pid_t pid)
 	rcu_read_lock();
 	error = kill_pid_info(sig, info, find_vpid(pid));
 	rcu_read_unlock();
+#ifdef CONFIG_KRG_PROC
+	if (error == -ESRCH)
+		error = krg_kill_proc_info(sig, info, pid);
+#endif /* CONFIG_KRG_PROC */
 	return error;
 }
 
@@ -1170,6 +1286,124 @@ out_unlock:
 }
 EXPORT_SYMBOL_GPL(kill_pid_info_as_uid);
 
+#ifdef CONFIG_KRG_PROC
+static int handle_kill_pg_info(struct rpc_desc *desc, void *_msg, size_t size)
+{
+	struct kill_info_msg *msg = _msg;
+	struct cred *cred;
+	const struct cred *old_cred, *tcred;
+	struct pid *pgrp;
+	struct task_struct *p;
+	int retval, err, success;
+	int cap_kill;
+
+	cred = prepare_creds();
+	if (!cred)
+		goto err_cancel;
+	err = unpack_creds(desc, cred);
+	if (err) {
+		put_cred(cred);
+		goto err_cancel;
+	}
+
+	read_lock(&tasklist_lock);
+
+	retval = -ESRCH;
+	pgrp = find_pid_ns(msg->pid, &init_pid_ns);
+
+	/*
+	 * Have to do the job of check_kill_permission() twice regarding
+	 * euid/uid, CAP_KILL, process session, and security checking,
+	 * since we can't reliably override current's session
+	 */
+	cap_kill = capable(CAP_KILL);
+	cap_raise(cred->cap_effective, CAP_KILL);
+	old_cred = override_creds(cred);
+	success = 0;
+	do_each_pid_task(pgrp, PIDTYPE_PGID, p) {
+		tcred = __task_cred(p);
+		if (!SI_FROMKERNEL(&msg->info)
+		    && (cred->euid ^ tcred->suid)
+		    && (cred->euid ^ tcred->uid)
+		    && (cred->uid ^ tcred->suid)
+		    && (cred->uid ^ tcred->uid)
+		    && !cap_kill
+		    && (msg->sig != SIGCONT
+			|| msg->session != task_session_nr_ns(p, &init_pid_ns)))
+			err = -EPERM;
+		else
+			err = group_send_sig_info(msg->sig, &msg->info, p);
+		success |= !err;
+		retval = err;
+	} while_each_pid_task(pgrp, PIDTYPE_PGID, p);
+	retval = success ? 0 : retval;
+
+	read_unlock(&tasklist_lock);
+
+	revert_creds(old_cred);
+	put_cred(cred);
+
+	return retval;
+
+err_cancel:
+	rpc_cancel(desc);
+	return -EPIPE;
+}
+
+static int krg_kill_pg_info(int sig, struct siginfo *info, pid_t pgid)
+{
+	struct kill_info_msg msg;
+	struct rpc_desc *desc;
+	krgnodemask_t nodes;
+	kerrighed_node_t node;
+	int retval = -ESRCH;
+
+	if (task_active_pid_ns(current) != &init_pid_ns)
+		goto out;
+
+	if (!(pgid & GLOBAL_PID_MASK))
+		goto out;
+
+	krgnodes_copy(nodes, krgnode_possible_map);
+	krgnode_clear(kerrighed_node_id, nodes);
+	if (krgnodes_empty(nodes))
+		goto out;
+
+	desc = rpc_begin_m(PROC_KILL_PG_INFO, &nodes);
+
+	make_kill_info_msg(&msg, sig, info, pgid);
+	retval = rpc_pack_type(desc, msg);
+	if (retval)
+		goto err_cancel;
+	retval = pack_creds(desc, current_cred());
+	if (retval)
+		goto err_cancel;
+
+	retval = -ESRCH;
+	for_each_krgnode_mask(node, nodes) {
+		retval = rpc_wait_return_from(desc, node);
+		if (!retval)
+			break;
+	}
+
+out_end:
+	rpc_end(desc, 0);
+
+out:
+	return retval;
+
+err_cancel:
+	rpc_cancel(desc);
+	goto out_end;
+}
+
+static void krg_kill_all(int sig, struct siginfo *info, int *count, int *retval)
+{
+	if (task_active_pid_ns(current) != &init_pid_ns)
+		return;
+}
+#endif /* CONFIG_KRG_PROC */
+
 /*
  * kill_something_info() interprets pid in interesting ways just like kill(2).
  *
@@ -1185,6 +1419,10 @@ static int kill_something_info(int sig, struct siginfo *info, pid_t pid)
 		rcu_read_lock();
 		ret = kill_pid_info(sig, info, find_vpid(pid));
 		rcu_read_unlock();
+#ifdef CONFIG_KRG_PROC
+		if (ret == -ESRCH)
+			ret = krg_kill_proc_info(sig, info, pid);
+#endif /* CONFIG_KRG_PROC */
 		return ret;
 	}
 
@@ -1192,6 +1430,12 @@ static int kill_something_info(int sig, struct siginfo *info, pid_t pid)
 	if (pid != -1) {
 		ret = __kill_pgrp_info(sig, info,
 				pid ? find_vpid(-pid) : task_pgrp(current));
+#ifdef CONFIG_KRG_PROC
+		read_unlock(&tasklist_lock);
+		if (pid)
+			ret = krg_kill_pg_info(sig, info, -pid) ? ret : 0;
+		return ret;
+#endif /* CONFIG_KRG_PROC */
 	} else {
 		int retval = 0, count = 0;
 		struct task_struct * p;
@@ -1205,7 +1449,14 @@ static int kill_something_info(int sig, struct siginfo *info, pid_t pid)
 					retval = err;
 			}
 		}
+#ifdef CONFIG_KRG_PROC
+		read_unlock(&tasklist_lock);
+		krg_kill_all(sig, info, &count, &retval);
+#endif /* CONFIG_KRG_PROC */
 		ret = count ? retval : -ESRCH;
+#ifdef CONFIG_KRG_PROC
+		return ret;
+#endif
 	}
 	read_unlock(&tasklist_lock);
 
@@ -2651,6 +2902,14 @@ __attribute__((weak)) const char *arch_vma_name(struct vm_area_struct *vma)
 {
 	return NULL;
 }
+
+#ifdef CONFIG_KRG_PROC
+void remote_signals_init(void)
+{
+	rpc_register_int(PROC_KILL_PROC_INFO, handle_kill_proc_info, 0);
+	rpc_register_int(PROC_KILL_PG_INFO, handle_kill_pg_info, 0);
+}
+#endif /* CONFIG_KRG_PROC */
 
 void __init signals_init(void)
 {
