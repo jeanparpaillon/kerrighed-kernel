@@ -155,4 +155,5 @@ void register_remote_syscalls_hooks(void)
 void proc_remote_syscalls_start(void)
 {
 	remote_signals_init();
+	remote_sched_init();
 }

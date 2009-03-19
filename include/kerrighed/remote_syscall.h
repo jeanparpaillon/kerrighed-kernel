@@ -18,5 +18,6 @@ int krg_handle_remote_syscall_begin(struct rpc_desc *desc,
 void krg_handle_remote_syscall_end(const struct cred *old_cred);
 
 void remote_signals_init(void);
+void remote_sched_init(void);
 
 #endif /* __REMOTE_SYSCALL_H__ */

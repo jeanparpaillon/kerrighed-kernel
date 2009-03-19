@@ -73,6 +73,11 @@
 #include <linux/ctype.h>
 #include <linux/ftrace.h>
 #include <trace/sched.h>
+#ifdef CONFIG_KRG_PROC
+#include <net/krgrpc/rpc.h>
+#include <net/krgrpc/rpcid.h>
+#include <kerrighed/remote_syscall.h>
+#endif
 
 #include <asm/tlb.h>
 #include <asm/irq_regs.h>
@@ -5954,6 +5959,51 @@ int sched_setscheduler_nocheck(struct task_struct *p, int policy,
 	return __sched_setscheduler(p, policy, param, false);
 }
 
+#ifdef CONFIG_KRG_PROC
+struct setscheduler_msg {
+	int policy;
+	struct sched_param param;
+};
+
+static
+int handle_sched_setscheduler(struct rpc_desc *desc, void *_msg, size_t size)
+{
+	struct setscheduler_msg msg;
+	pid_t pid;
+	const struct cred *old_cred;
+	struct task_struct *p;
+	int retval;
+
+	retval = krg_handle_remote_syscall_begin(desc, _msg, size,
+						 &msg, &old_cred);
+	if (retval < 0)
+		goto out;
+	pid = retval;
+
+	rcu_read_lock();
+	p = find_task_by_pid_ns(pid, &init_pid_ns);
+	BUG_ON(!p);
+	retval = sched_setscheduler(p, msg.policy, &msg.param);
+	rcu_read_unlock();
+
+	krg_handle_remote_syscall_end(old_cred);
+
+out:
+	return retval;
+}
+
+static
+int krg_sched_setscheduler(pid_t pid, int policy, struct sched_param *param)
+{
+	struct setscheduler_msg msg;
+
+	msg.policy = policy;
+	msg.param = *param;
+	return krg_remote_syscall_simple(PROC_SCHED_SETSCHEDULER, pid,
+					 &msg, sizeof(msg));
+}
+#endif /* CONFIG_KRG_PROC */
+
 static int
 do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 {
@@ -5972,6 +6022,10 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	if (p != NULL)
 		retval = sched_setscheduler(p, policy, &lparam);
 	rcu_read_unlock();
+#ifdef CONFIG_KRG_PROC
+	if (!p)
+		retval = krg_sched_setscheduler(pid, policy, &lparam);
+#endif
 
 	return retval;
 }
@@ -6002,6 +6056,35 @@ SYSCALL_DEFINE2(sched_setparam, pid_t, pid, struct sched_param __user *, param)
 	return do_sched_setscheduler(pid, -1, param);
 }
 
+#ifdef CONFIG_KRG_PROC
+static
+int handle_sched_getscheduler(struct rpc_desc *desc, void *msg, size_t size)
+{
+	pid_t pid;
+	const struct cred *old_cred;
+	int retval;
+
+	retval = krg_handle_remote_syscall_begin(desc, msg, size,
+						 NULL, &old_cred);
+	if (retval < 0)
+		goto out;
+	pid = retval;
+
+	retval = sys_sched_getscheduler(pid);
+
+	krg_handle_remote_syscall_end(old_cred);
+
+out:
+	return retval;
+}
+
+static int krg_sched_getscheduler(pid_t pid)
+{
+	return krg_remote_syscall_simple(PROC_SCHED_GETSCHEDULER, pid,
+					 NULL, 0);
+}
+#endif /* CONFIG_KRG_PROC */
+
 /**
  * sys_sched_getscheduler - get the policy (scheduling class) of a thread
  * @pid: the pid in question.
@@ -6023,8 +6106,79 @@ SYSCALL_DEFINE1(sched_getscheduler, pid_t, pid)
 			retval = p->policy;
 	}
 	read_unlock(&tasklist_lock);
+#ifdef CONFIG_KRG_PROC
+	if (!p)
+		retval = krg_sched_getscheduler(pid);
+#endif
 	return retval;
 }
+
+#ifdef CONFIG_KRG_PROC
+static
+int handle_sched_getparam(struct rpc_desc *desc, void *msg, size_t size)
+{
+	pid_t pid;
+	struct sched_param param;
+	const struct cred *old_cred;
+	int retval, err;
+
+	retval = krg_handle_remote_syscall_begin(desc, msg, size,
+						 NULL, &old_cred);
+	if (retval < 0)
+		goto out;
+	pid = retval;
+
+	retval = sys_sched_getparam(pid, &param);
+	if (retval)
+		goto out_end;
+
+	err = rpc_pack_type(desc, param);
+	if (err) {
+		rpc_cancel(desc);
+		retval = err;
+	}
+
+out_end:
+	krg_handle_remote_syscall_end(old_cred);
+
+out:
+	return retval;
+}
+
+static int krg_sched_getparam(pid_t pid, struct sched_param *param)
+{
+	struct rpc_desc *desc;
+	int res, r;
+
+	desc = krg_remote_syscall_begin(PROC_SCHED_GETPARAM, pid, NULL, 0);
+	if (IS_ERR(desc)) {
+		r = PTR_ERR(desc);
+		goto out;
+	}
+
+	r = rpc_unpack_type(desc, res);
+	if (r)
+		goto err_cancel;
+	r = res;
+	if (r)
+		goto out_end;
+	r = rpc_unpack_type(desc, *param);
+	if (r)
+		goto err_cancel;
+
+out_end:
+	krg_remote_syscall_end(desc, pid);
+
+out:
+	return r;
+
+err_cancel:
+	if (r > 0)
+		r = -EPIPE;
+	rpc_cancel(desc);
+	goto out_end;
+}
+#endif /* CONFIG_KRG_PROC */
 
 /**
  * sys_sched_getscheduler - get the RT priority of a thread
@@ -6042,6 +6196,15 @@ SYSCALL_DEFINE2(sched_getparam, pid_t, pid, struct sched_param __user *, param)
 
 	read_lock(&tasklist_lock);
 	p = find_process_by_pid(pid);
+#ifdef CONFIG_KRG_PROC
+	if (!p) {
+		read_unlock(&tasklist_lock);
+		retval = krg_sched_getparam(pid, &lp);
+		if (retval)
+			goto out_nounlock;
+		goto copy;
+	}
+#endif
 	retval = -ESRCH;
 	if (!p)
 		goto out_unlock;
@@ -6053,11 +6216,17 @@ SYSCALL_DEFINE2(sched_getparam, pid_t, pid, struct sched_param __user *, param)
 	lp.sched_priority = p->rt_priority;
 	read_unlock(&tasklist_lock);
 
+#ifdef CONFIG_KRG_PROC
+copy:
+#endif
 	/*
 	 * This one might sleep, we cannot do it with a spinlock held ...
 	 */
 	retval = copy_to_user(param, &lp, sizeof(*param)) ? -EFAULT : 0;
 
+#ifdef CONFIG_KRG_PROC
+out_nounlock:
+#endif
 	return retval;
 
 out_unlock:
@@ -6465,6 +6634,15 @@ out_unlock:
 	read_unlock(&tasklist_lock);
 	return retval;
 }
+
+#ifdef CONFIG_KRG_PROC
+void remote_sched_init(void)
+{
+	rpc_register_int(PROC_SCHED_SETSCHEDULER, handle_sched_setscheduler, 0);
+	rpc_register_int(PROC_SCHED_GETPARAM, handle_sched_getparam, 0);
+	rpc_register_int(PROC_SCHED_GETSCHEDULER, handle_sched_getscheduler, 0);
+}
+#endif /* CONFIG_KRG_PROC */
 
 static const char stat_nam[] = TASK_STATE_TO_CHAR_STR;
 
