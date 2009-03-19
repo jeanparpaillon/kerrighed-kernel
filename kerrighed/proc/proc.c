@@ -35,14 +35,6 @@ static void init_baby_sitter(void)
 }
 #endif
 
-static void proc_remote_syscalls_start(void)
-{
-}
-
-static void register_remote_syscalls_hooks(void)
-{
-}
-
 /** Initial function of the module
  *  @author Geoffroy Vallee, Pascal Gallard
  */
