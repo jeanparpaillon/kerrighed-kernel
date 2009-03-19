@@ -40,6 +40,11 @@
 #include <linux/syscalls.h>
 #include <linux/kprobes.h>
 #include <linux/user_namespace.h>
+#ifdef CONFIG_KRG_PROC
+#include <net/krgrpc/rpc.h>
+#include <net/krgrpc/rpcid.h>
+#include <kerrighed/remote_syscall.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -1018,6 +1023,33 @@ out:
 	return err;
 }
 
+#ifdef CONFIG_KRG_PROC
+static int handle_getpgid(struct rpc_desc *desc, void *msg, size_t size)
+{
+	pid_t pid;
+	const struct cred *old_cred;
+	int retval;
+
+	retval = krg_handle_remote_syscall_begin(desc, msg, size,
+						 NULL, &old_cred);
+	if (retval < 0)
+		goto out;
+	pid = retval;
+
+	retval = sys_getpgid(pid);
+
+	krg_handle_remote_syscall_end(old_cred);
+
+out:
+	return retval;
+}
+
+static int krg_getpgid(pid_t pid)
+{
+	return krg_remote_syscall_simple(PROC_GETPGID, pid, NULL, 0);
+}
+#endif /* CONFIG_KRG_PROC */
+
 SYSCALL_DEFINE1(getpgid, pid_t, pid)
 {
 	struct task_struct *p;
@@ -1029,6 +1061,9 @@ SYSCALL_DEFINE1(getpgid, pid_t, pid)
 		grp = task_pgrp(current);
 	else {
 		retval = -ESRCH;
+#ifdef CONFIG_KRG_PROC
+		grp = NULL;
+#endif
 		p = find_task_by_vpid(pid);
 		if (!p)
 			goto out;
@@ -1043,6 +1078,10 @@ SYSCALL_DEFINE1(getpgid, pid_t, pid)
 	retval = pid_vnr(grp);
 out:
 	rcu_read_unlock();
+#ifdef CONFIG_KRG_PROC
+	if (!grp)
+		retval = krg_getpgid(pid);
+#endif
 	return retval;
 }
 
@@ -1055,6 +1094,33 @@ SYSCALL_DEFINE0(getpgrp)
 
 #endif
 
+#ifdef CONFIG_KRG_PROC
+static int handle_getsid(struct rpc_desc *desc, void *msg, size_t size)
+{
+	pid_t pid;
+	const struct cred *old_cred;
+	int retval;
+
+	retval = krg_handle_remote_syscall_begin(desc, msg, size,
+						 NULL, &old_cred);
+	if (retval < 0)
+		goto out;
+	pid = retval;
+
+	retval = sys_getsid(pid);
+
+	krg_handle_remote_syscall_end(old_cred);
+
+out:
+	return retval;
+}
+
+static int krg_getsid(pid_t pid)
+{
+	return krg_remote_syscall_simple(PROC_GETSID, pid, NULL, 0);;
+}
+#endif /* CONFIG_KRG_PROC */
+
 SYSCALL_DEFINE1(getsid, pid_t, pid)
 {
 	struct task_struct *p;
@@ -1066,6 +1132,9 @@ SYSCALL_DEFINE1(getsid, pid_t, pid)
 		sid = task_session(current);
 	else {
 		retval = -ESRCH;
+#ifdef CONFIG_KRG_PROC
+		sid = NULL;
+#endif
 		p = find_task_by_vpid(pid);
 		if (!p)
 			goto out;
@@ -1080,8 +1149,20 @@ SYSCALL_DEFINE1(getsid, pid_t, pid)
 	retval = pid_vnr(sid);
 out:
 	rcu_read_unlock();
+#ifdef CONFIG_KRG_PROC
+	if (!sid)
+		retval = krg_getsid(pid);
+#endif
 	return retval;
 }
+
+#ifdef CONFIG_KRG_PROC
+void remote_sys_init(void)
+{
+	rpc_register_int(PROC_GETPGID, handle_getpgid, 0);
+	rpc_register_int(PROC_GETSID, handle_getsid, 0);
+}
+#endif /* CONFIG_KRG_PROC */
 
 SYSCALL_DEFINE0(setsid)
 {
