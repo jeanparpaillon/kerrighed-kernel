@@ -1254,6 +1254,7 @@ static int handle_getpgid(struct rpc_desc *desc, void *msg, size_t size)
 		goto out;
 	}
 
+	DEBUG(DBG_RSYSCALL, 1, "%d\n", pid_knr(pid));
 	retval = do_getpgid(pid_knr(pid), ns_of_pid(pid)->krg_ns_root);
 
 	krg_handle_remote_syscall_end(pid, old_cred);
@@ -1264,7 +1265,13 @@ out:
 
 static int krg_getpgid(pid_t pid)
 {
-	return krg_remote_syscall_simple(PROC_GETPGID, pid, NULL, 0);
+	int r;
+
+	DEBUG(DBG_RSYSCALL, 1, "%d\n", pid);
+	r = krg_remote_syscall_simple(PROC_GETPGID, pid, NULL, 0);
+	DEBUG(DBG_RSYSCALL, 1, "done r=%d\n", r);
+
+	return r;
 }
 
 SYSCALL_DEFINE1(getpgid, pid_t, pid)
@@ -1342,6 +1349,7 @@ static int handle_getsid(struct rpc_desc *desc, void *msg, size_t size)
 		goto out;
 	}
 
+	DEBUG(DBG_RSYSCALL, 1, "%d\n", pid_knr(pid));
 	retval = do_getsid(pid_knr(pid), ns_of_pid(pid)->krg_ns_root);
 
 	krg_handle_remote_syscall_end(pid, old_cred);
@@ -1352,7 +1360,13 @@ out:
 
 static int krg_getsid(pid_t pid)
 {
-	return krg_remote_syscall_simple(PROC_GETSID, pid, NULL, 0);;
+	int r;
+
+	DEBUG(DBG_RSYSCALL, 1, "%d\n", pid);
+	r = krg_remote_syscall_simple(PROC_GETSID, pid, NULL, 0);;
+	DEBUG(DBG_RSYSCALL, 1, "done r=%d\n", r);
+
+	return r;
 }
 
 SYSCALL_DEFINE1(getsid, pid_t, pid)

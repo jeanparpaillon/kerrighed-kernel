@@ -6038,6 +6038,7 @@ int handle_sched_setscheduler(struct rpc_desc *desc, void *_msg, size_t size)
 	krg_handle_remote_syscall_end(pid, old_cred);
 
 out:
+	DEBUG(DBG_RSYSCALL, 2, "%d retval=%d\n", pid, retval);
 	return retval;
 }
 
@@ -6045,11 +6046,17 @@ static
 int krg_sched_setscheduler(pid_t pid, int policy, struct sched_param *param)
 {
 	struct setscheduler_msg msg;
+	int retval;
+
+	DEBUG(DBG_RSYSCALL, 1, "%d\n", pid);
 
 	msg.policy = policy;
 	msg.param = *param;
-	return krg_remote_syscall_simple(PROC_SCHED_SETSCHEDULER, pid,
-					 &msg, sizeof(msg));
+	retval = krg_remote_syscall_simple(PROC_SCHED_SETSCHEDULER, pid,
+					   &msg, sizeof(msg));
+
+	DEBUG(DBG_RSYSCALL, 2, "%d retval=%d\n", pid, retval);
+	return retval;
 }
 #endif /* CONFIG_KRG_PROC */
 
@@ -6125,13 +6132,19 @@ int handle_sched_getscheduler(struct rpc_desc *desc, void *msg, size_t size)
 	krg_handle_remote_syscall_end(pid, old_cred);
 
 out:
+	DEBUG(DBG_RSYSCALL, 2, "%d retval=%d\n", pid, retval);
 	return retval;
 }
 
 static int krg_sched_getscheduler(pid_t pid)
 {
-	return krg_remote_syscall_simple(PROC_SCHED_GETSCHEDULER, pid,
+	int retval;
+
+	DEBUG(DBG_RSYSCALL, 1, "%d\n", pid);
+	retval = krg_remote_syscall_simple(PROC_SCHED_GETSCHEDULER, pid,
 					 NULL, 0);
+	DEBUG(DBG_RSYSCALL, 2, "%d retval=%d\n", pid, retval);
+	return retval;
 }
 #endif /* CONFIG_KRG_PROC */
 
@@ -6193,6 +6206,7 @@ out_end:
 	krg_handle_remote_syscall_end(pid, old_cred);
 
 out:
+	DEBUG(DBG_RSYSCALL, 2, "%d retval=%d\n", pid, retval);
 	return retval;
 }
 
@@ -6200,6 +6214,8 @@ static int krg_sched_getparam(pid_t pid, struct sched_param *param)
 {
 	struct rpc_desc *desc;
 	int res, r;
+
+	DEBUG(DBG_RSYSCALL, 1, "%d\n", pid);
 
 	desc = krg_remote_syscall_begin(PROC_SCHED_GETPARAM, pid, NULL, 0);
 	if (IS_ERR(desc)) {
@@ -6221,6 +6237,7 @@ out_end:
 	krg_remote_syscall_end(desc, pid);
 
 out:
+	DEBUG(DBG_RSYSCALL, 2, "%d retval=%d\n", pid, r);
 	return r;
 
 err_cancel:

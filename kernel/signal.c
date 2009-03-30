@@ -1216,6 +1216,9 @@ static int handle_kill_proc_info(struct rpc_desc *desc, void *_msg, size_t size)
 		goto out;
 	}
 
+	DEBUG(DBG_RSYSCALL, 1, "%d -> %d sig=%d\n",
+	      msg.info.si_pid, msg.pid, msg.sig);
+
 	rcu_read_lock();
 	retval = krg_group_send_sig_info(msg.sig, &msg.info,
 					 pid_task(pid, PIDTYPE_PID),
@@ -1261,10 +1264,15 @@ static void make_kill_info_msg(struct kill_info_msg *msg, int sig,
 static int krg_kill_proc_info(int sig, struct siginfo *info, pid_t pid)
 {
 	struct kill_info_msg msg;
+	int res;
 
+	DEBUG(DBG_RSYSCALL, 1, "%d sig=%d\n", pid, sig);
 	make_kill_info_msg(&msg, sig, info, pid);
-	return krg_remote_syscall_simple(PROC_KILL_PROC_INFO, pid,
+	res = krg_remote_syscall_simple(PROC_KILL_PROC_INFO, pid,
 					 &msg, sizeof(msg));
+	DEBUG(DBG_RSYSCALL, 1, "done res=%d\n", res);
+
+	return res;
 }
 #endif /* CONFIG_KRG_PROC */
 
@@ -1348,6 +1356,8 @@ static int handle_kill_pg_info(struct rpc_desc *desc, void *_msg, size_t size)
 	struct task_struct *p;
 	int retval, err, success;
 
+	DEBUG(DBG_RSYSCALL, 1, "%d sig=%d\n", msg->pid, msg->sig);
+
 	cred = prepare_creds();
 	if (!cred)
 		goto err_cancel;
@@ -1377,10 +1387,12 @@ static int handle_kill_pg_info(struct rpc_desc *desc, void *_msg, size_t size)
 	revert_creds(old_cred);
 	put_cred(cred);
 
+	DEBUG(DBG_RSYSCALL, 2, "return %d\n", retval);
 	return retval;
 
 err_cancel:
 	rpc_cancel(desc);
+	DEBUG(DBG_RSYSCALL, 2, "return %d\n", retval);
 	return -EPIPE;
 }
 
@@ -1408,6 +1420,7 @@ static int krg_kill_pg_info(int sig, struct siginfo *info, pid_t pgid)
 
 	desc = rpc_begin_m(PROC_KILL_PG_INFO, &nodes);
 
+	DEBUG(DBG_RSYSCALL, 1, "%d pgid=%d on all nodes\n", sig, pgid);
 	make_kill_info_msg(&msg, sig, info, pgid);
 	retval = rpc_pack_type(desc, msg);
 	if (retval)
@@ -1419,6 +1432,8 @@ static int krg_kill_pg_info(int sig, struct siginfo *info, pid_t pgid)
 	retval = -ESRCH;
 	for_each_krgnode_mask(node, nodes) {
 		retval = rpc_wait_return_from(desc, node);
+		DEBUG(DBG_RSYSCALL, 3, "%d (%d)\n", retval, node);
+
 		if (!retval)
 			break;
 	}
@@ -1427,6 +1442,7 @@ out_end:
 	rpc_end(desc, 0);
 
 out:
+	DEBUG(DBG_RSYSCALL, 2, "%d pgid=%d retval=%d\n", sig, pgid, retval);
 	return retval;
 
 err_cancel:
@@ -1441,6 +1457,7 @@ static void krg_kill_all(int sig, struct siginfo *info, int *count, int *retval)
 
 	if (!is_krg_pid_ns_root(task_active_pid_ns(current)))
 		return;
+	printk("krg_kill_all: function not implemented\n");
 }
 #endif /* CONFIG_KRG_PROC */
 
