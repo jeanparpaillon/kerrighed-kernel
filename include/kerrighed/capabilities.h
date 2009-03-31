@@ -63,13 +63,6 @@ typedef struct kernel_krg_cap_struct {
 #define KRG_CAP_INIT_INH_PERM_SET KRG_CAP_INIT_PERM_SET
 #define KRG_CAP_INIT_INH_EFF_SET KRG_CAP_INIT_EFF_SET
 
-#define INIT_KRG_CAP .krg_caps = {			    \
-	.permitted = KRG_CAP_INIT_PERM_SET,		    \
-	.effective = KRG_CAP_INIT_EFF_SET,		    \
-	.inheritable_permitted = KRG_CAP_INIT_INH_PERM_SET, \
-	.inheritable_effective = KRG_CAP_INIT_INH_EFF_SET   \
-},
-
 struct task_struct;
 struct linux_binprm;
 
@@ -79,10 +72,6 @@ void krg_cap_fork(struct task_struct *task, unsigned long clone_flags);
 int krg_cap_prepare_binprm(struct linux_binprm *bprm);
 void krg_cap_finish_exec(struct linux_binprm *bprm);
 
-#else /* !CONFIG_KRG_CAP */
-
-#define INIT_KRG_CAP
-
-#endif /* !CONFIG_KRG_CAP */
+#endif /* CONFIG_KRG_CAP */
 
 #endif /* _KERRIGHED_CAPABILITIES_H_INTERNAL */
