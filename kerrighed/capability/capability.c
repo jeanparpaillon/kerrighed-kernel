@@ -19,6 +19,10 @@
 #endif
 #include <linux/uaccess.h>
 
+#include "debug_capability.h"
+
+#define MODULE_NAME "capabilities"
+
 #include <kerrighed/krg_syscalls.h>
 #include <kerrighed/krg_services.h>
 #include <kerrighed/remote_cred.h>
@@ -118,6 +122,13 @@ static int krg_set_cap(struct task_struct *tsk,
 	if (res)
 		goto out;
 
+	DEBUG(DBG_CAP, 2,
+	      "Requested capabilities for process %d are {%d,%d,%d,%d}\n",
+	      tsk->pid,
+	      requested_cap->permitted.cap[0], requested_cap->effective.cap[0],
+	      requested_cap->inheritable_permitted.cap[0],
+	      requested_cap->inheritable_effective.cap[0]);
+
 	res = -EINVAL;
 	if (!cap_issubset(requested_cap->effective, requested_cap->permitted)
 	    || !cap_issubset(requested_cap->inheritable_permitted,
@@ -158,6 +169,13 @@ static int krg_set_cap(struct task_struct *tsk,
 	caps->inheritable_permitted = tmp_cap;
 
 	res = 0;
+
+	DEBUG(DBG_CAP, 2,
+	      "New capabilities of process %d are {%d,%d,%d,%d}\n",
+	      tsk->pid,
+	      caps->permitted.cap[0], caps->effective.cap[0],
+	      caps->inheritable_permitted.cap[0],
+	      caps->inheritable_effective.cap[0]);
 
 out_unlock:
 	task_unlock(tsk);
@@ -258,12 +276,25 @@ static int krg_get_cap(struct task_struct *tsk, kernel_krg_cap_t *resulting_cap)
 	kernel_krg_cap_t *caps = &tsk->krg_caps;
 	int res;
 
+	DEBUG(DBG_CAP, 1, "(%p, %p)\n", tsk, resulting_cap);
+
 	task_lock(tsk);
 
 	if (resulting_cap && permissions_ok(tsk)) {
 		*resulting_cap = *caps;
+		DEBUG(DBG_CAP, 2,
+		      "Capabilities of process %d are {%d,%d,%d,%d}\n",
+		      tsk->pid, caps->permitted.cap[0], caps->effective.cap[0],
+		      caps->inheritable_permitted.cap[0],
+		      caps->inheritable_effective.cap[0]);
 		res = 0;
 	} else {
+		DEBUG(DBG_CAP, 2,
+		      "Could not show capabilities"
+		      " of process %d which are {%d,%d,%d,%d}\n",
+		      tsk->pid, caps->permitted.cap[0], caps->effective.cap[0],
+		      caps->inheritable_permitted.cap[0],
+		      caps->inheritable_effective.cap[0]);
 		res = -EPERM;
 	}
 
@@ -411,6 +442,11 @@ static int user_to_kernel_krg_cap(const krg_cap_t __user *user_caps,
 	if (copy_from_user(&ucaps, user_caps, sizeof(ucaps)))
 		return -EFAULT;
 
+	DEBUG(DBG_CAP, 3, "{%d,%d,%d,%d}\n",
+	      ucaps.krg_cap_permitted, ucaps.krg_cap_effective,
+	      ucaps.krg_cap_inheritable_permitted,
+	      ucaps.krg_cap_inheritable_effective);
+
 	BUILD_BUG_ON(sizeof(kernel_cap_t) != 2 * sizeof(__u32));
 
 	caps->permitted = (kernel_cap_t){{ ucaps.krg_cap_permitted, 0 }};
@@ -419,6 +455,11 @@ static int user_to_kernel_krg_cap(const krg_cap_t __user *user_caps,
 		(kernel_cap_t){{ ucaps.krg_cap_inheritable_permitted, 0 }};
 	caps->inheritable_effective =
 		(kernel_cap_t){{ ucaps.krg_cap_inheritable_effective, 0 }};
+
+	DEBUG(DBG_CAP, 3, "-> {%d,%d,%d,%d}\n",
+	      caps->permitted.cap[0], caps->effective.cap[0],
+	      caps->inheritable_permitted.cap[0],
+	      caps->inheritable_effective.cap[0]);
 
 	return 0;
 }
@@ -471,12 +512,22 @@ static int kernel_to_user_krg_cap(const kernel_krg_cap_t *caps,
 	krg_cap_t ucaps;
 	int r = 0;
 
+	DEBUG(DBG_CAP, 3, "{%d,%d,%d,%d}\n",
+	      caps->permitted.cap[0], caps->effective.cap[0],
+	      caps->inheritable_permitted.cap[0],
+	      caps->inheritable_effective.cap[0]);
+
 	ucaps.krg_cap_permitted = caps->permitted.cap[0];
 	ucaps.krg_cap_effective = caps->effective.cap[0];
 	ucaps.krg_cap_inheritable_permitted =
 		caps->inheritable_permitted.cap[0];
 	ucaps.krg_cap_inheritable_effective =
 		caps->inheritable_effective.cap[0];
+
+	DEBUG(DBG_CAP, 3, "-> {%d,%d,%d,%d}\n",
+	      ucaps.krg_cap_permitted, ucaps.krg_cap_effective,
+	      ucaps.krg_cap_inheritable_permitted,
+	      ucaps.krg_cap_inheritable_effective);
 
 	if (copy_to_user(user_caps, &ucaps, sizeof(ucaps)))
 		r = -EFAULT;
@@ -502,8 +553,16 @@ static int proc_get_father_cap(void __user *arg)
 	int r;
 
 	r = krg_get_father_cap(current, &caps);
-	if (!r)
+	if (!r) {
+		DEBUG(DBG_CAP, 2,
+		      "Capabilities of father of process %d are {%d,%d,%d,%d}\n",
+		      current->pid,
+		      caps.permitted.cap[0], caps.effective.cap[0],
+		      caps.inheritable_permitted.cap[0],
+		      caps.inheritable_effective.cap[0]);
+
 		r = kernel_to_user_krg_cap(&caps, arg);
+	}
 
 	return r;
 }
@@ -516,13 +575,27 @@ static int proc_get_pid_cap(void __user *arg)
 
 	BUG_ON(sizeof(int) != sizeof(pid_t));
 
-	if (copy_from_user(&desc, arg, sizeof(desc)))
+	if (copy_from_user(&desc, arg, sizeof(desc))) {
+		DEBUG(DBG_CAP, 2,
+		      "Could not get the descriptor"
+		      " to find the concerned pid\n");
 		goto out;
+	}
 
 	r = krg_get_pid_cap(desc.pid, &caps);
 
-	if (!r)
+	if (!r) {
+		DEBUG(DBG_CAP, 2,
+		      "Capabilities of process %d are {%d,%d,%d,%d}\n",
+		      desc.pid, caps.permitted.cap[0], caps.effective.cap[0],
+		      caps.inheritable_permitted.cap[0],
+		      caps.inheritable_effective.cap[0]);
+
 		r = kernel_to_user_krg_cap(&caps, desc.caps);
+		if (r)
+			DEBUG(DBG_CAP, 2,
+			      "Could not copy the result back\n");
+	}
 
 out:
 	return r;
