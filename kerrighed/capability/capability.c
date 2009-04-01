@@ -159,7 +159,9 @@ out:
 	return res;
 }
 
+#ifdef CONFIG_KRG_PROC
 static int remote_set_pid_cap(pid_t pid, const kernel_krg_cap_t *cap);
+#endif
 
 static int krg_set_father_cap(struct task_struct *tsk,
 			      const kernel_krg_cap_t *requested_cap)
@@ -262,7 +264,9 @@ static int krg_get_cap(struct task_struct *tsk, kernel_krg_cap_t *resulting_cap)
 	return res;
 }
 
+#ifdef CONFIG_KRG_PROC
 static int remote_get_pid_cap(pid_t pid, kernel_krg_cap_t *cap);
+#endif
 
 static int krg_get_father_cap(struct task_struct *son,
 			      kernel_krg_cap_t *resulting_cap)
