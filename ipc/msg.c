@@ -42,6 +42,9 @@
 #include <asm/current.h>
 #include <asm/uaccess.h>
 #include "util.h"
+#ifdef CONFIG_KRG_IPC
+#include "krgmsg.h"
+#endif
 
 /*
  * one msg_receiver structure for each sleeping receiver:
@@ -68,7 +71,9 @@ struct msg_sender {
 #define SEARCH_NOTEQUAL		3
 #define SEARCH_LESSEQUAL	4
 
+#ifndef CONFIG_KRG_IPC
 #define msg_ids(ns)	((ns)->ids[IPC_MSG_IDS])
+#endif
 
 #define msg_unlock(msq)		ipc_unlock(&(msq)->q_perm)
 
@@ -76,6 +81,25 @@ static void freeque(struct ipc_namespace *, struct kern_ipc_perm *);
 static int newque(struct ipc_namespace *, struct ipc_params *);
 #ifdef CONFIG_PROC_FS
 static int sysvipc_msg_proc_show(struct seq_file *s, void *it);
+#endif
+
+
+#ifdef CONFIG_KRG_IPC
+int (*kh_ipc_msg_newque)(struct ipc_namespace *ns,
+			struct msg_queue *msq) = NULL;
+
+void (*kh_ipc_msg_freeque)(struct ipc_namespace *ns,
+			   struct kern_ipc_perm *ipcp);
+
+long (*kh_ipc_msg_rmid)(int msqid) = NULL;
+
+long (*kh_ipc_msgsnd)(int msqid, long mtype, void __user *mtext,
+		      size_t msgsz, int msgflg, struct ipc_namespace *ns,
+		      pid_t tgid) = NULL;
+
+long (*kh_ipc_msgrcv)(int msqid, long *pmtype, void __user *mtext,
+		      size_t msgsz, long msgtyp, int msgflg,
+		      struct ipc_namespace *ns, pid_t tgid) = NULL;
 #endif
 
 /*
@@ -217,6 +241,15 @@ static int newque(struct ipc_namespace *ns, struct ipc_params *params)
 	INIT_LIST_HEAD(&msq->q_receivers);
 	INIT_LIST_HEAD(&msq->q_senders);
 
+#ifdef CONFIG_KRG_IPC
+	if (is_krg_ipc(&msg_ids(ns))) {
+		retval = kh_ipc_msg_newque(ns, msq) ;
+		if (retval)
+			return retval;
+	} else
+		msq->q_perm.krgops = NULL;
+#endif
+
 	msg_unlock(msq);
 
 	return msq->q_perm.id;
@@ -276,7 +309,19 @@ static void expunge_all(struct msg_queue *msq, int res)
  * msg_ids.rw_mutex (writer) and the spinlock for this message queue are held
  * before freeque() is called. msg_ids.rw_mutex remains locked on exit.
  */
+#ifdef CONFIG_KRG_IPC
 static void freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
+{
+	if (is_krg_ipc(&msg_ids(ns)))
+		kh_ipc_msg_freeque(ns, ipcp);
+	else
+		local_master_freeque(ns, ipcp);
+}
+
+void local_master_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
+#else
+static void freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
+#endif
 {
 	struct list_head *tmp;
 	struct msg_queue *msq = container_of(ipcp, struct msg_queue, q_perm);
@@ -284,6 +329,9 @@ static void freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 	expunge_all(msq, -EIDRM);
 	ss_wakeup(&msq->q_senders, 1);
 	msg_rmid(ns, msq);
+#ifdef CONFIG_KRG_IPC
+	if (!is_krg_ipc(&msg_ids(ns)))
+#endif
 	msg_unlock(msq);
 
 	tmp = msq->q_messages.next;
@@ -527,15 +575,32 @@ SYSCALL_DEFINE3(msgctl, int, msqid, int, cmd, struct msqid_ds __user *, buf)
 		if (!buf)
 			return -EFAULT;
 
+#ifdef CONFIG_KRG_IPC
+		down_read(&msg_ids(ns).rw_mutex);
+#endif
 		if (cmd == MSG_STAT) {
 			msq = msg_lock(ns, msqid);
 			if (IS_ERR(msq))
+#ifdef CONFIG_KRG_IPC
+			{
+				up_read(&msg_ids(ns).rw_mutex);
 				return PTR_ERR(msq);
+			}
+#else
+				return PTR_ERR(msq);
+#endif
 			success_return = msq->q_perm.id;
 		} else {
 			msq = msg_lock_check(ns, msqid);
 			if (IS_ERR(msq))
+#ifdef CONFIG_KRG_IPC
+			{
+				up_read(&msg_ids(ns).rw_mutex);
 				return PTR_ERR(msq);
+			}
+#else
+				return PTR_ERR(msq);
+#endif
 			success_return = 0;
 		}
 		err = -EACCES;
@@ -558,6 +623,9 @@ SYSCALL_DEFINE3(msgctl, int, msqid, int, cmd, struct msqid_ds __user *, buf)
 		tbuf.msg_lspid  = msq->q_lspid;
 		tbuf.msg_lrpid  = msq->q_lrpid;
 		msg_unlock(msq);
+#ifdef CONFIG_KRG_IPC
+		up_read(&msg_ids(ns).rw_mutex);
+#endif
 		if (copy_msqid_to_user(buf, &tbuf, version))
 			return -EFAULT;
 		return success_return;
@@ -572,6 +640,9 @@ SYSCALL_DEFINE3(msgctl, int, msqid, int, cmd, struct msqid_ds __user *, buf)
 
 out_unlock:
 	msg_unlock(msq);
+#ifdef CONFIG_KRG_IPC
+	up_read(&msg_ids(ns).rw_mutex);
+#endif
 	return err;
 }
 
@@ -632,12 +703,42 @@ static inline int pipelined_send(struct msg_queue *msq, struct msg_msg *msg)
 	return 0;
 }
 
+#ifdef CONFIG_KRG_IPC
+long do_msgsnd(int msqid, long mtype, void __user *mtext,
+	       size_t msgsz, int msgflg)
+{
+	long r;
+	struct ipc_namespace *ns;
+	ns = current->nsproxy->ipc_ns;
+
+	if (msgsz > ns->msg_ctlmax || (long) msgsz < 0 || msqid < 0)
+		return -EINVAL;
+	if (mtype < 1)
+		return -EINVAL;
+
+	if (is_krg_ipc(&msg_ids(ns)))
+		r = kh_ipc_msgsnd(msqid, mtype, mtext, msgsz, msgflg,
+				  ns, task_tgid_vnr(current));
+	else {
+		r = __do_msgsnd(msqid, mtype, mtext, msgsz, msgflg,
+				ns, task_tgid_vnr(current));
+	}
+
+	return r;
+}
+
+long __do_msgsnd(int msqid, long mtype, void __user *mtext,
+		 size_t msgsz, int msgflg, struct ipc_namespace *ns,
+		 pid_t tgid)
+#else
 long do_msgsnd(int msqid, long mtype, void __user *mtext,
 		size_t msgsz, int msgflg)
+#endif
 {
 	struct msg_queue *msq;
 	struct msg_msg *msg;
 	int err;
+#ifndef CONFIG_KRG_IPC
 	struct ipc_namespace *ns;
 
 	ns = current->nsproxy->ipc_ns;
@@ -646,6 +747,7 @@ long do_msgsnd(int msqid, long mtype, void __user *mtext,
 		return -EINVAL;
 	if (mtype < 1)
 		return -EINVAL;
+#endif
 
 	msg = load_msg(mtext, msgsz);
 	if (IS_ERR(msg))
@@ -654,6 +756,9 @@ long do_msgsnd(int msqid, long mtype, void __user *mtext,
 	msg->m_type = mtype;
 	msg->m_ts = msgsz;
 
+#ifdef CONFIG_KRG_IPC
+	down_read(&msg_ids(ns).rw_mutex);
+#endif
 	msq = msg_lock_check(ns, msqid);
 	if (IS_ERR(msq)) {
 		err = PTR_ERR(msq);
@@ -682,16 +787,31 @@ long do_msgsnd(int msqid, long mtype, void __user *mtext,
 			goto out_unlock_free;
 		}
 		ss_add(msq, &s);
+#ifndef CONFIG_KRG_IPC
 		ipc_rcu_getref(msq);
+#endif
 		msg_unlock(msq);
+#ifdef CONFIG_KRG_IPC
+		up_read(&msg_ids(ns).rw_mutex);
+#endif
+
 		schedule();
 
+#ifdef CONFIG_KRG_IPC
+		down_read(&msg_ids(ns).rw_mutex);
+		msq = msg_lock_check(ns, msqid);
+		if (IS_ERR(msq)) {
+			err = -EIDRM;
+			goto out_free;
+		}
+#else
 		ipc_lock_by_ptr(&msq->q_perm);
 		ipc_rcu_putref(msq);
 		if (msq->q_perm.deleted) {
 			err = -EIDRM;
 			goto out_unlock_free;
 		}
+#endif
 		ss_del(&s);
 
 		if (signal_pending(current)) {
@@ -700,7 +820,11 @@ long do_msgsnd(int msqid, long mtype, void __user *mtext,
 		}
 	}
 
+#ifdef CONFIG_KRG_IPC
+	msq->q_lspid = tgid;
+#else
 	msq->q_lspid = task_tgid_vnr(current);
+#endif
 	msq->q_stime = get_seconds();
 
 	if (!pipelined_send(msq, msg)) {
@@ -720,6 +844,11 @@ out_unlock_free:
 out_free:
 	if (msg != NULL)
 		free_msg(msg);
+
+#ifdef CONFIG_KRG_IPC
+	up_read(&msg_ids(ns).rw_mutex);
+#endif
+
 	return err;
 }
 
@@ -752,22 +881,58 @@ static inline int convert_mode(long *msgtyp, int msgflg)
 	return SEARCH_EQUAL;
 }
 
+#ifdef CONFIG_KRG_IPC
+long do_msgrcv(int msqid, long *pmtype, void __user *mtext,
+	       size_t msgsz, long msgtyp, int msgflg)
+{
+	long r;
+	struct ipc_namespace *ns = current->nsproxy->ipc_ns;
+
+	if (is_krg_ipc(&msg_ids(ns)))
+		r = kh_ipc_msgrcv(msqid, pmtype, mtext, msgsz, msgtyp, msgflg,
+				  ns, task_tgid_vnr(current));
+	else
+		r = __do_msgrcv(msqid, pmtype, mtext, msgsz, msgtyp, msgflg,
+				ns, task_tgid_vnr(current));
+
+	return r;
+}
+
+long __do_msgrcv(int msqid, long *pmtype, void __user *mtext,
+		 size_t msgsz, long msgtyp, int msgflg,
+		 struct ipc_namespace *ns, pid_t tgid)
+#else
 long do_msgrcv(int msqid, long *pmtype, void __user *mtext,
 		size_t msgsz, long msgtyp, int msgflg)
+#endif
 {
 	struct msg_queue *msq;
 	struct msg_msg *msg;
 	int mode;
+#ifndef CONFIG_KRG_IPC
 	struct ipc_namespace *ns;
+#endif
 
 	if (msqid < 0 || (long) msgsz < 0)
 		return -EINVAL;
 	mode = convert_mode(&msgtyp, msgflg);
+#ifndef CONFIG_KRG_IPC
 	ns = current->nsproxy->ipc_ns;
+#endif
 
+#ifdef CONFIG_KRG_IPC
+	down_read(&msg_ids(ns).rw_mutex);
+#endif
 	msq = msg_lock_check(ns, msqid);
 	if (IS_ERR(msq))
+#ifdef CONFIG_KRG_IPC
+	{
+		up_read(&msg_ids(ns).rw_mutex);
 		return PTR_ERR(msq);
+	}
+#else
+		return PTR_ERR(msq);
+#endif
 
 	for (;;) {
 		struct msg_receiver msr_d;
@@ -811,12 +976,19 @@ long do_msgrcv(int msqid, long *pmtype, void __user *mtext,
 			list_del(&msg->m_list);
 			msq->q_qnum--;
 			msq->q_rtime = get_seconds();
+#ifdef CONFIG_KRG_IPC
+			msq->q_lrpid = tgid;
+#else
 			msq->q_lrpid = task_tgid_vnr(current);
+#endif
 			msq->q_cbytes -= msg->m_ts;
 			atomic_sub(msg->m_ts, &ns->msg_bytes);
 			atomic_dec(&ns->msg_hdrs);
 			ss_wakeup(&msq->q_senders, 0);
 			msg_unlock(msq);
+#ifdef CONFIG_KRG_IPC
+			up_read(&msg_ids(ns).rw_mutex);
+#endif
 			break;
 		}
 		/* No message waiting. Wait for a message */
@@ -835,9 +1007,21 @@ long do_msgrcv(int msqid, long *pmtype, void __user *mtext,
 		msr_d.r_msg = ERR_PTR(-EAGAIN);
 		current->state = TASK_INTERRUPTIBLE;
 		msg_unlock(msq);
+#ifdef CONFIG_KRG_IPC
+		up_read(&msg_ids(ns).rw_mutex);
+#endif
 
 		schedule();
 
+
+#ifdef CONFIG_KRG_IPC
+		down_read(&msg_ids(ns).rw_mutex);
+		msq = msg_lock_check(ns, msqid);
+		if (IS_ERR(msq)) {
+			up_read(&msg_ids(ns).rw_mutex);
+			return -EIDRM;
+		}
+#else
 		/* Lockless receive, part 1:
 		 * Disable preemption.  We don't hold a reference to the queue
 		 * and getting a reference would defeat the idea of a lockless
@@ -879,6 +1063,7 @@ long do_msgrcv(int msqid, long *pmtype, void __user *mtext,
 		/* Lockless receive, part 4:
 		 * Repeat test after acquiring the spinlock.
 		 */
+#endif
 		msg = (struct msg_msg*)msr_d.r_msg;
 		if (msg != ERR_PTR(-EAGAIN))
 			goto out_unlock;
@@ -888,6 +1073,9 @@ long do_msgrcv(int msqid, long *pmtype, void __user *mtext,
 			msg = ERR_PTR(-ERESTARTNOHAND);
 out_unlock:
 			msg_unlock(msq);
+#ifdef CONFIG_KRG_IPC
+			up_read(&msg_ids(ns).rw_mutex);
+#endif
 			break;
 		}
 	}

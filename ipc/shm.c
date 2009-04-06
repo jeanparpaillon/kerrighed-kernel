@@ -407,6 +407,10 @@ static int newseg(struct ipc_namespace *ns, struct ipc_params *params)
 
 	ns->shm_tot += numpages;
 	error = shp->shm_perm.id;
+
+#ifdef CONFIG_KRG_IPC
+	shp->shm_perm.krgops = NULL;
+#endif
 	shm_unlock(shp);
 	return error;
 

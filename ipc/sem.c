@@ -87,6 +87,10 @@
 #include <asm/uaccess.h>
 #include "util.h"
 
+#ifdef CONFIG_KRG_IPC
+#define assert_mutex_locked(x) BUG_ON(!mutex_is_locked(x))
+#endif
+
 #define sem_ids(ns)	((ns)->ids[IPC_SEM_IDS])
 
 #define sem_unlock(sma)		ipc_unlock(&(sma)->sem_perm)
@@ -276,6 +280,10 @@ static int newary(struct ipc_namespace *ns, struct ipc_params *params)
 	INIT_LIST_HEAD(&sma->list_id);
 	sma->sem_nsems = nsems;
 	sma->sem_ctime = get_seconds();
+
+#ifdef CONFIG_KRG_IPC
+	sma->sem_perm.krgops = NULL;
+#endif
 	sem_unlock(sma);
 
 	return sma->sem_perm.id;
@@ -521,7 +529,11 @@ static void freeary(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 	struct sem_array *sma = container_of(ipcp, struct sem_array, sem_perm);
 
 	/* Free the existing undo structures for this semaphore set.  */
+#ifdef CONFIG_KRG_IPC
+	assert_mutex_locked(&sma->sem_perm.mutex);
+#else
 	assert_spin_locked(&sma->sem_perm.lock);
+#endif
 	list_for_each_entry_safe(un, tu, &sma->list_id, list_id) {
 		list_del(&un->list_id);
 		spin_lock(&un->ulp->lock);
@@ -752,7 +764,11 @@ static int semctl_main(struct ipc_namespace *ns, int semid, int semnum,
 		for (i = 0; i < nsems; i++)
 			sma->sem_base[i].semval = sem_io[i];
 
+#ifdef CONFIG_KRG_IPC
+		assert_mutex_locked(&sma->sem_perm.mutex);
+#else
 		assert_spin_locked(&sma->sem_perm.lock);
+#endif
 		list_for_each_entry(un, &sma->list_id, list_id) {
 			for (i = 0; i < nsems; i++)
 				un->semadj[i] = 0;
@@ -793,7 +809,12 @@ static int semctl_main(struct ipc_namespace *ns, int semid, int semnum,
 		if (val > SEMVMX || val < 0)
 			goto out_unlock;
 
+
+#ifdef CONFIG_KRG_IPC
+		assert_mutex_locked(&sma->sem_perm.mutex);
+#else
 		assert_spin_locked(&sma->sem_perm.lock);
+#endif
 		list_for_each_entry(un, &sma->list_id, list_id)
 			un->semadj[semnum] = 0;
 
@@ -1043,7 +1064,11 @@ static struct sem_undo *find_alloc_undo(struct ipc_namespace *ns, int semid)
 	new->semid = semid;
 	assert_spin_locked(&ulp->lock);
 	list_add_rcu(&new->list_proc, &ulp->list_proc);
+#ifdef CONFIG_KRG_IPC
+	assert_mutex_locked(&sma->sem_perm.mutex);
+#else
 	assert_spin_locked(&sma->sem_perm.lock);
+#endif
 	list_add(&new->list_id, &sma->list_id);
 	un = new;
 
@@ -1317,7 +1342,12 @@ void exit_sem(struct task_struct *tsk)
 		}
 
 		/* remove un from the linked lists */
+#ifdef CONFIG_KRG_IPC
+		assert_mutex_locked(&sma->sem_perm.mutex);
+#else
 		assert_spin_locked(&sma->sem_perm.lock);
+#endif
+
 		list_del(&un->list_id);
 
 		spin_lock(&ulp->lock);

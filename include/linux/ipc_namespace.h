@@ -15,6 +15,9 @@
 
 #define IPCNS_CALLBACK_PRI 0
 
+#ifdef CONFIG_KRG_IPC
+struct krgipc_ops;
+#endif
 
 struct ipc_ids {
 	int in_use;
@@ -22,6 +25,9 @@ struct ipc_ids {
 	unsigned short seq_max;
 	struct rw_semaphore rw_mutex;
 	struct idr ipcs_idr;
+#ifdef CONFIG_KRG_IPC
+	struct krgipc_ops *krgops;
+#endif
 };
 
 struct ipc_namespace {

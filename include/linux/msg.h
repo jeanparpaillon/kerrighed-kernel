@@ -99,6 +99,10 @@ struct msg_queue {
 	struct list_head q_messages;
 	struct list_head q_receivers;
 	struct list_head q_senders;
+
+#ifdef CONFIG_KRG_IPC
+	int is_master;
+#endif
 };
 
 /* Helper routines for sys_msgsnd and sys_msgrcv */

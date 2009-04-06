@@ -11,6 +11,9 @@
 #define _IPC_UTIL_H
 
 #include <linux/err.h>
+#ifdef CONFIG_KRG_IPC
+#include <kerrighed/types.h>
+#endif
 
 #define SEQ_MULTIPLIER	(IPCMNI)
 
@@ -44,6 +47,12 @@ static inline void shm_init_ns(struct ipc_namespace *ns) { }
 static inline void sem_exit_ns(struct ipc_namespace *ns) { }
 static inline void msg_exit_ns(struct ipc_namespace *ns) { }
 static inline void shm_exit_ns(struct ipc_namespace *ns) { }
+#endif
+
+#ifdef CONFIG_KRG_IPC
+#define sem_ids(ns)     ((ns)->ids[IPC_SEM_IDS])
+#define msg_ids(ns)     ((ns)->ids[IPC_MSG_IDS])
+#define shm_ids(ns)     ((ns)->ids[IPC_SHM_IDS])
 #endif
 
 /*
@@ -158,18 +167,54 @@ static inline int ipc_checkid(struct kern_ipc_perm *ipcp, int uid)
 
 static inline void ipc_lock_by_ptr(struct kern_ipc_perm *perm)
 {
+#ifdef CONFIG_KRG_IPC
+	BUG_ON(perm->krgops);
+#endif
 	rcu_read_lock();
+#ifdef CONFIG_KRG_IPC
+	mutex_lock(&perm->mutex);
+#else
 	spin_lock(&perm->lock);
+#endif
 }
 
+#ifdef CONFIG_KRG_IPC
+void ipc_unlock(struct kern_ipc_perm *perm);
+
+void local_ipc_unlock(struct kern_ipc_perm *perm);
+#else
 static inline void ipc_unlock(struct kern_ipc_perm *perm)
 {
 	spin_unlock(&perm->lock);
 	rcu_read_unlock();
 }
+#endif
 
 struct kern_ipc_perm *ipc_lock_check(struct ipc_ids *ids, int id);
 int ipcget(struct ipc_namespace *ns, struct ipc_ids *ids,
 			struct ipc_ops *ops, struct ipc_params *params);
+
+#ifdef CONFIG_KRG_IPC
+
+struct krgipc_ops {
+	unique_id_t map_kddm;
+	unique_id_t key_kddm;
+	unique_id_t data_kddm;
+
+	struct kern_ipc_perm *(*ipc_lock)(struct ipc_ids *, int);
+	void (*ipc_unlock)(struct kern_ipc_perm *);
+	struct kern_ipc_perm *(*ipc_findkey)(struct ipc_ids *, key_t);
+};
+
+extern struct krgipc_ops krg_sysvipc_msg_ops;
+
+int local_ipc_reserveid(struct ipc_ids* ids, struct kern_ipc_perm* new,
+                        int size);
+
+void local_ipc_rmid(struct ipc_ids* ids, int ipc_id);
+
+int is_krg_ipc(struct ipc_ids *ids);
+
+#endif
 
 #endif

@@ -2,6 +2,7 @@
 #define _LINUX_IPC_H
 
 #include <linux/types.h>
+#include <linux/mutex.h>
 
 #define IPC_PRIVATE ((__kernel_key_t) 0)  
 
@@ -84,10 +85,18 @@ struct ipc_kludge {
 
 #define IPCMNI 32768  /* <= MAX_INT limit for ipc arrays (including sysctl changes) */
 
+#ifdef CONFIG_KRG_IPC
+struct krgipc_ops;
+#endif
+
 /* used by in-kernel data structures */
 struct kern_ipc_perm
 {
+#ifdef CONFIG_KRG_IPC
+	struct mutex    mutex;
+#else
 	spinlock_t	lock;
+#endif
 	int		deleted;
 	int		id;
 	key_t		key;
@@ -98,6 +107,9 @@ struct kern_ipc_perm
 	mode_t		mode; 
 	unsigned long	seq;
 	void		*security;
+#ifdef CONFIG_KRG_IPC
+	struct krgipc_ops *krgops;
+#endif
 };
 
 #endif /* __KERNEL__ */

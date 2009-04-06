@@ -153,7 +153,8 @@ config KRG_FAF
 
 config KRG_IPC
 	bool "KerIPC"
-	depends on KERRIGHED && KRG_KDDM && KRG_MM
+#	depends on KERRIGHED && KRG_KDDM && KRG_MM
+	depends on KERRIGHED && KRG_KDDM
 	help
 	  Kerrighed's global IPC management
 
