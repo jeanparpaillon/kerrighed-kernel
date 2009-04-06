@@ -2,6 +2,11 @@
 #define _LINUX_SEM_H
 
 #include <linux/ipc.h>
+#ifdef CONFIG_KRG_IPC
+#include <linux/unique_id.h>
+#include <kerrighed/krginit.h>
+#include <kerrighed/types.h>
+#endif
 
 /* semop flags */
 #define SEM_UNDO        0x1000  /* undo the operation on exit */
@@ -97,6 +102,9 @@ struct sem_array {
 	struct list_head	sem_pending;	/* pending operations to be processed */
 	struct list_head	list_id;	/* undo requests on this array */
 	unsigned long		sem_nsems;	/* no. of semaphores in array */
+#ifdef CONFIG_KRG_IPC
+	struct list_head        remote_sem_pending;
+#endif
 };
 
 /* One queue for each sleeping process in the system. */
@@ -109,12 +117,20 @@ struct sem_queue {
 	struct sembuf		*sops;	 /* array of pending operations */
 	int			nsops;	 /* number of operations */
 	int			alter;   /* does the operation alter the array? */
+#ifdef CONFIG_KRG_IPC
+	int                     semid;
+	kerrighed_node_t        node;
+#endif
 };
 
 /* Each task has a list of undo requests. They are executed automatically
  * when the process exits.
  */
 struct sem_undo {
+#ifdef CONFIG_KRG_IPC
+	unique_id_t             proc_list_id;
+	/* list_proc is useless in KRG code */
+#endif
 	struct list_head	list_proc;	/* per-process list: all undos from one process. */
 						/* rcu protected */
 	struct rcu_head		rcu;		/* rcu struct for sem_undo() */
@@ -134,6 +150,10 @@ struct sem_undo_list {
 };
 
 struct sysv_sem {
+#ifdef CONFIG_KRG_IPC
+	unique_id_t undo_list_id;
+	/* pointer to undo_list is useless in KRG code */
+#endif
 	struct sem_undo_list *undo_list;
 };
 

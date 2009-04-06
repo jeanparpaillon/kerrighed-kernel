@@ -45,6 +45,7 @@
 #include "ipcmap_io_linker.h"
 #include "ipc_handler.h"
 #include "msg_handler.h"
+#include "sem_handler.h"
 #endif
 
 struct ipc_proc_iface {
@@ -820,7 +821,7 @@ void ipc64_perm_to_ipc_perm (struct ipc64_perm *in, struct ipc_perm *out)
  * The ipc object is locked on exit.
  */
 #ifdef CONFIG_KRG_IPC
-static struct kern_ipc_perm *local_ipc_lock(struct ipc_ids *ids, int id)
+struct kern_ipc_perm *local_ipc_lock(struct ipc_ids *ids, int id)
 #else
 struct kern_ipc_perm *ipc_lock(struct ipc_ids *ids, int id)
 #endif
@@ -1215,6 +1216,8 @@ int init_keripc(void)
 	ipc_handler_init();
 
 	msg_handler_init();
+
+	sem_handler_init();
 
 	printk("KrgIPC initialisation done\n");
 

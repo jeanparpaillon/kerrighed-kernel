@@ -130,6 +130,9 @@ void ipc_rcu_getref(void *ptr);
 void ipc_rcu_putref(void *ptr);
 
 struct kern_ipc_perm *ipc_lock(struct ipc_ids *, int);
+#ifdef CONFIG_KRG_IPC
+struct kern_ipc_perm *local_ipc_lock(struct ipc_ids *ids, int id);
+#endif
 
 void kernel_to_ipc64_perm(struct kern_ipc_perm *in, struct ipc64_perm *out);
 void ipc64_perm_to_ipc_perm(struct ipc64_perm *in, struct ipc_perm *out);
@@ -207,6 +210,7 @@ struct krgipc_ops {
 };
 
 extern struct krgipc_ops krg_sysvipc_msg_ops;
+extern struct krgipc_ops krg_sysvipc_sem_ops;
 
 int local_ipc_reserveid(struct ipc_ids* ids, struct kern_ipc_perm* new,
                         int size);

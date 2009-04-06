@@ -2,13 +2,6 @@
 #define __KKRG_MSG__
 
 /** Kerrighed Hooks **/
-extern struct msg_queue * (*kh_ipc_msg_lock)(struct ipc_namespace *ns,
-					     int id);
-
-extern struct msg_queue * (*kh_ipc_msg_lock_check)(struct ipc_namespace *ns,
-						   int id);
-
-extern void (*kh_ipc_msg_unlock)(struct msg_queue *msq);
 
 extern int (*kh_ipc_msg_newque)(struct ipc_namespace *ns,
 				struct msg_queue *msq);

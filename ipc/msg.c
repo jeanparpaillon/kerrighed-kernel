@@ -244,8 +244,11 @@ static int newque(struct ipc_namespace *ns, struct ipc_params *params)
 #ifdef CONFIG_KRG_IPC
 	if (is_krg_ipc(&msg_ids(ns))) {
 		retval = kh_ipc_msg_newque(ns, msq) ;
-		if (retval)
+		if (retval) {
+			security_msg_queue_free(msq);
+			ipc_rcu_putref(msq);
 			return retval;
+		}
 	} else
 		msq->q_perm.krgops = NULL;
 #endif
