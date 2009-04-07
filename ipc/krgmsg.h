@@ -17,8 +17,6 @@ extern long (*kh_ipc_msgrcv)(int msqid, long *pmtype, void __user *mtext,
 			     size_t msgsz, long msgtyp, int msgflg,
 			     struct ipc_namespace *ns, pid_t tgid);
 
-#define msg_ids(ns)	((ns)->ids[IPC_MSG_IDS])
-
 static inline void local_msg_unlock(struct msg_queue *msq)
 {
 	local_ipc_unlock(&(msq)->q_perm);

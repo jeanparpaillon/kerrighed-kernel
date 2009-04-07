@@ -238,16 +238,17 @@ int msq_remove_object (void *object,
  *  @param  object    The object to export data from.
  */
 int msq_export_object (struct rpc_desc *desc,
-			 struct kddm_obj *obj_entry)
+		       struct kddm_obj *obj_entry)
 {
 	msq_object_t *msq_object;
+	int r;
 
 	msq_object = obj_entry->object;
 	msq_object->mobile_msq = *msq_object->local_msq;
 
-	rpc_pack(desc, 0, msq_object, sizeof(msq_object_t));
+	r = rpc_pack(desc, 0, msq_object, sizeof(msq_object_t));
 
-	return 0;
+	return r;
 }
 
 
@@ -263,10 +264,13 @@ int msq_import_object (struct kddm_obj *obj_entry,
 {
 	msq_object_t *msq_object, buffer;
 	struct msg_queue *msq;
+	int r;
 
 	msq_object = obj_entry->object;
 
-	rpc_unpack(desc, 0, &buffer, sizeof(msq_object_t));
+	r = rpc_unpack(desc, 0, &buffer, sizeof(msq_object_t));
+	if (r)
+		goto error;
 
 	msq_object->mobile_msq = buffer.mobile_msq;
 
@@ -274,7 +278,8 @@ int msq_import_object (struct kddm_obj *obj_entry,
 		msq = msq_object->local_msq;
 	}
 
-	return 0;
+error:
+	return r;
 }
 
 
