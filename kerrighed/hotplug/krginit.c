@@ -588,6 +588,7 @@ void __init kerrighed_init(void){
 	global_pid_init();
 
 	printk("Kerrighed: stage 1\n");
+
 	init_sysfs();
 	krg_wq = create_workqueue("krg");
 	krg_nb_wq = create_workqueue("krgNB");

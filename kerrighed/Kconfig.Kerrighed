@@ -101,6 +101,9 @@ config KRG_KDDM
 
 	  If unsure, say Y.
 
+config KRG_KDDM_DEBUG
+	def_bool KRG_KDDM && KRG_DEBUG
+
 config KRG_CAP
 	bool "KerCapabilities"
 	depends on KERRIGHED

@@ -49,6 +49,9 @@
 #include <linux/fs_struct.h>
 #include <linux/init_task.h>
 #include <trace/sched.h>
+#ifdef CONFIG_KRG_KDDM
+#include <kddm/kddm_info.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -979,6 +982,10 @@ NORET_TYPE void do_exit(long code)
 #ifdef CONFIG_NUMA
 	mpol_put(tsk->mempolicy);
 	tsk->mempolicy = NULL;
+#endif
+#ifdef CONFIG_KRG_KDDM
+	if (tsk->kddm_info)
+		kmem_cache_free(kddm_info_cachep, tsk->kddm_info);
 #endif
 #ifdef CONFIG_FUTEX
 	/*

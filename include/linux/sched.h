@@ -1429,6 +1429,9 @@ struct task_struct {
 	/* state flags for use by tracers */
 	unsigned long trace;
 #endif
+#ifdef CONFIG_KRG_KDDM
+	struct kddm_info_struct *kddm_info;
+#endif
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */

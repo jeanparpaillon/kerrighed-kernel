@@ -81,6 +81,10 @@
 #include <linux/elf.h>
 #include <linux/pid_namespace.h>
 #include <linux/fs_struct.h>
+#ifdef CONFIG_KRG_KDDM
+#include <kerrighed/krgnodemask.h>
+#include <kddm/kddm.h>
+#endif
 #include "internal.h"
 
 /* NOTE:
@@ -543,6 +547,84 @@ static int proc_pid_syscall(struct task_struct *task, char *buffer)
 		       sp, pc);
 }
 #endif /* CONFIG_HAVE_ARCH_TRACEHOOK */
+
+#ifdef CONFIG_KRG_KDDM
+
+static int proc_kddm_print_wq(char *buffer, wait_queue_head_t *q)
+{
+	wait_queue_t *curr;
+	int len = 0;
+
+	list_for_each_entry(curr, &q->task_list, task_list) {
+		struct task_struct *tsk = curr->private;
+
+		len += sprintf (buffer +len, "%s (%d) ", tsk->comm, tsk->pid);
+	}
+	return len;
+}
+
+static int proc_tid_kddm(struct task_struct *task, char *buffer)
+{
+	struct kddm_info_struct info;
+	struct kddm_set *set;
+	struct kddm_obj *obj_entry;
+	int len = 0;
+
+	if (!task->kddm_info)
+		goto done;
+	info = *task->kddm_info;
+
+	len += sprintf (buffer + len, "Get Object:          %ld\n",
+			info.get_object_counter);
+
+	len += sprintf (buffer + len, "Grab Object:         %ld\n",
+			info.grab_object_counter);
+
+	len += sprintf (buffer + len, "Remove Object:       %ld\n",
+			info.remove_object_counter);
+
+	len += sprintf (buffer + len, "Flush Object:        %ld\n",
+			info.flush_object_counter);
+
+
+	obj_entry = get_kddm_obj_entry(info.ns_id, info.set_id, info.obj_id,
+				       &set);
+	if (!set)
+		goto done;
+	if (!obj_entry || obj_entry != info.wait_obj)
+		goto unlock;
+
+	len += sprintf (buffer + len, "Process wait on object "
+			"(%d;%ld;%ld) %p with state %s\n",
+			info.ns_id, info.set_id,
+			info.obj_id, obj_entry,
+			STATE_NAME (OBJ_STATE(obj_entry)));
+
+	len += sprintf (buffer + len, "  * Probe owner:   %d\n",
+			get_prob_owner(obj_entry));
+	len += sprintf (buffer + len, "  * Frozen count:  %d\n",
+			atomic_read(&obj_entry->frozen_count));
+	len += sprintf (buffer + len, "  * Sleeper count: %d\n",
+			atomic_read(&obj_entry->sleeper_count));
+	len += sprintf (buffer + len, "  * Object:        %p\n",
+			obj_entry->object);
+	len += sprintf (buffer + len, "  * Copy set: ");
+	len += krgnodemask_scnprintf(buffer + len, PAGE_SIZE - len,
+				     obj_entry->master_obj.copyset);
+	len += sprintf (buffer + len, "\n  * Remove set: ");
+	len += krgnodemask_scnprintf(buffer + len, PAGE_SIZE - len,
+				     obj_entry->master_obj.copyset);
+	len += sprintf (buffer + len, "\n  * Waiting processes: ");
+	len += proc_kddm_print_wq (buffer + len, &obj_entry->waiting_tsk);
+	len += sprintf (buffer + len, "\n");
+unlock:
+	kddm_obj_unlock(set, info.obj_id);
+done:
+
+	return len;
+}
+
+#endif /* CONFIG_KRG_KDDM */
 
 /************************************************************************/
 /*                       Here the fs part begins                        */
@@ -2829,6 +2911,9 @@ static const struct pid_entry tid_base_stuff[] = {
 	INF("cmdline",   S_IRUGO, proc_pid_cmdline),
 	ONE("stat",      S_IRUGO, proc_tid_stat),
 	ONE("statm",     S_IRUGO, proc_pid_statm),
+#ifdef CONFIG_KRG_KDDM
+	INF("kddm",      S_IRUGO, proc_tid_kddm),
+#endif
 	REG("maps",      S_IRUGO, proc_maps_operations),
 #ifdef CONFIG_NUMA
 	REG("numa_maps", S_IRUGO, proc_numa_maps_operations),
