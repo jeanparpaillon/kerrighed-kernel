@@ -25,9 +25,6 @@
 
 #define KERRIGHED_MAX_CLUSTERS   256
 #define KERRIGHED_NODE_ID_NONE    -1        /* Invalid node id */
-#define KERRIGHED_MAX_CPU_PER_NODE 4
-
-#define KERRIGHED_MAX_CPU (KERRIGHED_MAX_NODES * KERRIGHED_MAX_CPU_PER_NODE)
 
 /*--------------------------------------------------------------------------*
  *                                                                          *

@@ -23,13 +23,16 @@ extern int proc_net_init(void);
 static inline int proc_net_init(void) { return 0; }
 #endif
 
+#ifndef CONFIG_KRG_PROCFS
 struct vmalloc_info {
 	unsigned long	used;
 	unsigned long	largest_chunk;
 };
+#endif /* !CONFIG_KRG_PROCFS */
 
 extern struct mm_struct *mm_for_maps(struct task_struct *);
 
+#ifndef CONFIG_KRG_PROCFS
 #ifdef CONFIG_MMU
 #define VMALLOC_TOTAL (VMALLOC_END - VMALLOC_START)
 extern void get_vmalloc_info(struct vmalloc_info *vmi);
@@ -42,6 +45,10 @@ do {						\
 	(vmi)->largest_chunk = 0;		\
 } while(0)
 #endif
+#else /* CONFIG_KRG_PROCFS */
+/* Moved into: */
+#include <linux/procfs_internal.h>
+#endif /* CONFIG_KRG_PROCFS */
 
 extern int proc_tid_stat(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *task);

@@ -82,6 +82,9 @@
 #include <linux/pid_namespace.h>
 #include <linux/ptrace.h>
 #include <linux/tracehook.h>
+#ifdef CONFIG_KRG_PROCFS
+#include <kerrighed/cpu_id.h>
+#endif
 
 #include <asm/pgtable.h>
 #include <asm/processor.h>
@@ -496,7 +499,11 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 		0UL,
 		0UL,
 		task->exit_signal,
+#ifdef CONFIG_KRG_PROCFS
+		krg_cpu_id(task_cpu(task)),
+#else
 		task_cpu(task),
+#endif
 		task->rt_priority,
 		task->policy,
 		(unsigned long long)delayacct_blkio_ticks(task),
