@@ -48,6 +48,12 @@ struct linux_binprm{
 	struct file * file;
 	struct cred *cred;	/* new credentials */
 	int unsafe;		/* how unsafe this exec is (mask of LSM_UNSAFE_*) */
+#ifdef CONFIG_KRG_CAP
+	/* The model needs changes with filesystem support ... */
+#if 0
+	kernel_cap_t krg_cap_permitted, krg_cap_forced, krg_cap_effective;
+#endif /* 0 */
+#endif /* CONFIG_KRG_CAP */
 	unsigned int per_clear;	/* bits to clear in current->personality */
 	int argc, envc;
 	char * filename;	/* Name of binary as seen by procps */

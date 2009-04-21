@@ -88,6 +88,9 @@ struct sched_param {
 #include <linux/kobject.h>
 #include <linux/latencytop.h>
 #include <linux/cred.h>
+#ifdef CONFIG_KRG_CAP
+#include <kerrighed/capabilities.h>
+#endif
 
 #include <asm/processor.h>
 
@@ -1428,6 +1431,12 @@ struct task_struct {
 #ifdef CONFIG_TRACING
 	/* state flags for use by tracers */
 	unsigned long trace;
+#endif
+#ifdef CONFIG_KRG_CAP
+	kernel_krg_cap_t krg_caps;
+	atomic_t krg_cap_used[CAP_SIZE];
+	atomic_t krg_cap_unavailable[CAP_SIZE];
+	atomic_t krg_cap_unavailable_private[CAP_SIZE];
 #endif
 #ifdef CONFIG_KRG_KDDM
 	struct kddm_info_struct *kddm_info;

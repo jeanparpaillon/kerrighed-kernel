@@ -54,6 +54,9 @@
 #include <linux/kmod.h>
 #include <linux/fsnotify.h>
 #include <linux/fs_struct.h>
+#ifdef CONFIG_KRG_CAP
+#include <kerrighed/capabilities.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
@@ -1105,6 +1108,12 @@ int prepare_binprm(struct linux_binprm *bprm)
 		return retval;
 	bprm->cred_prepared = 1;
 
+#ifdef CONFIG_KRG_CAP
+	retval = krg_cap_prepare_binprm(bprm);
+	if (retval)
+		return retval;
+#endif
+
 	memset(bprm->buf, 0, BINPRM_BUF_SIZE);
 	return kernel_read(bprm->file, 0, bprm->buf, BINPRM_BUF_SIZE);
 }
@@ -1332,6 +1341,9 @@ int do_execve(char * filename,
 	current->fs->in_exec = 0;
 	current->in_execve = 0;
 	mutex_unlock(&current->cred_exec_mutex);
+#ifdef CONFIG_KRG_CAP
+	krg_cap_finish_exec(bprm);
+#endif
 	acct_update_integrals(current);
 	free_bprm(bprm);
 	if (displaced)

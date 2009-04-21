@@ -11,6 +11,9 @@
 #include <linux/user_namespace.h>
 #include <linux/securebits.h>
 #include <net/net_namespace.h>
+#ifdef CONFIG_KRG_CAP
+#include <kerrighed/capabilities.h>
+#endif
 
 extern struct files_struct init_files;
 extern struct fs_struct init_fs;
@@ -180,6 +183,7 @@ extern struct cred init_cred;
 	INIT_TRACE_IRQFLAGS						\
 	INIT_LOCKDEP							\
 	INIT_FTRACE_GRAPH						\
+	INIT_KRG_CAP							\
 	INIT_KDDM							\
 }
 

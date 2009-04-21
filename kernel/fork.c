@@ -1098,6 +1098,10 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	/* Perform scheduler related setup. Assign this task to a CPU. */
 	sched_fork(p, clone_flags);
 
+#ifdef CONFIG_KRG_CAP
+	krg_cap_fork(p, clone_flags);
+#endif /* CONFIG_KRG_CAP */
+
 #ifdef CONFIG_KRG_KDDM
 	if (!kh_copy_kddm_info)
 		p->kddm_info = NULL;
