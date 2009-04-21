@@ -28,11 +28,11 @@
 
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/hotplug.h>
+#include <kerrighed/libproc.h>
 #include <kddm/kddm.h>
 #ifdef CONFIG_KRG_EPM
 #include "pid.h"
 #endif
-#include "libproc.h"
 
 static struct kmem_cache *task_kddm_obj_cachep;
 
