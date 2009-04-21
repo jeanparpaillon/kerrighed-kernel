@@ -66,6 +66,10 @@
 #ifdef CONFIG_KRG_KDDM
 #include <kddm/kddm_info.h>
 #endif
+#ifdef CONFIG_KRG_PROC
+#include <kerrighed/task.h>
+#include <kerrighed/krginit.h>
+#endif
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -1216,6 +1220,12 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	cgroup_fork_callbacks(p);
 	cgroup_callbacks_done = 1;
 
+#ifdef CONFIG_KRG_PROC
+	retval = krg_task_alloc(p, pid);
+	if (retval)
+		goto bad_fork_free_graph;
+#endif
+
 	/* Need tasklist lock for parent etc handling! */
 	write_lock_irq(&tasklist_lock);
 
@@ -1265,6 +1275,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 		p->group_leader = current->group_leader;
 		list_add_tail_rcu(&p->thread_group, &p->group_leader->thread_group);
 	}
+#ifdef CONFIG_KRG_PROC
+	krg_task_fill(p, clone_flags);
+#endif
 
 	if (likely(p->pid)) {
 		list_add_tail(&p->sibling, &p->real_parent->children);
@@ -1289,12 +1302,18 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	total_forks++;
 	spin_unlock(&current->sighand->siglock);
 	write_unlock_irq(&tasklist_lock);
+#ifdef CONFIG_KRG_PROC
+	krg_task_commit(p);
+#endif
 	proc_fork_connector(p);
 	cgroup_post_fork(p);
 	return p;
 
 bad_fork_free_graph:
 	ftrace_graph_exit_task(p);
+#ifdef CONFIG_KRG_PROC
+	krg_task_abort(p);
+#endif
 bad_fork_free_pid:
 	if (pid != &init_struct_pid)
 		free_pid(pid);
@@ -1411,6 +1430,9 @@ long do_fork(unsigned long clone_flags,
 		}
 	}
 
+#ifdef CONFIG_KRG_PROC
+	down_read(&kerrighed_init_sem);
+#endif
 	/*
 	 * When called from kernel_thread, don't do user tracing stuff.
 	 */
@@ -1472,6 +1494,9 @@ long do_fork(unsigned long clone_flags,
 	} else {
 		nr = PTR_ERR(p);
 	}
+#ifdef CONFIG_KRG_PROC
+	up_read(&kerrighed_init_sem);
+#endif
 	return nr;
 }
 

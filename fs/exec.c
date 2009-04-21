@@ -57,6 +57,10 @@
 #ifdef CONFIG_KRG_CAP
 #include <kerrighed/capabilities.h>
 #endif
+#ifdef CONFIG_KRG_PROC
+#include <kerrighed/task.h>
+#include <kerrighed/krginit.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
@@ -787,7 +791,17 @@ static int de_thread(struct task_struct *tsk)
 	 */
 	if (!thread_group_leader(tsk)) {
 		struct task_struct *leader = tsk->group_leader;
+#ifdef CONFIG_KRG_PROC
+		struct task_kddm_object *obj;
+#ifdef CONFIG_KRG_EPM
+		struct children_kddm_object *parent_children_obj;
+		pid_t real_parent_tgid;
+#endif
+#endif
 
+#ifdef CONFIG_KRG_PROC
+		down_read(&kerrighed_init_sem);
+#endif
 		sig->notify_count = -1;	/* for exit_notify() */
 		for (;;) {
 			write_lock_irq(&tasklist_lock);
@@ -798,6 +812,37 @@ static int de_thread(struct task_struct *tsk)
 			schedule();
 		}
 
+#ifdef CONFIG_KRG_PROC
+		/* tsk->pid will disappear just below. */
+		obj = leader->task_obj;
+		BUG_ON(!obj ^ !tsk->task_obj);
+#ifdef CONFIG_KRG_EPM
+		parent_children_obj = rcu_dereference(tsk->parent_children_obj);
+#endif
+		if (
+		    obj
+#ifdef CONFIG_KRG_EPM
+		    || parent_children_obj
+#endif
+		   ) {
+			write_unlock_irq(&tasklist_lock);
+
+#ifdef CONFIG_KRG_EPM
+			if (parent_children_obj) {
+				parent_children_obj =
+					kh_parent_children_writelock(tsk,
+								     &real_parent_tgid);
+				kh_remove_child(parent_children_obj, tsk->pid);
+			}
+#endif /* CONFIG_KRG_EPM */
+			krg_task_free(tsk);
+
+			if (obj)
+				krg_task_writelock(leader->pid);
+
+			write_lock_irq(&tasklist_lock);
+		}
+#endif /* CONFIG_KRG_PROC */
 		/*
 		 * The only record we have of the real-time age of a
 		 * process, regardless of execs it's done, is start_time.
@@ -830,6 +875,11 @@ static int de_thread(struct task_struct *tsk)
 		transfer_pid(leader, tsk, PIDTYPE_PGID);
 		transfer_pid(leader, tsk, PIDTYPE_SID);
 		list_replace_rcu(&leader->tasks, &tsk->tasks);
+#ifdef CONFIG_KRG_PROC
+		if (likely(obj))
+			obj->task = tsk;
+		tsk->task_obj = obj;
+#endif
 
 		tsk->group_leader = tsk;
 		leader->group_leader = tsk;
@@ -839,8 +889,27 @@ static int de_thread(struct task_struct *tsk)
 		BUG_ON(leader->exit_state != EXIT_ZOMBIE);
 		leader->exit_state = EXIT_DEAD;
 		write_unlock_irq(&tasklist_lock);
+#ifdef CONFIG_KRG_PROC
+		/* tsk has taken leader's pid. */
+		if (obj)
+			krg_task_unlock(tsk->pid);
+#ifdef CONFIG_KRG_EPM
+		if (parent_children_obj) {
+			kh_set_child_exit_signal(parent_children_obj,
+						 tsk->pid,
+						 tsk->exit_signal);
+			kh_set_child_exit_state(parent_children_obj,
+						tsk->pid,
+						tsk->exit_state);
+			kh_children_unlock(real_parent_tgid);
+		}
+#endif /* CONFIG_KRG_EPM */
+#endif /* CONFIG_KRG_PROC */
 
 		release_task(leader);
+#ifdef CONFIG_KRG_PROC
+		up_read(&kerrighed_init_sem);
+#endif
 	}
 
 	sig->group_exit_task = NULL;

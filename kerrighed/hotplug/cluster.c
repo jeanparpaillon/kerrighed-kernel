@@ -29,9 +29,8 @@
 #ifdef CONFIG_KRG_PROC
 #include <kerrighed/task.h>
 #include <kerrighed/pid.h>
-#include <proc/task.h>
-#include <proc/signal_management.h>
 #ifdef CONFIG_KRG_EPM
+#include <kerrighed/signal.h>
 #include <proc/sighand_management.h>
 #include <proc/children.h>
 #endif
@@ -77,8 +76,8 @@ static void init_prekerrighed_process(void)
 
 		if (!(t->pid & GLOBAL_PID_MASK) || !t->mm) {
 			BUG_ON(t->task_obj);
-			BUG_ON(t->signal->krg_objid);
 #ifdef CONFIG_KRG_EPM
+			BUG_ON(t->signal->krg_objid);
 			BUG_ON(t->sighand->krg_objid);
 			BUG_ON(t->children_obj);
 #endif
@@ -88,10 +87,10 @@ static void init_prekerrighed_process(void)
 			continue;
 		}
 
-		kcb_fill_task_kddm_object(t);
+		krg_task_setup(t);
+#ifdef CONFIG_KRG_EPM
 		if (likely(kcb_malloc_signal_struct(t, 1)))
 			kcb_signal_struct_unlock(t->tgid);
-#ifdef CONFIG_KRG_EPM
 		kcb_malloc_sighand_struct(t, 1);
 		kcb_fill_children_kddm_object(t);
 #endif

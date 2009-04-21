@@ -1441,6 +1441,9 @@ struct task_struct {
 #ifdef CONFIG_KRG_KDDM
 	struct kddm_info_struct *kddm_info;
 #endif
+#ifdef CONFIG_KRG_PROC
+	struct task_kddm_object *task_obj;
+#endif
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */

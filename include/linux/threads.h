@@ -21,6 +21,7 @@
 
 #define MIN_THREADS_LEFT_FOR_ROOT 4
 
+#ifndef CONFIG_KRG_PROC
 /*
  * This controls the default maximum pid allocated to a process
  */
@@ -32,5 +33,25 @@
  */
 #define PID_MAX_LIMIT (CONFIG_BASE_SMALL ? PAGE_SIZE * 8 : \
 	(sizeof(long) > 4 ? 4 * 1024 * 1024 : PID_MAX_DEFAULT))
+
+#else /* CONFIG_KRG_PROC */
+
+#include <kerrighed/sys/types.h>
+
+/* We need the number of bits for Kerrighed PIDs definitions. */
+#define NR_BITS_PID_MAX_DEFAULT (CONFIG_BASE_SMALL ? 12 : 15)
+#define PID_MAX_DEFAULT (1 << NR_BITS_PID_MAX_DEFAULT)
+
+/*
+ * Maximise number of PID bits:
+ * - 29 bits are the limitation in futex.h,
+ * - node bits are defined in include/kerrighed/sys/types.h
+ */
+#define NR_BITS_PID_MAX_LIMIT (CONFIG_BASE_SMALL ? PAGE_SHIFT + 3 : \
+	(sizeof(long) > 4 ? (29 - NR_BITS_IN_MAX_NODE_ID) : \
+	NR_BITS_PID_MAX_DEFAULT))
+#define PID_MAX_LIMIT (1 << NR_BITS_PID_MAX_LIMIT)
+
+#endif /* CONFIG_KRG_PROC */
 
 #endif

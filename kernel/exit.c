@@ -52,6 +52,13 @@
 #ifdef CONFIG_KRG_KDDM
 #include <kddm/kddm_info.h>
 #endif
+#ifdef CONFIG_KRG_PROC
+#include <kerrighed/task.h>
+#include <kerrighed/krginit.h>
+#endif
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/signal.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -170,7 +177,19 @@ void release_task(struct task_struct * p)
 {
 	struct task_struct *leader;
 	int zap_leader;
+#ifdef CONFIG_KRG_EPM
+	pid_t signal_id;
+#endif
 repeat:
+#ifdef CONFIG_KRG_PROC
+	krg_release_task(p);
+#endif /* CONFIG_KRG_PROC */
+#ifdef CONFIG_KRG_EPM
+	signal_id = 0;
+	if (likely(p->exit_state != EXIT_MIGRATION))
+		if (kh_exit_signal)
+			signal_id = kh_exit_signal(p);
+#endif /* CONFIG_KRG_EPM */
 	tracehook_prepare_release_task(p);
 	/* don't need to get the RCU readlock here - the process is dead and
 	 * can't be modifying its own credentials */
@@ -211,6 +230,10 @@ repeat:
 
 	write_unlock_irq(&tasklist_lock);
 	release_thread(p);
+#ifdef CONFIG_KRG_EPM
+       if (signal_id)
+               kh_signal_struct_unlock(signal_id);
+#endif
 	call_rcu(&p->rcu, delayed_put_task_struct);
 
 	p = leader;
@@ -809,6 +832,29 @@ static void exit_notify(struct task_struct *tsk, int group_dead)
 	int signal;
 	void *cookie;
 
+#ifdef CONFIG_KRG_PROC
+#ifdef CONFIG_KRG_EPM
+	if (rcu_dereference(tsk->parent_children_obj))
+		parent_children_obj =
+			parent_children_writelock_pid_location_lock(
+				tsk,
+				&real_parent_tgid,
+				&real_parent_pid,
+				&parent_pid,
+				&parent_node);
+	if (tsk->children_obj) {
+		if (parent_children_obj)
+			kh_children_writelock_nested(tsk->tgid);
+		else
+			kh_children_writelock(tsk->tgid);
+	}
+	if (parent_children_obj)
+		kh_task_writelock_nested(tsk->pid);
+	else
+#endif /* CONFIG_KRG_EPM */
+		if (tsk->task_obj)
+			krg_task_writelock(tsk->pid);
+#endif /* CONFIG_KRG_PROC */
 	/*
 	 * This does two things:
 	 *
@@ -856,6 +902,35 @@ static void exit_notify(struct task_struct *tsk, int group_dead)
 		wake_up_process(tsk->signal->group_exit_task);
 
 	write_unlock_irq(&tasklist_lock);
+#ifdef CONFIG_KRG_EPM
+	if (parent_children_obj) {
+		kh_unlock_pid_location(parent_pid);
+		if (tsk->exit_signal == -1 && original_exit_signal != -1)
+			/* Parent was not interested by notification, but may
+			 * have been woken up in do_wait and should not see tsk
+			 * as a child anymore. Remove tsk from its children kddm
+			 * object before parent can access it again. */
+			kh_remove_child(parent_children_obj, tsk->pid);
+		else {
+			kh_set_child_exit_signal(parent_children_obj,
+						 tsk->pid, tsk->exit_signal);
+			kh_set_child_exit_state(parent_children_obj,
+						tsk->pid, tsk->exit_state);
+			kh_set_child_location(parent_children_obj,
+					      tsk->pid, kerrighed_node_id);
+		}
+		kh_children_unlock(real_parent_tgid);
+	}
+#endif /* CONFIG_KRG_EPM */
+#ifdef CONFIG_KRG_PROC
+       if (tsk->task_obj)
+		krg_task_unlock(tsk->pid);
+	/*
+	 * No kerrighed structure should be accessed after this point,
+	 * since the task may have already been released by its reaper.
+	 * The exception of course is the case in which the task self-reaps.
+	 */
+#endif /* CONFIG_KRG_PROC */
 
 	tracehook_report_death(tsk, signal, cookie, group_dead);
 
@@ -928,6 +1003,9 @@ NORET_TYPE void do_exit(long code)
 
 	exit_irq_thread();
 
+#ifdef CONFIG_KRG_PROC
+	down_read_non_owner(&kerrighed_init_sem);
+#endif
 	exit_signals(tsk);  /* sets PF_EXITING */
 	/*
 	 * tsk->flags are checked in the futex code to protect against
@@ -1017,6 +1095,9 @@ NORET_TYPE void do_exit(long code)
 	preempt_disable();
 	/* causes final put_task_struct in finish_task_switch(). */
 	tsk->state = TASK_DEAD;
+#ifdef CONFIG_KRG_PROC
+	up_read_non_owner(&kerrighed_init_sem);
+#endif
 	schedule();
 	BUG();
 	/* Avoid "noreturn function does return".  */
@@ -1581,6 +1662,9 @@ static long do_wait(enum pid_type type, struct pid *pid, int options,
 
 	trace_sched_process_wait(pid);
 
+#ifdef CONFIG_KRG_PROC
+	down_read(&kerrighed_init_sem);
+#endif
 	add_wait_queue(&current->signal->wait_chldexit,&wait);
 repeat:
 	/*
@@ -1621,7 +1705,13 @@ repeat:
 	if (!retval && !(options & WNOHANG)) {
 		retval = -ERESTARTSYS;
 		if (!signal_pending(current)) {
+#ifdef CONFIG_KRG_PROC
+			up_read(&kerrighed_init_sem);
+#endif
 			schedule();
+#ifdef CONFIG_KRG_PROC
+			down_read(&kerrighed_init_sem);
+#endif
 			goto repeat;
 		}
 	}
@@ -1629,6 +1719,9 @@ repeat:
 end:
 	current->state = TASK_RUNNING;
 	remove_wait_queue(&current->signal->wait_chldexit,&wait);
+#ifdef CONFIG_KRG_PROC
+	up_read(&kerrighed_init_sem);
+#endif
 	if (infop) {
 		if (retval > 0)
 			retval = 0;
