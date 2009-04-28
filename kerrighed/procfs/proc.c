@@ -540,7 +540,7 @@ static int show_stat(struct seq_file *p, void *v)
 	 * Keep space to overwrite "cpu" line later in order to get this line
 	 * first without parsing data twice... Yes... Dirty...
 	 */
-	seq_printf(p, head_blank);
+	seq_printf(p, "%s", head_blank);
 	for_each_krgnode_mask(node_id, nodes) {
 		static_node_info = get_static_node_info(node_id);
 		dynamic_node_info = get_dynamic_node_info(node_id);
