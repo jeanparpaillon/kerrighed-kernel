@@ -1268,7 +1268,11 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 		spin_unlock(&current->sighand->siglock);
 		write_unlock_irq(&tasklist_lock);
 		retval = -ERESTARTNOINTR;
+#ifdef CONFIG_KRG_PROC
+		goto bad_fork_free_krg_task;
+#else
 		goto bad_fork_free_graph;
+#endif
 	}
 
 	if (clone_flags & CLONE_THREAD) {
@@ -1309,11 +1313,12 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	cgroup_post_fork(p);
 	return p;
 
-bad_fork_free_graph:
-	ftrace_graph_exit_task(p);
 #ifdef CONFIG_KRG_PROC
+bad_fork_free_krg_task:
 	krg_task_abort(p);
 #endif
+bad_fork_free_graph:
+	ftrace_graph_exit_task(p);
 bad_fork_free_pid:
 	if (pid != &init_struct_pid)
 		free_pid(pid);
