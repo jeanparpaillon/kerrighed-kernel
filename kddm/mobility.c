@@ -11,9 +11,10 @@
 #include <linux/slab.h>
 #include <linux/errno.h>
 #include <kddm/mobility.h>
+#include <kddm/kddm_types.h>
 
-#include <ghost/ghost.h>
-#include <epm/action.h>
+#include <kerrighed/ghost.h>
+#include <kerrighed/action.h>
 
 
 int initialize_kddm_info_struct (struct task_struct *task);

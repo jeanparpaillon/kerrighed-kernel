@@ -8,7 +8,7 @@
 #ifndef __KDDM_MOBILITY_H__
 #define __KDDM_MOBILITY_H__
 
-#include <ghost/ghost.h>
+#include <kerrighed/ghost.h>
 
 struct epm_action;
 struct task_struct;
