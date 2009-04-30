@@ -63,18 +63,6 @@ struct task_kddm_object {
 	struct rcu_head rcu;
 };
 
-#ifdef CONFIG_KRG_EPM
-/* task_struct allocation outside kernel/fork.c */
-/* Copy from: Linux kernel 2.6.20, kernel/fork.c, lines 90..94 */
-#include <asm/thread_info.h>
-#ifndef __HAVE_ARCH_TASK_STRUCT_ALLOCATOR
-#include <linux/slab.h>
-# define alloc_task_struct()    kmem_cache_alloc(task_struct_cachep, GFP_KERNEL)
-# define free_task_struct(tsk)  kmem_cache_free(task_struct_cachep, (tsk))
-extern struct kmem_cache *task_struct_cachep;
-#endif
-#endif /* CONFIG_KRG_EPM */
-
 void krg_task_get(struct task_kddm_object *obj);
 void krg_task_put(struct task_kddm_object *obj);
 int krg_task_alive(struct task_kddm_object *obj);

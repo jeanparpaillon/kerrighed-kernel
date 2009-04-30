@@ -622,13 +622,6 @@ retry:
 			 * rcu_read_unlock()
 			 */
 			task_obj = rcu_dereference(task->task_obj);
-#ifdef CONFIG_KRG_EPM
-			if (!task_obj)
-				/* Try again in case task is migrating */
-				task_obj = krg_pid_task(pid);
-		} else {
-			task_obj = krg_pid_task(pid);
-#endif
 		}
 		if (!task_obj || task_obj->group_leader != task_obj->pid)
 			goto retry;
@@ -683,9 +676,6 @@ static int fill_next_remote_tgids(kerrighed_node_t node,
 	struct rpc_desc *desc;
 	pid_t pid_array[PROC_MAXPIDS];
 	int nr_pids;
-#ifdef CONFIG_KRG_EPM
-	struct pid *pid = NULL;
-#endif
 	int i;
 	int retval;
 
@@ -717,26 +707,7 @@ static int fill_next_remote_tgids(kerrighed_node_t node,
 		iter.tgid = pid_array[i];
 		filp->f_pos = iter.tgid + offset;
 		iter.task = NULL;
-#ifdef CONFIG_KRG_EPM
-		rcu_read_lock();
-		pid = find_pid_ns(iter.tgid, &init_pid_ns);
-		if (pid) {
-			iter.task = pid_task(pid, PIDTYPE_PID);
-			if (iter.task)
-				get_task_struct(iter.task);
-		}
-		rcu_read_unlock();
-#ifdef CONFIG_KRG_CAP
-		if (!iter.task
-		    && can_use_krg_cap(current, CAP_SEE_LOCAL_PROC_STAT))
-			continue;
-#endif
-#endif /* CONFIG_KRG_EPM */
 		retval = krg_proc_pid_fill_cache(filp, dirent, filldir, iter);
-#ifdef CONFIG_KRG_EPM
-		if (iter.task)
-			put_task_struct(iter.task);
-#endif
 		if (retval < 0) {
 			retval = -EAGAIN;
 			goto out;
@@ -764,9 +735,6 @@ static int fill_next_local_tgids(struct file *filp,
 	struct tgid_iter iter;
 	pid_t tgid = filp->f_pos - offset;
 	struct pid *pid;
-#ifdef CONFIG_KRG_EPM
-	struct task_kddm_object *task_obj;
-#endif
 	int global_mode = tgid & GLOBAL_PID_MASK;
 	int nr;
 	int retval;
@@ -784,16 +752,6 @@ static int fill_next_local_tgids(struct file *filp,
 		iter.tgid = nr;
 		iter.task = pid_task(pid, PIDTYPE_PID);
 		if (!iter.task) {
-#ifdef CONFIG_KRG_EPM
-#ifdef CONFIG_KRG_CAP
-			if (can_use_krg_cap(current, CAP_SEE_LOCAL_PROC_STAT))
-				continue;
-#endif
-			/* Maybe a migrated thread group leader */
-			task_obj = krg_pid_task(pid);
-			if (!task_obj
-			    || task_obj->pid != task_obj->group_leader)
-#endif
 				continue;
 		} else if (has_group_leader_pid(iter.task)) {
 			get_task_struct(iter.task);

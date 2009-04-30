@@ -1110,11 +1110,7 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	if (!kh_copy_kddm_info)
 		p->kddm_info = NULL;
 	else if ((retval = kh_copy_kddm_info(clone_flags, p)))
-#ifdef CONFIG_KRG_EPM
-		goto bad_fork_cleanup_children_obj;
-#else
 		goto bad_fork_cleanup_policy;
-#endif /* CONFIG_KRG_EPM */
 #endif /* CONFIG_KRG_KDDM */
 
 	if ((retval = audit_alloc(p)))

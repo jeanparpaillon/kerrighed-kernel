@@ -12,11 +12,6 @@
 #include <linux/pid_namespace.h>
 #include <linux/rcupdate.h>
 #include <kerrighed/capabilities.h>
-#ifdef CONFIG_KRG_EPM
-#include <linux/pid_namespace.h>
-#include <kerrighed/sched.h>
-#include <kerrighed/children.h>
-#endif
 #include <linux/uaccess.h>
 
 #include <kerrighed/krg_syscalls.h>
@@ -41,12 +36,6 @@ void krg_cap_fork(struct task_struct *task, unsigned long clone_flags)
 	kernel_krg_cap_t *new_caps = &task->krg_caps;
 	kernel_cap_t new_krg_effective;
 	int i;
-
-#ifdef CONFIG_KRG_EPM
-	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid)
-		/* Migration/restart: do not recompute krg caps */
-		return;
-#endif
 
 	/*
 	 * Compute the new capabilities and reset the private
@@ -169,31 +158,8 @@ static int krg_set_father_cap(struct task_struct *tsk,
 	int retval = 0;
 
 	read_lock(&tasklist_lock);
-#ifdef CONFIG_KRG_EPM
-	if (tsk->parent != baby_sitter) {
-#endif
 		retval = krg_set_cap(tsk->parent, requested_cap);
 		read_unlock(&tasklist_lock);
-#ifdef CONFIG_KRG_EPM
-	} else {
-		struct children_kddm_object *parent_children_obj;
-		pid_t real_parent_tgid;
-		pid_t parent_pid, real_parent_pid;
-		int retval;
-
-		read_unlock(&tasklist_lock);
-
-		parent_children_obj =
-			kh_parent_children_readlock(tsk, &real_parent_tgid);
-		if (!parent_children_obj)
-			/* Parent is init. Do not change init's capabilities! */
-			return -EPERM;
-		kh_get_parent(parent_children_obj, tsk->pid,
-			      &parent_pid, &real_parent_pid);
-		retval = remote_set_pid_cap(real_parent_pid, requested_cap);
-		kh_children_unlock(real_parent_tgid);
-	}
-#endif
 
 	return retval;
 }
@@ -274,31 +240,8 @@ static int krg_get_father_cap(struct task_struct *son,
 	int retval = 0;
 
 	read_lock(&tasklist_lock);
-#ifdef CONFIG_KRG_EPM
-	if (son->parent != baby_sitter) {
-#endif
 		retval = krg_get_cap(son->parent, resulting_cap);
 		read_unlock(&tasklist_lock);
-#ifdef CONFIG_KRG_EPM
-	} else {
-		struct children_kddm_object *parent_children_obj;
-		pid_t real_parent_tgid;
-		pid_t parent_pid, real_parent_pid;
-		int retval;
-
-		read_unlock(&tasklist_lock);
-
-		parent_children_obj =
-			kh_parent_children_readlock(son, &real_parent_tgid);
-		if (!parent_children_obj)
-			/* Parent is init. */
-			return krg_get_cap(child_reaper(son), resulting_cap);
-		kh_get_parent(parent_children_obj, son->pid,
-			      &parent_pid, &real_parent_pid);
-		retval = remote_get_pid_cap(parent_pid, resulting_cap);
-		kh_children_unlock(real_parent_tgid);
-	}
-#endif
 
 	return retval;
 }

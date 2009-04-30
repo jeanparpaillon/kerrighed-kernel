@@ -62,22 +62,4 @@ void krg_unlock_pid_location(pid_t pid);
 
 #endif /* CONFIG_KRG_PROC */
 
-#ifdef CONFIG_KRG_EPM
-
-/* pid reference tracking */
-struct pid;
-
-extern struct pid * (*kh_get_pid)(int nr);
-extern void (*kh_end_get_pid)(struct pid *pid);
-extern void (*kh_put_pid)(struct pid *pid);
-
-struct pid * __alloc_pid(int nr);
-
-/* Checkpoint/restart */
-int reserve_pidmap(pid_t pid);
-extern void FASTCALL(free_pidmap(struct pid_namespace *pid_ns, int pid));
-void krg_rehash_restarted_thread(struct task_struct *p, struct task_struct *leader);
-
-#endif /* CONFIG_KRG_EPM */
-
 #endif /* __KERRIGHED_PID_H__ */

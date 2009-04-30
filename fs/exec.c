@@ -793,10 +793,6 @@ static int de_thread(struct task_struct *tsk)
 		struct task_struct *leader = tsk->group_leader;
 #ifdef CONFIG_KRG_PROC
 		struct task_kddm_object *obj;
-#ifdef CONFIG_KRG_EPM
-		struct children_kddm_object *parent_children_obj;
-		pid_t real_parent_tgid;
-#endif
 #endif
 
 #ifdef CONFIG_KRG_PROC
@@ -816,25 +812,9 @@ static int de_thread(struct task_struct *tsk)
 		/* tsk->pid will disappear just below. */
 		obj = leader->task_obj;
 		BUG_ON(!obj ^ !tsk->task_obj);
-#ifdef CONFIG_KRG_EPM
-		parent_children_obj = rcu_dereference(tsk->parent_children_obj);
-#endif
-		if (
-		    obj
-#ifdef CONFIG_KRG_EPM
-		    || parent_children_obj
-#endif
-		   ) {
+		if (obj) {
 			write_unlock_irq(&tasklist_lock);
 
-#ifdef CONFIG_KRG_EPM
-			if (parent_children_obj) {
-				parent_children_obj =
-					kh_parent_children_writelock(tsk,
-								     &real_parent_tgid);
-				kh_remove_child(parent_children_obj, tsk->pid);
-			}
-#endif /* CONFIG_KRG_EPM */
 			krg_task_free(tsk);
 
 			if (obj)
@@ -893,17 +873,6 @@ static int de_thread(struct task_struct *tsk)
 		/* tsk has taken leader's pid. */
 		if (obj)
 			krg_task_unlock(tsk->pid);
-#ifdef CONFIG_KRG_EPM
-		if (parent_children_obj) {
-			kh_set_child_exit_signal(parent_children_obj,
-						 tsk->pid,
-						 tsk->exit_signal);
-			kh_set_child_exit_state(parent_children_obj,
-						tsk->pid,
-						tsk->exit_state);
-			kh_children_unlock(real_parent_tgid);
-		}
-#endif /* CONFIG_KRG_EPM */
 #endif /* CONFIG_KRG_PROC */
 
 		release_task(leader);
