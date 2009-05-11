@@ -52,11 +52,9 @@ struct epm_action {
 			struct completion *vfork;
 		} remote_clone;
 		struct {
-			media_t media;
 			c_shared_obj_option_t shared;
 		} checkpoint;
 		struct {
-			media_t media;
 			r_shared_obj_option_t shared;
 			struct app_struct * app;
 		} restart;

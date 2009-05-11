@@ -20,6 +20,9 @@
 #include <linux/rcupdate.h>
 #include <linux/pid_namespace.h>
 #include <linux/smp_lock.h>
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
 
 #include <asm/poll.h>
 #include <asm/siginfo.h>
@@ -346,6 +349,13 @@ SYSCALL_DEFINE3(fcntl, unsigned int, fd, unsigned int, cmd, unsigned long, arg)
 	if (!filp)
 		goto out;
 
+#ifdef CONFIG_KRG_FAF
+	if ((filp->f_flags & O_FAF_CLT) && (cmd != F_DUPFD)) {
+		err = krg_faf_fcntl(filp, cmd, arg);
+		fput(filp);
+		goto out;
+       }
+#endif
 	err = security_file_fcntl(filp, cmd, arg);
 	if (err) {
 		fput(filp);
@@ -371,6 +381,13 @@ SYSCALL_DEFINE3(fcntl64, unsigned int, fd, unsigned int, cmd,
 	if (!filp)
 		goto out;
 
+#ifdef CONFIG_KRG_FAF
+	if ((filp->f_flags & O_FAF_CLT) && (cmd != F_DUPFD)) {
+		err = krg_faf_fcntl64(filp, cmd, arg);
+		fput(filp);
+		goto out;
+	}
+#endif
 	err = security_file_fcntl(filp, cmd, arg);
 	if (err) {
 		fput(filp);

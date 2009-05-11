@@ -129,6 +129,9 @@
 #include <linux/pid_namespace.h>
 
 #include <asm/uaccess.h>
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
 
 #define IS_POSIX(fl)	(fl->fl_flags & FL_POSIX)
 #define IS_FLOCK(fl)	(fl->fl_flags & FL_FLOCK)
@@ -1576,6 +1579,12 @@ SYSCALL_DEFINE2(flock, unsigned int, fd, unsigned int, cmd)
 	if (!filp)
 		goto out;
 
+#ifdef CONFIG_KRG_FAF
+	if (filp->f_flags & O_FAF_CLT) {
+		error = krg_faf_flock(filp, cmd);
+		goto out_putf;
+	}
+#endif
 	can_sleep = !(cmd & LOCK_NB);
 	cmd &= ~LOCK_NB;
 	unlock = (cmd == LOCK_UN);

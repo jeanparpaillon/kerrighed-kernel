@@ -25,6 +25,9 @@
 #include <linux/fs.h>
 #include <linux/rcupdate.h>
 #include <linux/hrtimer.h>
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
 
 #include <asm/uaccess.h>
 
@@ -119,6 +122,10 @@ EXPORT_SYMBOL(poll_initwait);
 static void free_poll_entry(struct poll_table_entry *entry)
 {
 	remove_wait_queue(entry->wait_address, &entry->wait);
+#ifdef CONFIG_KRG_FAF
+	if (entry->filp->f_flags & O_FAF_CLT)
+		krg_faf_poll_dequeue(entry->filp);
+#endif
 	fput(entry->filp);
 }
 
@@ -194,6 +201,27 @@ static int pollwake(wait_queue_t *wait, unsigned mode, int sync, void *key)
 	return default_wake_function(&dummy_wait, mode, sync, key);
 }
 
+#ifdef CONFIG_KRG_FAF
+static void poll_put_entry(poll_table *_p, struct poll_table_entry *entry)
+{
+	struct poll_wqueues *p = container_of(_p, struct poll_wqueues, pt);
+	struct poll_table_page *table = p->table;
+
+	if (!table) {
+		p->inline_index--;
+	} else {
+		table->entry--;
+		if (table->entry == table->entries) {
+			p->table = table->next;
+			free_page((unsigned long)table);
+		}
+	}
+
+	p->error = -ENOMEM;
+	__set_current_state(TASK_RUNNING);
+}
+#endif
+
 /* Add a new entry */
 static void __pollwait(struct file *filp, wait_queue_head_t *wait_address,
 				poll_table *p)
@@ -201,13 +229,33 @@ static void __pollwait(struct file *filp, wait_queue_head_t *wait_address,
 	struct poll_wqueues *pwq = container_of(p, struct poll_wqueues, pt);
 	struct poll_table_entry *entry = poll_get_entry(pwq);
 	if (!entry)
+#ifndef CONFIG_KRG_FAF
 		return;
+#else
+	        goto check_faf;
+#endif
 	get_file(filp);
 	entry->filp = filp;
 	entry->wait_address = wait_address;
 	init_waitqueue_func_entry(&entry->wait, pollwake);
 	entry->wait.private = pwq;
 	add_wait_queue(wait_address, &entry->wait);
+#ifdef CONFIG_KRG_FAF
+check_faf:
+	if (filp->f_flags & O_FAF_CLT) {
+		if (krg_faf_poll_wait(filp, entry != NULL)) {
+			if (entry) {
+				/*
+				 * Don't call free_poll_entry() since it would
+				 * call krg_faf_poll_dequeue().
+				 */
+				remove_wait_queue(wait_address, &entry->wait);
+				fput(filp);
+				poll_put_entry(p, entry);
+			}
+		}
+	}
+#endif
 }
 
 int poll_schedule_timeout(struct poll_wqueues *pwq, int state,

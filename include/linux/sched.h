@@ -1446,6 +1446,7 @@ struct task_struct {
 #endif
 #ifdef CONFIG_KRG_EPM
 	int krg_action_flags;
+	struct app_struct *application;
 #endif
 };
 

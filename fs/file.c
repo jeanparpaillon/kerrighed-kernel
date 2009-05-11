@@ -443,9 +443,15 @@ struct files_struct init_files = {
 /*
  * allocate a file descriptor, mark it busy.
  */
+#ifdef CONFIG_KRG_FAF
+int __alloc_fd(struct files_struct *files,
+	       unsigned start, unsigned flags)
+{
+#else
 int alloc_fd(unsigned start, unsigned flags)
 {
 	struct files_struct *files = current->files;
+#endif
 	unsigned int fd;
 	int error;
 	struct fdtable *fdt;
@@ -494,8 +500,22 @@ out:
 	return error;
 }
 
+#ifdef CONFIG_KRG_FAF
+int alloc_fd(unsigned start, unsigned flags)
+{
+	return __alloc_fd(current->files, start, flags);
+}
+#endif
+
 int get_unused_fd(void)
 {
 	return alloc_fd(0, 0);
 }
 EXPORT_SYMBOL(get_unused_fd);
+
+#ifdef CONFIG_KRG_FAF
+int __get_unused_fd(struct files_struct *files)
+{
+	return __alloc_fd(files, 0, 0);
+}
+#endif

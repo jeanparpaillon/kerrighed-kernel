@@ -10,7 +10,9 @@
 #include <linux/posix_types.h>
 
 struct file;
-
+#ifdef CONFIG_KRG_FAF
+struct files_struct;
+#endif
 extern void __fput(struct file *);
 extern void fput(struct file *);
 extern void drop_file_write_access(struct file *file);
@@ -36,9 +38,18 @@ extern void set_close_on_exec(unsigned int fd, int flag);
 extern void put_filp(struct file *);
 extern int alloc_fd(unsigned start, unsigned flags);
 extern int get_unused_fd(void);
+#ifdef CONFIG_KRG_FAF
+int __get_unused_fd(struct files_struct *files);
+#endif
 #define get_unused_fd_flags(flags) alloc_fd(0, (flags))
+#ifdef CONFIG_KRG_FAF
+extern void __put_unused_fd(struct files_struct *files, unsigned int fd);
+#endif
 extern void put_unused_fd(unsigned int fd);
-
+#ifdef CONFIG_KRG_FAF
+extern void __fd_install(struct files_struct *files,
+			 unsigned int fd, struct file *file);
+#endif
 extern void fd_install(unsigned int fd, struct file *file);
 
 #ifdef CONFIG_KRG_DVFS

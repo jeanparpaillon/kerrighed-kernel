@@ -28,6 +28,9 @@
 #ifdef CONFIG_KRG_DVFS
 #include <kerrighed/dvfs.h>
 #endif
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
 
 /* sysctl tunables... */
 struct files_stat_struct files_stat = {
@@ -269,10 +272,23 @@ void __fput(struct file *file)
 {
 	struct dentry *dentry = file->f_path.dentry;
 	struct vfsmount *mnt = file->f_path.mnt;
+#ifdef CONFIG_KRG_FAF
+	struct inode *inode;
+#else
 	struct inode *inode = dentry->d_inode;
+#endif
 
 	might_sleep();
 
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		security_file_free(file);
+		file_kill(file);
+		file_free(file);
+		return;
+	}
+	inode = dentry->d_inode;
+#endif
 	fsnotify_close(file);
 	/*
 	 * The function eventpoll_release() should be the first called

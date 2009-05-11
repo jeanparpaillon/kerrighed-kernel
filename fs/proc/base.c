@@ -88,6 +88,9 @@
 #if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
 #include <kerrighed/pid.h>
 #endif
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
 #include "internal.h"
 
 /* NOTE:
@@ -1472,6 +1475,11 @@ int do_proc_readlink(struct path *path, char __user *buffer, int buflen)
 	if (!tmp)
 		return -ENOMEM;
 
+#ifdef CONFIG_KRG_FAF
+	if (!path->dentry && path->mnt)
+		pathname = krg_faf_d_path((struct file *)path->mnt, tmp, PAGE_SIZE);
+	else
+#endif
 	pathname = d_path(path, tmp, PAGE_SIZE);
 	len = PTR_ERR(pathname);
 	if (IS_ERR(pathname))
@@ -1762,6 +1770,12 @@ static int proc_fd_info(struct inode *inode, struct path *path, char *info)
 				*path = file->f_path;
 				path_get(&file->f_path);
 			}
+#ifdef CONFIG_KRG_FAF
+			if (file->f_flags & O_FAF_CLT) {
+				path->mnt = (struct vfsmount *)file;
+				path->dentry = NULL;
+			}
+#endif
 			if (info)
 				snprintf(info, PROC_FDINFO_MAX,
 					 "pos:\t%lli\n"

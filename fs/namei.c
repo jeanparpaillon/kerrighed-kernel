@@ -963,6 +963,9 @@ last_component:
 			err = do_follow_link(&next, nd);
 			if (err)
 				goto return_err;
+#ifdef CONFIG_KRG_FAF
+                        if (nd->path.dentry)
+#endif
 			inode = nd->path.dentry->d_inode;
 		} else
 			path_to_nameidata(&next, nd);
@@ -1764,6 +1767,13 @@ do_last:
 	if (path.dentry->d_inode && S_ISDIR(path.dentry->d_inode->i_mode))
 		goto exit;
 ok:
+#ifdef CONFIG_KRG_FAF
+	if ((!nd.path.dentry) && (nd.path.mnt)) {
+		struct file *file = (struct file *)nd.path.mnt;
+		get_file(file);
+		return file;
+	}
+#endif
 	/*
 	 * Consider:
 	 * 1. may_open() truncates a file

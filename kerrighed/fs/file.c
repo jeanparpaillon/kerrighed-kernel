@@ -14,9 +14,9 @@
 /*#include <ipc/shm_memory_linker.h>*/
 #endif
 #ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf_file_mgr.h>
 #include "faf/faf_hooks.h"
-#include "faf/faf.h"
-#include "faf/faf_file_mgr.h"
+#include "faf/faf_internal.h"
 #endif
 
 #include <kddm/kddm.h>

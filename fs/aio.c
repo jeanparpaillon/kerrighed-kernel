@@ -614,7 +614,10 @@ static struct kioctx *lookup_ioctx(unsigned long ctx_id)
  *	(Note: this routine is intended to be called only
  *	from a kernel thread context)
  */
-static void use_mm(struct mm_struct *mm)
+#ifndef CONFIG_KRG_FAF
+static
+#endif
+void use_mm(struct mm_struct *mm)
 {
 	struct mm_struct *active_mm;
 	struct task_struct *tsk = current;
@@ -638,7 +641,10 @@ static void use_mm(struct mm_struct *mm)
  *	(Note: this routine is intended to be called only
  *	from a kernel thread context)
  */
-static void unuse_mm(struct mm_struct *mm)
+#ifndef CONFIG_KRG_FAF
+static
+#endif
+void unuse_mm(struct mm_struct *mm)
 {
 	struct task_struct *tsk = current;
 

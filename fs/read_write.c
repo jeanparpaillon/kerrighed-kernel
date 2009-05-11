@@ -24,6 +24,9 @@
 #ifdef CONFIG_KRG_DVFS
 #include <kerrighed/dvfs.h>
 #endif
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
 
 const struct file_operations generic_ro_fops = {
 	.llseek		= generic_file_llseek,
@@ -174,6 +177,13 @@ SYSCALL_DEFINE3(lseek, unsigned int, fd, off_t, offset, unsigned int, origin)
 	if (!file)
 		goto bad;
 
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		retval = krg_faf_lseek(file, offset, origin);
+		fput_light(file, fput_needed);
+		return retval;
+	}
+#endif
 	retval = -EINVAL;
 	if (origin <= SEEK_MAX) {
 		loff_t res = vfs_llseek(file, offset, origin);
@@ -205,10 +215,19 @@ SYSCALL_DEFINE5(llseek, unsigned int, fd, unsigned long, offset_high,
 	if (origin > SEEK_MAX)
 		goto out_putf;
 
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		retval = krg_faf_llseek(file, offset_high, offset_low,
+					&offset, origin);
+	} else {
+#endif
 	offset = vfs_llseek(file, ((loff_t) offset_high << 32) | offset_low,
 			origin);
 
 	retval = (int)offset;
+#ifdef CONFIG_KRG_FAF
+	}
+#endif
 	if (offset >= 0) {
 		retval = -EFAULT;
 		if (!copy_to_user(result, &offset, sizeof(offset)))
@@ -401,7 +420,17 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 
 	file = fget_light(fd, &fput_needed);
 	if (file) {
+#ifdef CONFIG_KRG_FAF
+		loff_t pos;
+		if (file->f_flags & O_FAF_CLT) {
+			ret = krg_faf_read(file, buf, count);
+			fput_light(file, fput_needed);
+			return ret;
+		}
+		pos = file_pos_read(file);
+#else
 		loff_t pos = file_pos_read(file);
+#endif
 		ret = vfs_read(file, buf, count, &pos);
 		file_pos_write(file, pos);
 		fput_light(file, fput_needed);
@@ -419,7 +448,17 @@ SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 
 	file = fget_light(fd, &fput_needed);
 	if (file) {
+#ifdef CONFIG_KRG_FAF
+		loff_t pos;
+		if (file->f_flags & O_FAF_CLT) {
+			ret = krg_faf_write(file, buf, count);
+			fput_light(file, fput_needed);
+			return ret;
+		}
+		pos = file_pos_read(file);
+#else
 		loff_t pos = file_pos_read(file);
+#endif
 		ret = vfs_write(file, buf, count, &pos);
 		file_pos_write(file, pos);
 		fput_light(file, fput_needed);

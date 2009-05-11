@@ -13,6 +13,9 @@
 #include <linux/pagemap.h>
 #include <linux/quotaops.h>
 #include <linux/buffer_head.h>
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
 
 #define VALID_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE| \
 			SYNC_FILE_RANGE_WAIT_AFTER)
@@ -112,6 +115,12 @@ int vfs_fsync(struct file *file, struct dentry *dentry, int datasync)
 	 * don't have a struct file available.  Damn nfsd..
 	 */
 	if (file) {
+#ifdef CONFIG_KRG_FAF
+		if (file->f_flags & O_FAF_CLT) {
+			ret = krg_faf_fsync(file);
+			goto out;
+		}
+#endif
 		mapping = file->f_mapping;
 		fop = file->f_op;
 	} else {
