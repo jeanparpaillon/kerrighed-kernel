@@ -68,4 +68,8 @@
 
 #endif /* __KERNEL__ */
 
+#ifdef CONFIG_KRG_DVFS
+#include <kerrighed/fcntl.h>
+#endif
+
 #endif

@@ -41,4 +41,11 @@ extern void put_unused_fd(unsigned int fd);
 
 extern void fd_install(unsigned int fd, struct file *file);
 
+#ifdef CONFIG_KRG_DVFS
+struct fdtable;
+int count_open_files(struct fdtable *fdt);
+
+struct fdtable * alloc_fdtable(unsigned int nr);
+#endif
+
 #endif /* __LINUX_FILE_H */

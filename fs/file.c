@@ -136,7 +136,10 @@ static void copy_fdtable(struct fdtable *nfdt, struct fdtable *ofdt)
 	memset((char *)(nfdt->close_on_exec) + cpy, 0, set);
 }
 
-static struct fdtable * alloc_fdtable(unsigned int nr)
+#ifndef CONFIG_KRG_DVFS
+static
+#endif
+struct fdtable * alloc_fdtable(unsigned int nr)
 {
 	struct fdtable *fdt;
 	char *data;
@@ -271,7 +274,10 @@ int expand_files(struct files_struct *files, int nr)
 	return expand_fdtable(files, nr);
 }
 
-static int count_open_files(struct fdtable *fdt)
+#ifndef CONFIG_KRG_DVFS
+static
+#endif
+int count_open_files(struct fdtable *fdt)
 {
 	int size = fdt->max_fds;
 	int i;

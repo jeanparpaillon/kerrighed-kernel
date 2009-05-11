@@ -134,7 +134,8 @@ config KRG_MM
 
 config KRG_DVFS
 	bool "Distributed VFS"
-	depends on KRG_MM && KERRIGHED
+#	depends on KRG_MM && KERRIGHED
+	depends on KERRIGHED
 	help
 	  Kerrighed's distributed VFS. This is the Kerrighed basic
 	  bloc for distributed file management.

@@ -25,6 +25,10 @@
 
 #include <asm/atomic.h>
 
+#ifdef CONFIG_KRG_DVFS
+#include <kerrighed/dvfs.h>
+#endif
+
 /* sysctl tunables... */
 struct files_stat_struct files_stat = {
 	.max_files = NR_FILE
@@ -48,6 +52,10 @@ static inline void file_free_rcu(struct rcu_head *head)
 
 static inline void file_free(struct file *f)
 {
+#ifdef CONFIG_KRG_DVFS
+	if (f->f_objid)
+		krg_put_file(f);
+#endif
 	percpu_counter_dec(&nr_files);
 	file_check_state(f);
 	call_rcu(&f->f_u.fu_rcuhead, file_free_rcu);
