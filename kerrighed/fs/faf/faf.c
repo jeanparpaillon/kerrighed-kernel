@@ -42,7 +42,7 @@ int setup_faf_file(struct file *file)
 	/* Install the file in the destination task file array */
 
 	if (!test_and_set_bit(O_FAF_SRV_BIT_NR, &file->f_flags)) {
-		server_fd = __get_unused_fd(first_krgrpc->files);
+		server_fd = __get_unused_fd(first_krgrpc);
 
 		if (server_fd >= 0) {
 			get_file (file);

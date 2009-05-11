@@ -12,6 +12,7 @@
 struct file;
 #ifdef CONFIG_KRG_FAF
 struct files_struct;
+struct task_struct;
 #endif
 extern void __fput(struct file *);
 extern void fput(struct file *);
@@ -39,7 +40,7 @@ extern void put_filp(struct file *);
 extern int alloc_fd(unsigned start, unsigned flags);
 extern int get_unused_fd(void);
 #ifdef CONFIG_KRG_FAF
-int __get_unused_fd(struct files_struct *files);
+int __get_unused_fd(struct task_struct *task);
 #endif
 #define get_unused_fd_flags(flags) alloc_fd(0, (flags))
 #ifdef CONFIG_KRG_FAF
