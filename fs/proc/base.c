@@ -649,7 +649,7 @@ static int proc_tid_kddm(struct task_struct *task, char *buffer)
 	len += proc_kddm_print_wq (buffer + len, &obj_entry->waiting_tsk);
 	len += sprintf (buffer + len, "\n");
 unlock:
-	kddm_obj_unlock(set, info.obj_id);
+	put_kddm_obj_entry(set, obj_entry, info.obj_id);
 done:
 
 	return len;

@@ -13,7 +13,6 @@
 #include "object_server.h"
 
 
-
 /** Remove an object from local physical memory.
  *  @author Renaud Lottiaux
  *
@@ -51,7 +50,7 @@ try_again:
 		/* There exist another copy in the cluster.
 		   Just invalidate the local one */
 		destroy_kddm_obj_entry(set, obj_entry, objid, 0);
-		send_invalidation_ack(set, objid, get_prob_owner(obj_entry),0);
+		send_invalidation_ack(set, objid, get_prob_owner(obj_entry));
 		res = 0;
 		goto exit_no_unlock;
 
@@ -93,7 +92,7 @@ try_again:
 		}
 
 		send_copy_on_write(set, obj_entry, objid, dest,
-				   KDDM_REMOVE_ON_ACK, 0);
+				   KDDM_REMOVE_ON_ACK);
 		res = 0;
 		goto exit_no_unlock;
 
@@ -119,7 +118,7 @@ try_again:
 		STATE_MACHINE_ERROR(set->id, objid, obj_entry);
 		break;
 	}
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 
 exit_no_unlock:
 

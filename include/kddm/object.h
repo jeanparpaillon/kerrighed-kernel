@@ -80,15 +80,11 @@ extern const char *state_name[]; /*< Printable state name */
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-
-
-#define ASSERT_OBJ_LOCKED(set, objid) assert_spin_locked(&(set)->obj_lock[(objid) % NR_OBJ_ENTRY_LOCKS])
-
-#define OBJ_IS_LOCKED(set, objid) spin_is_locked(&(set)->obj_lock[(objid) % NR_OBJ_ENTRY_LOCKS])
+#define ASSERT_OBJ_PATH_LOCKED(set, objid) assert_spin_locked(&(set)->obj_lock[(objid) % NR_OBJ_ENTRY_LOCKS])
 
 /** Lock the object (take care about the interrupt context) **/
-static inline void kddm_obj_lock (struct kddm_set *set,
-				  objid_t objid)
+static inline void kddm_obj_path_lock (struct kddm_set *set,
+				       objid_t objid)
 {
 	spinlock_t *lock = &set->obj_lock[objid % NR_OBJ_ENTRY_LOCKS];
 
@@ -98,8 +94,8 @@ static inline void kddm_obj_lock (struct kddm_set *set,
 		spin_lock_bh (lock);
 }
 
-static inline void kddm_obj_unlock (struct kddm_set *set,
-				    objid_t objid)
+static inline void kddm_obj_path_unlock (struct kddm_set *set,
+					 objid_t objid)
 {
 	spinlock_t *lock = &set->obj_lock[objid % NR_OBJ_ENTRY_LOCKS];
 
@@ -120,7 +116,12 @@ static inline void kddm_obj_unlock (struct kddm_set *set,
 struct kddm_obj *alloc_kddm_obj_entry(struct kddm_set *set,
 				      objid_t objid);
 
-
+/** Duplicate a KDDM obj entry structure.
+ *  @author Renaud Lottiaux
+ *
+ *  @param src_obj   The object entry to duplicate
+ */
+struct kddm_obj *dup_kddm_obj_entry(struct kddm_obj *src_obj);
 
 /** Free KDDM obj entry structure.
  *  @author Renaud Lottiaux
@@ -175,7 +176,14 @@ static inline struct kddm_obj *get_kddm_obj_entry (int ns_id,
 	return obj;
 }
 
+static inline void put_kddm_obj_entry (struct kddm_set *set,
+				       struct kddm_obj *obj_entry,
+				       objid_t objid)
+{
+	CLEAR_OBJECT_LOCKED(obj_entry);
 
+	kddm_obj_path_unlock (set, objid);
+}
 
 struct kddm_obj *default_get_kddm_obj_entry (struct kddm_set *set,
 					     objid_t objid);
@@ -249,6 +257,15 @@ void for_each_kddm_object(int ns_id, kddm_set_id_t set_id,
 void kddm_insert_object (struct kddm_set *set, objid_t objid,
                          struct kddm_obj * obj_entry,
 			 kddm_obj_state_t state);
+
+static inline struct kddm_obj *kddm_cow_object (struct kddm_set * set,
+						struct kddm_obj *obj_entry,
+						objid_t objid)
+{
+	if (set->ops->cow_object)
+		return set->ops->cow_object (set, obj_entry, objid);
+	return obj_entry;
+}
 
 
 /** Change a kddm object state.

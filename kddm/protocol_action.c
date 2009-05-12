@@ -15,14 +15,11 @@
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/krginit.h>
 
-#include <kerrighed/debug.h>
-
 #include <kddm/kddm.h>
 #include "object_server.h"
 #include "protocol_action.h"
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
-
 
 int delayed_transfer_write_access (kerrighed_node_t dest_node, void *msg);
 
@@ -155,7 +152,7 @@ int request_sync_object_and_unlock(struct kddm_set * set,
 	kerrighed_node_t dest;
 	int err = 0, flags = KDDM_SYNC_OBJECT;
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	dest = kddm_io_default_owner (set, objid);
 	BUG_ON (dest == kerrighed_node_id);
@@ -166,8 +163,8 @@ int request_sync_object_and_unlock(struct kddm_set * set,
 
 	kddm_change_obj_state (set, obj_entry, objid, new_state);
 
-	kddm_obj_unlock(set, objid);
-	err = send_copy_on_read (set, obj_entry, objid, dest, flags, 0);
+	put_kddm_obj_entry(set, obj_entry, objid);
+	err = send_copy_on_read(set, obj_entry, objid, dest, flags);
 
 	return err;
 }
@@ -239,7 +236,7 @@ int request_copies_remove(struct kddm_set * set,
 
 	BUG_ON(sender < 0 || sender > KERRIGHED_MAX_NODES);
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	REMOVE_FROM_SET(COPYSET(obj_entry), kerrighed_node_id);
 	REMOVE_FROM_SET(RMSET(obj_entry), kerrighed_node_id);
@@ -342,12 +339,12 @@ void send_copy_on_write(struct kddm_set * set,
 			struct kddm_obj * obj_entry,
 			objid_t objid,
 			kerrighed_node_t dest_node,
-			int flags,
-			long req_id)
+			int flags)
 {
 	kddm_obj_state_t state = WRITE_OWNER;
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
+	BUG_ON (!TEST_OBJECT_LOCKED(obj_entry));
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 	BUG_ON(object_frozen_or_pinned(obj_entry, set));
@@ -357,10 +354,24 @@ void send_copy_on_write(struct kddm_set * set,
 	change_prob_owner(obj_entry, dest_node);
 
 	send_msg_to_object_receiver(dest_node, set, objid, obj_entry, state,
-				    flags, req_id);
+				    flags, 0);
 }
 
+struct kddm_obj *send_copy_on_write_and_inv(struct kddm_set *set,
+					    struct kddm_obj *obj_entry,
+					    objid_t objid,
+					    kerrighed_node_t dest,
+					    int flags)
+{
+	obj_entry = kddm_cow_object (set, obj_entry, objid);
 
+	send_copy_on_write (set, obj_entry, objid, dest, 0);
+
+	kddm_invalidate_local_object_and_unlock(obj_entry, set, objid,
+						INV_COPY);
+
+	return obj_entry;
+}
 
 /** Send an object read copy to the given node.
  *  @author Renaud Lottiaux
@@ -374,14 +385,13 @@ int send_copy_on_read(struct kddm_set * set,
 		      struct kddm_obj * obj_entry,
 		      objid_t objid,
 		      kerrighed_node_t dest_node,
-		      int flags,
-		      long req_id)
+		      int flags)
 {
 	int r ;
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
 	r = send_msg_to_object_receiver(dest_node, set, objid,
-					obj_entry, READ_COPY, flags, req_id);
+					obj_entry, READ_COPY, flags, 0);
 
 	ADD_TO_SET(COPYSET(obj_entry), dest_node);
 	ADD_TO_SET(RMSET(obj_entry), dest_node);
@@ -403,8 +413,7 @@ void send_no_object(struct kddm_set * set,
 		    struct kddm_obj * obj_entry,
 		    objid_t objid,
 		    kerrighed_node_t dest_node,
-		    int send_ownership,
-		    long req_id)
+		    int send_ownership)
 {
 	int r = 0;
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
@@ -416,7 +425,7 @@ void send_no_object(struct kddm_set * set,
 
 	send_msg_to_object_server(dest_node, NO_OBJECT_SEND, set->ns->id,
 				  set->id, objid, send_ownership,
-				  kerrighed_node_id, req_id);
+				  kerrighed_node_id, 0);
 }
 
 
@@ -433,25 +442,24 @@ void transfer_write_access_and_unlock(struct kddm_set * set,
 				      struct kddm_obj * obj_entry,
 				      objid_t objid,
 				      kerrighed_node_t dest_node,
-				      masterObj_t * master_info,
-				      long req_id)
+				      masterObj_t * master_info)
 {
 	msg_injection_t msg;
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	msg.ns_id = set->ns->id;
 	msg.set_id = set->id;
 	msg.objid = objid;
-	msg.req_id = req_id;
+	msg.req_id = 0;
 	msg.owner_info = *master_info;
 
 	if (object_frozen_or_pinned(obj_entry, set)) {
 		queue_event(delayed_transfer_write_access, dest_node, &msg,
 			    sizeof(msg_injection_t));
-		kddm_obj_unlock(set, objid);
+		put_kddm_obj_entry(set, obj_entry, objid);
 
 		return;
 	}
@@ -478,7 +486,7 @@ int delayed_transfer_write_access(kerrighed_node_t dest_node, void *_msg)
 		return -EINVAL;
 
 	transfer_write_access_and_unlock(set, obj_entry, msg->objid, dest_node,
-					 &msg->owner_info, msg->req_id);
+					 &msg->owner_info);
 
 	return 0;
 }
@@ -505,14 +513,13 @@ void merge_ack_set(krgnodemask_t *obj_set,
  */
 void send_invalidation_ack(struct kddm_set * set,
 			   objid_t objid,
-			   kerrighed_node_t dest_node,
-			   long req_id)
+			   kerrighed_node_t dest_node)
 {
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
 	send_msg_to_object_server(dest_node, INVALIDATION_ACK, set->ns->id,
 				  set->id, objid, 0, kerrighed_node_id,
-				  req_id);
+				  0);
 }
 
 
@@ -527,13 +534,12 @@ void send_invalidation_ack(struct kddm_set * set,
 void send_remove_ack(struct kddm_set * set,
 		     objid_t objid,
 		     kerrighed_node_t dest_node,
-		     int flags,
-		     long req_id)
+		     int flags)
 {
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
 	send_msg_to_object_server(dest_node, REMOVE_ACK, set->ns->id, set->id,
-				  objid, flags, 0, req_id);
+				  objid, flags, 0, 0);
 }
 
 
@@ -547,7 +553,7 @@ void send_remove_ack(struct kddm_set * set,
  */
 void send_remove_ack2(struct kddm_set * set,
 		      objid_t objid,
-		      kerrighed_node_t dest_node, long req_id)
+		      kerrighed_node_t dest_node)
 {
 	msg_server_t msg_to_server;
 
@@ -556,7 +562,7 @@ void send_remove_ack2(struct kddm_set * set,
 	msg_to_server.ns_id = set->ns->id;
 	msg_to_server.set_id = set->id;
 	msg_to_server.objid = objid;
-	msg_to_server.req_id = req_id;
+	msg_to_server.req_id = 0;
 
 	rpc_async(REMOVE_ACK2, dest_node,
 		  &msg_to_server, sizeof(msg_server_t));
@@ -574,8 +580,7 @@ void send_remove_ack2(struct kddm_set * set,
 void send_remove_object_done(struct kddm_set * set,
 			     objid_t objid,
 			     kerrighed_node_t dest_node,
-			     krgnodemask_t *rmset,
-			     long req_id)
+			     krgnodemask_t *rmset)
 {
 	rm_done_msg_server_t msg;
 
@@ -584,7 +589,7 @@ void send_remove_object_done(struct kddm_set * set,
 	msg.ns_id = set->ns->id;
 	msg.set_id = set->id;
 	msg.objid = objid;
-	msg.req_id = req_id;
+	msg.req_id = 0;
 
 	DUP2_SET(rmset, &msg.rmset);
 
@@ -615,17 +620,15 @@ int object_first_touch_no_wakeup(struct kddm_set * set,
 {
 	int res;
 
-	obj_entry->countx = 0;
-
 	kddm_change_obj_state (set, obj_entry, objid, INV_FILLING);
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 
 	res = kddm_io_first_touch_object(obj_entry, set, objid, flags);
 
 	if (res)
 		return res;
 
-	kddm_obj_lock(set, objid);
+	kddm_obj_path_lock(set, objid);
 
 	if (object_state != INV_FILLING) {
 		kddm_change_obj_state(set, obj_entry, objid, object_state);
@@ -659,7 +662,7 @@ int object_first_touch(struct kddm_set * set,
 
 	BUG_ON(kddm_ft_linked(set, objid) && !I_AM_DEFAULT_OWNER(set, objid));
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	res = object_first_touch_no_wakeup(set, obj_entry, objid, INV_FILLING,
 					   flags);
@@ -689,19 +692,18 @@ void send_back_object_first_touch(struct kddm_set * set,
 				  objid_t objid,
 				  kerrighed_node_t dest_node,
 				  int flags,
-				  int req_type,
-				  long req_id)
+				  int req_type)
 {
 	msg_server_t msgToServer;
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	msgToServer.ns_id = set->ns->id;
 	msgToServer.set_id = set->id;
 	msgToServer.objid = objid;
-	msgToServer.req_id = req_id;
+	msgToServer.req_id = 0;
 	msgToServer.reply_node = kerrighed_node_id;
 	msgToServer.flags = flags;
 
@@ -732,7 +734,7 @@ void send_change_ownership_req(struct kddm_set * set,
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	changeOwnerMsg.ns_id = set->ns->id;
 	changeOwnerMsg.set_id = set->id;
@@ -758,7 +760,7 @@ void ack_change_object_owner(struct kddm_set * set,
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	msgToServer.ns_id = set->ns->id;
 	msgToServer.set_id = set->id;

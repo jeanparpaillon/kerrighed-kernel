@@ -13,7 +13,6 @@
 #include "object_server.h"
 
 
-
 /** Place a copy of a given object in local physical memory.
  *  @author Renaud Lottiaux
  *
@@ -120,7 +119,7 @@ exit:
 		set_object_frozen(obj_entry, set);
 
 exit_no_freeze:
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 
 	return obj_entry->object;
 }

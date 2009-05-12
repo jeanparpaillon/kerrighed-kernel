@@ -12,7 +12,6 @@
 #include "protocol_action.h"
 
 
-
 /** Check the presence of a given object in local physical memory.
  *  @author Renaud Lottiaux
  *
@@ -80,7 +79,7 @@ void *_kddm_find_object (struct kddm_set *set,
 	if (object)
 		set_object_frozen(obj_entry, set);
 
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 
 	return object;
 }

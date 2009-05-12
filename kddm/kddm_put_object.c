@@ -12,7 +12,6 @@
 #include "protocol_action.h"
 
 
-
 /** Release an object which has been acquired by a get, grab or find.
  *  @author Renaud Lottiaux
  *
@@ -40,7 +39,7 @@ void _kddm_put_object(struct kddm_set *set,
 	object_clear_frozen(obj_entry, set);
 
 exit:
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 }
 EXPORT_SYMBOL(_kddm_put_object);
 

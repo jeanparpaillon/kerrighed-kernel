@@ -16,7 +16,6 @@
 #include "protocol_action.h"
 
 
-
 /** Forward a message to the supposed correct prob Owner.
  *  @author Renaud Lottiaux
  */
@@ -41,6 +40,7 @@ static inline void forward_object_server_msg (struct kddm_obj * obj_entry,
 		BUG();
 	}
 
+	msg->req_id = 0;
 	rpc_async(msg_type, prob_owner, _msg, sizeof(msg_server_t));
 }
 
@@ -119,11 +119,8 @@ static inline int __handle_invalidation_ack (kerrighed_node_t sender,
 
 			  BUG_ON (dest == 1);
 
-			  send_copy_on_write (set, obj_entry, msg->objid, dest,
-					      0, msg->req_id);
-
-			  kddm_invalidate_local_object_and_unlock(
-				  obj_entry, set, msg->objid, INV_COPY);
+			  obj_entry = send_copy_on_write_and_inv (
+				  set, obj_entry, msg->objid, dest, 0);
 
 			  /* Wake up the set_flush function */
 
@@ -185,7 +182,7 @@ handle_ack:
 	}
 
 exit:
-	kddm_obj_unlock (set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 exit_no_unlock:
 	return 0;
@@ -227,16 +224,15 @@ void handle_remove_ack (struct rpc_desc* desc,
 		  REMOVE_FROM_SET (RMSET(obj_entry), desc->client);
 
 		  if (msg->flags & KDDM_NEED_OBJ_RM_ACK2)
-			  SET_OBJECT_FLAG(obj_entry, SEND_RM_ACK2);
+			  SET_OBJECT_RM_ACK2(obj_entry);
 
 		  if (SET_IS_EMPTY (RMSET(obj_entry))) {
 			  BUG_ON (!SET_IS_EMPTY (COPYSET(obj_entry)));
-			  if (TEST_OBJECT_FLAG(obj_entry, SEND_RM_ACK2)) {
+			  if (TEST_OBJECT_RM_ACK2(obj_entry)) {
 				  send_remove_ack2 (set, msg->objid,
 						    kddm_io_default_owner(set,
-								  msg->objid),
-						    msg->req_id);
-				  CLEAR_OBJECT_FLAG(obj_entry, SEND_RM_ACK2);
+									  msg->objid));
+				  CLEAR_OBJECT_RM_ACK2(obj_entry);
 			  }
 			  wake_up_on_wait_object (obj_entry, set);
 		  }
@@ -247,7 +243,7 @@ void handle_remove_ack (struct rpc_desc* desc,
 		  break;
 	}
 
-	kddm_obj_unlock (set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 	return;
 }
@@ -290,7 +286,7 @@ void handle_remove_ack2 (struct rpc_desc* desc,
 		  break;
 	}
 
-	kddm_obj_unlock(set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 exit_no_unlock:
 	return;
 }
@@ -329,7 +325,7 @@ void handle_remove_done (struct rpc_desc* desc,
 		  break;
 	}
 
-	kddm_obj_unlock (set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 	return;
 }
@@ -373,8 +369,7 @@ int __handle_object_invalidation (kerrighed_node_t sender,
 							   INV_COPY);
 
 		  change_prob_owner (obj_entry, msg->reply_node);
-		  send_invalidation_ack (set, msg->objid, msg->reply_node,
-					 msg->req_id);
+		  send_invalidation_ack (set, msg->objid, msg->reply_node);
 		  goto exit_no_unlock;
 
 	  case WAIT_OBJ_READ:
@@ -389,8 +384,7 @@ int __handle_object_invalidation (kerrighed_node_t sender,
 							   WAIT_OBJ_WRITE);
 
 		  change_prob_owner (obj_entry, msg->reply_node);
-		  send_invalidation_ack (set, msg->objid, msg->reply_node,
-					 msg->req_id);
+		  send_invalidation_ack (set, msg->objid, msg->reply_node);
 		  goto exit_no_unlock;
 
 	  default:
@@ -399,7 +393,7 @@ int __handle_object_invalidation (kerrighed_node_t sender,
 	}
 
 exit:
-	kddm_obj_unlock(set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 exit_no_unlock:
 
 	return 0;
@@ -432,16 +426,11 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 					&set);
 
 	if (obj_entry == NULL) {
-		send_remove_ack (set, msg->objid, msg->reply_node, 0,
-				 msg->req_id);
+		send_remove_ack (set, msg->objid, msg->reply_node, 0);
 		goto exit_no_unlock;
 	}
 
 	if (object_frozen_or_pinned (obj_entry, set)) {
-		printk ("Object (%ld;%ld) Frozen count : %d - Give a chance "
-			": %ld\n", msg->set_id, msg->objid,
-			atomic_read (&obj_entry->frozen_count),
-			TEST_OBJECT_PINNED(obj_entry));
 
 		queue_event (__handle_object_remove_req, sender, msg,
 			     sizeof (msg_server_t));
@@ -459,14 +448,18 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 		  if (flag) {
 			  kddm_change_obj_state (set, obj_entry, msg->objid,
 						 WAIT_OBJ_RM_ACK2);
+
+			  kddm_io_remove_object_and_unlock(obj_entry, set,
+							   msg->objid);
+
 			  send_remove_ack (set, msg->objid, msg->reply_node,
-					   flag, msg->req_id);
-			  break;
+					   flag);
+
+			  goto exit_no_unlock;
 		  }
 		  destroy_kddm_obj_entry(set, obj_entry, msg->objid, 1);
 
-		  send_remove_ack (set, msg->objid, msg->reply_node, flag,
-				   msg->req_id);
+		  send_remove_ack (set, msg->objid, msg->reply_node, flag);
 		  goto exit_no_unlock;
 
 	  case WAIT_OBJ_WRITE:
@@ -476,8 +469,7 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 		  kddm_io_remove_object_and_unlock (obj_entry, set,
 						    msg->objid);
 
-		  send_remove_ack (set, msg->objid, msg->reply_node, flag,
-				   msg->req_id);
+		  send_remove_ack (set, msg->objid, msg->reply_node, flag);
 		  goto exit_no_unlock;
 
 	  case INV_FILLING:
@@ -491,7 +483,7 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 	}
 
 exit:
-	kddm_obj_unlock (set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 exit_no_unlock:
 
 	return 0;
@@ -535,8 +527,7 @@ static inline int __handle_send_ownership_req (kerrighed_node_t sender,
 		  break;
 
 	  case WAIT_OBJ_WRITE:
-		  send_invalidation_ack (set, msg->objid, msg->reply_node,
-					 msg->req_id);
+		  send_invalidation_ack (set, msg->objid, msg->reply_node);
 		  break;
 
 	  case INV_FILLING:
@@ -550,7 +541,7 @@ static inline int __handle_send_ownership_req (kerrighed_node_t sender,
 		  break;
 	}
 
-	kddm_obj_unlock (set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 	return 0;
 }
@@ -589,7 +580,7 @@ void handle_change_ownership_ack (struct rpc_desc* desc,
 	else
 		STATE_MACHINE_ERROR (msg->set_id, msg->objid, obj_entry);
 
-	kddm_obj_unlock (set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 	return ;
 }
@@ -663,21 +654,21 @@ void handle_object_receive (struct rpc_desc* desc,
 
 	  default:
 		  STATE_MACHINE_ERROR (msg->set_id, msg->objid, obj_entry);
-		  kddm_obj_unlock(set, msg->objid);
+		  kddm_obj_path_unlock(set, msg->objid);
 		  BUG();
 	}
 
 	if (!(msg->flags & KDDM_NO_DATA)) {
 		kddm_change_obj_state (set, obj_entry, msg->objid,
 				       INV_FILLING);
-		kddm_obj_unlock(set, msg->objid);
+		put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 		res = kddm_io_alloc_object (obj_entry, set, msg->objid);
 		BUG_ON(res != 0);
 
 		kddm_io_import_object (set, obj_entry, desc);
 
-		kddm_obj_lock(set, msg->objid);
+		kddm_obj_path_lock(set, msg->objid);
 
 		if (obj_state == WAIT_ACK_INV) {
 			if (OBJ_EXCLUSIVE (obj_entry))
@@ -703,7 +694,7 @@ void handle_object_receive (struct rpc_desc* desc,
 					    obj_state);
 	}
 
-	kddm_obj_unlock(set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 	if (msg->flags & KDDM_SYNC_OBJECT) {
 		res = kddm_io_sync_object(obj_entry, set, msg->objid);
@@ -770,7 +761,7 @@ int __handle_no_object (kerrighed_node_t sender,
 	}
 
 exit:
-	kddm_obj_unlock(set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 exit_no_unlock:
 	return 0;
@@ -823,7 +814,7 @@ void handle_receive_write_access (struct rpc_desc* desc,
 		  break;
 	}
 
-	kddm_obj_unlock (set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 	return;
 }
@@ -861,8 +852,7 @@ static inline int __handle_object_copy_req (kerrighed_node_t sender,
 
 		if ((msg->flags & KDDM_NO_FT_REQ) && !send_ownership) {
 			send_no_object (set, obj_entry, msg->objid,
-					msg->reply_node, send_ownership,
-					msg->req_id);
+					msg->reply_node, send_ownership);
 			goto exit_no_unlock;
 		}
 
@@ -873,8 +863,7 @@ static inline int __handle_object_copy_req (kerrighed_node_t sender,
 	if (object_frozen_or_pinned (obj_entry, set)) {
 		if (msg->flags & KDDM_TRY_GRAB)
 			send_no_object (set, obj_entry, msg->objid,
-					msg->reply_node, send_ownership,
-					msg->req_id);
+					msg->reply_node, send_ownership);
 		else
 			queue_event (__handle_object_copy_req, sender, msg,
 				     sizeof (msg_server_t));
@@ -956,8 +945,7 @@ regular_case:
 	  case INV_OWNER:
 		  if (msg->flags & KDDM_NO_FT_REQ) {
 			  send_no_object (set, obj_entry, msg->objid,
-					  msg->reply_node, send_ownership,
-					  msg->req_id);
+					  msg->reply_node, send_ownership);
 			  break;
 		  }
 
@@ -967,8 +955,7 @@ regular_case:
 							msg->objid,
 							msg->reply_node,
 							msg->flags,
-							SEND_BACK_FIRST_TOUCH,
-							msg->req_id);
+							SEND_BACK_FIRST_TOUCH);
 		  else {
 			  /* The object can be created on the local node  */
 			  if (request_type == KDDM_OBJ_COPY_ON_WRITE) {
@@ -978,13 +965,9 @@ regular_case:
 					  WRITE_OWNER, msg->flags);
 				  if (r)
 					  goto first_touch_error;
-				  send_copy_on_write(set, obj_entry,
-						     msg->objid,
-						     msg->reply_node, 0,
-						     msg->req_id);
-
-				  kddm_invalidate_local_object_and_unlock(
-					  obj_entry, set, msg->objid, INV_COPY);
+				  obj_entry = send_copy_on_write_and_inv(
+					  set, obj_entry, msg->objid,
+					  msg->reply_node, 0);
 
 				  goto exit_no_unlock;
 			  }
@@ -1000,11 +983,9 @@ regular_case:
 		  break;
 
 	  case WRITE_GHOST:
-		  send_copy_on_write(set, obj_entry, msg->objid,
-				     msg->reply_node, 0, msg->req_id);
-
-		  kddm_invalidate_local_object_and_unlock(
-			  obj_entry, set, msg->objid, INV_COPY);
+		  obj_entry = send_copy_on_write_and_inv(
+			  set, obj_entry, msg->objid,
+			  msg->reply_node, 0);
 
 		  goto exit_no_unlock;
 
@@ -1015,11 +996,9 @@ regular_case:
 			  goto send_copy;
 		  }
 		  else {
-			  send_copy_on_write(set, obj_entry, msg->objid,
-					     msg->reply_node, 0, msg->req_id);
-
-			  kddm_invalidate_local_object_and_unlock(
-				  obj_entry, set, msg->objid, INV_COPY);
+			  obj_entry = send_copy_on_write_and_inv(
+				  set, obj_entry, msg->objid,
+				  msg->reply_node, 0);
 
 			  goto exit_no_unlock;
 		  }
@@ -1031,7 +1010,7 @@ send_copy:
 			  /* Read copy request */
 
 			  send_copy_on_read (set, obj_entry, msg->objid,
-					     msg->reply_node, 0, msg->req_id);
+					     msg->reply_node, 0);
 			  break;
 		  }
 
@@ -1046,13 +1025,11 @@ send_copy:
 			  transfer_write_access_and_unlock (
 				  set, obj_entry, msg->objid,
 				  msg->reply_node,
-				  &obj_entry->master_obj, msg->req_id);
+				  &obj_entry->master_obj);
 		  else {
-			  send_copy_on_write(set, obj_entry, msg->objid,
-					     msg->reply_node, 0, msg->req_id);
-
-			  kddm_invalidate_local_object_and_unlock(
-				  obj_entry, set, msg->objid, INV_COPY);
+			  obj_entry = send_copy_on_write_and_inv(
+				  set, obj_entry, msg->objid,
+				  msg->reply_node, 0);
 		  }
 
 		  goto exit_no_unlock;
@@ -1075,7 +1052,7 @@ send_copy:
 	}
 
 exit:
-	kddm_obj_unlock(set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 exit_no_unlock:
 	return 0;
@@ -1085,7 +1062,7 @@ first_touch_error:
 
 	BUG_ON (msg->reply_node == kerrighed_node_id);
 	send_no_object (set, obj_entry, msg->objid, msg->reply_node,
-			0 /* send ownership */, msg->req_id);
+			0 /* send ownership */);
 	goto exit;
 }
 
@@ -1151,8 +1128,7 @@ int __handle_object_remove_to_mgr_req (kerrighed_node_t sender,
 					msg->objid,
 					msg->reply_node);
 		  send_remove_object_done(set, msg->objid,
-					  msg->reply_node, RMSET(obj_entry),
-					  msg->req_id);
+					  msg->reply_node, RMSET(obj_entry));
 
 		  destroy_kddm_obj_entry(set, obj_entry,
 					 msg->objid, 1);
@@ -1164,7 +1140,7 @@ int __handle_object_remove_to_mgr_req (kerrighed_node_t sender,
 	}
 
 exit:
-	kddm_obj_unlock (set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 exit_no_unlock:
 	return err;
@@ -1208,7 +1184,7 @@ void handle_send_back_first_touch_req (struct rpc_desc* desc,
 		  STATE_MACHINE_ERROR (msg->set_id, msg->objid, obj_entry);
 		  break;
 	}
-	kddm_obj_unlock (set, msg->objid);
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 	return;
 }

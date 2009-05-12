@@ -12,7 +12,6 @@
 #include "object_server.h"
 
 
-
 static inline void wait_copies_remove_done(struct kddm_set *set,
 					   struct kddm_obj *obj_entry,
 					   objid_t objid)
@@ -47,6 +46,15 @@ int generic_kddm_remove_object(struct kddm_set *set,
 	int res = 0, need_wait;
 
 	inc_remove_object_counter(set);
+
+	obj_entry = __get_kddm_obj_entry(set, objid);
+	if (likely(obj_entry != NULL))
+		goto try_again;
+
+	if (I_AM_DEFAULT_OWNER(set, objid))
+		return 0;
+
+	BUG_ON(remove_frozen);
 
 	obj_entry = __get_alloc_kddm_obj_entry(set, objid);
 
@@ -115,7 +123,7 @@ try_again:
 		break;
 	}
 
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 exit_no_unlock:
 
 	return res;

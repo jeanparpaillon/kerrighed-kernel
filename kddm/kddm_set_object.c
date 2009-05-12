@@ -12,7 +12,6 @@
 #include "object_server.h"
 
 
-
 /** Set the initial value of an object.
  *  @author Renaud Lottiaux
  *
@@ -49,7 +48,7 @@ retry:
 	atomic_inc(&set->nr_objects);
 	ADD_TO_SET (COPYSET(obj_entry), kerrighed_node_id);
 	kddm_insert_object (set, objid, obj_entry, state);
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 
 	return 0;
 }

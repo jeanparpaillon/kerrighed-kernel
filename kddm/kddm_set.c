@@ -17,8 +17,6 @@
 #include <linux/hashtable.h>
 #include <linux/unique_id.h>
 
-#include <kerrighed/debug.h>
-
 #include "process.h"
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
@@ -77,7 +75,7 @@ static inline struct kddm_set *alloc_kddm_set_struct (struct kddm_ns *ns,
 	kddm_set->ns = ns;
 	init_waitqueue_head (&kddm_set->create_wq);
 	spin_lock_init(&kddm_set->lock);
-	atomic_set(&kddm_set->usage_count, 1);
+	atomic_set(&kddm_set->count, 1);
 
 err:
 	return kddm_set;
@@ -178,7 +176,7 @@ void free_kddm_set_struct(struct kddm_set * kddm_set)
 
 void put_kddm_set(struct kddm_set *set)
 {
-	if (atomic_dec_and_test(&set->usage_count))
+	if (atomic_dec_and_test(&set->count))
 		free_kddm_set_struct(set);
 }
 EXPORT_SYMBOL(put_kddm_set);
@@ -216,7 +214,7 @@ struct kddm_set *_generic_local_get_kddm_set(struct kddm_ns *ns,
 	}
 
 	if (likely(kddm_set != NULL))
-		atomic_inc(&kddm_set->usage_count);
+		atomic_inc(&kddm_set->count);
 
 found:
 	hashtable_unlock (ns->kddm_set_table);
@@ -494,71 +492,6 @@ EXPORT_SYMBOL(__create_new_kddm_set);
 /*                                                                           */
 /*****************************************************************************/
 
-
-
-/** Increment a kddm set usage counter.
- *  @author Renaud Lottiaux
- *
- *  @param sender    Identifier of the remote requesting machine.
- *  @param msg       Identifier of the kddm set.
- */
-int handle_req_inc_kddm_set_use(struct rpc_desc* desc,
-				void *msg, size_t size)
-{
-	kddm_id_msg_t kddm_id = *((kddm_id_msg_t *) msg);
-	struct kddm_set *kddm_set;
-
-	BUG_ON(!krgnode_online(rpc_desc_get_client(desc)));
-
-	kddm_set = local_get_kddm_set(kddm_id.ns_id, kddm_id.set_id);
-
-	if (kddm_set == NULL) {
-		WARNING ("kddm set %d:%ld invalid\n", kddm_id.ns_id,
-			 kddm_id.set_id );
-		return -EINVAL;
-	}
-
-	atomic_inc(&kddm_set->count);
-
-	put_kddm_set(kddm_set);
-
-	return 0;
-}
-
-
-
-/** Decrement a kddm set usage counter.
- *  @author Renaud Lottiaux
- *
- *  @param sender    Identifier of the remote requesting machine.
- *  @param msg       Identifier of the kddm set.
- */
-int handle_req_dec_kddm_set_use (struct rpc_desc* desc,
-				 void *msg, size_t size)
-{
-	kddm_id_msg_t kddm_id = *((kddm_id_msg_t *) msg);
-	struct kddm_set *kddm_set;
-
-	BUG_ON(!krgnode_online(rpc_desc_get_client(desc)));
-
-	kddm_set = local_get_kddm_set(kddm_id.ns_id, kddm_id.set_id);
-
-	if (kddm_set == NULL) {
-		WARNING ("kddm set %d:%ld invalid\n", kddm_id.ns_id,
-			 kddm_id.set_id );
-		return -EINVAL;
-	}
-
-	if (atomic_dec_and_test(&kddm_set->count))
-		_destroy_kddm_set(kddm_set);
-
-	put_kddm_set(kddm_set);
-
-	return 0;
-}
-
-
-
 /** kddm set lookup handler.
  *  @author Renaud Lottiaux
  *
@@ -693,65 +626,6 @@ int destroy_kddm_set(struct kddm_ns *ns, kddm_set_id_t set_id)
 }
 EXPORT_SYMBOL(destroy_kddm_set);
 
-
-
-int _increment_kddm_set_usage(struct kddm_set * kddm_set)
-{
-	kddm_id_msg_t kddm_id;
-
-	kddm_id.set_id = kddm_set->id;
-	kddm_id.ns_id = kddm_set->ns->id;
-
-	return rpc_sync(REQ_INC_KDDM_SET_USE, KDDM_SET_MGR(kddm_set),
-			&kddm_id, sizeof(kddm_id_msg_t));
-}
-EXPORT_SYMBOL(_increment_kddm_set_usage);
-
-int increment_kddm_set_usage(struct kddm_ns *ns, kddm_set_id_t set_id)
-{
-	struct kddm_set * kddm_set;
-	int r;
-
-	kddm_set = _find_get_kddm_set(ns, set_id);
-	if (kddm_set == NULL)
-		return -EINVAL;
-	r = _increment_kddm_set_usage(kddm_set);
-
-	put_kddm_set(kddm_set);
-	return r;
-}
-EXPORT_SYMBOL(increment_kddm_set_usage);
-
-int _decrement_kddm_set_usage(struct kddm_set * kddm_set)
-{
-	kddm_id_msg_t kddm_id;
-
-	kddm_id.set_id = kddm_set->id;
-	kddm_id.ns_id = kddm_set->ns->id;
-
-	rpc_async(REQ_DEC_KDDM_SET_USE, KDDM_SET_MGR(kddm_set),
-		  &kddm_id, sizeof(kddm_id_msg_t));
-	return 0;
-}
-EXPORT_SYMBOL(_decrement_kddm_set_usage);
-
-int decrement_kddm_set_usage(struct kddm_ns *ns, kddm_set_id_t set_id)
-{
-	struct kddm_set * kddm_set;
-	int r;
-
-	kddm_set = _find_get_kddm_set(ns, set_id);
-	if (kddm_set == NULL)
-		return -EINVAL;
-	r = _decrement_kddm_set_usage(kddm_set);
-
-	put_kddm_set(kddm_set);
-	return r;
-}
-EXPORT_SYMBOL(decrement_kddm_set_usage);
-
-
-
 /*****************************************************************************/
 /*                                                                           */
 /*                               INIT / FINALIZE                             */
@@ -797,14 +671,6 @@ void kddm_set_init()
 	__rpc_register(REQ_KDDM_SET_DESTROY,
 		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_VOID,
 		       kddm_server, handle_req_kddm_set_destroy, 0);
-
-	__rpc_register(REQ_INC_KDDM_SET_USE,
-		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_INT,
-		       kddm_server, handle_req_inc_kddm_set_use, 0);
-
-	__rpc_register(REQ_DEC_KDDM_SET_USE,
-		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_VOID,
-		       kddm_server, handle_req_dec_kddm_set_use, 0);
 
 	printk ("KDDM set init : done\n");
 }

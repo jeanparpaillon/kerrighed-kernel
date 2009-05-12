@@ -13,8 +13,6 @@
 #include <linux/spinlock.h>
 #include <linux/module.h>
 
-#include <kerrighed/debug.h>
-
 #include <kddm/kddm.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
@@ -162,7 +160,6 @@ struct kddm_obj *alloc_kddm_obj_entry(struct kddm_set *set,
 
 	obj_entry->flags = 0;
 	obj_entry->object = NULL;
-	obj_entry->countx = 0;
 
 	BUG_ON(set->def_owner < 0 ||
 	       set->def_owner > KDDM_MAX_DEF_OWNER);
@@ -187,7 +184,25 @@ struct kddm_obj *alloc_kddm_obj_entry(struct kddm_set *set,
 	return obj_entry;
 }
 
+struct kddm_obj *dup_kddm_obj_entry(struct kddm_obj *src_obj)
+{
+	struct kddm_obj * obj_entry;
 
+	BUG_ON(atomic_read(&src_obj->frozen_count) != 0);
+
+	obj_entry = kmem_cache_alloc(kddm_obj_cachep, GFP_ATOMIC);
+	if (obj_entry == NULL) {
+		OOM;
+		return NULL;
+	}
+
+	*obj_entry = *src_obj;
+
+	atomic_set(&obj_entry->sleeper_count, 0);
+	init_waitqueue_head(&obj_entry->waiting_tsk);
+
+	return obj_entry;
+}
 
 /** Remove a local object frame from a kddm set
  */
@@ -217,7 +232,7 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 {
 	BUG_ON (object_frozen(obj_entry, set));
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	/* Check if we are in a flush case i.e. cluster_wide_remove == 0 */
 	if ((!cluster_wide_remove) ||
@@ -245,7 +260,7 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 
 	set->ops->remove_obj_entry(set, objid);
 
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 
 	free_kddm_obj_entry(set, obj_entry, objid);
 exit:
@@ -259,13 +274,22 @@ exit:
 struct kddm_obj *__get_kddm_obj_entry (struct kddm_set *set,
 				       objid_t objid)
 {
-        struct kddm_obj *obj_entry;
+	struct kddm_obj *obj_entry;
 
-	kddm_obj_lock(set, objid);
+retry:
+	kddm_obj_path_lock(set, objid);
 
 	obj_entry = set->ops->lookup_obj_entry(set, objid);
-	if (obj_entry == NULL)
-		kddm_obj_unlock(set, objid);
+	if (obj_entry) {
+		if (TEST_AND_SET_OBJECT_LOCKED (obj_entry)) {
+			kddm_obj_path_unlock (set, objid);
+			while (TEST_OBJECT_LOCKED (obj_entry))
+				cpu_relax();
+			goto retry;
+		}
+	}
+	else
+		kddm_obj_path_unlock(set, objid);
 
 	return obj_entry;
 }
@@ -284,13 +308,21 @@ struct kddm_obj *__get_alloc_kddm_obj_entry (struct kddm_set *set,
 	 * object was already present in the table. Can do better with a cache
 	 * of new objects (see radix tree code for instance).
 	 */
-	new_obj = alloc_kddm_obj_entry (set, objid);
+	new_obj = alloc_kddm_obj_entry(set, objid);
 
-	kddm_obj_lock(set, objid);
+retry:
+	kddm_obj_path_lock(set, objid);
 
 	obj_entry = set->ops->get_obj_entry(set, objid, new_obj);
 	if (obj_entry != new_obj)
 		free_kddm_obj_entry(set, new_obj, objid);
+
+	if (TEST_AND_SET_OBJECT_LOCKED (obj_entry)) {
+		kddm_obj_path_unlock(set, objid);
+		while (TEST_OBJECT_LOCKED (obj_entry))
+			cpu_relax();
+		goto retry;
+	}
 
 	return obj_entry;
 }
@@ -304,16 +336,16 @@ void kddm_insert_object(struct kddm_set * set,
 			struct kddm_obj * obj_entry,
 			kddm_obj_state_t objectState)
 {
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 
 	if (set->ops->insert_object)
 		set->ops->insert_object (set, objid, obj_entry);
 
 	kddm_io_insert_object(obj_entry, set, objid);
 
-	kddm_obj_lock(set, objid);
+	kddm_obj_path_lock(set, objid);
 
 	kddm_change_obj_state(set, obj_entry, objid, objectState);
 
@@ -337,23 +369,20 @@ void kddm_invalidate_local_object_and_unlock(struct kddm_obj * obj_entry,
 					     kddm_obj_state_t state)
 {
 	BUG_ON(obj_entry->object == NULL);
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	/* Inform interface linkers to invalidate the object */
 	kddm_change_obj_state(set, obj_entry, objid, INV_COPY);
 	if (state != INV_COPY)
 		kddm_change_obj_state(set, obj_entry, objid, state);
-	obj_entry->countx = 0;
 
 	CLEAR_SET(COPYSET(obj_entry));
 
 	/* Ask the IO linker to invalidate the object */
 	kddm_io_invalidate_object(obj_entry, set, objid);
 
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 }
-
-
 
 /* Unlock, and make a process sleep until the corresponding
  * object is received.
@@ -365,8 +394,16 @@ void __sleep_on_kddm_obj(struct kddm_set * set,
 {
 	struct kddm_info_struct *kddm_info = current->kddm_info;
 	wait_queue_t wait;
+#ifdef CONFIG_KRG_EPM
+	struct task_struct *krg_cur = krg_current;
+#endif
 
-	ASSERT_OBJ_LOCKED(set, objid);
+#ifdef CONFIG_KRG_EPM
+	if (krg_cur)
+		krg_current = NULL;
+#endif
+
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	/* Increase sleeper count and enqueue the task in the obj wait queue */
 	atomic_inc(&obj_entry->sleeper_count);
@@ -378,7 +415,7 @@ void __sleep_on_kddm_obj(struct kddm_set * set,
 
 	set_current_state(TASK_UNINTERRUPTIBLE);
 
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 
 	if (kddm_info) {
 		kddm_info->wait_obj = obj_entry;
@@ -389,7 +426,14 @@ void __sleep_on_kddm_obj(struct kddm_set * set,
 
 	schedule();
 
-	kddm_obj_lock(set, objid);
+retry:
+	kddm_obj_path_lock(set, objid);
+	if (TEST_AND_SET_OBJECT_LOCKED (obj_entry)) {
+		kddm_obj_path_unlock (set, objid);
+		while (TEST_OBJECT_LOCKED (obj_entry))
+			cpu_relax();
+		goto retry;
+	}
 
 	if( (TEST_FAILURE_FLAG(obj_entry)) &&
 	    !(flags & KDDM_DONT_KILL) ){
@@ -410,6 +454,10 @@ void __sleep_on_kddm_obj(struct kddm_set * set,
 	if (atomic_dec_and_test(&obj_entry->sleeper_count))
 		CLEAR_OBJECT_PINNED(obj_entry);
 
+#ifdef CONFIG_KRG_EPM
+	if (krg_cur)
+		krg_current = krg_cur;
+#endif
 }
 
 
@@ -423,7 +471,7 @@ int check_sleep_on_local_exclusive (struct kddm_set * set,
 {
 	int res = 0;
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	if (object_frozen(obj_entry, set) &&
 	    (set->flags & KDDM_LOCAL_EXCLUSIVE)) {

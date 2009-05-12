@@ -12,7 +12,6 @@
 #include "object_server.h"
 
 
-
 /** Synchronize an object with its attached physical device.
  *  @author Renaud Lottiaux
  *
@@ -53,7 +52,7 @@ int _kddm_sync_frozen_object(struct kddm_set *set,
 	}
 
 	if (I_AM_DEFAULT_OWNER(set, objid)) {
-		kddm_obj_unlock(set, objid);
+		put_kddm_obj_entry(set, obj_entry, objid);
 		res = kddm_io_sync_object(obj_entry, set, objid);
 	}
 	else

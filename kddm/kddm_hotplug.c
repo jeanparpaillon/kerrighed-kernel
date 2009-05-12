@@ -16,8 +16,6 @@
 #include <kddm/kddm.h>
 #include "protocol_action.h"
 
-#include <kerrighed/debug.h>
-
 static void kddm_set_failure_cb(void *_set, void *_data);
 
 /**
@@ -44,7 +42,7 @@ static void handle_set_advertise_owner(struct rpc_desc* desc)
 		return;
 	};
 
-	atomic_inc(&set->usage_count);
+	atomic_inc(&set->count);
 	hashtable_unlock(kddm_def_ns->kddm_set_table);
 
 	rpc_unpack_type(desc, objid);
@@ -56,7 +54,7 @@ static void handle_set_advertise_owner(struct rpc_desc* desc)
 	if(OBJ_STATE(obj_entry) == INV_OWNER)
 		kddm_change_obj_state(set, obj_entry, objid, INV_COPY);
 
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 };
 
 /**
@@ -345,7 +343,7 @@ static void handle_set_copyset(struct rpc_desc *desc)
 		};
 
 		object_clear_frozen(obj_entry, set);
-		kddm_obj_unlock(set, objid);
+		put_kddm_obj_entry(set, obj_entry, objid);
 	} else {
 
 		set = _local_get_kddm_set(kddm_def_ns, set_id);
@@ -394,7 +392,7 @@ static void handle_set_copyset(struct rpc_desc *desc)
 			change_prob_owner(obj_entry, potential_owner);
 
 	unlock_forward_rq:
-		kddm_obj_unlock(set, objid);
+		put_kddm_obj_entry(set, obj_entry, objid);
 
 	put_set_forward_rq:
 		put_kddm_set(set);
@@ -469,7 +467,7 @@ static void handle_select_owner(struct rpc_desc *desc)
 		if (obj_entry != NULL) {
 			CLEAR_FAILURE_FLAG(obj_entry);
 			change_prob_owner(obj_entry, sender);
-			kddm_obj_unlock(set, objid);
+			put_kddm_obj_entry(set, obj_entry, objid);
 		};
 
 	};

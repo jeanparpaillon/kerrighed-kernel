@@ -3,6 +3,7 @@
 
 #include <kddm/kddm_tree.h>
 #include <linux/wait.h>
+#include <net/krgrpc/rpc.h>
 #include <kerrighed/types.h>
 
 
@@ -26,7 +27,7 @@
 //             |             |  |  |  |            |             |  | | +----------------- Pinned flag
 //             |             |  |  |  |            |             |  | +------------------- SEND_RM_ACK2 flag
 //             |             |  |  |  |            |             |  +--------------------- Failure Flag
-//             |             |  |  |  |            |             +------------------------ Unused flag
+//             |             |  |  |  |            |             +------------------------ Locked
 //             |             |  |  |  |            +-------------------------------------- Object state index
 //             |             |  |  |  +--------------------------------------------------- Owner flag
 //             |             |  |  +------------------------------------------------------ Read access flag
@@ -34,26 +35,23 @@
 //             |             +------------------------------------------------------------ Unused
 //             +-------------------------------------------------------------------------- Probe Owner
 
-/* Reserved bits. For future short entry usage */
-#define OBJ_ENTRY_RESERVED0 0x00000001  /* Bit reserved for external usage */
-#define OBJ_ENTRY_RESERVED1 0x00000002  /* Bit reserved for external usage */
-
 /* Various object flags */
-#define OBJECT_PINNED       0x00000100  /* Lock the object to give waiting
-					   processes a change to access
-				           the object before a potential
-				           invalidation */
-#define SEND_RM_ACK2        0x00000200  /* The default owner need an ack2 after
-					   a global remove is done */
-#define FAILURE_FLAG        0x00000400
+#define OBJECT_PINNED        8  /* Lock the object to give waiting
+				   processes a change to access
+				   the object before a potential
+				   invalidation */
+#define SEND_RM_ACK2         9  /* The default owner need an ack2 after
+				   a global remove is done */
+#define FAILURE_FLAG        10
+#define OBJECT_LOCKED       11  /* The object is locked */
 
 /* Object state */
 #define STATE_INDEX_MASK    0x000FF000  /* Mask to extract the state index */
 #define STATE_INDEX_SHIFT   12
 
-#define KDDM_OWNER_OBJ      0x00100000  /* Object is the master object */
-#define KDDM_READ_OBJ       0x00200000  /* Object can be read */
-#define KDDM_WRITE_OBJ      0x00400000  /* Object can be write */
+#define KDDM_OWNER_OBJ      (1 << 20)  /* Object is the master object */
+#define KDDM_READ_OBJ       (1 << 21)  /* Object can be read */
+#define KDDM_WRITE_OBJ      (1 << 22)  /* Object can be write */
 
 #define OBJECT_STATE_MASK   0x00FFF000
 
@@ -61,23 +59,37 @@
 #define PROB_OWNER_MASK     0xFF000000
 #define PROB_OWNER_SHIFT    24
 
-
-
 /* Helper macros */
 
 #define SET_OBJECT_PINNED(obj_entry) \
-        (obj_entry)->flags |= OBJECT_PINNED
+        set_bit (OBJECT_PINNED, &(obj_entry)->flags)
 #define CLEAR_OBJECT_PINNED(obj_entry) \
-        (obj_entry)->flags = (obj_entry)->flags & ~OBJECT_PINNED
+        clear_bit (OBJECT_PINNED, &(obj_entry)->flags)
 #define TEST_OBJECT_PINNED(obj_entry) \
-        ((obj_entry)->flags & OBJECT_PINNED)
+        test_bit (OBJECT_PINNED, &(obj_entry)->flags)
 
-#define SET_OBJECT_FLAG(obj_entry,flag) \
-        (obj_entry)->flags |= (flag)
-#define TEST_OBJECT_FLAG(obj_entry,flag) \
-        ((obj_entry)->flags & (flag))
-#define CLEAR_OBJECT_FLAG(obj_entry,flag) \
-        (obj_entry)->flags &= ~(flag)
+#define SET_OBJECT_LOCKED(obj_entry) \
+        set_bit(OBJECT_LOCKED, &(obj_entry)->flags)
+#define TEST_AND_SET_OBJECT_LOCKED(obj_entry) \
+        test_and_set_bit(OBJECT_LOCKED, &(obj_entry)->flags)
+#define CLEAR_OBJECT_LOCKED(obj_entry) \
+        clear_bit(OBJECT_LOCKED, &(obj_entry)->flags)
+#define TEST_OBJECT_LOCKED(obj_entry) \
+        test_bit(OBJECT_LOCKED, &(obj_entry)->flags)
+
+#define SET_OBJECT_RM_ACK2(obj_entry) \
+        set_bit (SEND_RM_ACK2, &(obj_entry)->flags)
+#define CLEAR_OBJECT_RM_ACK2(obj_entry) \
+        clear_bit (SEND_RM_ACK2, &(obj_entry)->flags)
+#define TEST_OBJECT_RM_ACK2(obj_entry) \
+        test_bit (SEND_RM_ACK2, &(obj_entry)->flags)
+
+#define SET_FAILURE_FLAG(obj_entry) \
+        set_bit (FAILURE_FLAG, &(obj_entry)->flags)
+#define CLEAR_FAILURE_FLAG(obj_entry) \
+        clear_bit (FAILURE_FLAG, &(obj_entry)->flags)
+#define TEST_FAILURE_FLAG(obj_entry) \
+        test_bit (FAILURE_FLAG, &(obj_entry)->flags)
 
 #define OBJ_STATE(object) \
         (int)((object)->flags & OBJECT_STATE_MASK)
@@ -89,13 +101,6 @@
         atomic_inc (&nr_OBJ_STATE[OBJ_STATE_INDEX(state)])
 #define DEC_STATE_COUNTER(state) \
         atomic_inc (&nr_OBJ_STATE[OBJ_STATE_INDEX(state)])
-
-#define SET_FAILURE_FLAG(obj_entry) \
-        (obj_entry)->flags |= FAILURE_FLAG
-#define CLEAR_FAILURE_FLAG(obj_entry) \
-        (obj_entry)->flags = (obj_entry)->flags & ~FAILURE_FLAG
-#define TEST_FAILURE_FLAG(obj_entry) \
-        ((obj_entry)->flags & FAILURE_FLAG)
 
 
 /** Object states used for the coherence protocol */
@@ -153,7 +158,6 @@ typedef struct kddm_obj {
 	masterObj_t master_obj;        /* Object informations handled by the
 					  manager */
 	void *object;                  /* Kernel physical object struct */
-	int countx;                    /* Object count debugging */
 	atomic_t frozen_count;         /* Number of task freezing the object */
 	atomic_t sleeper_count;        /* Nunmber of task waiting on the
 					  object */
@@ -177,7 +181,6 @@ typedef struct kddm_obj {
 
 
 struct kddm_set;
-struct rpc_desc;
 
 typedef struct kddm_set_ops {
 	void *(*obj_set_alloc) (struct kddm_set *set, void *data);
@@ -190,6 +193,8 @@ typedef struct kddm_set_ops {
 					  objid_t objid, struct kddm_obj *obj);
 	void (*insert_object)(struct kddm_set * set, objid_t objid,
 			      struct kddm_obj *obj_entry);
+	struct kddm_obj *(*cow_object)(struct kddm_set * set,
+				       struct kddm_obj *obj_entry, objid_t objid);
 	void (*remove_obj_entry) (struct kddm_set *set, objid_t objid);
 	void (*for_each_obj_entry)(struct kddm_set *set,
 				   int(*f)(unsigned long, void *, void*),
@@ -218,8 +223,7 @@ typedef struct kddm_set {
 	unsigned long flags;         /**< Kddm set flags */
 	int state;                   /**< State of the set (locked, ...) */
 	wait_queue_head_t create_wq; /**< Process waiting for set creation */
-	atomic_t usage_count;
-	atomic_t count;              /**< Global usage counter */
+	atomic_t count;
 	unsigned int last_ra_start;  /**< Start of the last readahead window */
 	int ra_window_size;          /**< Size of the readahead window */
 	kerrighed_node_t def_owner;  /**< Id of default owner node */

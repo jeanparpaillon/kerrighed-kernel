@@ -56,22 +56,27 @@ void request_object_on_read (struct kddm_set * set, struct kddm_obj *obj_entry,
  *  @author Renaud Lottiaux
  */
 void send_copy_on_write (struct kddm_set *set, struct kddm_obj *obj_entry,
-			 objid_t objid, kerrighed_node_t dest_node, int flags,
-			 long req_id);
+			 objid_t objid, kerrighed_node_t dest_node, int flags);
+
+struct kddm_obj *send_copy_on_write_and_inv (struct kddm_set *set,
+					     struct kddm_obj *obj_entry,
+					     objid_t objid,
+					     kerrighed_node_t dest_node,
+					     int flags);
+
 
 /** Send an object read copy to the given node.
  *  @author Renaud Lottiaux
  */
 int send_copy_on_read (struct kddm_set *set, struct kddm_obj *obj_entry,
-		       objid_t objid, kerrighed_node_t dest_node, int flags,
-		       long req_id);
+		       objid_t objid, kerrighed_node_t dest_node, int flags);
 
 /** Send a "no object" anwser to the given node.
  *  @author Renaud Lottiaux
  */
 void send_no_object (struct kddm_set * set, struct kddm_obj *obj_entry,
 		     objid_t objid, kerrighed_node_t dest_node,
-		     int send_ownership, long req_id);
+		     int send_ownership);
 
 /** Send object write access to the given node.
  *  @author Renaud Lottiaux
@@ -80,8 +85,7 @@ void transfer_write_access_and_unlock (struct kddm_set *set,
                                        struct kddm_obj *obj_entry,
 				       objid_t objid,
 				       kerrighed_node_t dest_node,
-				       masterObj_t * master_info,
-				       long req_id);
+				       masterObj_t * master_info);
 
 void merge_ack_set(krgnodemask_t *obj_set, krgnodemask_t *recv_set);
 
@@ -89,22 +93,22 @@ void merge_ack_set(krgnodemask_t *obj_set, krgnodemask_t *recv_set);
  *  @author Renaud Lottiaux
  */
 void send_invalidation_ack (struct kddm_set *set, objid_t objid,
-			    kerrighed_node_t dest_node, long req_id);
+			    kerrighed_node_t dest_node);
 
 /** Send an object remove ack to the given node.
  *  @author Renaud Lottiaux
  */
 void send_remove_ack (struct kddm_set *set, objid_t objid,
-		      kerrighed_node_t dest_node, int flags, long req_id);
+		      kerrighed_node_t dest_node, int flags);
 void send_remove_ack2 (struct kddm_set *set, objid_t objid,
-		       kerrighed_node_t dest_node, long req_id);
+		       kerrighed_node_t dest_node);
 
 /** Send a global objects remove ack from the manager node to the given node.
  *  @author Renaud Lottiaux
  */
 void send_remove_object_done (struct kddm_set *set, objid_t objid,
-			      kerrighed_node_t dest_node, krgnodemask_t *rmset,
-			      long req_id);
+			      kerrighed_node_t dest_node,
+			      krgnodemask_t *rmset);
 
 
 /** Do an object first touch.
@@ -124,7 +128,7 @@ int object_first_touch_no_wakeup (struct kddm_set *set,
 void send_back_object_first_touch (struct kddm_set *set,
 				   struct kddm_obj * obj_entry,
                                    objid_t objid, kerrighed_node_t dest_node,
-                                   int flags, int req_type, long req_id);
+                                   int flags, int req_type);
 
 void send_change_ownership_req (struct kddm_set * set,
 				struct kddm_obj *obj_entry, objid_t objid,

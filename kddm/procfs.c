@@ -504,12 +504,8 @@ int read_set_id_setinfo (char *buffer,
 		len += sprintf (mybuffer + len, "- Copy entries     : %d\n",
 				atomic_read(&set->nr_copies));
 
-		len += sprintf (mybuffer + len, "Local usage count  : %d\n",
-				atomic_read(&set->usage_count) - 1);
-
-		if (KDDM_SET_MGR (set) == kerrighed_node_id)
-			len += sprintf (mybuffer + len, "Global usage count : %d\n",
-					atomic_read(&set->count));
+		len += sprintf (mybuffer + len, "Usage count  : %d\n",
+				atomic_read(&set->count) - 1);
 
 		switch (set->def_owner) {
 		  case KDDM_RR_DEF_OWNER:
@@ -595,7 +591,7 @@ int read_set_id_objectstates (char *buffer,
 			default:
 				buffer[i] = '?';
 			}
-			kddm_obj_unlock(set, offset + i);
+			put_kddm_obj_entry(set, obj_entry, offset + i);
 		}
 		else
 			buffer[i] = 'I';

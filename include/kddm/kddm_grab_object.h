@@ -82,6 +82,8 @@ void *_kddm_try_grab_object(struct kddm_set *set, objid_t objid);
 void *__kddm_try_grab_object(struct kddm_set *set,
 			     struct kddm_obj *obj_entry, objid_t objid);
 
+void *_kddm_grab_object_cow(struct kddm_set *set, objid_t objid);
+
 /** Generic grab function with free use of KDDM flags */
 void *fkddm_grab_object(struct kddm_ns *ns, kddm_set_id_t set_id,
 			objid_t objid, int flags);

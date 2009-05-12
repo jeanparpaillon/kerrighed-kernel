@@ -19,7 +19,6 @@
 #include <kddm/io_linker.h>
 
 
-
 struct iolinker_struct *iolinker_list[MAX_IO_LINKER];
 
 
@@ -230,7 +229,7 @@ int kddm_io_put_object (struct kddm_obj * obj_entry,
 {
 	int res = 0;
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	if (set && set->iolinker->put_object)
 		res = set->iolinker->put_object (obj_entry, set,
@@ -254,7 +253,7 @@ int kddm_io_invalidate_object (struct kddm_obj * obj_entry,
 {
 	int res = 0;
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	if (obj_entry->object) {
 		if (set->iolinker && set->iolinker->invalidate_object) {
@@ -307,17 +306,17 @@ int kddm_io_remove_object_and_unlock (struct kddm_obj * obj_entry,
 	int res = 0;
 	void *object;
 
-	ASSERT_OBJ_LOCKED(set, objid);
+	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	object = obj_entry->object;
 
 	if (object == NULL) {
-		kddm_obj_unlock(set, objid);
+		put_kddm_obj_entry(set, obj_entry, objid);
 		goto done;
 	}
 
 	obj_entry->object = NULL;
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 
 	res = kddm_io_remove_object (object, set, objid);
 

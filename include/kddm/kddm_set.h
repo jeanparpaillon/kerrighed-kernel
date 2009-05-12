@@ -262,9 +262,4 @@ static inline struct kddm_set *_local_get_alloc_unique_kddm_set(
 
 void put_kddm_set(struct kddm_set *set);
 
-int _increment_kddm_set_usage(struct kddm_set * kddm_set);
-int increment_kddm_set_usage(struct kddm_ns *ns, kddm_set_id_t set_id);
-int _decrement_kddm_set_usage(struct kddm_set * kddm_set);
-int decrement_kddm_set_usage(struct kddm_ns *ns, kddm_set_id_t set_id);
-
 #endif // __KDDM_NS__

@@ -12,7 +12,27 @@
 #include "protocol_action.h"
 #include "object_server.h"
 
-
+static inline struct kddm_obj *check_cow (struct kddm_set *set,
+					  struct kddm_obj *obj_entry,
+					  objid_t objid,
+					  int flags,
+					  int *retry)
+{
+	*retry = 0;
+	if (flags & KDDM_COW_OBJECT) {
+		if (object_frozen(obj_entry, set)) {
+			if (!(flags & KDDM_ASYNC_REQ)) {
+				sleep_on_kddm_obj(set, obj_entry, objid,
+						  flags);
+				*retry = 1;
+			}
+		}
+		else
+			obj_entry = kddm_cow_object (set, obj_entry,
+						     objid);
+	}
+	return obj_entry;
+}
 
 /** Get a copy of a object and invalidate any other existing copy.
  *  @author Renaud Lottiaux
@@ -31,6 +51,7 @@ void *generic_kddm_grab_object(struct kddm_set *set,
 			       int flags)
 {
 	struct kddm_obj *obj_entry;
+	int retry;
 
 	inc_grab_object_counter(set);
 
@@ -74,8 +95,13 @@ try_again:
 sleep_on_wait_page:
 		sleep_on_kddm_obj(set, obj_entry, objid, flags);
 
-		if (OBJ_STATE(obj_entry) == WRITE_OWNER)
+		if (OBJ_STATE(obj_entry) == WRITE_OWNER) {
+			obj_entry = check_cow (set, obj_entry, objid, flags,
+					       &retry);
+			if (retry)
+				goto try_again;
 			break;
+		}
 
 		if (flags & KDDM_NO_FT_REQ) {
 			if ((OBJ_STATE(obj_entry) == INV_OWNER) ||
@@ -101,7 +127,14 @@ sleep_on_wait_page:
 		break;
 
 	case READ_OWNER:
+		obj_entry = check_cow (set, obj_entry, objid, flags,
+				       &retry);
+		if (retry)
+			goto try_again;
+
 		if (!OBJ_EXCLUSIVE(obj_entry)) {
+			BUG_ON (flags & KDDM_COW_OBJECT);
+
 			kddm_change_obj_state(set, obj_entry, objid,
 					      WAIT_ACK_WRITE);
 			request_copies_invalidation(set, obj_entry, objid,
@@ -121,9 +154,15 @@ sleep_on_wait_page:
 		break;
 
 	case WRITE_OWNER:
+		obj_entry = check_cow (set, obj_entry, objid, flags, &retry);
+		if (retry)
+			goto try_again;
 		break;
 
 	case WRITE_GHOST:
+		obj_entry = check_cow (set, obj_entry, objid, flags, &retry);
+		if (retry)
+			goto try_again;
 		kddm_change_obj_state(set, obj_entry, objid, WRITE_OWNER);
 		break;
 
@@ -165,12 +204,12 @@ sleep:
 		set_object_frozen(obj_entry, set);
 
 exit_no_freeze:
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 
 	return obj_entry->object;
 
 exit_try_failed:
-	kddm_obj_unlock(set, objid);
+	put_kddm_obj_entry(set, obj_entry, objid);
 	return ERR_PTR(-EBUSY);
 }
 
@@ -324,12 +363,18 @@ void *kddm_grab_object_no_lock(struct kddm_ns *ns, kddm_set_id_t set_id,
 EXPORT_SYMBOL(kddm_grab_object_no_lock);
 
 
-
 void *_kddm_try_grab_object(struct kddm_set *set, objid_t objid)
 {
 	return generic_kddm_grab_object(set, objid, KDDM_TRY_GRAB);
 }
 EXPORT_SYMBOL(_kddm_try_grab_object);
+
+void *_kddm_grab_object_cow(struct kddm_set *set, objid_t objid)
+{
+	return generic_kddm_grab_object(set, objid, KDDM_COW_OBJECT);
+}
+EXPORT_SYMBOL(_kddm_grab_object_cow);
+
 
 void *kddm_try_grab_object(struct kddm_ns *ns, kddm_set_id_t set_id,
 			   objid_t objid)

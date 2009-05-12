@@ -34,7 +34,7 @@ static inline void *_kddm_find_object_raw (struct kddm_set *set, objid_t objid)
 	obj_entry = __get_kddm_obj_entry(set, objid);
 	if (obj_entry) {
 		obj = obj_entry->object;
-		kddm_obj_unlock(set, objid);
+		put_kddm_obj_entry(set, obj_entry, objid);
 	}
 
 	return obj;
