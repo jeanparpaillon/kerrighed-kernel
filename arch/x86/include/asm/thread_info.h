@@ -101,6 +101,9 @@ struct thread_info {
 #ifdef CONFIG_KRG_EPM
 #define TIF_MIGRATION		29
 #endif
+#ifdef CONFIG_KRGRPC_DEBUG
+#define TIF_KRG_DEBUG		29
+#endif
 
 #define _TIF_SYSCALL_TRACE	(1 << TIF_SYSCALL_TRACE)
 #define _TIF_NOTIFY_RESUME	(1 << TIF_NOTIFY_RESUME)
@@ -128,6 +131,9 @@ struct thread_info {
 #endif
 #ifdef CONFIG_KRG_EPM
 #define _TIF_MIGRATION		(1 << TIF_MIGRATION)
+#endif
+#ifdef CONFIG_KRGRPC_DEBUG
+#define _TIF_KRG_DEBUG		(1 << TIF_KRG_DEBUG)
 #endif
 
 /* work to do in syscall_trace_enter() */

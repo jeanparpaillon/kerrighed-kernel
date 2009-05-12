@@ -588,6 +588,11 @@ int __rpc_send_ll(struct rpc_desc* desc,
 
 	elem->h.rpcid = desc->rpcid;
 
+#ifdef CONFIG_KRGRPC_DEBUG
+	if (desc->debug)
+		elem->h.flags |= __RPC_HEADER_FLAGS_DEBUG;
+#endif
+	
 	elem->iov[0].iov_base = &elem->h;
 	elem->iov[0].iov_len = sizeof(elem->h);
 	
@@ -828,6 +833,10 @@ static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
 	if (!desc)
 		goto out;
 
+#ifdef CONFIG_KRG_DEBUG
+	desc->debug = h->flags & __RPC_HEADER_FLAGS_DEBUG;
+#endif
+
 	desc->desc_send = rpc_desc_send_alloc();
 	if (!desc->desc_send)
 		goto err_desc_send;
@@ -907,6 +916,10 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 		BUG_ON(desc->desc_id != h->desc_id);
 		rpc_desc_get(desc);
 
+#ifdef CONFIG_KRGRPC_DEBUG
+		desc->debug = h->flags & __RPC_HEADER_FLAGS_DEBUG;
+#endif
+
 	} else {
 		
 		spin_lock(&rpc_desc_done_lock[h->client]);
@@ -940,6 +953,7 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 				 */
 				hashtable_unlock(desc_ht);
 				err = -ENOMEM;
+				printk("tipc_handler_ordered: OOM (desc)\n");
 				goto out;
 			}
 
@@ -997,6 +1011,7 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 		 * complexity to try to free it.
 		 */
 		err = -ENOMEM;
+		printk("tipc_handler_ordered: OOM (descelem)\n");
 		goto out_put;
 	}
 
