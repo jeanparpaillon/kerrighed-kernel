@@ -14,7 +14,15 @@ static __always_inline struct task_struct *get_current(void)
 	return percpu_read(current_task);
 }
 
+#ifdef CONFIG_KRG_EPM
+#define krg_current (get_current()->effective_current)
+#define current ({							\
+	struct task_struct *__cur = get_current();			\
+	__cur->effective_current ? __cur->effective_current : __cur;	\
+})
+#else /* !CONFIG_KRG_EPM */
 #define current get_current()
+#endif /* !CONFIG_KRG_EPM */
 
 #endif /* __ASSEMBLY__ */
 
