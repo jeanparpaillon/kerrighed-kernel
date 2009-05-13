@@ -4,6 +4,7 @@
 
 #include <kerrighed/krgsyms.h>
 #include <linux/hashtable.h>
+#include <linux/init.h>
 
 /*****************************************************************************/
 /*                                                                           */
@@ -14,7 +15,7 @@
 
 #define KRGSYMS_HTABLE_SIZE 256
 
-static hashtable_t *krgsyms_htable = NULL;
+static hashtable_t *krgsyms_htable;
 static void* krgsyms_table[KRGSYMS_TABLE_SIZE];
 
 int krgsyms_register(enum krgsyms_val v, void* p)
@@ -91,19 +92,13 @@ void* krgsyms_import(enum krgsyms_val v)
 	return krgsyms_table[v];
 };
 
-int init_krgsyms(void)
+static __init int init_krgsyms(void)
 {
-	int i;
-
 	krgsyms_htable = hashtable_new(KRGSYMS_HTABLE_SIZE);
-	if(krgsyms_table == NULL) return -ENOMEM;
-
-	for(i=0;i<KRGSYMS_TABLE_SIZE;i++){
-		krgsyms_table[i] = NULL;
-	};
+	if (!krgsyms_htable)
+		panic("Could not setup krgsyms table!\n");
 
 	return 0;
 };
 
-void cleanup_krgsyms(void){
-};
+pure_initcall(init_krgsyms);

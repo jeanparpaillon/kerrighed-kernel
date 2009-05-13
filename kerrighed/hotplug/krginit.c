@@ -12,7 +12,6 @@
 #include <kerrighed/types.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/krgflags.h>
-#include <kerrighed/krgsyms.h>
 #include <linux/unique_id.h>
 #include <net/krgrpc/rpc.h>
 #ifdef CONFIG_KRG_PROC
@@ -573,7 +572,6 @@ void __init kerrighed_init(void){
 	BUG_ON(krg_wq == NULL);
 	BUG_ON(krg_nb_wq == NULL);
 
-	init_krgsyms();
 	init_unique_ids();
 	init_node_discovering();
 

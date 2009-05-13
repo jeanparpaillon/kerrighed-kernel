@@ -49,9 +49,6 @@ int krgsyms_unregister(enum krgsyms_val v);
 enum krgsyms_val krgsyms_export(void* p);
 void* krgsyms_import(enum krgsyms_val v);
 
-int init_krgsyms(void);
-void cleanup_krgsyms(void);
-
 #endif /* __ASSEMBLY__ */
 
 #endif /* __KRGSYMS__ */
