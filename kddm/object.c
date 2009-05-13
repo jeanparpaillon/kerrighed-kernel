@@ -16,7 +16,7 @@
 #include <kddm/kddm.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
-#include "object_server.h"
+#include <kddm/object_server.h>
 #include <kddm/object.h>
 #include <kddm/io_linker.h>
 

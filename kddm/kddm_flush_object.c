@@ -9,8 +9,8 @@
 #include <linux/module.h>
 
 #include <kddm/kddm.h>
+#include <kddm/object_server.h>
 #include "protocol_action.h"
-#include "object_server.h"
 
 
 /** Remove an object from local physical memory.

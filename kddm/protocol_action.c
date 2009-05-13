@@ -16,7 +16,7 @@
 #include <kerrighed/krginit.h>
 
 #include <kddm/kddm.h>
-#include "object_server.h"
+#include <kddm/object_server.h>
 #include "protocol_action.h"
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>

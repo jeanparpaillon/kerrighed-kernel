@@ -16,7 +16,7 @@
 
 #include <kerrighed/hotplug.h>
 #include <kddm/kddm.h>
-#include "object_server.h"
+#include <kddm/object_server.h>
 #include "procfs.h"
 #include "protocol_action.h"
 #include <kddm/name_space.h>

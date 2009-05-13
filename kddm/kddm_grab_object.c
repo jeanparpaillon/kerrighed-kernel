@@ -9,8 +9,8 @@
 #include <linux/module.h>
 
 #include <kddm/kddm.h>
+#include <kddm/object_server.h>
 #include "protocol_action.h"
-#include "object_server.h"
 
 static inline struct kddm_obj *check_cow (struct kddm_set *set,
 					  struct kddm_obj *obj_entry,
