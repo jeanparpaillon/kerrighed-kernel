@@ -1389,6 +1389,11 @@ int do_execve(char * filename,
 	return retval;
 
 out:
+#ifdef CONFIG_KRG_EPM
+	/* Quiet the BUG_ON() in mmput() */
+	if (bprm->mm)
+		atomic_dec(&bprm->mm->mm_ltasks);
+#endif
 	if (bprm->mm)
 		mmput (bprm->mm);
 

@@ -18,10 +18,18 @@
 extern struct files_struct init_files;
 extern struct fs_struct init_fs;
 
+#ifdef CONFIG_KRG_EPM
+#define INIT_MM_EPM						\
+	.mm_ltasks      = ATOMIC_INIT(1),
+#else
+#define INIT_MM_EPM
+#endif
+
 #define INIT_MM(name) \
 {			 					\
 	.mm_rb		= RB_ROOT,				\
 	.pgd		= swapper_pg_dir, 			\
+	INIT_MM_EPM						\
 	.mm_users	= ATOMIC_INIT(2), 			\
 	.mm_count	= ATOMIC_INIT(1), 			\
 	.mmap_sem	= __RWSEM_INITIALIZER(name.mmap_sem),	\
