@@ -38,12 +38,6 @@ enum {
 	PCUS_RUNNING
 };
 
-struct credentials {
-	uid_t uid;
-	uid_t euid;
-	gid_t gid;
-};
-
 typedef struct task_identity {
 	pid_t pid;
 	pid_t tgid;
@@ -106,7 +100,80 @@ struct app_struct {
 			struct file *terminal;
 		} restart;
 	};
+
+	const struct cred *cred;
 };
+
+/*--------------------------------------------------------------------------*/
+
+int create_application(struct task_struct *task);
+
+struct app_struct *new_local_app(long app_id);
+
+void delete_app(struct app_struct *app);
+
+int __delete_local_app(struct app_struct *app);
+
+struct app_struct *find_local_app(long app_id);
+
+/*--------------------------------------------------------------------------*/
+
+task_state_t *alloc_task_state_from_pids(pid_t pid,
+					  pid_t tgid,
+					  pid_t parent,
+					  pid_t real_parent,
+					  pid_t real_parent_tgid,
+					  pid_t pgrp,
+					  pid_t session);
+
+void free_task_state(task_state_t *t);
+
+int register_task_to_appid(long app_id, struct task_struct *task);
+
+int register_task_to_app(struct app_struct *app, struct task_struct *task);
+
+void unregister_task_to_app(struct app_struct *app, struct task_struct *task);
+
+/* need to hold lock app->lock before calling it */
+static inline int local_tasks_list_empty(struct app_struct *app) {
+	return list_empty(&app->tasks);
+}
+
+void set_task_chkpt_result(struct task_struct *task, int result);
+int get_local_tasks_chkpt_result(struct app_struct* app);
+
+/*--------------------------------------------------------------------------*/
+
+int krg_copy_application(struct task_struct *task);
+void krg_exit_application(struct task_struct *task);
+
+/*--------------------------------------------------------------------------*/
+
+int export_application(struct epm_action *action,
+		       ghost_t *ghost, struct task_struct *task);
+int import_application(struct epm_action *action,
+		       ghost_t *ghost, struct task_struct *task);
+void unimport_application(struct epm_action *action,
+			  ghost_t *ghost, struct task_struct *task);
+
+/*--------------------------------------------------------------------------*/
+
+int global_stop(struct app_kddm_object *obj);
+
+int global_continue(struct app_kddm_object *obj, int first_run);
+
+int global_kill(struct app_kddm_object *obj, int signal);
+
+/*--------------------------------------------------------------------------*/
+
+int app_set_userdata(__u64 user_data);
+
+int app_get_userdata(long _appid,  type_ckpt_t type_id, __u64 *user_data);
+
+/*--------------------------------------------------------------------------*/
+
+void application_cr_server_init(void);
+void application_cr_server_finalize(void);
 
 #endif /* CONFIG_KRG_EPM */
 

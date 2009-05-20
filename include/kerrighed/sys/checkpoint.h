@@ -1,6 +1,8 @@
 #ifndef CHECKPOINT_TYPES_H
 #define CHECKPOINT_TYPES_H
 
+#include <linux/types.h>
+
 #define E_CR_APPBUSY     1000
 #define E_CR_PIDBUSY     1001
 #define E_CR_TASKDEAD    1002
@@ -11,17 +13,11 @@ typedef enum {
 	FROM_PID
 } type_ckpt_t;
 
-typedef enum {
-	DISK,
-	MEMORY
-} media_t;
-
 typedef struct checkpoint_info
 {
 	long app_id;
 
 	type_ckpt_t type;
-	media_t media;
 
 	int chkpt_sn;
 	int result;
@@ -36,7 +32,13 @@ typedef struct restart_request
 	long app_id;
 	int chkpt_sn;
 	int flags;
-	media_t media;
 } restart_request_t;
+
+typedef struct app_userdata_request
+{
+	long app_id;
+	type_ckpt_t type;
+	__u64 user_data;
+} app_userdata_request_t;
 
 #endif

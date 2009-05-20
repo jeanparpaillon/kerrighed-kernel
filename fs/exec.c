@@ -61,6 +61,9 @@
 #include <kerrighed/task.h>
 #include <kerrighed/krginit.h>
 #endif
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/signal.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
@@ -808,6 +811,9 @@ static int de_thread(struct task_struct *tsk)
 #ifdef CONFIG_KRG_PROC
 		struct task_kddm_object *obj;
 #endif
+#ifdef CONFIG_KRG_EPM
+		struct children_kddm_object *parent_children_obj;
+#endif
 
 #ifdef CONFIG_KRG_PROC
 		down_read(&kerrighed_init_sem);
@@ -822,13 +828,25 @@ static int de_thread(struct task_struct *tsk)
 			schedule();
 		}
 
+#ifdef CONFIG_KRG_EPM
+		parent_children_obj = rcu_dereference(tsk->parent_children_obj);
+#endif
 #ifdef CONFIG_KRG_PROC
 		/* tsk->pid will disappear just below. */
 		obj = leader->task_obj;
 		BUG_ON(!obj ^ !tsk->task_obj);
-		if (obj) {
+		if (
+		    obj
+#ifdef CONFIG_KRG_EPM
+		    || parent_children_obj
+#endif
+		   ) {
 			write_unlock_irq(&tasklist_lock);
 
+#ifdef CONFIG_KRG_EPM
+			parent_children_obj =
+				krg_children_prepare_de_thread(tsk);
+#endif
 			krg_task_free(tsk);
 
 			if (obj)
@@ -870,9 +888,10 @@ static int de_thread(struct task_struct *tsk)
 		transfer_pid(leader, tsk, PIDTYPE_SID);
 		list_replace_rcu(&leader->tasks, &tsk->tasks);
 #ifdef CONFIG_KRG_PROC
-		if (likely(obj))
-			obj->task = tsk;
-		tsk->task_obj = obj;
+		rcu_assign_pointer(leader->task_obj, NULL);
+		if (obj)
+			rcu_assign_pointer(obj->task, tsk);
+		rcu_assign_pointer(tsk->task_obj, obj);
 #endif
 
 		tsk->group_leader = tsk;
@@ -888,6 +907,9 @@ static int de_thread(struct task_struct *tsk)
 		if (obj)
 			krg_task_unlock(tsk->pid);
 #endif /* CONFIG_KRG_PROC */
+#ifdef CONFIG_KRG_EPM
+		krg_children_finish_de_thread(parent_children_obj, tsk);
+#endif
 
 		release_task(leader);
 #ifdef CONFIG_KRG_PROC
@@ -915,6 +937,11 @@ no_thread_group:
 		atomic_set(&newsighand->count, 1);
 		memcpy(newsighand->action, oldsighand->action,
 		       sizeof(newsighand->action));
+#ifdef CONFIG_KRG_EPM
+		down_read(&kerrighed_init_sem);
+
+		krg_sighand_alloc_unshared(tsk, newsighand);
+#endif
 
 		write_lock_irq(&tasklist_lock);
 		spin_lock(&oldsighand->siglock);
@@ -922,7 +949,13 @@ no_thread_group:
 		spin_unlock(&oldsighand->siglock);
 		write_unlock_irq(&tasklist_lock);
 
+#ifdef CONFIG_KRG_EPM
+		krg_sighand_cleanup(oldsighand);
+
+		up_read(&kerrighed_init_sem);
+#else
 		__cleanup_sighand(oldsighand);
+#endif
 	}
 
 	BUG_ON(!thread_group_leader(tsk));
@@ -1049,6 +1082,9 @@ int flush_old_exec(struct linux_binprm * bprm)
 	   group */
 
 	current->self_exec_id++;
+#ifdef CONFIG_KRG_EPM
+	krg_update_self_exec_id(current);
+#endif
 			
 	flush_signal_handlers(current, 0);
 	flush_old_files(current->files);
@@ -1696,6 +1732,11 @@ static int coredump_wait(int exit_code, struct core_state *core_state)
 	vfork_done = tsk->vfork_done;
 	if (vfork_done) {
 		tsk->vfork_done = NULL;
+#ifdef CONFIG_KRG_EPM
+		if (tsk->remote_vfork_done)
+			krg_vfork_done(vfork_done);
+		else
+#endif
 		complete(vfork_done);
 	}
 

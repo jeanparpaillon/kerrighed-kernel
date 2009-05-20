@@ -61,6 +61,9 @@ struct pid
 	/* lists of tasks that use this pid */
 	struct hlist_head tasks[PIDTYPE_MAX];
 	struct rcu_head rcu;
+#ifdef CONFIG_KRG_EPM
+	struct pid_kddm_object *kddm_obj;
+#endif
 	struct upid numbers[1];
 };
 
@@ -119,8 +122,20 @@ extern struct pid *find_get_pid(int nr);
 extern struct pid *find_ge_pid(int nr, struct pid_namespace *);
 int next_pidmap(struct pid_namespace *pid_ns, int last);
 
+#ifndef CONFIG_KRG_EPM
 extern struct pid *alloc_pid(struct pid_namespace *ns);
+#endif
 extern void free_pid(struct pid *pid);
+#ifdef CONFIG_KRG_EPM
+extern struct pid *__alloc_pid(struct pid_namespace *ns, const int *req_nr);
+extern int reserve_pidmap(struct pid_namespace *ns, int nr);
+extern void free_pidmap(struct upid *upid);
+
+static inline struct pid *alloc_pid(struct pid_namespace *ns)
+{
+	return __alloc_pid(ns, NULL);
+}
+#endif /* CONFIG_KRG_EPM */
 
 /*
  * ns_of_pid() returns the pid namespace in which the specified pid was

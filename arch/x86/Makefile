@@ -127,6 +127,9 @@ core-$(CONFIG_XEN) += arch/x86/xen/
 # lguest paravirtualization support
 core-$(CONFIG_LGUEST_GUEST) += arch/x86/lguest/
 
+# Kerrighed SSI cluster support
+core-$(CONFIG_KERRIGHED) += arch/x86/kerrighed/
+
 core-y += arch/x86/kernel/
 core-y += arch/x86/mm/
 

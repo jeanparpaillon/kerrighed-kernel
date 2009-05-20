@@ -30,6 +30,10 @@
 #include <kerrighed/task.h>
 #include <kerrighed/pid.h>
 #endif
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/signal.h>
+#include <kerrighed/children.h>
+#endif
 #ifdef CONFIG_KRG_SCHED_CONFIG
 #include <scheduler/core/krg_sched_info.h>
 #endif
@@ -71,6 +75,11 @@ static void init_prekerrighed_process(void)
 
 		if (!(t->pid & GLOBAL_PID_MASK) || !t->mm) {
 			BUG_ON(t->task_obj);
+#ifdef CONFIG_KRG_EPM
+			BUG_ON(t->signal->krg_objid);
+			BUG_ON(t->sighand->krg_objid);
+			BUG_ON(t->children_obj);
+#endif
 #ifdef CONFIG_KRG_SCHED_CONFIG
 			BUG_ON(t->krg_sched);
 #endif
@@ -78,6 +87,11 @@ static void init_prekerrighed_process(void)
 		}
 
 		krg_task_setup(t);
+#ifdef CONFIG_KRG_EPM
+		krg_signal_setup(t);
+		krg_sighand_setup(t);
+		krg_children_setup(t);
+#endif
 #ifdef CONFIG_KRG_SCHED_CONFIG
 		fill_krg_sched_info(t);
 #endif

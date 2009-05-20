@@ -31,11 +31,12 @@ extern struct shared_object_operations cr_shared_dvfs_regular_file_ops;
 extern struct shared_object_operations cr_shared_faf_file_ops;
 extern struct shared_object_operations cr_shared_files_struct_ops;
 extern struct shared_object_operations cr_shared_fs_struct_ops;
+#ifdef CONFIG_KRG_MM
 extern struct shared_object_operations cr_shared_mm_struct_ops;
+#endif
 extern struct shared_object_operations cr_shared_semundo_ops;
-/* TODO PORT */
-/*extern*/ struct shared_object_operations cr_shared_sighand_struct_ops;
-/*extern*/ struct shared_object_operations cr_shared_signal_struct_ops;
+extern struct shared_object_operations cr_shared_sighand_struct_ops;
+extern struct shared_object_operations cr_shared_signal_struct_ops;
 
 static struct shared_object_operations * get_shared_ops(
 	enum shared_obj_type type)
@@ -58,9 +59,11 @@ static struct shared_object_operations * get_shared_ops(
 	case FS_STRUCT:
 		s_ops = &cr_shared_fs_struct_ops;
 		break;
+#ifdef CONFIG_KRG_MM
 	case MM_STRUCT:
 		s_ops = &cr_shared_mm_struct_ops;
 		break;
+#endif
 	case SEMUNDO_LIST:
 		s_ops = &cr_shared_semundo_ops;
 		break;
@@ -424,18 +427,14 @@ static int export_shared_objects_but_files(ghost_t *ghost,
 	return __export_shared_objects(ghost, app, 0);
 }
 
-static int chkpt_shared_objects(struct app_struct *app,
-				int chkpt_sn,
-				struct credentials *user_creds)
+static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 {
 	int r;
 
 	ghost_fs_t oldfs;
 	ghost_t *ghost;
 
-	r = set_ghost_fs(&oldfs, user_creds->uid, user_creds->gid);
-	if (r)
-		goto exit;
+	__set_ghost_fs(&oldfs);
 
 	ghost = create_file_ghost(GHOST_WRITE, app->app_id, chkpt_sn,
 				  kerrighed_node_id, "shared_obj");
@@ -458,7 +457,6 @@ exit_close_ghost:
 exit_unset_fs:
 	unset_ghost_fs(&oldfs);
 
-exit:
 	return r;
 }
 
@@ -641,8 +639,7 @@ error:
 
 int local_chkpt_shared(struct rpc_desc *desc,
 		       struct app_struct *app,
-		       int chkpt_sn,
-		       struct credentials *user_creds)
+		       int chkpt_sn)
 {
 	int r = 0;
 
@@ -662,7 +659,7 @@ int local_chkpt_shared(struct rpc_desc *desc,
 		goto error;
 
 	/* 4) dump the shared objects for which we are responsible */
-	r = chkpt_shared_objects(app, chkpt_sn, user_creds);
+	r = chkpt_shared_objects(app, chkpt_sn);
 error:
 	return r;
 }
@@ -1128,17 +1125,14 @@ int local_restart_shared_complete(struct app_struct *app,
 int local_restart_shared(struct rpc_desc *desc,
 			 struct app_struct *app,
 			 struct task_struct *fake,
-			 int chkpt_sn,
-			 struct credentials *user_creds)
+			 int chkpt_sn)
 {
 	ghost_fs_t oldfs;
 	ghost_t *ghost;
 
 	int r;
 
-	r = set_ghost_fs(&oldfs, user_creds->uid, user_creds->gid);
-	if (r)
-		goto error;
+	__set_ghost_fs(&oldfs);
 
 	ghost = create_file_ghost(GHOST_READ, app->app_id, chkpt_sn,
 				  kerrighed_node_id, "shared_obj");

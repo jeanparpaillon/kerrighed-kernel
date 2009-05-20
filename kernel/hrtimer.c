@@ -43,6 +43,9 @@
 #include <linux/seq_file.h>
 #include <linux/err.h>
 #include <linux/debugobjects.h>
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/krgsyms.h>
+#endif
 
 #include <asm/uaccess.h>
 
@@ -1530,6 +1533,19 @@ SYSCALL_DEFINE2(nanosleep, struct timespec __user *, rqtp,
 
 	return hrtimer_nanosleep(&tu, rmtp, HRTIMER_MODE_REL, CLOCK_MONOTONIC);
 }
+
+#ifdef CONFIG_KRG_EPM
+int hrtimer_krgsyms_register(void)
+{
+	return krgsyms_register(KRGSYMS_HRTIMER_NANOSLEEP_RESTART,
+				hrtimer_nanosleep_restart);
+}
+
+int hrtimer_krgsyms_unregister(void)
+{
+	return krgsyms_unregister(KRGSYMS_HRTIMER_NANOSLEEP_RESTART);
+}
+#endif
 
 /*
  * Functions related to boot-time initialization:

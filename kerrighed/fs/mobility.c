@@ -723,6 +723,8 @@ int export_mnt_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *tsk)
 {
 	/* Nothing done right now... */
+	if (tsk->nsproxy->mnt_ns != init_task.nsproxy->mnt_ns)
+		return -EPERM;
 	return 0;
 }
 
@@ -1319,11 +1321,9 @@ exit_free_fs:
 int import_mnt_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *tsk)
 {
-	if (tsk->nsproxy->mnt_ns != NULL)
-	{
-		get_mnt_ns(tsk->nsproxy->mnt_ns);
-		tsk->nsproxy->mnt_ns = current->nsproxy->mnt_ns;
-	}
+	/* TODO */
+	tsk->nsproxy->mnt_ns = init_task.nsproxy->mnt_ns;
+	get_mnt_ns(tsk->nsproxy->mnt_ns);
 
 	return 0;
 }
@@ -1333,11 +1333,6 @@ int import_mnt_namespace(struct epm_action *action,
 /*                            UNIMPORT FUNCTIONS                             */
 /*                                                                           */
 /*****************************************************************************/
-
-void unimport_mnt_namespace(struct task_struct *tsk)
-{
-	exit_mnt_ns(tsk);
-}
 
 void unimport_files_struct(struct task_struct *tsk)
 {

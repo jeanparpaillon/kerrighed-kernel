@@ -5,6 +5,9 @@
 
 struct epm_action;
 struct task_struct;
+struct restart_block;
+struct pid_link;
+struct pid;
 enum shared_obj_type;
 
 /* KDDM */
@@ -115,7 +118,6 @@ int import_vma_file (struct epm_action *action, ghost_t *ghost,
 int import_mnt_namespace (struct epm_action *action,
 			  ghost_t *ghost, struct task_struct *tsk);
 
-void unimport_mnt_namespace(struct task_struct *task);
 void unimport_files_struct(struct task_struct *task);
 void unimport_fs_struct(struct task_struct *task);
 
@@ -149,5 +151,131 @@ int export_sysv_sem(struct epm_action *action,
 int import_sysv_sem(struct epm_action *action,
                     ghost_t *ghost, struct task_struct *task);
 void unimport_sysv_sem(struct task_struct *task);
+
+/* EPM */
+
+/* Arch-dependent helpers */
+
+void prepare_to_export(struct task_struct *task);
+
+int export_thread_info(struct epm_action *action,
+		       ghost_t *ghost, struct task_struct *task);
+int import_thread_info(struct epm_action *action,
+		       ghost_t *ghost, struct task_struct *task);
+void unimport_thread_info(struct task_struct *task);
+void free_ghost_thread_info(struct task_struct *);
+
+int export_thread_struct(struct epm_action *action,
+			 ghost_t *ghost, struct task_struct *tsk);
+int import_thread_struct(struct epm_action *action,
+			 ghost_t *ghost, struct task_struct *tsk);
+void unimport_thread_struct(struct task_struct *task);
+
+/* Generic helpers for arch-dependent helpers */
+
+int export_exec_domain(struct epm_action *action,
+		       ghost_t *ghost, struct task_struct *tsk);
+struct exec_domain *import_exec_domain(struct epm_action *action,
+				       ghost_t *ghost);
+
+int export_restart_block(struct epm_action *action,
+			 ghost_t *ghost, struct task_struct *tsk);
+int import_restart_block(struct epm_action *action,
+			 ghost_t *ghost, struct restart_block *p);
+
+/* Signals */
+
+int export_signal_struct(struct epm_action *action,
+			 ghost_t *ghost, struct task_struct *task);
+int import_signal_struct(struct epm_action *action,
+			 ghost_t *ghost, struct task_struct *task);
+void unimport_signal_struct(struct task_struct *task);
+
+int export_private_signals(struct epm_action *action,
+			   ghost_t *ghost,
+			   struct task_struct *task);
+int import_private_signals(struct epm_action *action,
+			   ghost_t *ghost,
+			   struct task_struct *task);
+void unimport_private_signals(struct task_struct *task);
+
+int export_sighand_struct(struct epm_action *action,
+			  ghost_t *ghost, struct task_struct *task);
+int import_sighand_struct(struct epm_action *action,
+			  ghost_t *ghost, struct task_struct *task);
+void unimport_sighand_struct(struct task_struct *task);
+
+/* Pids */
+
+int export_pid(struct epm_action *action,
+	       ghost_t *ghost, struct pid_link *link);
+int export_pid_namespace(struct epm_action *action,
+			 ghost_t *ghost, struct task_struct *task);
+
+int import_pid(struct epm_action *action,
+	       ghost_t *ghost, struct pid_link *link);
+int import_pid_namespace(struct epm_action *action,
+			 ghost_t *ghost, struct task_struct *task);
+void krg_end_get_pid(struct pid *pid);
+
+void unimport_pid(struct pid_link *link);
+
+/* Misc */
+
+int export_sched(struct epm_action *action,
+		 ghost_t *ghost, struct task_struct *tsk);
+int import_sched(struct epm_action *action,
+		 ghost_t *ghost, struct task_struct *task);
+static inline void unimport_sched(struct task_struct *task)
+{
+}
+
+int export_vfork_done(struct epm_action *action,
+		      ghost_t *ghost, struct task_struct *tsk);
+int import_vfork_done(struct epm_action *action,
+		      ghost_t *ghost, struct task_struct *task);
+void unimport_vfork_done(struct task_struct *task);
+
+int export_cred(struct epm_action *action,
+		ghost_t *ghost, struct task_struct *tsk);
+int import_cred(struct epm_action *action,
+		ghost_t *ghost, struct task_struct *task);
+void unimport_cred(struct task_struct *task);
+void free_ghost_cred(struct task_struct *ghost);
+
+#ifdef CONFIG_AUDITSYSCALL
+int export_audit_context(struct epm_action *action,
+			 ghost_t *ghost, struct task_struct *tsk);
+int import_audit_context(struct epm_action *action,
+			 ghost_t *ghost, struct task_struct *task);
+void unimport_audit_context(struct task_struct *task);
+void free_ghost_audit_context(struct task_struct *ghost);
+#else /* !CONFIG_AUDITSYSCALL */
+static inline
+int export_audit_context(struct epm_action *action,
+			 ghost_t *ghost, struct task_struct *tsk)
+{
+	return 0;
+}
+static inline
+int import_audit_context(struct epm_action *action,
+			 ghost_t *ghost, struct task_struct *task)
+{
+	return 0;
+}
+static inline void unimport_audit_context(struct task_struct *task)
+{
+}
+static inline void free_ghost_audit_context(struct task_struct *ghost)
+{
+}
+#endif /* !CONFIG_AUDITSYSCALL */
+
+int export_cgroups(struct epm_action *action,
+		   ghost_t *ghost, struct task_struct *task);
+int import_cgroups(struct epm_action *action,
+		   ghost_t *ghost, struct task_struct *task);
+void unimport_cgroups(struct task_struct *task);
+void free_ghost_cgroups(struct task_struct *ghost);
 
 #endif /* __GHOST_HELPERS_H__ */

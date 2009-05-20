@@ -290,6 +290,10 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
 			(THREAD_SIZE + task_stack_page(p))) - 1;
 	*childregs = *regs;
 
+#ifdef CONFIG_KRG_EPM
+	/* Do not corrupt ax in migration/restart */
+	if (!krg_current || krg_current->tgid != krg_current->signal->krg_objid)
+#endif
 	childregs->ax = 0;
 	childregs->sp = sp;
 	if (sp == ~0UL)
@@ -300,14 +304,28 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
 	p->thread.usersp = me->thread.usersp;
 
 	set_tsk_thread_flag(p, TIF_FORK);
+#ifdef CONFIG_KRG_EPM
+	/*
+	 * Migration/restart could have rcx, r11, and rflags corrupted by
+	 * ret_from_fork.
+	 */
+	if (krg_current && p->tgid == krg_current->signal->krg_objid)
+		set_tsk_thread_flag(p, TIF_MIGRATION);
+#endif
 
 	p->thread.fs = me->thread.fs;
 	p->thread.gs = me->thread.gs;
 
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current) {
+#endif
 	savesegment(gs, p->thread.gsindex);
 	savesegment(fs, p->thread.fsindex);
 	savesegment(es, p->thread.es);
 	savesegment(ds, p->thread.ds);
+#ifdef CONFIG_KRG_EPM
+	}
+#endif
 
 	if (unlikely(test_tsk_thread_flag(me, TIF_IO_BITMAP))) {
 		p->thread.io_bitmap_ptr = kmalloc(IO_BITMAP_BYTES, GFP_KERNEL);
@@ -337,8 +355,16 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
 
 	ds_copy_thread(p, me);
 
+#ifdef CONFIG_KRG_EPM
+	/* Do not corrupt debugctlmsr in migration/restart */
+	if (!krg_current
+	    || krg_current->tgid != krg_current->signal->krg_objid) {
+#endif
 	clear_tsk_thread_flag(p, TIF_DEBUGCTLMSR);
 	p->thread.debugctlmsr = 0;
+#ifdef CONFIG_KRG_EPM
+	}
+#endif
 
 	err = 0;
 out:

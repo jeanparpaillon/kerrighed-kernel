@@ -116,7 +116,10 @@ EXPORT_SYMBOL(is_container_init);
 
 static  __cacheline_aligned_in_smp DEFINE_SPINLOCK(pidmap_lock);
 
-static void free_pidmap(struct upid *upid)
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+void free_pidmap(struct upid *upid)
 {
 #ifndef CONFIG_KRG_PROC
 	int nr = upid->nr;
@@ -126,10 +129,16 @@ static void free_pidmap(struct upid *upid)
 	struct pidmap *map = upid->ns->pidmap + nr / BITS_PER_PAGE;
 	int offset = nr & BITS_PER_PAGE_MASK;
 
+#ifdef CONFIG_KRG_EPM
+	if ((upid->nr & GLOBAL_PID_MASK)
+	    && ORIG_NODE(upid->nr) != kerrighed_node_id)
+		return;
+#else /* !CONFIG_KRG_EPM */
 #ifdef CONFIG_KRG_PROC
 	BUG_ON((upid->nr & GLOBAL_PID_MASK) &&
 	       ORIG_NODE(upid->nr) != kerrighed_node_id);
 #endif
+#endif /* !CONFIG_KRG_EPM */
 	clear_bit(offset, map->page);
 	atomic_inc(&map->nr_free);
 }
@@ -194,6 +203,47 @@ static int alloc_pidmap(struct pid_namespace *pid_ns)
 	return -1;
 }
 
+#ifdef CONFIG_KRG_EPM
+int reserve_pidmap(struct pid_namespace *pid_ns, int pid)
+{
+	int offset;
+	struct pidmap *map;
+
+	BUG_ON(ORIG_NODE(pid) != kerrighed_node_id);
+	pid = SHORT_PID(pid);
+	if (pid >= pid_max)
+		return -EINVAL;
+
+	offset = pid & BITS_PER_PAGE_MASK;
+	map = &pid_ns->pidmap[pid/BITS_PER_PAGE];
+	if (!map->page) {
+		/* next_pidmap() is safe if intermediate pages are missing */
+		void *page = kzalloc(PAGE_SIZE, GFP_KERNEL);
+		/*
+		 * Free the page if someone raced with us
+		 * installing it:
+		 */
+		spin_lock_irq(&pidmap_lock);
+		if (map->page)
+			kfree(page);
+		else
+			map->page = page;
+		spin_unlock_irq(&pidmap_lock);
+		if (unlikely(!map->page))
+			return -ENOMEM;
+	}
+
+	/* Reserve pid in the page */
+	BUG_ON(pid != mk_pid(pid_ns, map, offset));
+	if (!test_and_set_bit(offset, map->page)) {
+		atomic_dec(&map->nr_free);
+		return 0;
+	}
+
+	return -EBUSY;
+}
+#endif /* CONFIG_KRG_EPM */
+
 int next_pidmap(struct pid_namespace *pid_ns, int last)
 {
 	int offset;
@@ -251,7 +301,11 @@ void free_pid(struct pid *pid)
 	call_rcu(&pid->rcu, delayed_put_pid);
 }
 
+#ifdef CONFIG_KRG_EPM
+struct pid *__alloc_pid(struct pid_namespace *ns, const int *req_nr)
+#else
 struct pid *alloc_pid(struct pid_namespace *ns)
+#endif
 {
 	struct pid *pid;
 	enum pid_type type;
@@ -262,15 +316,27 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 	pid = kmem_cache_alloc(ns->pid_cachep, GFP_KERNEL);
 	if (!pid)
 		goto out;
+#ifdef CONFIG_KRG_EPM
+	pid->kddm_obj = NULL;
+	BUG_ON(req_nr && ns != &init_pid_ns);
+#endif
 
 	tmp = ns;
 	for (i = ns->level; i >= 0; i--) {
+#ifdef CONFIG_KRG_EPM
+		if (req_nr) {
+			nr = req_nr[i];
+		} else {
+#endif
 		nr = alloc_pidmap(tmp);
 		if (nr < 0)
 			goto out_free;
 #ifdef CONFIG_KRG_PROC
 		if (tmp == &init_pid_ns)
 			nr = MAKE_KERRIGHED_PID(nr);
+#endif
+#ifdef CONFIG_KRG_EPM
+		}
 #endif
 
 		pid->numbers[i].nr = nr;
@@ -296,6 +362,9 @@ out:
 	return pid;
 
 out_free:
+#ifdef CONFIG_KRG_EPM
+	BUG_ON(req_nr);
+#endif
 	while (++i <= ns->level)
 		free_pidmap(pid->numbers + i);
 
@@ -355,7 +424,11 @@ static void __change_pid(struct task_struct *task, enum pid_type type,
 		if (!hlist_empty(&pid->tasks[tmp]))
 			return;
 
+#ifdef CONFIG_KRG_EPM
+	krg_put_pid(pid);
+#else
 	free_pid(pid);
+#endif
 }
 
 void detach_pid(struct task_struct *task, enum pid_type type)

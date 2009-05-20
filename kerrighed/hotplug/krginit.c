@@ -94,6 +94,10 @@ deffct(procfs);
 #ifdef CONFIG_KRG_PROC
 deffct(proc);
 #endif
+#ifdef CONFIG_KRG_EPM
+deffct(ghost);
+deffct(epm);
+#endif
 #ifdef CONFIG_KRG_SCHED
 deffct(scheduler);
 #endif
@@ -375,6 +379,11 @@ int init_kerrighed_upper_layers(void)
 		goto err_kddm;
 #endif
 
+#ifdef CONFIG_KRG_EPM
+	if (init_ghost())
+		goto err_ghost;
+#endif
+
 #ifdef CONFIG_KRG_STREAM
 	if (init_stream())
 		goto err_palantir;
@@ -410,6 +419,11 @@ int init_kerrighed_upper_layers(void)
 		goto err_procfs;
 #endif
 
+#ifdef CONFIG_KRG_EPM
+	if (init_epm())
+		goto err_epm;
+#endif
+
 	printk("Init Kerrighed distributed services: done\n");
 
 #ifdef CONFIG_KRG_SCHED
@@ -422,6 +436,10 @@ int init_kerrighed_upper_layers(void)
 #ifdef CONFIG_KRG_SCHED
 	cleanup_scheduler();
       err_sched:
+#endif
+#ifdef CONFIG_KRG_EPM
+	cleanup_epm();
+      err_epm:
 #endif
 #ifdef CONFIG_KRG_IPC
 	cleanup_keripc();
@@ -454,6 +472,10 @@ int init_kerrighed_upper_layers(void)
 #ifdef CONFIG_KRG_STREAM
 	cleanup_stream();
       err_palantir:
+#endif
+#ifdef CONFIG_KRG_EPM
+	cleanup_ghost();
+      err_ghost:
 #endif
 #ifdef CONFIG_KRGRPC
 	cleanup_rpc();

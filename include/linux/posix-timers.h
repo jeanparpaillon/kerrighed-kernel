@@ -109,6 +109,9 @@ void posix_cpu_timer_get(struct k_itimer *timer, struct itimerspec *itp);
 void posix_cpu_timer_schedule(struct k_itimer *timer);
 
 void run_posix_cpu_timers(struct task_struct *task);
+#ifdef CONFIG_KRG_EPM
+void posix_cpu_timers_init_group(struct signal_struct *sig);
+#endif
 void posix_cpu_timers_exit(struct task_struct *task);
 void posix_cpu_timers_exit_group(struct task_struct *task);
 

@@ -165,6 +165,10 @@ extern void oops_exit(void);
 extern int oops_may_print(void);
 NORET_TYPE void do_exit(long error_code)
 	ATTRIB_NORET;
+#ifdef CONFIG_KRG_EPM
+NORET_TYPE void do_exit_wo_notify(long code)
+	ATTRIB_NORET;
+#endif
 NORET_TYPE void complete_and_exit(struct completion *, long)
 	ATTRIB_NORET;
 extern unsigned long simple_strtoul(const char *,char **,unsigned int);

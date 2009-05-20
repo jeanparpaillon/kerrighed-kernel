@@ -81,6 +81,9 @@ void __krg_task_free(struct task_struct *task);
 void krg_task_free(struct task_struct *task);
 
 /* exit */
+#ifdef CONFIG_KRG_EPM
+int krg_delay_release_task(struct task_struct *task);
+#endif
 void krg_release_task(struct task_struct *task);
 
 void __krg_task_unlink(struct task_kddm_object *obj, int need_update);

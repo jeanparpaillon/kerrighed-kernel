@@ -45,6 +45,12 @@
 #include <net/krgrpc/rpcid.h>
 #include <kerrighed/remote_syscall.h>
 #endif
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/krginit.h>
+#include <kerrighed/pid.h>
+#include <kerrighed/task.h>
+#include <kerrighed/children.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -942,6 +948,60 @@ SYSCALL_DEFINE1(times, struct tms __user *, tbuf)
 	return (long) jiffies_64_to_clock_t(get_jiffies_64());
 }
 
+#ifdef CONFIG_KRG_EPM
+struct setpgid_message {
+	pid_t pid;
+	pid_t pgid;
+	pid_t parent_tgid;
+	pid_t parent_session;
+};
+
+static
+int handle_forward_setpgid(struct rpc_desc *desc, void *_msg, size_t size)
+{
+	const struct setpgid_message *msg = _msg;
+	struct task_struct *p;
+	int retval;
+
+	rcu_read_lock();
+	p = find_task_by_pid_ns(msg->pid, &init_pid_ns);
+	rcu_read_unlock();
+	/* p won't disappear since its pid location is locked. */
+	retval = -EPERM;
+	if (task_session_nr_ns(p, &init_pid_ns) != msg->parent_session)
+		goto out;
+	retval = -EACCES;
+	if (p->did_exec)
+		goto out;
+
+	retval = sys_setpgid(msg->pid, msg->pgid);
+
+out:
+	return retval;
+}
+
+static int krg_forward_setpgid(kerrighed_node_t node, pid_t pid, pid_t pgid)
+{
+	struct children_kddm_object *children_obj = current->children_obj;
+	pid_t parent, real_parent;
+	struct setpgid_message msg;
+	int retval = -ESRCH;
+
+	if (krg_get_parent(children_obj, pid, &parent, &real_parent))
+		goto out;
+
+	msg.pid = pid;
+	msg.pgid = pgid;
+	msg.parent_tgid = current->tgid;
+	msg.parent_session = task_session_vnr(current);
+
+	retval = rpc_sync(PROC_FORWARD_SETPGID, node, &msg, sizeof(msg));
+
+out:
+	return retval;
+}
+#endif /* CONFIG_KRG_EPM */
+
 /*
  * This needs some heavy checking ...
  * I just haven't the stomach for it. I also don't fully
@@ -959,6 +1019,21 @@ SYSCALL_DEFINE2(setpgid, pid_t, pid, pid_t, pgid)
 	struct task_struct *p;
 	struct task_struct *group_leader = current->group_leader;
 	struct pid *pgrp;
+#ifdef CONFIG_KRG_EPM
+	struct children_kddm_object *parent_children_obj = NULL;
+	pid_t real_parent_tgid;
+	kerrighed_node_t node = KERRIGHED_NODE_ID_NONE;
+	/*
+	 * We assume that:
+	 * 1/ all RPC handlers are kernel threads having PF_KTHREAD set,
+	 * 2/ the only kernel thread that calls sys_setpgid is
+	 *    the RPC handler of a forwarded setpgid.
+	 *
+	 * Should these assumptions be false, we may use a process flag set by
+	 * the rpc handler instead.
+	 */
+	int forwarded_call = current->flags & PF_KTHREAD;
+#endif /* CONFIG_KRG_EPM */
 	int err;
 
 	if (!pid)
@@ -968,6 +1043,56 @@ SYSCALL_DEFINE2(setpgid, pid_t, pid, pid_t, pgid)
 	if (pgid < 0)
 		return -EINVAL;
 
+#ifdef CONFIG_KRG_EPM
+	down_read(&kerrighed_init_sem);
+
+	if (forwarded_call || current->nsproxy->pid_ns != &init_pid_ns
+	    || !(pid & GLOBAL_PID_MASK))
+		goto lock_tasklist;
+
+	if (pid == current->tgid) {
+		if (rcu_dereference(current->parent_children_obj))
+			parent_children_obj =
+				krg_parent_children_writelock(current,
+							      &real_parent_tgid);
+	} else {
+		if (rcu_dereference(current->children_obj)) {
+			struct task_kddm_object *task_obj;
+			struct timespec backoff_time = {
+				.tv_sec = 1,
+				.tv_nsec = 0
+			};	/* 1 second */
+
+			real_parent_tgid = current->tgid;
+			for (;;) {
+				parent_children_obj =
+					krg_children_writelock(real_parent_tgid);
+				BUG_ON(!parent_children_obj);
+
+				task_obj = krg_task_readlock(pid);
+				if (!task_obj) {
+					krg_task_unlock(pid);
+					break;
+				}
+				node = task_obj->node;
+				if (node == kerrighed_node_id)
+					break;
+				if (node != KERRIGHED_NODE_ID_NONE) {
+					err = krg_forward_setpgid(node, pid, pgid);
+					goto out_unlock;
+				}
+
+				/* We might deadlock with migration. Back off. */
+				krg_task_unlock(pid);
+				krg_children_unlock(parent_children_obj);
+
+				set_current_state(TASK_UNINTERRUPTIBLE);
+				schedule_timeout(timespec_to_jiffies(&backoff_time) + 1);
+			}
+		}
+	}
+lock_tasklist:
+#endif /* CONFIG_KRG_EPM */
 	/* From this point forward we keep holding onto the tasklist lock
 	 * so that our parent does not change from under us. -DaveM
 	 */
@@ -982,6 +1107,11 @@ SYSCALL_DEFINE2(setpgid, pid_t, pid, pid_t, pgid)
 	if (!thread_group_leader(p))
 		goto out;
 
+#ifdef CONFIG_KRG_EPM
+	if (forwarded_call)
+		/* The RPC handler already did the following checks. */
+		goto session_leader_check;
+#endif /* CONFIG_KRG_EPM */
 	if (same_thread_group(p->real_parent, group_leader)) {
 		err = -EPERM;
 		if (task_session(p) != task_session(group_leader))
@@ -995,6 +1125,9 @@ SYSCALL_DEFINE2(setpgid, pid_t, pid, pid_t, pgid)
 			goto out;
 	}
 
+#ifdef CONFIG_KRG_EPM
+session_leader_check:
+#endif
 	err = -EPERM;
 	if (p->signal->leader)
 		goto out;
@@ -1005,7 +1138,11 @@ SYSCALL_DEFINE2(setpgid, pid_t, pid, pid_t, pgid)
 
 		pgrp = find_vpid(pgid);
 		g = pid_task(pgrp, PIDTYPE_PGID);
+#ifdef CONFIG_KRG_EPM
+		if (!g || task_session(g) != task_session(p))
+#else
 		if (!g || task_session(g) != task_session(group_leader))
+#endif
 			goto out;
 	}
 
@@ -1020,6 +1157,17 @@ SYSCALL_DEFINE2(setpgid, pid_t, pid, pid_t, pgid)
 out:
 	/* All paths lead to here, thus we are safe. -DaveM */
 	write_unlock_irq(&tasklist_lock);
+#ifdef CONFIG_KRG_EPM
+	if (!forwarded_call && parent_children_obj) {
+out_unlock:
+		if (node != KERRIGHED_NODE_ID_NONE)
+			krg_task_unlock(pid);
+		if (!err)
+			krg_set_child_pgid(parent_children_obj, pid, pgid);
+		krg_children_unlock(parent_children_obj);
+	}
+	up_read(&kerrighed_init_sem);
+#endif /* CONFIG_KRG_EPM */
 	return err;
 }
 
@@ -1161,6 +1309,9 @@ void remote_sys_init(void)
 {
 	rpc_register_int(PROC_GETPGID, handle_getpgid, 0);
 	rpc_register_int(PROC_GETSID, handle_getsid, 0);
+#ifdef CONFIG_KRG_EPM
+	rpc_register_int(PROC_FORWARD_SETPGID, handle_forward_setpgid, 0);
+#endif
 }
 #endif /* CONFIG_KRG_PROC */
 
@@ -1169,8 +1320,19 @@ SYSCALL_DEFINE0(setsid)
 	struct task_struct *group_leader = current->group_leader;
 	struct pid *sid = task_pid(group_leader);
 	pid_t session = pid_vnr(sid);
+#ifdef CONFIG_KRG_EPM
+	struct children_kddm_object *parent_children_obj = NULL;
+	pid_t real_parent_tgid;
+#endif /* CONFIG_KRG_EPM */
 	int err = -EPERM;
 
+#ifdef CONFIG_KRG_EPM
+	down_read(&kerrighed_init_sem);
+	if (rcu_dereference(current->parent_children_obj))
+		parent_children_obj =
+			krg_parent_children_writelock(current,
+						      &real_parent_tgid);
+#endif /* CONFIG_KRG_EPM */
 	write_lock_irq(&tasklist_lock);
 	/* Fail if I am already a session leader */
 	if (group_leader->signal->leader)
@@ -1190,6 +1352,15 @@ SYSCALL_DEFINE0(setsid)
 	err = session;
 out:
 	write_unlock_irq(&tasklist_lock);
+#ifdef CONFIG_KRG_EPM
+	if (parent_children_obj) {
+		if (err >= 0)
+			krg_set_child_pgid(parent_children_obj,
+					   session, session);
+		krg_children_unlock(parent_children_obj);
+	}
+	up_read(&kerrighed_init_sem);
+#endif /* CONFIG_KRG_EPM */
 	return err;
 }
 

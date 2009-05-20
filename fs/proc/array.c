@@ -85,6 +85,9 @@
 #ifdef CONFIG_KRG_PROCFS
 #include <kerrighed/cpu_id.h>
 #endif
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/children.h>
+#endif
 
 #include <asm/pgtable.h>
 #include <asm/processor.h>
@@ -150,6 +153,9 @@ static inline const char *get_task_state(struct task_struct *tsk)
 	unsigned int state = (tsk->state & TASK_REPORT) | tsk->exit_state;
 	const char **p = &task_state_array[0];
 
+#ifdef CONFIG_KRG_EPM
+	state &= ~EXIT_MIGRATION;
+#endif
 	while (state) {
 		p++;
 		state >>= 1;
@@ -167,8 +173,12 @@ static inline void task_state(struct seq_file *m, struct pid_namespace *ns,
 	pid_t ppid, tpid;
 
 	rcu_read_lock();
+#ifdef CONFIG_KRG_EPM
+	ppid = krg_get_real_parent_tgid(p, ns);
+#else
 	ppid = pid_alive(p) ?
 		task_tgid_nr_ns(rcu_dereference(p->real_parent), ns) : 0;
+#endif
 	tpid = 0;
 	if (pid_alive(p)) {
 		struct task_struct *tracer = tracehook_tracer_task(p);
@@ -426,7 +436,17 @@ static int do_task_stat(struct seq_file *m, struct pid_namespace *ns,
 		}
 
 		sid = task_session_nr_ns(task, ns);
+#ifdef CONFIG_KRG_EPM
+		/*
+		 * sighand lock is not enough: task or children KDDM objects
+		 * can disappear before release_task() locks sighand.
+		 */
+		rcu_read_lock();
+		ppid = krg_get_real_parent_tgid(task, ns);
+		rcu_read_unlock();
+#else
 		ppid = task_tgid_nr_ns(task->real_parent, ns);
+#endif
 		pgid = task_pgrp_nr_ns(task, ns);
 
 		unlock_task_sighand(task, &flags);

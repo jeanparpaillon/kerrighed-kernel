@@ -37,6 +37,12 @@
 #include <kerrighed/krginit.h>
 #include <kerrighed/remote_syscall.h>
 #endif
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/krg_exit.h>
+#include <kerrighed/action.h>
+#include <kerrighed/kerrighed_signal.h>
+#include <kerrighed/signal.h>
+#endif
 
 #include <asm/param.h>
 #include <asm/uaccess.h>
@@ -129,7 +135,10 @@ static inline int has_pending_signals(sigset_t *signal, sigset_t *blocked)
 
 #define PENDING(p,b) has_pending_signals(&(p)->signal, (b))
 
-static int recalc_sigpending_tsk(struct task_struct *t)
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+int recalc_sigpending_tsk(struct task_struct *t)
 {
 	if (t->signal->group_stop_count > 0 ||
 	    PENDING(&t->pending, &t->blocked) ||
@@ -204,7 +213,10 @@ int next_signal(struct sigpending *pending, sigset_t *mask)
  * - this may be called without locks if and only if t == current, otherwise an
  *   appopriate lock must be held to stop the target task from exiting
  */
-static struct sigqueue *__sigqueue_alloc(struct task_struct *t, gfp_t flags,
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+struct sigqueue *__sigqueue_alloc(struct task_struct *t, gfp_t flags,
 					 int override_rlimit)
 {
 	struct sigqueue *q = NULL;
@@ -234,7 +246,10 @@ static struct sigqueue *__sigqueue_alloc(struct task_struct *t, gfp_t flags,
 	return q;
 }
 
-static void __sigqueue_free(struct sigqueue *q)
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+void __sigqueue_free(struct sigqueue *q)
 {
 	if (q->flags & SIGQUEUE_PREALLOC)
 		return;
@@ -1235,9 +1250,25 @@ static int krg_kill_proc_info(int sig, struct siginfo *info, pid_t pid)
 int
 kill_proc_info(int sig, struct siginfo *info, pid_t pid)
 {
+#ifdef CONFIG_KRG_EPM
+	struct pid *p;
+	struct task_struct *t;
+#endif /* CONFIG_KRG_EPM */
 	int error;
 	rcu_read_lock();
+#ifdef CONFIG_KRG_EPM
+	p = find_vpid(pid);
+	t = pid_task(p, PIDTYPE_PID);
+	if (t && krg_action_block_any(t)) {
+		error = kill_pid_info(sig, info, p);
+		krg_action_unblock_any(t);
+	} else {
+		/* Try a remote syscall */
+		error = -ESRCH;
+	}
+#else /* CONFIG_KRG_EPM */
 	error = kill_pid_info(sig, info, find_vpid(pid));
+#endif /* CONFIG_KRG_EPM */
 	rcu_read_unlock();
 #ifdef CONFIG_KRG_PROC
 	if (error == -ESRCH)
@@ -1625,6 +1656,60 @@ ret:
 	return ret;
 }
 
+#ifdef CONFIG_KRG_EPM
+int send_kerrighed_signal(int sig, struct siginfo *info, struct task_struct *t)
+{
+	struct sigqueue *q;
+	unsigned long flags;
+
+	/*
+	 * To bypass blocked/ignored signals masks as well as user tracing stuff
+	 * we open-code the core of send_signal().
+	 */
+
+	q = __sigqueue_alloc(t, GFP_ATOMIC, 1);
+	if (!q)
+		return -ENOMEM;
+
+	printk("send_kerrighed_signal: %d (%s) -> %d (%s)\n",
+	       current->pid, current->comm, t->pid, t->comm);
+
+	info->si_signo = sig;
+	info->si_code = SI_KERRIGHED;
+
+	if (!lock_task_sighand(t, &flags))
+		BUG();
+
+	list_add_tail(&q->list, &t->pending.list);
+	copy_siginfo(&q->info, info);
+
+	sigaddset(&t->pending.signal, sig);
+	signal_wake_up(t, 0);
+
+	unlock_task_sighand(t, &flags);
+
+	return 0;
+}
+
+kerrighed_handler_t *krg_handler[_NSIG];
+
+static int handle_kerrighed_signal(int sig, struct siginfo *info,
+				   struct pt_regs *regs)
+{
+	kerrighed_handler_t *kh = krg_handler[sig];
+	int released = 0;
+
+	if (kh) {
+		spin_unlock_irq(&current->sighand->siglock);
+		released = 1;
+
+		(*kh)(sig, info, regs);
+	}
+
+	return released;
+}
+#endif /* CONFIG_KRG_EPM */
+
 /*
  * Wake up any threads in the parent blocked in wait* syscalls.
  */
@@ -1671,6 +1756,11 @@ int do_notify_parent(struct task_struct *tsk, int sig)
 	 * correct to rely on this
 	 */
 	rcu_read_lock();
+#ifdef CONFIG_KRG_EPM
+	if (tsk->parent == baby_sitter)
+		info.si_pid = task_pid_nr_ns(tsk, &init_pid_ns);
+	else
+#endif
 	info.si_pid = task_pid_nr_ns(tsk, tsk->parent->nsproxy->pid_ns);
 	info.si_uid = __task_cred(tsk)->uid;
 	rcu_read_unlock();
@@ -1690,6 +1780,22 @@ int do_notify_parent(struct task_struct *tsk, int sig)
 		info.si_status = tsk->exit_code >> 8;
 	}
 
+#ifdef CONFIG_KRG_EPM
+	if (tsk->parent == baby_sitter) {
+		/*
+		 * Current users hold write_lock_irq(&tasklist_lock).
+		 * Ok to temporarily release the lock with use cases having
+		 * remote parent (that is neither __ptrace_detach() nor
+		 * reparent_thread()).
+		 */
+		write_unlock_irq(&tasklist_lock);
+		ret = krg_do_notify_parent(tsk, &info);
+		write_lock_irq(&tasklist_lock);
+		if (ret < 0)
+			tsk->exit_signal = -1;
+		return ret;
+	}
+#endif /* CONFIG_KRG_EPM */
 	psig = tsk->parent->sighand;
 	spin_lock_irqsave(&psig->siglock, flags);
 	if (!tsk->ptrace && sig == SIGCHLD &&
@@ -1735,6 +1841,10 @@ static void do_notify_parent_cldstop(struct task_struct *tsk, int why)
 		tsk = tsk->group_leader;
 		parent = tsk->real_parent;
 	}
+#ifdef CONFIG_KRG_EPM
+	if (parent == baby_sitter)
+		return;
+#endif
 
 	info.si_signo = SIGCHLD;
 	info.si_errno = 0;
@@ -2092,6 +2202,14 @@ relock:
 
 			if (!signr)
 				break; /* will return 0 */
+#ifdef CONFIG_KRG_EPM
+			if (info->si_code == SI_KERRIGHED) {
+				if (handle_kerrighed_signal(signr, info, regs))
+					/* It released the siglock.  */
+					goto relock;
+				continue;
+			}
+#endif
 
 			if (signr != SIGKILL) {
 				signr = ptrace_signal(signr, info,
@@ -2619,12 +2737,21 @@ int do_sigaction(int sig, struct k_sigaction *act, struct k_sigaction *oact)
 	struct task_struct *t = current;
 	struct k_sigaction *k;
 	sigset_t mask;
+#ifdef CONFIG_KRG_EPM
+	unsigned long sighand_id;
+#endif
 
 	if (!valid_signal(sig) || sig < 1 || (act && sig_kernel_only(sig)))
 		return -EINVAL;
 
 	k = &t->sighand->action[sig-1];
 
+#ifdef CONFIG_KRG_EPM
+	down_read(&kerrighed_init_sem);
+	sighand_id = current->sighand->krg_objid;
+	if (sighand_id)
+		krg_sighand_writelock(sighand_id);
+#endif
 	spin_lock_irq(&current->sighand->siglock);
 	if (oact)
 		*oact = *k;
@@ -2656,6 +2783,11 @@ int do_sigaction(int sig, struct k_sigaction *act, struct k_sigaction *oact)
 	}
 
 	spin_unlock_irq(&current->sighand->siglock);
+#ifdef CONFIG_KRG_EPM
+	if (sighand_id)
+		krg_sighand_unlock(sighand_id);
+	up_read(&kerrighed_init_sem);
+#endif
 	return 0;
 }
 

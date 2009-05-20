@@ -417,6 +417,11 @@ ENTRY(ret_from_fork)
 	call schedule_tail			# rdi: 'prev' task parameter
 
 	GET_THREAD_INFO(%rcx)
+#ifdef CONFIG_KRG_EPM
+	btr $TIF_MIGRATION,TI_flags(%rcx)
+	jc ret_from_migration
+	CFI_REMEMBER_STATE
+#endif
 
 	RESTORE_REST
 
@@ -428,6 +433,27 @@ ENTRY(ret_from_fork)
 
 	RESTORE_TOP_OF_STACK %rdi, -ARGOFFSET
 	jmp ret_from_sys_call			# go to the SYSRET fastpath
+
+#ifdef CONFIG_KRG_EPM
+/*
+ * A newly restarted/migrated process directly context switches to
+ * ret_from_fork, calls schedule_tail, and jumps into this.
+ *
+ * Ptregscall stack frame.
+ *
+ * May return from syscall or from interrupt/exception as well.
+ * If return from interrupt/exception, ORIG_RAX was set to -1 before handling
+ * the migration/checkpoint signal, so jumping to int_signal is ok.
+ *
+ * Ignore trace/audit hooks if migration/checkpoint was done before returning
+ * from syscall. Anyway trace/audit hooks should be made cluster aware before.
+ */
+/* rcx: threadinfo */
+ret_from_migration:
+	CFI_RESTORE_STATE
+	movl TI_flags(%rcx),%edx
+	jmp int_signal
+#endif /* CONFIG_KRG_EPM */
 
 	CFI_ENDPROC
 END(ret_from_fork)

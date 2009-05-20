@@ -22,7 +22,10 @@
 #include <net/net_namespace.h>
 #include <linux/ipc_namespace.h>
 
-static struct kmem_cache *nsproxy_cachep;
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+struct kmem_cache *nsproxy_cachep;
 
 struct nsproxy init_nsproxy = INIT_NSPROXY(init_nsproxy);
 

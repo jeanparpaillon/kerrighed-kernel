@@ -31,6 +31,9 @@
 #include <linux/random.h>
 #include <linux/elf.h>
 #include <linux/utsname.h>
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/krgsyms.h>
+#endif
 #include <asm/uaccess.h>
 #include <asm/param.h>
 #include <asm/page.h>
@@ -2068,12 +2071,25 @@ out:
 
 static int __init init_elf_binfmt(void)
 {
+#ifdef CONFIG_KRG_EPM
+	int retval;
+
+	krgsyms_register(KRGSYMS_BINFMTS_ELF, &elf_format);
+	retval = register_binfmt(&elf_format);
+	if (retval)
+		krgsyms_unregister(KRGSYMS_BINFMTS_ELF);
+	return retval;
+#else
 	return register_binfmt(&elf_format);
+#endif
 }
 
 static void __exit exit_elf_binfmt(void)
 {
 	/* Remove the COFF and ELF loaders. */
+#ifdef CONFIG_KRG_EPM
+	krgsyms_unregister(KRGSYMS_BINFMTS_ELF);
+#endif
 	unregister_binfmt(&elf_format);
 }
 

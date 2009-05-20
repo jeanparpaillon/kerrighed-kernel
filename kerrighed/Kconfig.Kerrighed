@@ -170,40 +170,15 @@ config KRG_PROC
 
 config KRG_EPM
 	bool "KerEPM"
-#	depends on KERRIGHED && KRG_PROC && KRG_CAP && KRG_MM && (KRG_DVFS || KRG_FAF)
-	depends on KERRIGHED && KRG_PROC && KRG_CAP
+	depends on KERRIGHED && KRG_PROC && KRG_CAP && KRG_MM && (KRG_DVFS || KRG_FAF)
 	help
-	  Enhanced Process Management (process migration, checkpoint/restart...)
+	  Enhanced Process Management:
+	    process migration, checkpoint/restart, remote clone.
 
 	  If unsure, say Y.
 
 config KRG_IPC_EPM
        def_bool KRG_IPC && KRG_EPM
-
-config KRG_FD
-	bool "Activate Fork Delay"
-	depends on KRG_EPM
-	default n
-	help
-	  Activate Fork Delay
-	  Even if you do not activate Fork_Delay, you will allow to set the FORK_DELAY capability with "krg_capset" but, it will not have effect.
-
-choice
-	prompt "Fork_Delay version :"
-	default FD_V1
-	depends on KRG_FD
-
-config FD_V1
-	bool "1 (token)"
-	help
-	  Version 1 of the Fork_Delay.
-	  It uses an implementation with a token.
-
-config FD_V2
-	bool "2 (message passing)"
-	help
-	  Not yet implemented !
-endchoice
 
 menuconfig KRG_SCHED
 	bool "Kerrighed support for global scheduling"

@@ -70,6 +70,11 @@
 #include <kerrighed/task.h>
 #include <kerrighed/krginit.h>
 #endif
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/signal.h>
+#include <kerrighed/children.h>
+#include <kerrighed/application.h>
+#endif
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -106,7 +111,10 @@ int nr_processes(void)
 #ifndef __HAVE_ARCH_TASK_STRUCT_ALLOCATOR
 # define alloc_task_struct()	kmem_cache_alloc(task_struct_cachep, GFP_KERNEL)
 # define free_task_struct(tsk)	kmem_cache_free(task_struct_cachep, (tsk))
-static struct kmem_cache *task_struct_cachep;
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+struct kmem_cache *task_struct_cachep;
 #endif
 
 #ifndef __HAVE_ARCH_THREAD_INFO_ALLOCATOR
@@ -127,7 +135,10 @@ static inline void free_thread_info(struct thread_info *ti)
 #endif
 
 /* SLAB cache for signal_struct structures (tsk->signal) */
-static struct kmem_cache *signal_cachep;
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+struct kmem_cache *signal_cachep;
 
 /* SLAB cache for sighand_struct structures (tsk->sighand) */
 struct kmem_cache *sighand_cachep;
@@ -228,6 +239,9 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 
 	int err;
 
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current)
+#endif
 	prepare_to_copy(orig);
 
 	tsk = alloc_task_struct();
@@ -611,6 +625,11 @@ void mm_release(struct task_struct *tsk, struct mm_struct *mm)
 	/* notify parent sleeping on vfork() */
 	if (vfork_done) {
 		tsk->vfork_done = NULL;
+#ifdef CONFIG_KRG_EPM
+		if (tsk->remote_vfork_done)
+			krg_vfork_done(vfork_done);
+		else
+#endif
 		complete(vfork_done);
 	}
 
@@ -675,6 +694,9 @@ struct mm_struct *dup_mm(struct task_struct *tsk)
 	return mm;
 
 free_pt:
+#ifdef CONFIG_KRG_EPM
+	atomic_dec(&mm->mm_ltasks);
+#endif
 	mmput(mm);
 
 fail_nomem:
@@ -827,8 +849,29 @@ static int copy_sighand(unsigned long clone_flags, struct task_struct *tsk)
 {
 	struct sighand_struct *sig;
 
+#ifdef CONFIG_KRG_EPM
+	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid)
+		/*
+		 * This is a process migration or restart: sighand_struct is
+		 * already setup.
+		 */
+		return 0;
+
+	if (!krg_current)
+#endif
 	if (clone_flags & CLONE_SIGHAND) {
+#ifdef CONFIG_KRG_EPM
+		sig = current->sighand;
+		if (sig->kddm_obj)
+			krg_sighand_writelock(sig->krg_objid);
+#endif
 		atomic_inc(&current->sighand->count);
+#ifdef CONFIG_KRG_EPM
+		if (sig->kddm_obj) {
+			krg_sighand_share(current);
+			krg_sighand_unlock(sig->krg_objid);
+		}
+#endif
 		return 0;
 	}
 	sig = kmem_cache_alloc(sighand_cachep, GFP_KERNEL);
@@ -837,6 +880,9 @@ static int copy_sighand(unsigned long clone_flags, struct task_struct *tsk)
 		return -ENOMEM;
 	atomic_set(&sig->count, 1);
 	memcpy(sig->action, current->sighand->action, sizeof(sig->action));
+#ifdef CONFIG_KRG_EPM
+	krg_sighand_alloc(tsk);
+#endif
 	return 0;
 }
 
@@ -850,7 +896,10 @@ void __cleanup_sighand(struct sighand_struct *sighand)
 /*
  * Initialize POSIX timer handling for a thread group.
  */
-static void posix_cpu_timers_init_group(struct signal_struct *sig)
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+void posix_cpu_timers_init_group(struct signal_struct *sig)
 {
 	/* Thread group counters. */
 	thread_group_cputime_init(sig);
@@ -882,9 +931,29 @@ static int copy_signal(unsigned long clone_flags, struct task_struct *tsk)
 {
 	struct signal_struct *sig;
 
+#ifdef CONFIG_KRG_EPM
+	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid)
+		/*
+		 * This is a process migration or restart: signal_struct is
+		 * already setup.
+		 */
+		return 0;
+
+	if (!krg_current)
+#endif
 	if (clone_flags & CLONE_THREAD) {
+#ifdef CONFIG_KRG_EPM
+		if (current->signal->kddm_obj)
+			krg_signal_writelock(current->tgid);
+#endif
 		atomic_inc(&current->signal->count);
 		atomic_inc(&current->signal->live);
+#ifdef CONFIG_KRG_EPM
+		if (current->signal->kddm_obj) {
+			krg_signal_share(current);
+			krg_signal_unlock(current->tgid);
+		}
+#endif
 		return 0;
 	}
 
@@ -924,8 +993,14 @@ static int copy_signal(unsigned long clone_flags, struct task_struct *tsk)
 	sig->sum_sched_runtime = 0;
 	taskstats_tgid_init(sig);
 
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current)
+#endif
 	task_lock(current->group_leader);
 	memcpy(sig->rlim, current->signal->rlim, sizeof sig->rlim);
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current)
+#endif
 	task_unlock(current->group_leader);
 
 	posix_cpu_timers_init_group(sig);
@@ -934,6 +1009,14 @@ static int copy_signal(unsigned long clone_flags, struct task_struct *tsk)
 
 	tty_audit_fork(sig);
 
+#ifdef CONFIG_KRG_EPM
+	/*
+	 * Too early to allocate the KDDM object, will do it once the tgid is
+	 * known.
+	 */
+	sig->krg_objid = 0;
+	sig->kddm_obj = NULL;
+#endif
 	return 0;
 }
 
@@ -947,11 +1030,21 @@ void __cleanup_signal(struct signal_struct *sig)
 static void cleanup_signal(struct task_struct *tsk)
 {
 	struct signal_struct *sig = tsk->signal;
+#ifdef CONFIG_KRG_EPM
+	pid_t locked_signal_id;
+#endif
 
+#ifdef CONFIG_KRG_EPM
+	locked_signal_id = krg_signal_exit(tsk);
+#endif
 	atomic_dec(&sig->live);
 
 	if (atomic_dec_and_test(&sig->count))
 		__cleanup_signal(sig);
+#ifdef CONFIG_KRG_EPM
+	if (locked_signal_id)
+		krg_signal_unlock(locked_signal_id);
+#endif
 }
 
 static void copy_flags(unsigned long clone_flags, struct task_struct *p)
@@ -1009,7 +1102,10 @@ static void posix_cpu_timers_init(struct task_struct *tsk)
  * parts of the process environment (as per the clone
  * flags). The actual kick-off is left to the caller.
  */
-static struct task_struct *copy_process(unsigned long clone_flags,
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+struct task_struct *copy_process(unsigned long clone_flags,
 					unsigned long stack_start,
 					struct pt_regs *regs,
 					unsigned long stack_size,
@@ -1082,6 +1178,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 		goto bad_fork_cleanup_put_domain;
 
 	p->did_exec = 0;
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current)
+#endif
 	delayacct_tsk_init(p);	/* Must remain after dup_task_struct() */
 	copy_flags(clone_flags, p);
 	INIT_LIST_HEAD(&p->children);
@@ -1090,6 +1189,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	p->rcu_read_lock_nesting = 0;
 	p->rcu_flipctr_idx = 0;
 #endif /* #ifdef CONFIG_PREEMPT_RCU */
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current)
+#endif
 	p->vfork_done = NULL;
 	spin_lock_init(&p->alloc_lock);
 
@@ -1106,8 +1208,15 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 
 	p->default_timer_slack_ns = current->timer_slack_ns;
 
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current
+	    || krg_current->tgid != krg_current->signal->krg_objid) {
+#endif
 	task_io_accounting_init(&p->ioac);
 	acct_clear_integrals(p);
+#ifdef CONFIG_KRG_EPM
+	}
+#endif
 
 	posix_cpu_timers_init(p);
 
@@ -1176,9 +1285,6 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 #ifdef CONFIG_KRG_KDDM
 		goto bad_fork_cleanup_kddm_info;
 #else
-#ifdef CONFIG_KRG_EPM
-#error CONFIG_KRG_KDDM should be set!
-#endif /* CONFIG_KRG_EPM */
 		goto bad_fork_cleanup_policy;
 #endif /* CONFIG_KRG_KDDM */
 	/* copy all the process information */
@@ -1202,6 +1308,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	if (retval)
 		goto bad_fork_cleanup_io;
 
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current)
+#endif
 	if (pid != &init_struct_pid) {
 		retval = -ENOMEM;
 		pid = alloc_pid(p->nsproxy->pid_ns);
@@ -1232,6 +1341,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	/*
 	 * Clear TID on mm_release()?
 	 */
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current || krg_current->tgid != krg_current->signal->krg_objid)
+#endif
 	p->clear_child_tid = (clone_flags & CLONE_CHILD_CLEARTID) ? child_tidptr: NULL;
 #ifdef CONFIG_FUTEX
 	p->robust_list = NULL;
@@ -1244,6 +1356,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	/*
 	 * sigaltstack should be cleared when sharing the same VM
 	 */
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current)
+#endif
 	if ((clone_flags & (CLONE_VM|CLONE_VFORK)) == CLONE_VM)
 		p->sas_ss_sp = p->sas_ss_size = 0;
 
@@ -1258,9 +1373,22 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	clear_all_latency_tracing(p);
 
 	/* ok, now we should be set up.. */
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current) {
+#endif
 	p->exit_signal = (clone_flags & CLONE_THREAD) ? -1 : (clone_flags & CSIGNAL);
 	p->pdeath_signal = 0;
 	p->exit_state = 0;
+#ifdef CONFIG_KRG_EPM
+	} else {
+		p->exit_signal = clone_flags & CSIGNAL;
+		if (p->tgid != krg_current->signal->krg_objid) {
+			/* Remote clone */
+			p->pdeath_signal = 0;
+			p->exit_state = 0;
+		}
+	}
+#endif
 
 	/*
 	 * Ok, make it visible to the rest of the system.
@@ -1275,10 +1403,27 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	cgroup_fork_callbacks(p);
 	cgroup_callbacks_done = 1;
 
+#ifdef CONFIG_KRG_EPM
+	krg_signal_alloc(p, pid, clone_flags);
+
+	if (!krg_current) {
+		retval = krg_copy_application(p);
+		if (retval)
+			goto bad_fork_free_graph;
+	}
+
+	retval = krg_children_prepare_fork(p, pid, clone_flags);
+	if (retval)
+		goto bad_fork_cleanup_application;
+#endif
 #ifdef CONFIG_KRG_PROC
 	retval = krg_task_alloc(p, pid);
 	if (retval)
+#ifdef CONFIG_KRG_EPM
+		goto bad_fork_cleanup_children;
+#else
 		goto bad_fork_free_graph;
+#endif
 #endif
 
 	/* Need tasklist lock for parent etc handling! */
@@ -1307,6 +1452,17 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 		p->real_parent = current;
 		p->parent_exec_id = current->self_exec_id;
 	}
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current
+	    && p->real_parent == baby_sitter && !p->parent_children_obj)
+		/*
+		 * parent died (remotely) and current is still attached to
+		 * baby_sitter. p having no parent_children_obj pointer, p must
+		 * be attached to a real local process. Fortunately this can
+		 * only be the local child reaper.
+		 */
+		p->real_parent = current->nsproxy->pid_ns->child_reaper;
+#endif /* CONFIG_KRG_EPM */
 
 	spin_lock(&current->sighand->siglock);
 
@@ -1319,6 +1475,10 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	 * thread can't slip out of an OOM kill (or normal SIGKILL).
  	 */
 	recalc_sigpending();
+#ifdef CONFIG_KRG_EPM
+	/* Only check if inside a remote clone() */
+	if (krg_current && krg_current->signal->krg_objid != p->tgid)
+#endif
 	if (signal_pending(current)) {
 		spin_unlock(&current->sighand->siglock);
 		write_unlock_irq(&tasklist_lock);
@@ -1330,6 +1490,17 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 #endif
 	}
 
+#ifdef CONFIG_KRG_EPM
+	retval = krg_children_fork(p);
+	if (retval) {
+		spin_unlock(&current->sighand->siglock);
+		write_unlock_irq(&tasklist_lock);
+		goto bad_fork_free_krg_task;
+	}
+#endif
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current || !thread_group_leader(krg_current))
+#endif
 	if (clone_flags & CLONE_THREAD) {
 		p->group_leader = current->group_leader;
 		list_add_tail_rcu(&p->thread_group, &p->group_leader->thread_group);
@@ -1339,6 +1510,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 #endif
 
 	if (likely(p->pid)) {
+#ifdef CONFIG_KRG_EPM
+		if (p->real_parent != baby_sitter)
+#endif
 		list_add_tail(&p->sibling, &p->real_parent->children);
 		tracehook_finish_clone(p, clone_flags, trace);
 
@@ -1364,6 +1538,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 #ifdef CONFIG_KRG_PROC
 	krg_task_commit(p);
 #endif
+#ifdef CONFIG_KRG_EPM
+	krg_children_commit_fork(p);
+#endif
 	proc_fork_connector(p);
 	cgroup_post_fork(p);
 	return p;
@@ -1371,6 +1548,13 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 #ifdef CONFIG_KRG_PROC
 bad_fork_free_krg_task:
 	krg_task_abort(p);
+#endif
+#ifdef CONFIG_KRG_EPM
+bad_fork_cleanup_children:
+	krg_children_abort_fork(p);
+bad_fork_cleanup_application:
+	if (!krg_current)
+		krg_exit_application(p);
 #endif
 bad_fork_free_graph:
 	ftrace_graph_exit_task(p);
@@ -1393,9 +1577,17 @@ bad_fork_cleanup_mm:
 	if (p->mm)
 		mmput(p->mm);
 bad_fork_cleanup_signal:
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current || krg_current->tgid != krg_current->signal->krg_objid)
+#endif
 	cleanup_signal(p);
 bad_fork_cleanup_sighand:
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current || krg_current->tgid != krg_current->signal->krg_objid)
+		krg_sighand_cleanup(p->sighand);
+#else
 	__cleanup_sighand(p->sighand);
+#endif /* CONFIG_KRG_EPM */
 bad_fork_cleanup_fs:
 	exit_fs(p); /* blocking */
 bad_fork_cleanup_files:
@@ -1498,15 +1690,26 @@ long do_fork(unsigned long clone_flags,
 		}
 	}
 
-#ifdef CONFIG_KRG_PROC
-	down_read(&kerrighed_init_sem);
-#endif
 	/*
 	 * When called from kernel_thread, don't do user tracing stuff.
 	 */
 	if (likely(user_mode(regs)))
 		trace = tracehook_prepare_clone(clone_flags);
 
+#ifdef CONFIG_KRG_EPM
+#ifdef CONFIG_KRG_CAP
+	nr = 0;
+	if (can_use_krg_cap(current, CAP_DISTANT_FORK))
+#endif
+		nr = krg_do_fork(clone_flags, stack_start, regs, stack_size,
+				 parent_tidptr, child_tidptr, trace);
+	if (nr > 0)
+		return nr;
+	/* Give a chance to local fork */
+#endif /* CONFIG_KRG_EPM */
+#ifdef CONFIG_KRG_PROC
+	down_read(&kerrighed_init_sem);
+#endif
 	p = copy_process(clone_flags, stack_start, regs, stack_size,
 			 child_tidptr, NULL, trace);
 	/*
@@ -1525,6 +1728,9 @@ long do_fork(unsigned long clone_flags,
 
 		if (clone_flags & CLONE_VFORK) {
 			p->vfork_done = &vfork;
+#ifdef CONFIG_KRG_EPM
+			p->remote_vfork_done = 0;
+#endif
 			init_completion(&vfork);
 		}
 

@@ -132,7 +132,12 @@
 #define KSYS_APP_RESTART               _IOW(KERRIGHED_PROC_MAGIC, \
                                             EPM_PROC_BASE + 5, \
                                             restart_request_t)
-
+#define KSYS_APP_SET_USERDATA          _IOW(KERRIGHED_PROC_MAGIC, \
+                                            EPM_PROC_BASE + 6, \
+                                            __u64)
+#define KSYS_APP_GET_USERDATA          _IOW(KERRIGHED_PROC_MAGIC, \
+                                            EPM_PROC_BASE + 7, \
+                                            app_userdata_request_t)
 
 /*
  * HotPlug

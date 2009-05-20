@@ -10,6 +10,12 @@ struct ipc_namespace;
 struct pid_namespace;
 struct fs_struct;
 
+#ifdef CONFIG_KRG_EPM
+struct kmem_cache;
+
+extern struct kmem_cache *nsproxy_cachep;
+#endif
+
 /*
  * A structure to contain pointers to all per-process
  * namespaces - fs (mount), uts, network, sysvipc, etc.

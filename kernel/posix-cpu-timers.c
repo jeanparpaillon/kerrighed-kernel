@@ -8,6 +8,9 @@
 #include <linux/math64.h>
 #include <asm/uaccess.h>
 #include <linux/kernel_stat.h>
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/krgsyms.h>
+#endif
 
 /*
  * Called after updating RLIMIT_CPU to set timer expiration if necessary.
@@ -1683,6 +1686,19 @@ static long thread_cpu_nsleep_restart(struct restart_block *restart_block)
 {
 	return -EINVAL;
 }
+
+#ifdef CONFIG_KRG_EPM
+int posix_cpu_timers_krgsyms_register(void)
+{
+	return krgsyms_register(KRGSYMS_POSIX_CPU_NSLEEP_RESTART,
+				posix_cpu_nsleep_restart);
+}
+
+int posix_cpu_timers_krgsyms_unregister(void)
+{
+	return krgsyms_unregister(KRGSYMS_POSIX_CPU_NSLEEP_RESTART);
+}
+#endif /* CONFIG_KRG_EPM */
 
 static __init int init_posix_cpu_timers(void)
 {

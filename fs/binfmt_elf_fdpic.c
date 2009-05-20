@@ -34,6 +34,9 @@
 #include <linux/elf.h>
 #include <linux/elf-fdpic.h>
 #include <linux/elfcore.h>
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/krgsyms.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/param.h>
@@ -90,11 +93,24 @@ static struct linux_binfmt elf_fdpic_format = {
 
 static int __init init_elf_fdpic_binfmt(void)
 {
+#ifdef CONFIG_KRG_EPM
+	int retval;
+
+	krgsyms_register(KRGSYMS_BINFMTS_ELF_FDPIC, &elf_fdpic_format);
+	retval = register_binfmt(&elf_fdpic_format);
+	if (retval)
+		krgsyms_unregister(KRGSYMS_BINFMTS_ELF_FDPIC);
+	return retval;
+#else
 	return register_binfmt(&elf_fdpic_format);
+#endif
 }
 
 static void __exit exit_elf_fdpic_binfmt(void)
 {
+#ifdef CONFIG_KRG_EPM
+	krgsyms_unregister(KRGSYMS_BINFMTS_ELF_FDPIC);
+#endif
 	unregister_binfmt(&elf_fdpic_format);
 }
 

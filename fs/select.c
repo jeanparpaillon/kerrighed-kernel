@@ -28,6 +28,9 @@
 #ifdef CONFIG_KRG_FAF
 #include <kerrighed/faf.h>
 #endif
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/krgsyms.h>
+#endif
 
 #include <asm/uaccess.h>
 
@@ -989,3 +992,15 @@ SYSCALL_DEFINE5(ppoll, struct pollfd __user *, ufds, unsigned int, nfds,
 	return ret;
 }
 #endif /* HAVE_SET_RESTORE_SIGMASK */
+
+#ifdef CONFIG_KRG_EPM
+int select_krgsyms_register(void)
+{
+	return krgsyms_register(KRGSYMS_DO_RESTART_POLL, do_restart_poll);
+}
+
+int select_krgsyms_unregister(void)
+{
+	return krgsyms_unregister(KRGSYMS_DO_RESTART_POLL);
+}
+#endif /* CONFIG_KRG_EPM */

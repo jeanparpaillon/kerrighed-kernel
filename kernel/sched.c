@@ -78,6 +78,9 @@
 #include <net/krgrpc/rpcid.h>
 #include <kerrighed/remote_syscall.h>
 #endif
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/ghost.h>
+#endif
 
 #include <asm/tlb.h>
 #include <asm/irq_regs.h>
@@ -2482,6 +2485,10 @@ int wake_up_state(struct task_struct *p, unsigned int state)
  */
 static void __sched_fork(struct task_struct *p)
 {
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current
+	    || krg_current->tgid != krg_current->signal->krg_objid) {
+#endif
 	p->se.exec_start		= 0;
 	p->se.sum_exec_runtime		= 0;
 	p->se.prev_sum_exec_runtime	= 0;
@@ -2500,6 +2507,9 @@ static void __sched_fork(struct task_struct *p)
 	p->se.exec_max			= 0;
 	p->se.slice_max			= 0;
 	p->se.wait_max			= 0;
+#endif
+#ifdef CONFIG_KRG_EPM
+	}
 #endif
 
 	INIT_LIST_HEAD(&p->rt.run_list);
@@ -2541,6 +2551,9 @@ void sched_fork(struct task_struct *p, int clone_flags)
 		p->sched_class = &fair_sched_class;
 
 #if defined(CONFIG_SCHEDSTATS) || defined(CONFIG_TASK_DELAY_ACCT)
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current || krg_current->tgid != krg_current->signal->krg_objid)
+#endif
 	if (likely(sched_info_on()))
 		memset(&p->sched_info, 0, sizeof(p->sched_info));
 #endif
@@ -5018,7 +5031,14 @@ asmlinkage void __sched __schedule(void)
 	unsigned long *switch_count;
 	struct rq *rq;
 	int cpu;
+#ifdef CONFIG_KRG_EPM
+	struct task_struct *krg_cur;
+#endif
 
+#ifdef CONFIG_KRG_EPM
+	krg_cur = krg_current;
+	krg_current = NULL;
+#endif
 	cpu = smp_processor_id();
 	rq = cpu_rq(cpu);
 	rcu_qsctr_inc(cpu);
@@ -5075,6 +5095,9 @@ need_resched_nonpreemptible:
 
 	if (unlikely(reacquire_kernel_lock(current) < 0))
 		goto need_resched_nonpreemptible;
+#ifdef CONFIG_KRG_EPM
+	krg_current = krg_cur;
+#endif
 }
 
 asmlinkage void __sched schedule(void)
@@ -6493,8 +6516,15 @@ EXPORT_SYMBOL(cond_resched_softirq);
  */
 void __sched yield(void)
 {
+#ifdef CONFIG_KRG_EPM
+	struct task_struct *krg_cur = krg_current;
+	krg_current = NULL;
+#endif
 	set_current_state(TASK_RUNNING);
 	sys_sched_yield();
+#ifdef CONFIG_KRG_EPM
+	krg_current = krg_cur;
+#endif
 }
 EXPORT_SYMBOL(yield);
 
@@ -6634,6 +6664,79 @@ out_unlock:
 	read_unlock(&tasklist_lock);
 	return retval;
 }
+
+#ifdef CONFIG_KRG_EPM
+
+struct epm_action;
+
+struct task_sched_params {
+	int policy, rt_prio, static_prio;
+};
+
+int export_sched(struct epm_action *action,
+		 ghost_t *ghost, struct task_struct *task)
+{
+	struct task_sched_params params;
+	unsigned long flags;
+	struct rq *rq;
+	int err = 0;
+
+	rq = task_rq_lock(task, &flags);
+	params.policy = task->policy;
+	params.rt_prio = task->rt_priority;
+	params.static_prio = task->static_prio;
+	/* Group scheduling is not supported yet */
+#if defined(CONFIG_GROUP_SCHED) && !defined(CONFIG_USER_SCHED)
+	if (task_group(task) != &init_task_group)
+		err = -EPERM;
+#endif
+	task_rq_unlock(rq, &flags);
+
+	if (!err)
+		err = ghost_write(ghost, &params, sizeof(params));
+
+	return err;
+}
+
+int import_sched(struct epm_action *action,
+		 ghost_t *ghost, struct task_struct *task)
+{
+	struct task_sched_params params;
+	int cpu;
+	int err;
+
+	err = ghost_read(ghost, &params, sizeof(params));
+	if (err)
+		goto out;
+
+	/* Mostly bug-catchers inits */
+	INIT_LIST_HEAD(&task->rt.run_list);
+	task->rt.back = NULL;
+#ifdef CONFIG_RT_GROUP_SCHED
+	task->rt.parent = NULL;
+	task->rt.rt_rq = NULL;
+	task->rt.my_q = NULL;
+#endif
+	/* Checked by __setscheduler() */
+	task->se.on_rq = 0;
+	INIT_LIST_HEAD(&task->se.group_node);
+#ifdef CONFIG_FAIR_GROUP_SCHED
+	task->se.parent = NULL;
+	task->se.cfs_rq = NULL;
+	task->se.my_q = NULL;
+#endif
+	cpu = get_cpu();
+	__set_task_cpu(task, cpu);
+	put_cpu();
+
+	task->static_prio = params.static_prio;
+	__setscheduler(NULL, task, params.policy, params.rt_prio);
+
+out:
+	return err;
+}
+
+#endif /* CONFIG_KRG_EPM */
 
 #ifdef CONFIG_KRG_PROC
 void remote_sched_init(void)

@@ -37,6 +37,9 @@
 #include <linux/delay.h>
 #include <linux/tick.h>
 #include <linux/kallsyms.h>
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/children.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -1253,7 +1256,11 @@ SYSCALL_DEFINE0(getppid)
 	int pid;
 
 	rcu_read_lock();
+#ifdef CONFIG_KRG_EPM
+	pid = krg_get_real_parent_tgid(current, current->nsproxy->pid_ns);
+#else
 	pid = task_tgid_vnr(current->real_parent);
+#endif
 	rcu_read_unlock();
 
 	return pid;

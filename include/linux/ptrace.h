@@ -78,6 +78,9 @@
 
 #include <linux/compiler.h>		/* For unlikely.  */
 #include <linux/sched.h>		/* For struct task_struct.  */
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/children.h>
+#endif
 
 
 extern long arch_ptrace(struct task_struct *child, long request, long addr, long data);
@@ -102,16 +105,40 @@ extern void ptrace_fork(struct task_struct *task, unsigned long clone_flags);
 extern int __ptrace_may_access(struct task_struct *task, unsigned int mode);
 /* Returns true on success, false on denial. */
 extern bool ptrace_may_access(struct task_struct *task, unsigned int mode);
+#ifdef CONFIG_KRG_EPM
+extern
+int krg_ptrace_link(struct task_struct *task, struct task_struct *tracer);
+extern void krg_ptrace_unlink(struct task_struct *task);
+extern void krg_ptrace_reparent_ptraced(struct task_struct *real_parent,
+					struct task_struct *task);
+#endif /* CONFIG_KRG_EPM */
 
 static inline int ptrace_reparented(struct task_struct *child)
 {
+#ifdef CONFIG_KRG_EPM
+/*
+ * if (child->parent == baby_sitter || child->real_parent == baby_sitter)
+ *		return child->task_obj->parent != child->task_obj->real_parent;
+ */
+#endif
 	return child->real_parent != child->parent;
 }
 static inline void ptrace_link(struct task_struct *child,
 			       struct task_struct *new_parent)
 {
+#ifdef CONFIG_KRG_EPM
+	if (unlikely(child->ptrace)) {
+		int ret = krg_ptrace_link(child, new_parent);
+		BUG_ON(ret);
+		ret = krg_set_child_ptraced(child->parent_children_obj,
+					    child->pid, 1);
+		BUG_ON(ret);
+		__ptrace_link(child, new_parent);
+	}
+#else
 	if (unlikely(child->ptrace))
 		__ptrace_link(child, new_parent);
+#endif
 }
 static inline void ptrace_unlink(struct task_struct *child)
 {

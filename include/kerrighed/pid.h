@@ -62,4 +62,26 @@ void krg_unlock_pid_location(pid_t pid);
 
 #endif /* CONFIG_KRG_PROC */
 
+#ifdef CONFIG_KRG_EPM
+
+/* Task KDDM object link */
+struct pid_kddm_object;
+struct task_kddm_object;
+struct pid;
+
+/* Must be called under rcu_read_lock() */
+struct task_kddm_object *krg_pid_task(struct pid *pid);
+
+/* Must be called under rcu_read_lock() */
+void krg_pid_unlink_task(struct pid_kddm_object *obj);
+
+/* Pid reference tracking */
+void krg_put_pid(struct pid *pid);
+
+/* Checkpoint/restart */
+void krg_rehash_restarted_thread(struct task_struct *p,
+				 struct task_struct *leader);
+
+#endif /* CONFIG_KRG_EPM */
+
 #endif /* __KERRIGHED_PID_H__ */
