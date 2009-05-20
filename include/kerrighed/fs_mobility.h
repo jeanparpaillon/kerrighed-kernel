@@ -8,7 +8,7 @@
 #ifndef __MOBILITY_H__
 #define __MOBILITY_H__
 
-#include <kerrighed/ghost.h>
+#include <kerrighed/ghost_types.h>
 
 struct epm_action;
 
@@ -40,89 +40,11 @@ struct dvfs_mobility_operations {
 
 extern struct dvfs_mobility_operations *dvfs_mobility_ops[];
 
-enum shared_obj_type;
-
 /*--------------------------------------------------------------------------*
  *                                                                          *
  *                              EXTERN FUNCTIONS                            *
  *                                                                          *
  *--------------------------------------------------------------------------*/
-
-/** Export an files structure into a ghost.
- *  @author  Renaud Lottiaux
- *
- *  @param ghost  Ghost where files data should be stored.
- *  @param tsk    Task to export files data from.
- *
- *  @return  0 if everything ok.
- *           Negative value otherwise.
- */
-int export_files_struct (struct epm_action *action,
-			 ghost_t *ghost, struct task_struct *tsk);
-
-/** Export the fs_struct of a process
- *  @author Renaud Lottiaux
- *
- *  @param ghost  Ghost where file data should be stored.
- *  @param tsk    Task to export file data from.
- *
- *  @return  0 if everything ok.
- *           Negative value otherwise.
- */
-int export_fs_struct (struct epm_action *action,
-		      ghost_t *ghost, struct task_struct *tsk);
-
-int export_vma_file (struct epm_action *action, ghost_t * ghost,
-                     struct task_struct *tsk, struct vm_area_struct *vma);
-
-int export_mnt_namespace (struct epm_action *action,
-			  ghost_t *ghost, struct task_struct *tsk);
-
-/** Import a files structure from a ghost.
- *  @author  Renaud Lottiaux
- *
- *  @param ghost  Ghost where files data are stored.
- *  @param tsk    Task to load files data in.
- *
- *  @return  0 if everything ok.
- *           Negative value otherwise.
- */
-int import_files_struct (struct epm_action *action,
-			 ghost_t *ghost, struct task_struct *tsk);
-
-/** Import the fs_struct of a process
- *  @author Renaud Lottiaux
- *
- *  @param ghost  Ghost where file data are stored.
- *  @param tsk    Task to import file data in.
- *
- *  @return  0 if everything ok.
- *           Negative value otherwise.
- */
-int import_fs_struct (struct epm_action *action,
-		      ghost_t *ghost, struct task_struct *tsk);
-
-int import_vma_file (struct epm_action *action, ghost_t *ghost,
-                     struct task_struct *tsk, struct vm_area_struct *vma);
-
-int import_mnt_namespace (struct epm_action *action,
-			  ghost_t *ghost, struct task_struct *tsk);
-
-void unimport_mnt_namespace(struct task_struct *task);
-void unimport_files_struct(struct task_struct *task);
-void unimport_fs_struct(struct task_struct *task);
-
-void free_ghost_files (struct task_struct *ghost);
-
-void cr_get_file_type_and_key(const struct file *file,
-			      enum shared_obj_type *type,
-			      long *key);
-
-int cr_add_file_to_shared_table(struct task_struct *task,
-				int index, struct file *file);
-
-int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
-		    struct task_struct *task, struct file **returned_file);
 
 static inline int dvfs_mobility_index (unsigned short mode)
 {

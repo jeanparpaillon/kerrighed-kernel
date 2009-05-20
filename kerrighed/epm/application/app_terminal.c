@@ -9,7 +9,7 @@
 #include <net/krgrpc/rpc.h>
 #include <linux/file.h>
 #include <kerrighed/file.h>
-#include <kerrighed/fs_mobility.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/regular_file_mgr.h>
 #include <kerrighed/faf.h>
 #include <kerrighed/faf_file_mgr.h>

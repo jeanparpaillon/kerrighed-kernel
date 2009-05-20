@@ -10,7 +10,6 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/errno.h>
-#include <kddm/mobility.h>
 #include <kddm/kddm_types.h>
 
 #include <kerrighed/ghost.h>
