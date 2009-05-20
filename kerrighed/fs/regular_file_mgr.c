@@ -21,7 +21,7 @@
 #include <kerrighed/app_terminal.h>
 #include <kerrighed/file.h>
 #include <kerrighed/regular_file_mgr.h>
-#include <kerrighed/fs_mobility.h>
+#include "mobility.h"
 #include "physical_fs.h"
 
 /*****************************************************************************/

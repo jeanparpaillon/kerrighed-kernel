@@ -14,7 +14,7 @@
 #include <kerrighed/file.h>
 #include "file_struct_io_linker.h"
 #ifdef CONFIG_KRG_EPM
-#include <kerrighed/fs_mobility.h>
+#include "mobility.h"
 #include <kerrighed/regular_file_mgr.h>
 #endif
 #ifdef CONFIG_KRG_FAF
