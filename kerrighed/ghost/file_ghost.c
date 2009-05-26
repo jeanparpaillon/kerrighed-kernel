@@ -126,52 +126,30 @@ struct ghost_operations ghost_file_ops = {
 	.close = &file_ghost_close
 };
 
-static int change_fs_creds(uid_t uid, gid_t gid)
-{
-	int r;
-	struct cred *new;
-
-	new = prepare_creds();
-	if (!new) {
-		r = -ENOMEM;
-		goto err;
-	}
-
-	new->fsuid = uid;
-	new->fsgid = gid;
-
-	r = commit_creds(new);
-	if (r)
-		goto err;
-
-err:
-	return r;
-}
-
 int set_ghost_fs(ghost_fs_t *oldfs, uid_t uid, gid_t gid)
 {
-	int r;
+	struct cred *new_cred;
+	int r = -ENOMEM;
+
+	new_cred = prepare_creds();
+	if (!new_cred)
+		goto err;
+	new_cred->fsuid = uid;
+	new_cred->fsgid = gid;
 
 	oldfs->fs = get_fs();
-	current_fsuid_fsgid(&oldfs->uid, &oldfs->gid);
-
-	r = change_fs_creds(uid, gid);
-	if (r)
-		goto err;
-
 	set_fs(KERNEL_DS);
+	oldfs->cred = override_creds(new_cred);
+	put_cred(new_cred);
+
 err:
 	return r;
 }
 
-int unset_ghost_fs(const ghost_fs_t *oldfs)
+void unset_ghost_fs(const ghost_fs_t *oldfs)
 {
-	int r;
 	set_fs(oldfs->fs);
-
-	r = change_fs_creds(oldfs->uid, oldfs->gid);
-
-	return r;
+	revert_creds(oldfs->cred);
 }
 
 /*--------------------------------------------------------------------------*

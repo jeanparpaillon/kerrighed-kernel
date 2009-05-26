@@ -67,11 +67,10 @@ ghost_t *create_file_ghost_from_fd(int access, unsigned int fd);
 
 typedef struct {
 	mm_segment_t fs;
-	uid_t uid;
-	gid_t gid;
+	const struct cred *cred;
 } ghost_fs_t;
 
 int set_ghost_fs(ghost_fs_t *oldfs, uid_t uid, gid_t gid);
-int unset_ghost_fs(const ghost_fs_t *oldfs);
+void unset_ghost_fs(const ghost_fs_t *oldfs);
 
 #endif // __FILE_GHOST__
