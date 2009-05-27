@@ -70,7 +70,8 @@ typedef struct {
 	const struct cred *cred;
 } ghost_fs_t;
 
-int set_ghost_fs(ghost_fs_t *oldfs, uid_t uid, gid_t gid);
+void __set_ghost_fs(ghost_fs_t *oldfs);
+int set_ghost_fs(ghost_fs_t *oldfs, uid_t fsuid, gid_t fsgid);
 void unset_ghost_fs(const ghost_fs_t *oldfs);
 
 #endif // __FILE_GHOST__

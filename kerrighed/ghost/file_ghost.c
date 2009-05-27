@@ -126,6 +126,13 @@ struct ghost_operations ghost_file_ops = {
 	.close = &file_ghost_close
 };
 
+void __set_ghost_fs(ghost_fs_t *oldfs)
+{
+	oldfs->fs = get_fs();
+	set_fs(KERNEL_DS);
+	oldfs->cred = NULL;
+}
+
 int set_ghost_fs(ghost_fs_t *oldfs, uid_t uid, gid_t gid)
 {
 	struct cred *new_cred;
@@ -137,8 +144,7 @@ int set_ghost_fs(ghost_fs_t *oldfs, uid_t uid, gid_t gid)
 	new_cred->fsuid = uid;
 	new_cred->fsgid = gid;
 
-	oldfs->fs = get_fs();
-	set_fs(KERNEL_DS);
+	__set_ghost_fs(oldfs);
 	oldfs->cred = override_creds(new_cred);
 	put_cred(new_cred);
 
@@ -149,7 +155,8 @@ err:
 void unset_ghost_fs(const ghost_fs_t *oldfs)
 {
 	set_fs(oldfs->fs);
-	revert_creds(oldfs->cred);
+	if (oldfs->cred)
+		revert_creds(oldfs->cred);
 }
 
 /*--------------------------------------------------------------------------*
