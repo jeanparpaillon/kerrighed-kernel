@@ -8,7 +8,7 @@
 
 #ifdef CONFIG_KRG_EPM
 
-#include <linux/types.h>
+#include <linux/sched.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/sys/checkpoint.h>
 
@@ -91,8 +91,6 @@ static inline void krg_action_unblock_all(void)
 {
 	read_unlock(&krg_action_lock);
 }
-
-struct task_struct;
 
 static inline int krg_action_any_pending(struct task_struct *task)
 {
