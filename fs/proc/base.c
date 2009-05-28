@@ -1777,11 +1777,19 @@ static int proc_fd_info(struct inode *inode, struct path *path, char *info)
 			}
 #endif
 			if (info)
+#ifdef CONFIG_KRG_FAF
+				snprintf(info, PROC_FDINFO_MAX,
+					 "pos:\t%lli\n"
+					 "flags:\t0%o\n",
+					 (long long) file->f_pos,
+					 (unsigned int)(file->f_flags & ~(unsigned long)O_KRG_FLAGS));
+#else
 				snprintf(info, PROC_FDINFO_MAX,
 					 "pos:\t%lli\n"
 					 "flags:\t0%o\n",
 					 (long long) file->f_pos,
 					 file->f_flags);
+#endif
 			spin_unlock(&files->file_lock);
 			put_files_struct(files);
 			return 0;
