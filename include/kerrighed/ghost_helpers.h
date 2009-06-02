@@ -15,6 +15,44 @@ int import_kddm_info_struct (struct epm_action *action,
 			     ghost_t *ghost, struct task_struct *tsk);
 void unimport_kddm_info_struct (struct task_struct *tsk);
 
+/* MM */
+
+/**
+ *  This function exports the virtual memory of a process
+ *  @author Renaud Lottiaux
+ *
+ *  @param ghost  Ghost where VM data should be stored.
+ *  @param task    Task to export file data from.
+ *
+ *  @return  0 if everything ok.
+ *           Negative value otherwise.
+ */
+int export_mm_struct (struct epm_action *action,
+		      ghost_t *ghost, struct task_struct *task);
+
+
+/**
+ *  This function imports the virtual memory of a process
+ *  @author Renaud Lottiaux
+ *
+ *  @param ghost  Ghost where VM data are stored.
+ *  @param task    Task to load VM data in.
+ *
+ *  @return  0 if everything ok.
+ *           Negative value otherwise.
+ */
+int import_mm_struct (struct epm_action *action,
+		      ghost_t *ghost, struct task_struct *task);
+
+void unimport_mm_struct(struct task_struct *task);
+
+/**
+ *  Free the mm struct of the ghost process.
+ *
+ *  @param task    Task struct of the ghost process.
+ */
+void free_ghost_mm (struct task_struct *task);
+
 /* FS */
 
 /** Export an files structure into a ghost.
