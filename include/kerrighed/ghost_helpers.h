@@ -93,4 +93,18 @@ int cr_add_file_to_shared_table(struct task_struct *task,
 int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 		    struct task_struct *task, struct file **returned_file);
 
+/* IPC */
+
+int export_ipc_namespace(struct epm_action *action,
+                         ghost_t *ghost, struct task_struct *task);
+int import_ipc_namespace(struct epm_action *action,
+                         ghost_t *ghost, struct task_struct *task);
+void unimport_ipc_namespace(struct task_struct *task);
+
+int export_sysv_sem(struct epm_action *action,
+                    ghost_t *ghost, struct task_struct *task);
+int import_sysv_sem(struct epm_action *action,
+                    ghost_t *ghost, struct task_struct *task);
+void unimport_sysv_sem(struct task_struct *task);
+
 #endif /* __GHOST_HELPERS_H__ */

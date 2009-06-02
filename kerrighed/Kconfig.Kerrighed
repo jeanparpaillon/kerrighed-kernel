@@ -177,6 +177,9 @@ config KRG_EPM
 
 	  If unsure, say Y.
 
+config KRG_IPC_EPM
+       def_bool KRG_IPC && KRG_EPM
+
 config KRG_FD
 	bool "Activate Fork Delay"
 	depends on KRG_EPM
