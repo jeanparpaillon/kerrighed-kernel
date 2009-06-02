@@ -7,7 +7,6 @@
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 
-#include "mobility.h"
 #include "mm_struct.h"
 #include "vma_struct.h"
 

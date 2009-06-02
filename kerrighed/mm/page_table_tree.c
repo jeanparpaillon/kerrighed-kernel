@@ -17,7 +17,6 @@
 #include "memory_int_linker.h"
 #include "mm_struct.h"
 #include "vma_struct.h"
-#include "mobility.h"
 
 /*****************************************************************************/
 /*                                                                           */
