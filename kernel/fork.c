@@ -271,7 +271,11 @@ out:
 }
 
 #ifdef CONFIG_MMU
+#ifdef CONFIG_KRG_MM
+int __dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm, int anon_only)
+#else
 static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
+#endif
 {
 	struct vm_area_struct *mpnt, *tmp, **pprev;
 	struct rb_node **rb_link, *rb_parent;
@@ -301,7 +305,12 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 	for (mpnt = oldmm->mmap; mpnt; mpnt = mpnt->vm_next) {
 		struct file *file;
 
+#ifdef CONFIG_KRG_MM
+		if ((mpnt->vm_flags & VM_DONTCOPY)
+		    || (anon_only && !anon_vma(mpnt))) {
+#else
 		if (mpnt->vm_flags & VM_DONTCOPY) {
+#endif
 			long pages = vma_pages(mpnt);
 			mm->total_vm -= pages;
 			vm_stat_account(mm, mpnt->vm_flags, mpnt->vm_file,
@@ -366,7 +375,11 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 		rb_parent = &tmp->vm_rb;
 
 		mm->map_count++;
+#ifdef CONFIG_KRG_MM
+		retval = copy_page_range(mm, oldmm, mpnt, anon_only);
+#else
 		retval = copy_page_range(mm, oldmm, mpnt);
+#endif
 
 		if (tmp->vm_ops && tmp->vm_ops->open)
 			tmp->vm_ops->open(tmp);
@@ -389,6 +402,14 @@ fail_nomem:
 	vm_unacct_memory(charge);
 	goto out;
 }
+
+#ifdef CONFIG_KRG_MM
+static inline int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
+{
+       return __dup_mmap(mm, oldmm, 0);
+}
+#endif
+
 
 static inline int mm_alloc_pgd(struct mm_struct * mm)
 {

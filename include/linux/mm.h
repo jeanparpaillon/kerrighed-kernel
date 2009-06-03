@@ -106,6 +106,10 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_SAO		0x20000000	/* Strong Access Ordering (powerpc) */
 #define VM_PFN_AT_MMAP	0x40000000	/* PFNMAP vma that is fully mapped at mmap time */
 
+#ifdef CONFIG_KRG_MM
+#define VM_KDDM		0x80000000	/* The vma is stored inside KDDM */
+#endif
+
 #ifndef VM_STACK_DEFAULT_FLAGS		/* arch can override this */
 #define VM_STACK_DEFAULT_FLAGS VM_DATA_DEFAULT_FLAGS
 #endif
@@ -790,8 +794,13 @@ int walk_page_range(unsigned long addr, unsigned long end,
 		struct mm_walk *walk);
 void free_pgd_range(struct mmu_gather *tlb, unsigned long addr,
 		unsigned long end, unsigned long floor, unsigned long ceiling);
+#ifdef CONFIG_KRG_MM
+int copy_page_range(struct mm_struct *dst, struct mm_struct *src,
+			struct vm_area_struct *vma, int anon_only);
+#else
 int copy_page_range(struct mm_struct *dst, struct mm_struct *src,
 			struct vm_area_struct *vma);
+#endif
 void unmap_mapping_range(struct address_space *mapping,
 		loff_t const holebegin, loff_t const holelen, int even_cows);
 int follow_phys(struct vm_area_struct *vma, unsigned long address,
@@ -1322,5 +1331,10 @@ void vmemmap_populate_print_last(void);
 extern void *alloc_locked_buffer(size_t size);
 extern void free_locked_buffer(void *buffer, size_t size);
 extern void release_locked_buffer(void *buffer, size_t size);
+
+#ifdef CONFIG_KRG_MM
+#include <kerrighed/mm.h>
+#endif
+
 #endif /* __KERNEL__ */
 #endif /* _LINUX_MM_H */
