@@ -609,6 +609,25 @@ static inline void clone_pgd_range(pgd_t *dst, pgd_t *src, int count)
        memcpy(dst, src, count * sizeof(pgd_t));
 }
 
+#ifdef CONFIG_KRG_MM
+struct kddm_obj;
+static inline void set_pte_obj_entry(pte_t *ptep, struct kddm_obj *obj)
+{
+	pte_t pte = __pte((unsigned long)obj);
+	pte = pte_set_flags(*ptep, _PAGE_OBJ_ENTRY);
+	set_pte(ptep, pte);
+}
+
+static inline struct kddm_obj *get_pte_obj_entry(pte_t *ptep)
+{
+	return (struct kddm_obj *)(pte_val(*ptep) & (~_PAGE_OBJ_ENTRY));
+}
+
+static inline int pte_obj_entry(pte_t *ptep)
+{
+	return ((pte_val(*ptep) & _PAGE_OBJ_ENTRY) && (!pte_present(*ptep)));
+}
+#endif /* KRG_MM */
 
 #include <asm-generic/pgtable.h>
 #endif	/* __ASSEMBLY__ */

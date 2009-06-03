@@ -138,6 +138,10 @@ static inline int pgd_large(pgd_t pgd) { return 0; }
 extern int direct_gbpages;
 
 /* Encode and de-code a swap entry */
+#ifdef CONFIG_KRG_MM
+#define SWP_TYPE_BITS		5
+#define SWP_OFFSET_SHIFT	9
+#else
 #if _PAGE_BIT_FILE < _PAGE_BIT_PROTNONE
 #define SWP_TYPE_BITS (_PAGE_BIT_FILE - _PAGE_BIT_PRESENT - 1)
 #define SWP_OFFSET_SHIFT (_PAGE_BIT_PROTNONE + 1)
@@ -145,15 +149,27 @@ extern int direct_gbpages;
 #define SWP_TYPE_BITS (_PAGE_BIT_PROTNONE - _PAGE_BIT_PRESENT - 1)
 #define SWP_OFFSET_SHIFT (_PAGE_BIT_FILE + 1)
 #endif
+#endif /* !CONFIG_KRG_MM */
 
 #define MAX_SWAPFILES_CHECK() BUILD_BUG_ON(MAX_SWAPFILES_SHIFT > SWP_TYPE_BITS)
 
+#ifdef CONFIG_KRG_MM
+#define __swp_type(x)			(((x).val >> (_PAGE_BIT_OBJ_ENTRY + 1)) \
+					 & ((1U << SWP_TYPE_BITS) - 1))
+#else
 #define __swp_type(x)			(((x).val >> (_PAGE_BIT_PRESENT + 1)) \
 					 & ((1U << SWP_TYPE_BITS) - 1))
+#endif
 #define __swp_offset(x)			((x).val >> SWP_OFFSET_SHIFT)
+#ifdef CONFIG_KRG_MM
+#define __swp_entry(type, offset)	((swp_entry_t) { \
+					 ((type) << (_PAGE_BIT_OBJ_ENTRY + 1)) \
+					 | ((offset) << SWP_OFFSET_SHIFT) })
+#else
 #define __swp_entry(type, offset)	((swp_entry_t) { \
 					 ((type) << (_PAGE_BIT_PRESENT + 1)) \
 					 | ((offset) << SWP_OFFSET_SHIFT) })
+#endif
 #define __pte_to_swp_entry(pte)		((swp_entry_t) { pte_val((pte)) })
 #define __swp_entry_to_pte(x)		((pte_t) { .pte = (x).val })
 
