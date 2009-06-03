@@ -25,10 +25,18 @@ extern struct fs_struct init_fs;
 #define INIT_MM_EPM
 #endif
 
+#ifdef CONFIG_KRG_MM
+#define INIT_MM_MM                                              \
+        .mm_tasks       = ATOMIC_INIT(1),
+#else
+#define INIT_MM_MM
+#endif
+
 #define INIT_MM(name) \
 {			 					\
 	.mm_rb		= RB_ROOT,				\
 	.pgd		= swapper_pg_dir, 			\
+	INIT_MM_MM						\
 	INIT_MM_EPM						\
 	.mm_users	= ATOMIC_INIT(2), 			\
 	.mm_count	= ATOMIC_INIT(1), 			\

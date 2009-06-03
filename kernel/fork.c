@@ -429,6 +429,9 @@ __setup("coredump_filter=", coredump_filter_setup);
 
 static struct mm_struct * mm_init(struct mm_struct * mm, struct task_struct *p)
 {
+#ifdef CONFIG_KRG_MM
+	atomic_set(&mm->mm_tasks, 1);
+#endif
 #ifdef CONFIG_KRG_EPM
 	atomic_set(&mm->mm_ltasks, 1);
 #endif
