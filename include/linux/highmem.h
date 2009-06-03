@@ -198,4 +198,22 @@ static inline void copy_highpage(struct page *to, struct page *from)
 	kunmap_atomic(vto, KM_USER1);
 }
 
+#ifdef CONFIG_KRG_MM
+static inline void copy_buff_to_highpage(struct page * page, char *buffer)
+{
+	char *to;
+	to = (char *)kmap_atomic(page, KM_USER0);
+	copy_page(to, buffer);
+	kunmap_atomic(to, KM_USER0);
+}
+
+static inline void copy_highpage_to_buff(char *buffer, struct page * page)
+{
+	char *from;
+	from = (char *)kmap_atomic(page, KM_USER0);
+	copy_page(buffer, from);
+	kunmap_atomic(from, KM_USER0);
+}
+#endif
+
 #endif /* _LINUX_HIGHMEM_H */
