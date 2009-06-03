@@ -14,6 +14,7 @@
 
 #include <kddm/kddm.h>
 #include <net/krgrpc/rpc.h>
+#include <kerrighed/hotplug.h>
 #include "ipc_handler.h"
 #include "msg_handler.h"
 #include "msg_io_linker.h"
@@ -410,8 +411,6 @@ void init_msg_ops(struct ipc_namespace *ns)
 
 	msg_ids(ns).krgops = &krg_sysvipc_msg_ops;
 }
-
-extern void hook_register(void *hk, void *f);
 
 void msg_handler_init(void)
 {

@@ -12,6 +12,7 @@
 #include <linux/nsproxy.h>
 #include <kddm/kddm.h>
 #include <net/krgrpc/rpc.h>
+#include <kerrighed/hotplug.h>
 #include "ipc_handler.h"
 #include "sem_handler.h"
 #include "semarray_io_linker.h"
@@ -622,8 +623,6 @@ void init_sem_ops(struct ipc_namespace *ns)
 
 	sem_ids(ns).krgops = &krg_sysvipc_sem_ops;
 }
-
-extern void hook_register(void *hk, void *f);
 
 void sem_handler_init (void)
 {
