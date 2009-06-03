@@ -890,22 +890,6 @@ void local_ipc_unlock(struct kern_ipc_perm *perm)
 	rcu_read_unlock();
 }
 
-static struct kern_ipc_perm *local_ipc_lock_check(struct ipc_ids *ids, int id)
-{
-	struct kern_ipc_perm *out;
-
-	out = local_ipc_lock(ids, id);
-	if (IS_ERR(out))
-		return out;
-
-	if (ipc_checkid(out, id)) {
-		local_ipc_unlock(out);
-		return ERR_PTR(-EIDRM);
-	}
-
-	return out;
-}
-
 void ipc_unlock(struct kern_ipc_perm *perm)
 {
 	if (perm->krgops)
