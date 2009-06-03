@@ -380,11 +380,6 @@ int init_kerrighed_upper_layers(void)
 		goto err_palantir;
 #endif
 
-#ifdef CONFIG_KRG_MM
-	if (init_kermm())
-		goto err_kermm;
-#endif
-
 #ifdef CONFIG_KRG_DVFS
 	if (init_dvfs())
 		goto err_dvfs;
@@ -442,10 +437,6 @@ int init_kerrighed_upper_layers(void)
 #ifdef CONFIG_KRG_CAP
 	cleanup_krg_cap();
       err_krg_cap:
-#endif
-#ifdef CONFIG_KRG_MM
-	cleanup_kermm();
-      err_kermm:
 #endif
 #ifdef CONFIG_KRG_KDDM
 	cleanup_kddm();
