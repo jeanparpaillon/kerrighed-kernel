@@ -309,6 +309,54 @@ int __init sysenter_setup(void)
 	return 0;
 }
 
+#ifdef CONFIG_KRG_MM
+int import_vdso_context(struct mm_struct *mm)
+{
+	unsigned long addr;
+	int ret;
+
+	if (vdso_enabled != VDSO_ENABLED) {
+		BUG_ON(!mm->context.vdso
+		       && mm->context.vdso != (void *)VDSO_HIGH_BASE);
+		return 0;
+	}
+
+	addr = get_unmapped_area(NULL, 0, PAGE_SIZE, 0, 0);
+	if (IS_ERR_VALUE(addr)) {
+		ret = addr;
+		goto err;
+	}
+
+	if (compat_uses_vma) {
+		ret = install_special_mapping(mm, addr, PAGE_SIZE,
+					      VM_READ|VM_EXEC|
+					      VM_MAYREAD|VM_MAYWRITE|VM_MAYEXEC|
+					      VM_ALWAYSDUMP,
+					      vdso32_pages);
+		if (ret)
+			goto err;
+	}
+	mm->context.vdso = (void *)addr;
+err:
+	return ret;
+}
+
+int import_mm_struct_end(struct mm_struct *mm, struct task_struct *task)
+{
+	if (vdso_enabled != VDSO_ENABLED) {
+		BUG_ON(!mm->context.vdso
+		       && mm->context.vdso != (void *)VDSO_HIGH_BASE);
+		return 0;
+	}
+
+	task_thread_info(task)->sysenter_return =
+		VDSO32_SYMBOL(mm->context.vdso, SYSENTER_RETURN);
+
+	return 0;
+}
+
+#endif
+
 /* Setup a VMA at program startup for the vsyscall page */
 int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 {

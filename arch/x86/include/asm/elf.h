@@ -344,4 +344,9 @@ extern int syscall32_setup_pages(struct linux_binprm *, int exstack);
 extern unsigned long arch_randomize_brk(struct mm_struct *mm);
 #define arch_randomize_brk arch_randomize_brk
 
+#ifdef CONFIG_KRG_MM
+int import_vdso_context(struct mm_struct *mm);
+int import_mm_struct_end(struct mm_struct *mm, struct task_struct *task);
+#endif
+
 #endif /* _ASM_X86_ELF_H */
