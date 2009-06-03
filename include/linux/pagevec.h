@@ -8,6 +8,10 @@
 #ifndef _LINUX_PAGEVEC_H
 #define _LINUX_PAGEVEC_H
 
+#if defined(CONFIG_KRG_MM) && defined(CONFIG_DEBUG_PAGEALLOC)
+#include <linux/page-flags.h>
+#endif
+
 /* 14 pointers + two long's align the pagevec structure to a power of two */
 #define PAGEVEC_SIZE	14
 
@@ -56,6 +60,9 @@ static inline unsigned pagevec_space(struct pagevec *pvec)
  */
 static inline unsigned pagevec_add(struct pagevec *pvec, struct page *page)
 {
+#if defined(CONFIG_KRG_MM) && defined(CONFIG_DEBUG_PAGEALLOC)
+	SetPageInVec(page);
+#endif
 	pvec->pages[pvec->nr++] = page;
 	return pagevec_space(pvec);
 }

@@ -344,6 +344,9 @@ void release_pages(struct page **pages, int nr, int cold)
 			continue;
 		}
 
+#if defined(CONFIG_KRG_MM) && defined(CONFIG_DEBUG_PAGEALLOC)
+		ClearPageInVec(page);
+#endif
 		if (!put_page_testzero(page))
 			continue;
 
@@ -422,6 +425,9 @@ void ____pagevec_lru_add(struct pagevec *pvec, enum lru_list lru)
 		VM_BUG_ON(PageActive(page));
 		VM_BUG_ON(PageUnevictable(page));
 		VM_BUG_ON(PageLRU(page));
+#if defined(CONFIG_KRG_MM) && defined(CONFIG_DEBUG_PAGEALLOC)
+		ClearPageInVec(page);
+#endif
 		SetPageLRU(page);
 		active = is_active_lru(lru);
 		file = is_file_lru(lru);

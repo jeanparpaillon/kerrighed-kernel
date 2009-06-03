@@ -94,6 +94,13 @@ enum pageflags {
 	PG_mappedtodisk,	/* Has blocks allocated on-disk */
 	PG_reclaim,		/* To be reclaimed asap */
 	PG_buddy,		/* Page is free, on buddy lists */
+#ifdef CONFIG_KRG_MM
+	PG_to_invalidate,
+	PG_to_set_read_only,
+#ifdef CONFIG_DEBUG_PAGEALLOC
+	PG_in_vec,
+#endif
+#endif
 	PG_swapbacked,		/* Page is backed by RAM/swap */
 #ifdef CONFIG_UNEVICTABLE_LRU
 	PG_unevictable,		/* Page is "unevictable"  */
@@ -271,6 +278,14 @@ PAGEFLAG_FALSE(Mlocked)
 PAGEFLAG(Uncached, uncached)
 #else
 PAGEFLAG_FALSE(Uncached)
+#endif
+
+#ifdef CONFIG_KRG_MM
+PAGEFLAG(ToInvalidate, to_invalidate)
+PAGEFLAG(ToSetReadOnly, to_set_read_only)
+#ifdef CONFIG_DEBUG_PAGEALLOC
+PAGEFLAG(InVec, in_vec)
+#endif
 #endif
 
 static inline int PageUptodate(struct page *page)
