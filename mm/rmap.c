@@ -674,6 +674,11 @@ void page_add_new_anon_rmap(struct page *page,
 	SetPageSwapBacked(page);
 	atomic_set(&page->_mapcount, 0); /* increment count (starts at -1) */
 	__page_set_anon_rmap(page, vma, address);
+#ifdef CONFIG_KRG_MM
+	if (page->obj_entry)
+		return;
+	/* following code is done is Krg MM code */
+#endif
 	if (page_evictable(page, vma))
 		lru_cache_add_lru(page, LRU_ACTIVE_ANON);
 	else

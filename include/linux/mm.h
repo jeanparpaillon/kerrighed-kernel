@@ -297,6 +297,13 @@ static inline struct page *compound_head(struct page *page)
 	return page;
 }
 
+#ifdef CONFIG_KRG_MM
+static inline int page_kddm_count(struct page *page)
+{
+	return atomic_read(&page->_kddm_count);
+}
+#endif
+
 static inline int page_count(struct page *page)
 {
 	return atomic_read(&compound_head(page)->_count);

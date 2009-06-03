@@ -51,6 +51,11 @@ struct page {
 			u16 objects;
 		};
 	};
+#ifdef CONFIG_KRG_MM
+	atomic_t _kddm_count;		/* Count number of KDDM set sharing
+					 * the page */
+	void *obj_entry;
+#endif
 	union {
 	    struct {
 		unsigned long private;		/* Mapping-private opaque data:
