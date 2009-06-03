@@ -50,8 +50,8 @@ static struct msg_queue *create_local_msq(struct msg_queue *received_msq)
 	INIT_LIST_HEAD(&msq->q_receivers);
 	INIT_LIST_HEAD(&msq->q_senders);
 
-	local_msg_unlock(msq);
 	msq->q_perm.krgops = &krg_sysvipc_msg_ops;
+	local_msg_unlock(msq);
 
 	return msq;
 

@@ -46,6 +46,7 @@
 #include "ipc_handler.h"
 #include "msg_handler.h"
 #include "sem_handler.h"
+#include "shm_handler.h"
 #endif
 
 struct ipc_proc_iface {
@@ -1202,6 +1203,8 @@ int init_keripc(void)
 	msg_handler_init();
 
 	sem_handler_init();
+
+	shm_handler_init();
 
 	printk("KrgIPC initialisation done\n");
 

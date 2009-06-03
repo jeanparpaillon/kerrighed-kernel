@@ -58,8 +58,8 @@ struct sem_array *create_local_sem(struct sem_array *received_sma)
 	INIT_LIST_HEAD(&sma->list_id);
 	INIT_LIST_HEAD(&sma->remote_sem_pending);
 
-	local_sem_unlock(sma);
 	sma->sem_perm.krgops = &krg_sysvipc_sem_ops;
+	local_sem_unlock(sma);
 
 	return sma;
 
