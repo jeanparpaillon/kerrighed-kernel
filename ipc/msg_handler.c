@@ -119,7 +119,7 @@ int kcb_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 	msq_object_t *msq_object;
 	kerrighed_node_t *master_node;
 	long *key_index;
-	int index ;
+	int index, err = 0;
 
 	BUG_ON (ns != &init_ipc_ns);
 
@@ -130,8 +130,10 @@ int kcb_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 	BUG_ON(msq_object);
 
 	msq_object = kmem_cache_alloc(msq_object_cachep, GFP_KERNEL);
-	if (!msq_object)
-		return -ENOMEM;
+	if (!msq_object) {
+		err = -ENOMEM;
+		goto err_put;
+	}
 
 	msq_object->local_msq = msq;
 	msq_object->local_msq->is_master = 1;
@@ -149,13 +151,15 @@ int kcb_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 
 	master_node = _kddm_grab_object(msq_master_kddm_set, index);
 	*master_node = kerrighed_node_id;
-	_kddm_put_object(msq_master_kddm_set, index);
-
-	_kddm_put_object(msq_struct_kddm_set, index);
 
 	msq->q_perm.krgops = &krg_sysvipc_msg_ops;
 
-	return 0;
+	_kddm_put_object(msq_master_kddm_set, index);
+
+err_put:
+	_kddm_put_object(msq_struct_kddm_set, index);
+
+	return err;
 }
 
 void kcb_ipc_msg_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
