@@ -28,7 +28,10 @@ static void flush_ldt(void *current_mm)
 }
 #endif
 
-static int alloc_ldt(mm_context_t *pc, int mincount, int reload)
+#ifndef CONFIG_KRG_MM
+static
+#endif
+int alloc_ldt(mm_context_t *pc, int mincount, int reload)
 {
 	void *oldldt, *newldt;
 	int oldsize;

@@ -55,7 +55,10 @@
 
 #include "internal.h"
 
-static struct kmem_cache *anon_vma_cachep;
+#ifndef CONFIG_KRG_MM
+static
+#endif
+struct kmem_cache *anon_vma_cachep;
 
 static inline struct anon_vma *anon_vma_alloc(void)
 {
@@ -776,6 +779,35 @@ static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 	pte = page_check_address(page, mm, address, &ptl, 0);
 	if (!pte)
 		goto out;
+
+#ifdef CONFIG_KRG_MM
+	if (PageToInvalidate(page)) {
+		if ((vma->vm_flags & (VM_LOCKED|VM_RESERVED))) {
+			ret = SWAP_FAIL;
+			goto out_unmap;
+		}
+
+		/* Nuke the page table entry. */
+		flush_cache_page(vma, address, page_to_pfn(page));
+		pteval = ptep_clear_flush(vma, address, pte);
+		update_hiwater_rss(mm);
+
+		if (PageAnon(page))
+			dec_mm_counter(mm, anon_rss);
+		else
+			dec_mm_counter(mm, file_rss);
+
+		page_remove_rmap(page);
+		page_cache_release(page);
+		goto out_unmap;
+	}
+
+	if (PageToSetReadOnly(page)) {
+		ptep_set_wrprotect(mm, address, pte);
+		flush_tlb_page(vma, address);
+		goto out_unmap;
+	}
+#endif // CONFIG_KRG_MM
 
 	/*
 	 * If the page is mlock()d, we cannot swap it out.

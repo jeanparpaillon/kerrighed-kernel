@@ -48,9 +48,11 @@
 #define arch_rebalance_pgtables(addr, len)		(addr)
 #endif
 
+#ifndef CONFIG_KRG_MM
 static void unmap_region(struct mm_struct *mm,
 		struct vm_area_struct *vma, struct vm_area_struct *prev,
 		unsigned long start, unsigned long end);
+#endif
 
 /*
  * WARNING: the debugging will use recursive algorithms so never enable this
@@ -229,7 +231,10 @@ void unlink_file_vma(struct vm_area_struct *vma)
 /*
  * Close a vm structure and free it, returning the next.
  */
-static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
+#ifndef CONFIG_KRG_MM
+static
+#endif
+struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
 {
 	struct vm_area_struct *next = vma->vm_next;
 
@@ -412,7 +417,10 @@ void __vma_link_rb(struct mm_struct *mm, struct vm_area_struct *vma,
 	rb_insert_color(&vma->vm_rb, &mm->mm_rb);
 }
 
-static void __vma_link_file(struct vm_area_struct *vma)
+#ifndef CONFIG_KRG_MM
+static
+#endif
+void __vma_link_file(struct vm_area_struct *vma)
 {
 	struct file *file;
 
@@ -660,7 +668,11 @@ again:			remove_next = 1 + (end > next->vm_end);
 }
 
 /* Flags that can be inherited from an existing mapping when merging */
+#ifdef CONFIG_KRG_MM
+#define VM_MERGEABLE_FLAGS (VM_CAN_NONLINEAR|VM_KDDM)
+#else
 #define VM_MERGEABLE_FLAGS (VM_CAN_NONLINEAR)
+#endif
 
 /*
  * If the vma has a ->close operation then the driver probably needs to release
@@ -669,6 +681,9 @@ again:			remove_next = 1 + (end > next->vm_end);
 static inline int is_mergeable_vma(struct vm_area_struct *vma,
 			struct file *file, unsigned long vm_flags)
 {
+#ifdef CONFIG_KRG_MM
+	BUG_ON(!(vma->vm_flags & VM_KDDM) && (vm_flags & VM_KDDM));
+#endif
 	if ((vma->vm_flags ^ vm_flags) & ~VM_MERGEABLE_FLAGS)
 		return 0;
 	if (vma->vm_file != file)
@@ -1235,6 +1250,9 @@ out:
 		mm->locked_vm += (len >> PAGE_SHIFT) - nr_pages;
 	} else if ((flags & MAP_POPULATE) && !(flags & MAP_NONBLOCK))
 		make_pages_present(addr, addr + len);
+#ifdef CONFIG_KRG_MM
+	KRGFCT(kh_do_mmap)(vma);
+#endif
 	return addr;
 
 unmap_and_free_vma:
@@ -1749,7 +1767,10 @@ find_extend_vma(struct mm_struct * mm, unsigned long addr)
  *
  * Called with the mm semaphore held.
  */
-static void remove_vma_list(struct mm_struct *mm, struct vm_area_struct *vma)
+#ifndef CONFIG_KRG_MM
+static
+#endif
+void remove_vma_list(struct mm_struct *mm, struct vm_area_struct *vma)
 {
 	/* Update high watermark before we lower total_vm */
 	update_hiwater_vm(mm);
@@ -1768,7 +1789,10 @@ static void remove_vma_list(struct mm_struct *mm, struct vm_area_struct *vma)
  *
  * Called with the mm semaphore held.
  */
-static void unmap_region(struct mm_struct *mm,
+#ifndef CONFIG_KRG_MM
+static
+#endif
+void unmap_region(struct mm_struct *mm,
 		struct vm_area_struct *vma, struct vm_area_struct *prev,
 		unsigned long start, unsigned long end)
 {
@@ -1790,7 +1814,10 @@ static void unmap_region(struct mm_struct *mm,
  * Create a list of vma's touched by the unmap, removing them from the mm's
  * vma list as we go..
  */
-static void
+#ifndef CONFIG_KRG_MM
+static
+#endif
+void
 detach_vmas_to_be_unmapped(struct mm_struct *mm, struct vm_area_struct *vma,
 	struct vm_area_struct *prev, unsigned long end)
 {
@@ -1939,6 +1966,10 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len)
 	 * Remove the vma's, and unmap the actual pages
 	 */
 	detach_vmas_to_be_unmapped(mm, vma, prev, end);
+#ifdef CONFIG_KRG_MM
+	if (kh_do_munmap && mm->anon_vma_kddm_set)
+		kh_do_munmap(mm, start, len, vma);
+#endif
 	unmap_region(mm, vma, prev, start, end);
 
 	/* Fix up all other VM information */
@@ -2068,6 +2099,9 @@ unsigned long do_brk(unsigned long addr, unsigned long len)
 	vma->vm_flags = flags;
 	vma->vm_page_prot = vm_get_page_prot(flags);
 	vma_link(mm, vma, prev, rb_link, rb_parent);
+#ifdef CONFIG_KRG_MM
+	KRGFCT(kh_do_mmap)(vma);
+#endif
 out:
 	mm->total_vm += len >> PAGE_SHIFT;
 	if (flags & VM_LOCKED) {

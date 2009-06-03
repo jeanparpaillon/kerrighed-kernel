@@ -31,9 +31,9 @@ extern struct shared_object_operations cr_shared_dvfs_regular_file_ops;
 extern struct shared_object_operations cr_shared_faf_file_ops;
 extern struct shared_object_operations cr_shared_files_struct_ops;
 extern struct shared_object_operations cr_shared_fs_struct_ops;
-/* TODO PORT */
-/*extern*/ struct shared_object_operations cr_shared_mm_struct_ops;
+extern struct shared_object_operations cr_shared_mm_struct_ops;
 extern struct shared_object_operations cr_shared_semundo_ops;
+/* TODO PORT */
 /*extern*/ struct shared_object_operations cr_shared_sighand_struct_ops;
 /*extern*/ struct shared_object_operations cr_shared_signal_struct_ops;
 

@@ -67,7 +67,10 @@ DEFINE_TRACE(sched_process_free);
 DEFINE_TRACE(sched_process_exit);
 DEFINE_TRACE(sched_process_wait);
 
-static void exit_mm(struct task_struct * tsk);
+#ifndef CONFIG_KRG_MM
+static
+#endif
+void exit_mm(struct task_struct * tsk);
 
 static void __unhash_process(struct task_struct *p)
 {
@@ -651,7 +654,10 @@ assign_new_owner:
  * Turn us into a lazy TLB process if we
  * aren't already..
  */
-static void exit_mm(struct task_struct * tsk)
+#ifndef CONFIG_KRG_MM
+static
+#endif
+void exit_mm(struct task_struct * tsk)
 {
 	struct mm_struct *mm = tsk->mm;
 	struct core_state *core_state;

@@ -142,7 +142,10 @@ struct kmem_cache *fs_cachep;
 struct kmem_cache *vm_area_cachep;
 
 /* SLAB cache for mm_struct structures (tsk->mm) */
-static struct kmem_cache *mm_cachep;
+#ifndef CONFIG_KRG_MM
+static
+#endif
+struct kmem_cache *mm_cachep;
 
 void free_task(struct task_struct *tsk)
 {
@@ -431,8 +434,10 @@ static inline void mm_free_pgd(struct mm_struct * mm)
 
 __cacheline_aligned_in_smp DEFINE_SPINLOCK(mmlist_lock);
 
+#ifndef CONFIG_KRG_MM
 #define allocate_mm()	(kmem_cache_alloc(mm_cachep, GFP_KERNEL))
 #define free_mm(mm)	(kmem_cache_free(mm_cachep, (mm)))
+#endif
 
 static unsigned long default_dump_filter = MMF_DUMP_FILTER_DEFAULT;
 
@@ -448,7 +453,10 @@ __setup("coredump_filter=", coredump_filter_setup);
 
 #include <linux/init_task.h>
 
-static struct mm_struct * mm_init(struct mm_struct * mm, struct task_struct *p)
+#ifndef CONFIG_KRG_MM
+static
+#endif
+struct mm_struct * mm_init(struct mm_struct * mm, struct task_struct *p)
 {
 #ifdef CONFIG_KRG_MM
 	atomic_set(&mm->mm_tasks, 1);
@@ -463,6 +471,9 @@ static struct mm_struct * mm_init(struct mm_struct * mm, struct task_struct *p)
 	mm->flags = (current->mm) ? current->mm->flags : default_dump_filter;
 	mm->core_state = NULL;
 	mm->nr_ptes = 0;
+#ifdef CONFIG_KRG_MM
+	mm->mm_id = 0;
+#endif
 	set_mm_counter(mm, file_rss, 0);
 	set_mm_counter(mm, anon_rss, 0);
 	spin_lock_init(&mm->page_table_lock);
@@ -707,11 +718,22 @@ static int copy_mm(unsigned long clone_flags, struct task_struct * tsk)
 		atomic_inc(&oldmm->mm_ltasks);
 #endif
 		atomic_inc(&oldmm->mm_users);
+#ifdef CONFIG_KRG_MM
+#ifdef CONFIG_KRG_EPM
+		if (!krg_current)
+#endif
+			KRGFCT(kh_mm_get)(oldmm);
+#endif
 		mm = oldmm;
 		goto good_mm;
 	}
 
 	retval = -ENOMEM;
+#ifdef CONFIG_KRG_MM
+	if (kh_copy_mm)
+		mm = kh_copy_mm(tsk, oldmm, clone_flags);
+	else
+#endif
 	mm = dup_mm(tsk);
 	if (!mm)
 		goto fail_nomem;
@@ -1360,6 +1382,10 @@ bad_fork_cleanup_io:
 bad_fork_cleanup_namespaces:
 	exit_task_namespaces(p);
 bad_fork_cleanup_mm:
+#ifdef CONFIG_KRG_MM
+	if (p->mm && p->mm->mm_id && (clone_flags & CLONE_VM))
+		KRGFCT(kh_mm_release)(p->mm, 1);
+#endif
 #ifdef CONFIG_KRG_EPM
 	if (p->mm)
 		atomic_dec(&p->mm->mm_ltasks);

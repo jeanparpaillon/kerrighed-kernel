@@ -839,6 +839,16 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 			continue;
 		}
 
+#ifdef CONFIG_KRG_MM
+		if (vma->vm_mm->anon_vma_kddm_set) {
+			KRGFCT(kh_zap_pte)(vma->vm_mm, addr, pte);
+			ptent = *pte;
+			if (pte_none(ptent)) {
+				(*zap_work)--;
+				continue;
+			}
+		}
+#endif
 		(*zap_work) -= PAGE_SIZE;
 
 		if (pte_present(ptent)) {
@@ -1962,6 +1972,9 @@ static int do_wp_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	int reuse = 0, ret = 0;
 	int page_mkwrite = 0;
 	struct page *dirty_page = NULL;
+#ifdef CONFIG_KRG_MM
+	int need_vma_link_check = (vma->anon_vma == NULL);
+#endif
 
 	old_page = vm_normal_page(vma, address, orig_pte);
 	if (!old_page) {
@@ -1982,6 +1995,9 @@ static int do_wp_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * Take out anonymous pages first, anonymous shared vmas are
 	 * not dirty accountable.
 	 */
+#ifdef CONFIG_KRG_MM
+	if (!(vma->vm_flags & VM_KDDM)) {
+#endif
 	if (PageAnon(old_page)) {
 		if (!trylock_page(old_page)) {
 			page_cache_get(old_page);
@@ -2062,6 +2078,9 @@ static int do_wp_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		get_page(dirty_page);
 		reuse = 1;
 	}
+#ifdef CONFIG_KRG_MM
+	}
+#endif
 
 	if (reuse) {
 reuse:
@@ -2083,6 +2102,40 @@ gotten:
 
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
+
+#ifdef CONFIG_KRG_MM
+	if (need_vma_link_check)
+		KRGFCT(kh_do_mmap)(vma);
+	if (vma->vm_ops && vma->vm_ops->wppage) {
+		new_page = vma->vm_ops->wppage(vma, address & PAGE_MASK,
+					       old_page);
+
+		if (!new_page)
+			goto oom;
+
+		if (new_page != old_page) {
+			/* Unlike the kernel COW function, the KDDM one does
+			 * all the job (unmap, count decrement, etc). Nothing
+			 * more has to be done by the kernel.
+			 */
+			page_cache_release(old_page);
+			old_page = NULL;
+			goto install_page;
+		}
+
+		/* We have just a write access upgrade to do... */
+
+		page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
+		entry = mk_pte(new_page, vma->vm_page_prot);
+		entry = maybe_mkwrite(pte_mkdirty(entry), vma);
+		set_pte_at(mm, address, page_table, entry);
+		update_mmu_cache(vma, address, entry);
+		if (old_page)
+			page_cache_release(old_page);
+		goto unlock;
+	}
+#endif /* CONFIG_KRG_MM */
+
 	VM_BUG_ON(old_page == ZERO_PAGE(0));
 	new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, address);
 	if (!new_page)
@@ -2105,7 +2158,14 @@ gotten:
 	/*
 	 * Re-check the pte - we dropped the lock
 	 */
+#ifdef CONFIG_KRG_MM
+install_page:
+#endif
 	page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
+#ifdef CONFIG_KRG_MM
+	if (pfn_to_page(pte_pfn(*page_table)) == new_page)
+		orig_pte = *page_table;
+#endif
 	if (likely(pte_same(*page_table, orig_pte))) {
 		if (old_page) {
 			if (!PageAnon(old_page)) {
@@ -2527,6 +2587,9 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	delayacct_set_flag(DELAYACCT_PF_SWAPIN);
 	page = lookup_swap_cache(entry);
 	if (!page) {
+#ifdef CONFIG_KRG_MM
+		if (current->mm)
+#endif
 		grab_swap_token(); /* Contend for token _before_ read-in */
 		page = swapin_readahead(entry,
 					GFP_HIGHUSER_MOVABLE, vma, address);
@@ -2596,6 +2659,10 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	swap_free(entry);
 	if (vm_swap_full() || (vma->vm_flags & VM_LOCKED) || PageMlocked(page))
 		try_to_free_swap(page);
+#ifdef CONFIG_KRG_MM
+	if (mm->anon_vma_kddm_set)
+		KRGFCT(kh_fill_pte)(mm, address, page_table);
+#endif
 	unlock_page(page);
 
 	if (write_access) {
@@ -2704,6 +2771,17 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	vmf.flags = flags;
 	vmf.page = NULL;
 
+#ifdef CONFIG_KRG_MM
+	if (flags & FAULT_FLAG_WRITE
+	    && !vma->anon_vma
+	    && !(vma->vm_flags & VM_SHARED)) {
+		if (unlikely(anon_vma_prepare(vma))) {
+			anon = 1;
+			return VM_FAULT_OOM;
+		}
+		KRGFCT(kh_do_mmap)(vma);
+	}
+#endif
 	ret = vma->vm_ops->fault(vma, &vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE)))
 		return ret;
@@ -2721,7 +2799,20 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * Should we do an early C-O-W break?
 	 */
 	page = vmf.page;
+#ifdef CONFIG_KRG_MM
+	if ((vma->vm_flags & VM_KDDM) &&
+	    (!page->mapping || PageAnon(page))) {
+		anon = 1;
+		if (unlikely(anon_vma_prepare(vma))) {
+			ret = VM_FAULT_OOM;
+			goto out;
+		}
+	}
+	if (flags & FAULT_FLAG_WRITE &&
+	    !(vma->vm_flags & VM_KDDM)) {
+#else
 	if (flags & FAULT_FLAG_WRITE) {
+#endif
 		if (!(vma->vm_flags & VM_SHARED)) {
 			anon = 1;
 			if (unlikely(anon_vma_prepare(vma))) {
@@ -2793,11 +2884,20 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * handle that later.
 	 */
 	/* Only go through if we didn't race with anybody else... */
+#ifdef CONFIG_KRG_MM
+	if (pte_same(*page_table, orig_pte) || pte_obj_entry(page_table) ||
+	   (pfn_to_page(pte_pfn(*page_table)) == page)) {
+#else
 	if (likely(pte_same(*page_table, orig_pte))) {
+#endif
 		flush_icache_page(vma, page);
 		entry = mk_pte(page, vma->vm_page_prot);
 		if (flags & FAULT_FLAG_WRITE)
 			entry = maybe_mkwrite(pte_mkdirty(entry), vma);
+#ifdef CONFIG_KRG_MM
+		else if (vma->vm_flags & VM_KDDM)
+			entry = pte_wrprotect(entry);
+#endif
 		if (anon) {
 			inc_mm_counter(mm, anon_rss);
 			page_add_new_anon_rmap(page, vma, address);

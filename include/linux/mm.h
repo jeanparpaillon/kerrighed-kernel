@@ -189,6 +189,12 @@ struct vm_operations_struct {
 	void (*open)(struct vm_area_struct * area);
 	void (*close)(struct vm_area_struct * area);
 	int (*fault)(struct vm_area_struct *vma, struct vm_fault *vmf);
+#ifdef CONFIG_KRG_MM
+	struct page * (*wppage)(struct vm_area_struct *area,
+				unsigned long address,
+				struct page *old_page);
+	void (*unlink)(struct vm_area_struct *area);
+#endif // CONFIG_KRG_MM
 
 	/* notification that a previously read-only page is about to become
 	 * writable, if an error is returned it will cause a SIGBUS */
