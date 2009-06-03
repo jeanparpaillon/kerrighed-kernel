@@ -52,3 +52,71 @@ end
 document dmesg
 	print the kernel ring buffer
 end
+
+define task
+	set $t = $arg0
+
+	printf "Task %d %s:\n", $t->pid, $t->comm
+	printf "  task_struct:\t0x%lx\n", $t
+	printf "  stack:\t0x%lx\n", $t->stack
+	printf "  signal:\t0x%lx\n", $t->signal
+	printf "  sighand:\t0x%lx\n", $t->sighand
+	printf "  mm:\t\t0x%lx\n", $t->mm
+	printf "  files:\t0x%lx\n", $t->files
+	printf "  fs:\t\t0x%lx\n", $t->fs
+	printf "  state:\t0x%lx\n", $t->state
+	printf "  flags:\t0x%x\n", $t->flags
+end
+document task
+	print informations on a task given its task_struct address
+end
+
+define taskpid
+	set $nr = $arg0
+	set $s = pidhash_shift
+	set $hash = $nr + (unsigned long)&init_pid_ns
+	set $n = $hash
+
+	set $n <<= 18
+	set $hash -= $n
+	set $n <<= 33
+	set $hash -= $n
+	set $n <<= 3
+	set $hash += $n
+	set $n <<= 3
+	set $hash -= $n
+	set $n <<= 4
+	set $hash += $n
+	set $n <<= 2
+	set $hash += $n
+
+	set $hash >>= (64 - $s)
+
+	set $pos = pid_hash[$hash].first
+	while $pos != 0
+		set $upid = (struct upid *)((char *)$pos - (char *)&((struct upid *)0)->pid_chain)
+		if $upid->nr == $nr && $upid->ns == &init_pid_ns
+			set $pid = (struct pid *)((char *)$upid - (char *)&(((struct pid *)0)->numbers[0]))
+			loop_break
+		end
+
+		set $pos = $pos->next
+	end
+
+	set $t = 0
+	if $pos != 0
+		set $t = $pid->tasks[0].first
+		if $t != 0
+			set $t = (struct task_struct *)((char *)$t - (char *)&((struct task_struct *)0)->pids[0].node)
+		end
+	end
+
+	if $t == 0
+		printf "no such task\n"
+	else
+		task $t
+	end
+end
+document taskpid
+	print informations on a task given its pid
+end
