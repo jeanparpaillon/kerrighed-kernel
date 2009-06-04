@@ -6,20 +6,19 @@
  */
 #include <linux/mutex.h>
 #include <linux/sched.h>
-#include <linux/ipc.h>
 #include <linux/file.h>
+#ifdef CONFIG_KRG_IPC
+#include <linux/ipc.h>
 #include <linux/shm.h>
 #include <linux/msg.h>
-#ifdef CONFIG_KRG_IPC
 #include <linux/ipc_namespace.h>
-/* TODO PORT */
-/* #include <ipc/shm_memory_linker.h> */
 #endif
 #include <kddm/kddm.h>
 #include <kerrighed/action.h>
 #include <kerrighed/app_shared.h>
 #include <kerrighed/app_terminal.h>
 #include <kerrighed/file.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/regular_file_mgr.h>
 #include "mobility.h"
 #include "physical_fs.h"
@@ -82,45 +81,6 @@ struct file *create_file_entry_from_krg_desc (struct task_struct *task,
 	return file;
 }
 
-#ifdef CONFIG_KRG_IPC
-
-struct file *reopen_shm_file_entry_from_krg_desc (struct task_struct *task,
-						regular_file_krg_desc_t *desc)
-{
-/* TODO PORT */
-
-/* 	int shmid; */
-/* 	int err = 0; */
-/* 	struct shmid_kernel *shp; */
-/* 	struct file *file = NULL; */
-
-/* 	BUG_ON (!task); */
-/* 	BUG_ON (!desc); */
-
-/* 	shmid = desc->shmid; */
-
-/* 	shp = shm_lock(&init_ipc_ns, shmid); */
-/* 	if (!shp) { */
-/* 		err = -EINVAL; */
-/* 		goto out; */
-/* 	} */
-
-/* 	file = shp->shm_file; */
-/* 	get_file (file); */
-/* 	shp->shm_nattch++; */
-/* 	shm_unlock(shp); */
-
-/* out: */
-/* 	if (err) */
-/* 		file = ERR_PTR(err); */
-
-/* 	return file; */
-	BUG();
-	return NULL;
-}
-
-#endif
-
 /** Create a regular file struct from a Kerrighed file descriptor.
  *  @author Renaud Lottiaux, Matthieu Fertré
  *
@@ -148,43 +108,6 @@ struct file *import_regular_file_from_krg_desc (struct task_struct *task,
 	else
 		return reopen_file_entry_from_krg_desc (task, desc);
 }
-
-#ifdef CONFIG_KRG_IPC
-/** Return a kerrighed descriptor corresponding to the given file.
- *  @author Renaud Lottiaux
- *
- *  @param file       The file to get a Kerrighed descriptor for.
- *  @param desc       The returned descriptor.
- *  @param desc_size  Size of the returned descriptor.
- *
- *  @return   0 if everything ok.
- *            Negative value otherwise.
- */
-int get_shm_file_krg_desc (struct file *file,
-			   void **desc,
-			   int *desc_size)
-{
-	regular_file_krg_desc_t *data;
-	int size, r = -ENOENT;
-
-	size = sizeof (regular_file_krg_desc_t);
-
-	data = kmalloc (size, GFP_KERNEL);
-	if (!data) {
-		r = -ENOMEM;
-		goto exit;
-	}
-
-	data->shmid = file->f_dentry->d_inode->i_ino ;
-	data->sysv = 1;
-	*desc = data;
-	*desc_size = size;
-
-	r = 0;
-exit:
-	return r;
-}
-#endif
 
 int check_flush_file (struct epm_action *action,
 		      fl_owner_t id,
@@ -230,11 +153,10 @@ int get_regular_file_krg_desc (struct file *file,
 	int r = -ENOENT;
 
 #ifdef CONFIG_KRG_IPC
-/* TODO PORT */
-/* 	if (file->f_op == &krg_shmem_file_operations) { */
-/* 		r = get_shm_file_krg_desc (file, desc, desc_size); */
-/* 		goto exit; */
-/* 	} */
+	if (file->f_op == &krg_shm_file_operations) {
+		r = get_shm_file_krg_desc(file, desc, desc_size);
+		goto exit;
+	}
 #endif
 
 	file_name = physical_d_path(&file->f_path, tmp);

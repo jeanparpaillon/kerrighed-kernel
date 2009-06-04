@@ -133,6 +133,11 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 
 /* IPC */
 
+int get_shm_file_krg_desc(struct file *file, void **desc, int *desc_size);
+
+struct file *reopen_shm_file_entry_from_krg_desc(struct task_struct *task,
+						 void *desc);
+
 int export_ipc_namespace(struct epm_action *action,
                          ghost_t *ghost, struct task_struct *task);
 int import_ipc_namespace(struct epm_action *action,

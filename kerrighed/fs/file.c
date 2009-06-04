@@ -9,10 +9,6 @@
 #include <linux/sched.h>
 #include <kerrighed/dvfs.h>
 
-#ifdef CONFIG_KRG_IPC
-/* SHM are not yet ported */
-/*#include <ipc/shm_memory_linker.h>*/
-#endif
 #ifdef CONFIG_KRG_FAF
 #include <kerrighed/faf_file_mgr.h>
 #include "faf/faf_hooks.h"
@@ -75,11 +71,9 @@ void check_file_struct_sharing (int index, struct file *file,
 		goto done;
 
 #ifdef CONFIG_KRG_IPC
-	/* TODO PORT IPC */
-	
-/* 	/\* Do not share the file struct for Kerrighed SHM files *\/ */
-/* 	if (file->f_op == &krg_shmem_file_operations) */
-/* 		goto done; */
+	/* Do not share the file struct for Kerrighed SHM files */
+	if (file->f_op == &krg_shm_file_operations)
+		goto done;
 #endif
 
 	switch (action->type) {

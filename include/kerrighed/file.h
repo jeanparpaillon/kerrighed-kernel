@@ -25,6 +25,10 @@ struct dvfs_file_struct {
 
 extern struct kddm_set *dvfs_file_struct_ctnr;
 
+#ifdef CONFIG_KRG_IPC
+extern struct file_operations krg_shm_file_operations;
+#endif
+
 /*--------------------------------------------------------------------------*
  *                                                                          *
  *                              EXTERN FUNCTIONS                            *

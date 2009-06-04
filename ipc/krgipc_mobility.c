@@ -9,17 +9,89 @@
 #include <linux/nsproxy.h>
 #include <linux/ipc.h>
 #include <linux/ipc_namespace.h>
+#include <linux/msg.h>
 #include <linux/sem.h>
+#include <linux/shm.h>
 #include <linux/unique_id.h>
 #include <kddm/kddm.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/action.h>
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
+#include <kerrighed/regular_file_mgr.h>
+#include "krgshm.h"
 #include "sem_handler.h"
 #include "semundolst_io_linker.h"
 
 extern struct kddm_set *sem_undo_list_kddm_set;
+
+/** Return a kerrighed descriptor corresponding to the given file.
+ *  @author Renaud Lottiaux
+ *
+ *  @param file       The file to get a Kerrighed descriptor for.
+ *  @param desc       The returned descriptor.
+ *  @param desc_size  Size of the returned descriptor.
+ *
+ *  @return   0 if everything ok.
+ *            Negative value otherwise.
+ */
+int get_shm_file_krg_desc (struct file *file,
+			   void **desc,
+			   int *desc_size)
+{
+	regular_file_krg_desc_t *data;
+	int size, r = -ENOENT;
+
+	size = sizeof (regular_file_krg_desc_t);
+
+	data = kmalloc (size, GFP_KERNEL);
+	if (!data) {
+		r = -ENOMEM;
+		goto exit;
+	}
+
+	data->shmid = file->f_dentry->d_inode->i_ino ;
+	data->sysv = 1;
+	*desc = data;
+	*desc_size = size;
+
+	r = 0;
+exit:
+	return r;
+}
+
+struct file *reopen_shm_file_entry_from_krg_desc(struct task_struct *task,
+						 void *_desc)
+{
+	int shmid;
+	int err = 0;
+	struct shmid_kernel *shp;
+	struct file *file = NULL;
+	regular_file_krg_desc_t *desc = _desc;
+
+	BUG_ON (!task);
+	BUG_ON (!desc);
+
+	shmid = desc->shmid;
+
+	shp = shm_lock(&init_ipc_ns, shmid);
+	if (!shp) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	file = shp->shm_file;
+	get_file (file);
+	shp->shm_nattch++;
+	shm_unlock(shp);
+
+out:
+	if (err)
+		file = ERR_PTR(err);
+
+	return file;
+}
 
 int export_ipc_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *task)
