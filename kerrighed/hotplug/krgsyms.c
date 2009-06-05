@@ -62,17 +62,7 @@ int krgsyms_unregister(enum krgsyms_val v)
 
 enum krgsyms_val krgsyms_export(void* p)
 {
-	enum krgsyms_val ret;
-
-	ret = (enum krgsyms_val)hashtable_find(krgsyms_htable, (unsigned long)p);
-
-	if ((p!=NULL) && (ret == KRGSYMS_UNDEF))
-	  {
-			printk ("undefined krgsymbol (0x%p)!", p);
-			BUG();
-		}
-
-	return ret;
+	return (enum krgsyms_val)hashtable_find(krgsyms_htable, (unsigned long)p);
 };
 
 void* krgsyms_import(enum krgsyms_val v)

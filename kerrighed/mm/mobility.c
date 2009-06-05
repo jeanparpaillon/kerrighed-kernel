@@ -290,8 +290,13 @@ static int export_one_vma (struct epm_action *action,
 #endif
 	/* Define and export the vm_ops type of the vma */
 
+	r = -EPERM;
 	vm_ops_type = krgsyms_export (vma->vm_ops);
+	if (vma->vm_ops && vm_ops_type == KRGSYMS_UNDEF)
+		goto out;
 	initial_vm_ops_type = krgsyms_export (vma->initial_vm_ops);
+	if (vma->initial_vm_ops && initial_vm_ops_type == KRGSYMS_UNDEF)
+		goto out;
 
 	r = ghost_write (ghost, &vm_ops_type, sizeof (krgsyms_val_t));
 	if (r)

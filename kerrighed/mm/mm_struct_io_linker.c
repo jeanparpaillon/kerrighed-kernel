@@ -86,9 +86,11 @@ int mm_export_object (struct rpc_desc *desc,
 	rpc_pack(desc, 0, mm, sizeof(struct mm_struct));
 
 	get_unmap_id = krgsyms_export(mm->get_unmapped_area);
+	BUG_ON(mm->get_unmapped_area && get_unmap_id == KRGSYMS_UNDEF);
 	rpc_pack_type(desc, get_unmap_id);
 
 	unmap_id = krgsyms_export(mm->unmap_area);
+	BUG_ON(mm->unmap_area && unmap_id == KRGSYMS_UNDEF);
 	rpc_pack_type(desc, unmap_id);
 
 	return 0;
