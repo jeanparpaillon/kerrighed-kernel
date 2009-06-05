@@ -112,6 +112,12 @@ static inline void nfs_fs_proc_exit(void)
 }
 #endif
 
+#ifdef CONFIG_KRG_MM
+struct vm_operations_struct;
+
+extern struct vm_operations_struct nfs_file_vm_ops;
+#endif
+
 /* nfs4namespace.c */
 #ifdef CONFIG_NFS_V4
 extern struct vfsmount *nfs_do_refmount(const struct vfsmount *mnt_parent, struct dentry *dentry);
