@@ -960,10 +960,6 @@ int create_proc_node_info(kerrighed_node_t nodeid)
 	if (CW_LOADAVG || nodeid != KERRIGHED_MAX_NODES)
 		krg_create_seq_entry("loadavg", 0, &proc_krg_loadavg_operations,
 				     node_procfs, (void *)((long)nodeid));
-#ifdef CONFIG_KRG_SCHED_MOSIX_PROBE
-	krg_create_seq_entry("mosix_load", 0, &proc_krg_mosix_load_operations,
-			     node_procfs, (void *)((long)nodeid));
-#endif
 #ifdef CONFIG_CLUSTER_WIDE_PROC_UPTIME
 #define CW_UPTIME 1
 #else

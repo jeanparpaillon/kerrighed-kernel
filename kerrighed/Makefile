@@ -6,3 +6,4 @@ obj-$(CONFIG_KRG_PROC) += proc/
 obj-$(CONFIG_KRG_DVFS) += fs/
 obj-$(CONFIG_KRG_EPM) += epm/ ghost/
 obj-$(CONFIG_KRG_MM) += mm/
+obj-$(CONFIG_KRG_SCHED) += scheduler/

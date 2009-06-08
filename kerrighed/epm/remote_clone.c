@@ -15,12 +15,12 @@
 #include <kerrighed/hotplug.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
+#ifdef CONFIG_KRG_SCHED
+#include <kerrighed/scheduler/placement.h>
+#endif
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include "network_ghost.h"
-#ifdef CONFIG_KRG_SCHED_CONFIG
-#include <scheduler/core/placement.h>
-#endif
 
 struct vfork_done_proxy {
 	struct completion *waiter_vfork_done;
@@ -40,7 +40,7 @@ int krg_do_fork(unsigned long clone_flags,
 		int trace)
 {
 	struct task_struct *task = current;
-#ifdef CONFIG_KRG_SCHED_CONFIG
+#ifdef CONFIG_KRG_SCHED
 	kerrighed_node_t distant_node;
 #else
 	static kerrighed_node_t distant_node = -1;
@@ -72,7 +72,7 @@ int krg_do_fork(unsigned long clone_flags,
 	if (retval)
 		goto out;
 
-#ifdef CONFIG_KRG_SCHED_CONFIG
+#ifdef CONFIG_KRG_SCHED
 	distant_node = new_task_node(task);
 #else
 	if (distant_node < 0)

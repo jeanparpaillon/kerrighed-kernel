@@ -75,6 +75,9 @@
 #include <kerrighed/children.h>
 #include <kerrighed/application.h>
 #endif
+#ifdef CONFIG_KRG_SCHED
+#include <kerrighed/scheduler/info.h>
+#endif
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -1425,6 +1428,15 @@ struct task_struct *copy_process(unsigned long clone_flags,
 		goto bad_fork_free_graph;
 #endif
 #endif
+#ifdef CONFIG_KRG_SCHED
+	retval = krg_sched_info_copy(p);
+	if (retval)
+#ifdef CONFIG_KRG_PROC
+		goto bad_fork_free_krg_task;
+#else
+		goto bad_fork_free_graph;
+#endif
+#endif /* CONFIG_KRG_SCHED */
 
 	/* Need tasklist lock for parent etc handling! */
 	write_lock_irq(&tasklist_lock);
@@ -1483,7 +1495,9 @@ struct task_struct *copy_process(unsigned long clone_flags,
 		spin_unlock(&current->sighand->siglock);
 		write_unlock_irq(&tasklist_lock);
 		retval = -ERESTARTNOINTR;
-#ifdef CONFIG_KRG_PROC
+#if defined(CONFIG_KRG_SCHED)
+		goto bad_fork_free_krg_sched;
+#elif defined(CONFIG_KRG_PROC)
 		goto bad_fork_free_krg_task;
 #else
 		goto bad_fork_free_graph;
@@ -1495,9 +1509,13 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	if (retval) {
 		spin_unlock(&current->sighand->siglock);
 		write_unlock_irq(&tasklist_lock);
+#ifdef CONFIG_KRG_SCHED
+		goto bad_fork_free_krg_sched;
+#else
 		goto bad_fork_free_krg_task;
-	}
 #endif
+	}
+#endif /* CONFIG_KRG_EPM */
 #ifdef CONFIG_KRG_EPM
 	if (!krg_current || !thread_group_leader(krg_current))
 #endif
@@ -1545,6 +1563,10 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	cgroup_post_fork(p);
 	return p;
 
+#ifdef CONFIG_KRG_SCHED
+bad_fork_free_krg_sched:
+	krg_sched_info_free(p);
+#endif
 #ifdef CONFIG_KRG_PROC
 bad_fork_free_krg_task:
 	krg_task_abort(p);

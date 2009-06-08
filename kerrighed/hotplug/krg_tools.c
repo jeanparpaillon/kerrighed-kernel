@@ -13,11 +13,6 @@
 #include <kerrighed/krg_syscalls.h>
 #include <kerrighed/krg_services.h>
 
-#ifdef CONFIG_KRG_SCHED_LEGACY
-extern int init_sysfs(void);
-extern void cleanup_sysfs(void);
-#endif
-
 static int tools_proc_nb_max_nodes(void* arg)
 {
 	int r, v = KERRIGHED_MAX_NODES;
@@ -68,10 +63,6 @@ int init_tools(void)
 {
 	int error;
 
-#ifdef CONFIG_KRG_SCHED_LEGACY
-	if ((error = init_sysfs()))
-		goto Error;
-#endif
 	if ((error = kerrighed_proc_init()))
 		goto ErrorProc;
 	if ((error = krg_syscalls_init()))
@@ -109,9 +100,6 @@ int init_tools(void)
  ErrorSys:
 	kerrighed_proc_finalize();
  ErrorProc:
-#ifdef CONFIG_KRG_SCHED_LEGACY
-	cleanup_sysfs();
-#endif
  Error:
 	goto Done;
 }
@@ -122,9 +110,6 @@ void cleanup_tools(void)
 	krg_syscalls_finalize();
 #ifdef CONFIG_KERRIGHED
 	kerrighed_proc_finalize();
-#endif
-#ifdef CONFIG_KRG_SCHED_LEGACY
-	cleanup_sysfs();
 #endif
 
 	printk("iluvatar - end module\n");

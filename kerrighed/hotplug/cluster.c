@@ -34,8 +34,8 @@
 #include <kerrighed/signal.h>
 #include <kerrighed/children.h>
 #endif
-#ifdef CONFIG_KRG_SCHED_CONFIG
-#include <scheduler/core/krg_sched_info.h>
+#ifdef CONFIG_KRG_SCHED
+#include <kerrighed/scheduler/info.h>
 #endif
 
 #include "hotplug.h"
@@ -79,7 +79,7 @@ static void init_prekerrighed_process(void)
 			BUG_ON(t->sighand->krg_objid);
 			BUG_ON(t->children_obj);
 #endif
-#ifdef CONFIG_KRG_SCHED_CONFIG
+#ifdef CONFIG_KRG_SCHED
 			BUG_ON(t->krg_sched);
 #endif
 			continue;
@@ -91,8 +91,8 @@ static void init_prekerrighed_process(void)
 		krg_sighand_setup(t);
 		krg_children_setup(t);
 #endif
-#ifdef CONFIG_KRG_SCHED_CONFIG
-		fill_krg_sched_info(t);
+#ifdef CONFIG_KRG_SCHED
+		krg_sched_info_setup(t);
 #endif
 	} while_each_thread(g, t);
 #endif /* CONFIG_KRG_PROC */

@@ -24,6 +24,9 @@
 #include <kerrighed/krgnodemask.h>
 #include <asm/cputime.h>
 #endif
+#ifdef CONFIG_KRG_SCHED
+#include <kerrighed/scheduler/info.h>
+#endif
 
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/workqueue.h>
@@ -605,9 +608,6 @@ void krg_release_task(struct task_struct *p)
 
 #ifdef CONFIG_KRG_EPM
 	krg_exit_application(p);
-#ifdef CONFIG_KRG_SCHED
-	kh_free_sched_info(p);
-#endif
 	krg_unhash_process(p);
 	if (p->exit_state != EXIT_MIGRATION) {
 #endif /* CONFIG_KRG_EPM */

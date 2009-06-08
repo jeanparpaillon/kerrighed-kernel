@@ -182,27 +182,12 @@ config KRG_IPC_EPM
 
 menuconfig KRG_SCHED
 	bool "Kerrighed support for global scheduling"
-	depends on KRG_EPM
-	select KRG_SCHED_CONFIG if !KERRIGHED_DEVEL
-	default y
-	help
-	  Compile support for global schedulers.
-	  You will need to activate one of the scheduler infrastructures below.
-
-	  If unsure, say Y.
-
-config KRG_SCHED_CONFIG
-	bool "Run-time configurable scheduler framework"
-	depends on KRG_SCHED
+	depends on KERRIGHED
 	select CONFIGFS_FS
 	default y
 	help
-	  Since Kerrighed 2.0 the default scheduler is a hard-coded MOSIX-like
-	  preemptive CPU load balancing policy coupled to a round robin new
-	  task placement policy.
+	  Compile support for global schedulers.
 
-	  This option selects the new scheduler framework to replace the
-	  hard-coded one.
 	  This framework allows, at run-time, to build and configure schedulers
 	  from third parties hot-pluggable components.
 
@@ -212,37 +197,42 @@ config KRG_SCHED_CONFIG
 
 	  If unsure, say Y.
 
+if KRG_SCHED
+
 config KRG_SCHED_COMPAT
-	bool "Compile components needed to emulate the old hard-coded scheduler"
-	depends on KRG_SCHED_CONFIG
+	bool "Compile components needed to emulate Kerrighed 2.3 hard-coded scheduler"
+	depends on KRG_SCHED && KRG_EPM
 	default y
-	select KRG_SCHED_CONFIG_MIGRATION_PROBE
-	select KRG_SCHED_CONFIG_MOSIX_PROBE
-	select KRG_SCHED_CONFIG_THRESHOLD_FILTER
-	select KRG_SCHED_CONFIG_FREQ_LIMIT_FILTER
-	select KRG_SCHED_CONFIG_REMOTE_CACHE_FILTER
-	select KRG_SCHED_CONFIG_MOSIX_LOAD_BALANCER
-	select KRG_SCHED_CONFIG_ROUND_ROBIN_BALANCER
 	help
 	  This option selects the components needed to obtain the same
-	  scheduling policy as in the hard-coded scheduler.
+	  scheduling policy as in Kerrighed 2.3 hard-coded scheduler.
 	  See the sample script krg_legacy_scheduler located in Kerrighed's
 	  tools to setup this compatible scheduler.
 
 	  If unsure, say Y.
 
-config KRG_SCHED_CONFIG_CPU_PROBE
-	bool "Sample CPU probe"
-	depends on KRG_SCHED_CONFIG
+config KRG_SCHED_COMPAT_FORCE
+	def_tristate m if KRG_SCHED_COMPAT
+	select KRG_SCHED_MIGRATION_PROBE
+	select KRG_SCHED_MOSIX_PROBE
+	select KRG_SCHED_THRESHOLD_FILTER
+	select KRG_SCHED_FREQ_LIMIT_FILTER
+	select KRG_SCHED_REMOTE_CACHE_FILTER
+	select KRG_SCHED_MOSIX_LOAD_BALANCER
+	select KRG_SCHED_ROUND_ROBIN_BALANCER
+
+config KRG_SCHED_CPU_PROBE
+	tristate "Sample CPU probe"
+	depends on m
 	default n
 	help
 	  Sample CPU probe exposing the CPU load of a node
 
 	  If unsure, say N.
 
-config KRG_SCHED_CONFIG_MEM_PROBE
-	bool "Sample memory probe"
-	depends on KRG_SCHED_CONFIG
+config KRG_SCHED_MEM_PROBE
+	tristate "Sample memory probe"
+	depends on m
 	default n
 	help
 	  Sample memory probe exposing the total RAM and free RAM available on
@@ -250,29 +240,31 @@ config KRG_SCHED_CONFIG_MEM_PROBE
 
 	  If unsure, say N.
 
-config KRG_SCHED_CONFIG_MIGRATION_PROBE
-	bool "Migration probe"
-	depends on KRG_SCHED_CONFIG
+config KRG_SCHED_MIGRATION_PROBE
+	tristate "Migration probe"
+	depends on KRG_EPM && m
 	default n
+	select MODULE_HOOK
 	help
 	  Probe counting the number of ongoing task migrations out of a node
 	  and registering the last migration event.
 
 	  If unsure, say N.
 
-config KRG_SCHED_CONFIG_MOSIX_PROBE
-	bool "MOSIX-like CPU probe"
-	depends on KRG_SCHED_CONFIG
+config KRG_SCHED_MOSIX_PROBE
+	tristate "MOSIX-like CPU probe"
+	depends on m
 	default n
+	select MODULE_HOOK
 	help
 	  MOSIX-like CPU probe exposing the CPU load of a node as well as the
 	  CPU load induced by individual tasks
 
 	  If unsure, say N.
 
-config KRG_SCHED_CONFIG_THRESHOLD_FILTER
-	bool "Threshold filter"
-	depends on KRG_SCHED_CONFIG
+config KRG_SCHED_THRESHOLD_FILTER
+	tristate "Threshold filter"
+	depends on m
 	default n
 	help
 	  Filter propagating events only if the value exceeds the configured
@@ -280,9 +272,9 @@ config KRG_SCHED_CONFIG_THRESHOLD_FILTER
 
 	  If unsure, say N.
 
-config KRG_SCHED_CONFIG_FREQ_LIMIT_FILTER
-	bool "Frequency limit filter"
-	depends on KRG_SCHED_CONFIG
+config KRG_SCHED_FREQ_LIMIT_FILTER
+	tristate "Frequency limit filter"
+	depends on m
 	default n
 	help
 	  Filter propagating events only if, for a configured action monitored,
@@ -291,9 +283,9 @@ config KRG_SCHED_CONFIG_FREQ_LIMIT_FILTER
 
 	  If unsure, say N.
 
-config KRG_SCHED_CONFIG_REMOTE_CACHE_FILTER
-	bool "Remote cache filter"
-	depends on KRG_SCHED_CONFIG
+config KRG_SCHED_REMOTE_CACHE_FILTER
+	tristate "Remote cache filter"
+	depends on m
 	default n
 	help
 	  Filter caching values from the other nodes, at a configured refresh
@@ -301,9 +293,9 @@ config KRG_SCHED_CONFIG_REMOTE_CACHE_FILTER
 
 	  If unsure, say N.
 
-config KRG_SCHED_CONFIG_ECHO_POLICY
-	bool "Sample echo policy"
-	depends on KRG_SCHED_CONFIG
+config KRG_SCHED_ECHO_POLICY
+	tristate "Sample echo policy"
+	depends on m
 	default n
 	help
 	  Sample policy that logs the values read on its ports when update
@@ -311,9 +303,9 @@ config KRG_SCHED_CONFIG_ECHO_POLICY
 
 	  If unsure, say N.
 
-config KRG_SCHED_CONFIG_MOSIX_LOAD_BALANCER
-	bool "MOSIX-like load balancing policy"
-	depends on KRG_SCHED_CONFIG
+config KRG_SCHED_MOSIX_LOAD_BALANCER
+	tristate "MOSIX-like load balancing policy"
+	depends on KRG_EPM && m
 	default n
 	help
 	  Migration-based load balancing policy using simplified algorithms
@@ -321,34 +313,16 @@ config KRG_SCHED_CONFIG_MOSIX_LOAD_BALANCER
 
 	  If unsure, say N.
 
-config KRG_SCHED_CONFIG_ROUND_ROBIN_BALANCER
-	bool "Round robin balancing policy"
-	depends on KRG_SCHED_CONFIG
+config KRG_SCHED_ROUND_ROBIN_BALANCER
+	tristate "Round robin balancing policy"
+	depends on m
 	default n
 	help
 	  Policy that selects target nodes in a round robin manner when called
 
 	  If unsure, say N.
 
-config KRG_SCHED_LEGACY
-	bool
-	depends on KRG_SCHED && !KRG_SCHED_CONFIG
-	select KRG_SCHED_MOSIX_PROBE if !KERRIGHED_DEVEL
-	default y
-
-config KRG_SCHED_MOSIX_PROBE
-	bool "MOSIX probe support"
-	depends on KRG_SCHED_LEGACY
-	default y
-	help
-	  MOSIX-like global scheduler doing processor load-balancing
-
-	  If unsure, say Y.
-
-config AUTOLOAD_PLUGINS
-	bool "Autoload default Kerrighed modules (mainly scheduler modules)"
-	depends on KRG_MONOLITHIC && KMOD 
-	default y
+endif
 
 config CLUSTER_WIDE_PROC_INFRA
 	bool

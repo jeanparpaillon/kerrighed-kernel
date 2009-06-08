@@ -32,9 +32,6 @@
 #ifdef CONFIG_KRG_CAP
 #include <kerrighed/capabilities.h>
 #endif
-#ifdef CONFIG_KRG_SCHED
-#include <kerrighed/module_hook.h>
-#endif
 #ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
 #include <kerrighed/syscalls.h>
 #endif
@@ -50,7 +47,7 @@
 #include "network_ghost.h"
 #include "epm_internal.h"
 
-#ifdef CONFIG_KRG_SCHED
+#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
 struct module_hook_desc kmh_migration_start;
 struct module_hook_desc kmh_migration_end;
 struct module_hook_desc kmh_migration_aborted;

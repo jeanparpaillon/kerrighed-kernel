@@ -152,11 +152,11 @@ static int export_pids(struct epm_action *action,
 	enum pid_type type;
 	int retval = 0; /* Prevent gcc from warning */
 
-#ifdef CONFIG_KRG_SCHED_CONFIG
+#ifdef CONFIG_KRG_SCHED
 	retval = export_process_set_links_start(action, ghost, task);
 	if (retval)
 		goto out;
-#endif /* CONFIG_KRG_SCHED_CONFIG */
+#endif /* CONFIG_KRG_SCHED */
 
 	for (type = 0; type < PIDTYPE_MAX; type++) {
 		if (!thread_group_leader(task) && type > PIDTYPE_PID)
@@ -166,19 +166,19 @@ static int export_pids(struct epm_action *action,
 			retval = export_pid(action, ghost, &task->pids[type]);
 			if (retval)
 				goto out;
-#ifdef CONFIG_KRG_SCHED_CONFIG
+#ifdef CONFIG_KRG_SCHED
 			retval = export_process_set_links(action, ghost,
 							  task->pids[type].pid,
 							  type);
 			if (retval)
 				goto out;
-#endif /* CONFIG_KRG_SCHED_CONFIG */
+#endif /* CONFIG_KRG_SCHED */
 		}
 	}
 
-#ifdef CONFIG_KRG_SCHED_CONFIG
+#ifdef CONFIG_KRG_SCHED
 	retval = export_process_set_links_end(action, ghost, task);
-#endif /* CONFIG_KRG_SCHED_CONFIG */
+#endif /* CONFIG_KRG_SCHED */
 
 out:
 	return retval;
@@ -868,7 +868,7 @@ static int import_pids(struct epm_action *action,
 	enum pid_type type;
 	int retval = 0;
 
-#ifdef CONFIG_KRG_SCHED_CONFIG
+#ifdef CONFIG_KRG_SCHED
 	retval = import_process_set_links_start(action, ghost, task);
 	if (retval)
 		goto out;
@@ -898,7 +898,7 @@ static int import_pids(struct epm_action *action,
 			break;
 		}
 
-#ifdef CONFIG_KRG_SCHED_CONFIG
+#ifdef CONFIG_KRG_SCHED
 		if (type != PIDTYPE_PID || action->type != EPM_REMOTE_CLONE) {
 			retval = import_process_set_links(
 				action, ghost,
@@ -908,10 +908,10 @@ static int import_pids(struct epm_action *action,
 				break;
 			}
 		}
-#endif /* CONFIG_KRG_SCHED_CONFIG */
+#endif /* CONFIG_KRG_SCHED */
 	}
 
-#ifdef CONFIG_KRG_SCHED_CONFIG
+#ifdef CONFIG_KRG_SCHED
 	if (!retval)
 		retval = import_process_set_links_end(action, ghost, task);
 out:
@@ -1735,7 +1735,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	 */
 	join_local_relatives(newTsk);
 
-#ifdef CONFIG_KRG_SCHED_CONFIG
+#ifdef CONFIG_KRG_SCHED
 	post_import_krg_sched_info(newTsk);
 #endif
 

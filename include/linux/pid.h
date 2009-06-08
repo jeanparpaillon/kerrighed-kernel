@@ -64,6 +64,9 @@ struct pid
 #ifdef CONFIG_KRG_EPM
 	struct pid_kddm_object *kddm_obj;
 #endif
+#ifdef CONFIG_KRG_SCHED
+	struct hlist_head process_sets[PIDTYPE_MAX];
+#endif
 	struct upid numbers[1];
 };
 

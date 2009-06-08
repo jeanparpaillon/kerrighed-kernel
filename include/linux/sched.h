@@ -1469,6 +1469,9 @@ struct task_struct {
 	struct children_kddm_object *children_obj;
 	struct app_struct *application;
 #endif
+#ifdef CONFIG_KRG_SCHED
+	struct krg_sched_info *krg_sched;
+#endif
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */

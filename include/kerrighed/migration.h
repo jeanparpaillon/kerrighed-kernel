@@ -25,8 +25,8 @@ typedef struct migration_infos_struct migration_infos_t;
 
 #ifdef CONFIG_KRG_EPM
 
-#ifdef CONFIG_KRG_SCHED
-#include <kerrighed/module_hook.h>
+#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+#include <linux/module_hook.h>
 
 extern struct module_hook_desc kmh_migration_start;
 extern struct module_hook_desc kmh_migration_aborted;

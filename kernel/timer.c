@@ -40,6 +40,9 @@
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/children.h>
 #endif
+#ifdef CONFIG_KRG_SCHED
+#include <kerrighed/scheduler/hooks.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -1145,6 +1148,11 @@ unsigned long avenrun[3];
 
 EXPORT_SYMBOL(avenrun);
 
+#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+struct module_hook_desc kmh_calc_load;
+EXPORT_SYMBOL(kmh_calc_load);
+#endif
+
 /*
  * calc_load - given tick count, update the avenrun load estimates.
  * This is called while holding a write_lock on xtime_lock.
@@ -1164,6 +1172,9 @@ static inline void calc_load(unsigned long ticks)
 			count += LOAD_FREQ;
 		} while (count < 0);
 	}
+#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+	module_hook_call(&kmh_calc_load, ticks);
+#endif
 }
 
 /*

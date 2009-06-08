@@ -61,6 +61,9 @@
 #include <kerrighed/signal.h>
 #include <kerrighed/children.h>
 #endif
+#ifdef CONFIG_KRG_SCHED
+#include <kerrighed/scheduler/info.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -239,6 +242,9 @@ void release_task(struct task_struct * p)
 		return;
 #endif /* CONFIG_KRG_EPM */
 repeat:
+#ifdef CONFIG_KRG_SCHED
+	krg_sched_info_free(p);
+#endif
 #ifdef CONFIG_KRG_PROC
 	krg_release_task(p);
 #endif /* CONFIG_KRG_PROC */

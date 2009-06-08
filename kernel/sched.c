@@ -81,6 +81,9 @@
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/ghost.h>
 #endif
+#ifdef CONFIG_KRG_SCHED
+#include <kerrighed/scheduler/hooks.h>
+#endif
 
 #include <asm/tlb.h>
 #include <asm/irq_regs.h>
@@ -2332,6 +2335,13 @@ static int sched_balance_self(int cpu, int flag)
 
 #endif /* CONFIG_SMP */
 
+#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+struct module_hook_desc kmh_process_on;
+EXPORT_SYMBOL(kmh_process_on);
+struct module_hook_desc kmh_process_off;
+EXPORT_SYMBOL(kmh_process_off);
+#endif
+
 /***
  * try_to_wake_up - wake up a thread
  * @p: the to-be-woken-up thread
@@ -2434,6 +2444,9 @@ out_activate:
 		schedstat_inc(p, se.nr_wakeups_remote);
 	activate_task(rq, p, 1);
 	success = 1;
+#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+	module_hook_call(&kmh_process_on, (unsigned long)p);
+#endif
 
 	/*
 	 * Only attribute actual wakeups done by this task.
@@ -2597,6 +2610,9 @@ void wake_up_new_task(struct task_struct *p, unsigned long clone_flags)
 		p->sched_class->task_new(rq, p);
 		inc_nr_running(rq);
 	}
+#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+	module_hook_call(&kmh_process_on, (unsigned long)p);
+#endif
 	trace_sched_wakeup_new(rq, p, 1);
 	check_preempt_curr(rq, p, 0);
 #ifdef CONFIG_SMP
@@ -5064,7 +5080,14 @@ need_resched_nonpreemptible:
 		if (unlikely(signal_pending_state(prev->state, prev)))
 			prev->state = TASK_RUNNING;
 		else
+#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+		{
+			module_hook_call(&kmh_process_off, (unsigned long)prev);
+#endif
 			deactivate_task(rq, prev, 1);
+#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+		}
+#endif
 		switch_count = &prev->nvcsw;
 	}
 
@@ -7192,6 +7215,9 @@ void sched_idle_next(void)
 
 	update_rq_clock(rq);
 	activate_task(rq, p, 0);
+#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+	module_hook_call(&kmh_process_on, (unsigned long)p);
+#endif
 
 	spin_unlock_irqrestore(&rq->lock, flags);
 }
