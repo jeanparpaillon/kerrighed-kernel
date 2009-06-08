@@ -42,10 +42,12 @@ int krg_ptrace_link(struct task_struct *task, struct task_struct *tracer)
 	retval = krg_action_disable(task, EPM_MIGRATE, 0);
 	if (retval)
 		goto bad_task;
+	DEBUG(DBG_PTRACE, 2, "D %d\n", task->pid);
 	/* Lock tracer on this node */
 	retval = krg_action_disable(tracer, EPM_MIGRATE, 0);
 	if (retval)
 		goto bad_tracer;
+	DEBUG(DBG_PTRACE, 2, "D tracer (%d)\n", tracer->pid);
 	/* Lock parent on this node */
 	retval = -EPERM;
 	parent = task->parent;
@@ -55,13 +57,16 @@ int krg_ptrace_link(struct task_struct *task, struct task_struct *tracer)
 		retval = krg_action_disable(parent, EPM_MIGRATE, 0);
 		if (retval)
 			goto bad_parent;
+		DEBUG(DBG_PTRACE, 2, "D parent (%d)\n", parent->pid);
 	}
 
 	return 0;
 
 bad_parent:
+	DEBUG(DBG_PTRACE, 2, "E tracer (%d)\n", tracer->pid);
 	krg_action_enable(tracer, EPM_MIGRATE, 0);
 bad_tracer:
+	DEBUG(DBG_PTRACE, 2, "E %d\n", task->pid);
 	krg_action_enable(task, EPM_MIGRATE, 0);
 bad_task:
 	return retval;
@@ -73,10 +78,14 @@ void krg_ptrace_unlink(struct task_struct *task)
 {
 	BUG_ON(task->real_parent == baby_sitter);
 	if (!is_container_init(task->real_parent)
-	    && task->real_parent != task->parent)
+	    && task->real_parent != task->parent) {
+		DEBUG(DBG_PTRACE, 2, "E parent (%d)\n", task->real_parent->pid);
 		krg_action_enable(task->real_parent, EPM_MIGRATE, 0);
+	}
 	BUG_ON(task->parent == baby_sitter);
+	DEBUG(DBG_PTRACE, 2, "E tracer (%d)\n", task->parent->pid);
 	krg_action_enable(task->parent, EPM_MIGRATE, 0);
+	DEBUG(DBG_PTRACE, 2, "E %d\n", task->pid);
 	krg_action_enable(task, EPM_MIGRATE, 0);
 }
 
@@ -92,6 +101,7 @@ void krg_ptrace_reparent_ptraced(struct task_struct *real_parent,
 	 */
 
 	/* Not really needed as long as zombies do not migrate... */
+	DEBUG(DBG_PTRACE, 2, "E parent (%d)\n", real_parent->pid);
 	krg_action_enable(real_parent, EPM_MIGRATE, 0);
 	/* new real_parent has already been assigned. */
 	BUG_ON(task->real_parent == baby_sitter);
@@ -101,6 +111,8 @@ void krg_ptrace_reparent_ptraced(struct task_struct *real_parent,
 
 		retval = krg_action_disable(task->real_parent, EPM_MIGRATE, 0);
 		BUG_ON(retval);
+		DEBUG(DBG_PTRACE, 2, "D new parent (%d)\n",
+		      task->real_parent->pid);
 	}
 }
 

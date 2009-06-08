@@ -1090,6 +1090,8 @@ static int krg_forward_setpgid(kerrighed_node_t node, pid_t pid, pid_t pgid)
 	struct setpgid_message msg;
 	int retval = -ESRCH;
 
+	DEBUG(DBG_RSYSCALL, 1, "start %d pgid=%d\n", pid, pgid);
+
 	if (__krg_get_parent(children_obj, pid, &parent, &real_parent))
 		goto out;
 
@@ -1097,9 +1099,11 @@ static int krg_forward_setpgid(kerrighed_node_t node, pid_t pid, pid_t pgid)
 	msg.pgid = pgid;
 	msg.parent_session = task_session_knr(current);
 
+	DEBUG(DBG_RSYSCALL, 2, "Calling node %d\n", node);
 	retval = rpc_sync(PROC_FORWARD_SETPGID, node, &msg, sizeof(msg));
 
 out:
+	DEBUG(DBG_RSYSCALL, 2, "end %d pgid=%d retval=%d\n", pid, pgid, retval);
 	return retval;
 }
 
