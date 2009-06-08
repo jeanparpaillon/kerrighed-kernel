@@ -3,6 +3,11 @@
  *
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
+
+#include "debug_keripc.h"
+
+#define MODULE_NAME "Shm Mem linker  "
+
 #include <linux/sched.h>
 #include <linux/shm.h>
 #include <linux/lockdep.h>
@@ -34,6 +39,9 @@ struct shmid_kernel *create_local_shp (struct ipc_namespace *ns,
 	struct kddm_set *set;
 	char name[13];
 	int retval;
+
+	IPCDEBUG(DBG_KERIPC_SHMID_LINKER, 3, "Create local shp - SHM id %d - "
+		 "set %ld\n", received_shp->shm_perm.id, set_id);
 
 	shp = ipc_rcu_alloc(sizeof(*shp));
 	if (!shp)
@@ -77,6 +85,9 @@ struct shmid_kernel *create_local_shp (struct ipc_namespace *ns,
 
 	local_shm_unlock(shp);
 
+	IPCDEBUG (DBG_KERIPC_SHMID_LINKER, 3, "Local shp created - id %d (%p)\n",
+	       shp->shm_perm.id, shp);
+
 	return shp;
 
 err_security_free:
@@ -102,12 +113,18 @@ int shmid_alloc_object (struct kddm_obj * obj_entry,
 {
 	shmid_object_t *shp_object;
 
+	IPCDEBUG (DBG_KERIPC_SHMID_LINKER, 3, "Alloc object (%ld;%ld), "
+	       "obj_entry %p\n", set->id, objid, obj_entry);
+
 	shp_object = kmem_cache_alloc (shmid_object_cachep, GFP_KERNEL);
 	if (!shp_object)
 		return -ENOMEM;
 
 	shp_object->local_shp = NULL;
 	obj_entry->object = shp_object;
+
+	IPCDEBUG (DBG_KERIPC_SHMID_LINKER, 3, "Alloc object (%ld;%ld): done %p\n",
+	       set->id, objid, shp_object);
 
 	return 0;
 }
@@ -150,6 +167,9 @@ int shmid_insert_object (struct kddm_obj * obj_entry,
 	struct shmid_kernel *shp;
 	struct ipc_namespace *ns;
 
+	IPCDEBUG (DBG_KERIPC_SHMID_LINKER, 3, "Insert object (%ld;%ld), obj_entry %p\n",
+	       set->id, objid, obj_entry);
+
 	shp_object = obj_entry->object;
 	BUG_ON(!shp_object);
 
@@ -167,6 +187,10 @@ int shmid_insert_object (struct kddm_obj * obj_entry,
 	shp_object->local_shp = shp;
 
 	put_ipc_ns(ns);
+
+	IPCDEBUG (DBG_KERIPC_SHMID_LINKER, 3, "Insert object (%ld;%ld) : done %p\n",
+	       set->id, objid, shp_object);
+
 done:
 	return 0;
 }
@@ -184,6 +208,9 @@ int shmid_invalidate_object (struct kddm_obj * obj_entry,
 			     struct kddm_set * set,
 			     objid_t objid)
 {
+	IPCDEBUG (DBG_KERIPC_SHMID_LINKER, 3, "Invalidate object (%ld;%ld)\n",
+	       set->id, objid);
+
 	return KDDM_IO_KEEP_OBJECT;
 }
 
@@ -203,6 +230,9 @@ int shmid_remove_object (void *object,
 	shmid_object_t *shp_object;
 	struct shmid_kernel *shp;
 
+	IPCDEBUG (DBG_KERIPC_SHMID_LINKER, 3, "remove object (%ld;%ld)\n",
+	       set->id, objid);
+
 	shp_object = object;
 
 	if (shp_object) {
@@ -218,6 +248,9 @@ int shmid_remove_object (void *object,
 
 		put_ipc_ns(ns);
 	}
+
+	IPCDEBUG (DBG_KERIPC_SHMID_LINKER, 3, "remove object (%ld;%ld) : done\n",
+	       set->id, objid);
 
 	return 0;
 }
@@ -263,8 +296,13 @@ int shmid_import_object (struct rpc_desc *desc,
 	shp_object = obj_entry->object;
 	rpc_unpack(desc, 0, &buffer, sizeof(shmid_object_t));
 
+	IPCDEBUG (DBG_KERIPC_SHMID_LINKER, 3, "Import object %p, obj_entry %p\n",
+	       shp_object, obj_entry);
+
 	shp_object->mobile_shp = buffer.mobile_shp;
 	shp_object->set_id = buffer.set_id;
+
+	IPCDEBUG (DBG_KERIPC_SHMID_LINKER, 5, "Set_id: %ld\n", buffer.set_id);
 
 	if (shp_object->local_shp) {
 		shp = shp_object->local_shp;

@@ -7,6 +7,13 @@
 
 #ifndef NO_SHM
 
+#include "debug_keripc.h"
+
+#define MODULE_NAME "System V shm    "
+
+#ifdef SHM_HANDLER_DEBUG
+#define DEBUG_THIS_MODULE
+#endif
 #include <linux/ipc.h>
 #include <linux/ipc_namespace.h>
 #include <linux/shm.h>
@@ -36,11 +43,14 @@ static struct kern_ipc_perm *kcb_ipc_shm_lock(struct ipc_ids *ids, int id)
 
 	index = ipcid_to_idx(id);
 
+	IPCDEBUG (DBG_KERIPC_SHM_LOCK, 2, "Lock SHM %d(%d)\n", id, index);
+
 	shp_object = _kddm_grab_object_no_ft(ids->krgops->data_kddm_set, index);
 
 	if (!shp_object)
 		goto error;
 
+	IPCDEBUG (DBG_KERIPC_MSG_LOCK, 5, "shp_object: %p\n", shp_object);
 	shp = shp_object->local_shp;
 
 	BUG_ON(!shp);
@@ -51,6 +61,9 @@ static struct kern_ipc_perm *kcb_ipc_shm_lock(struct ipc_ids *ids, int id)
 		mutex_unlock(&shp->shm_perm.mutex);
 		goto error;
 	}
+
+	IPCDEBUG (DBG_KERIPC_SHM_LOCK, 2, "Lock SHM %d(%d) done: %p (natt %ld)\n",
+	       id, index, shp, shp->shm_nattch);
 
 	return &(shp->shm_perm);
 
@@ -71,6 +84,9 @@ static void kcb_ipc_shm_unlock(struct kern_ipc_perm *ipcp)
 		deleted = 1;
 
 	_kddm_put_object(ipcp->krgops->data_kddm_set, index);
+
+	IPCDEBUG (DBG_KERIPC_SHM_LOCK, 2, "Unlock SHM %d(%d)\n",
+		  ipcp->id, index);
 
 	if (!deleted)
 		mutex_unlock(&ipcp->mutex);
@@ -110,6 +126,9 @@ int krg_ipc_shm_newseg (struct ipc_namespace *ns, struct shmid_kernel *shp)
 	BUG_ON(!shm_ids(ns).krgops);
 
 	index = ipcid_to_idx(shp->shm_perm.id);
+
+	IPCDEBUG (DBG_KERIPC_SHM_NEWSEG, 2, "New SHM : id %d(%d) (%p)\n", shp->shm_perm.id,
+	       index, shp);
 
 	shp_object = _kddm_grab_object_manual_ft(
 		shm_ids(ns).krgops->data_kddm_set, index);
@@ -152,6 +171,8 @@ int krg_ipc_shm_newseg (struct ipc_namespace *ns, struct shmid_kernel *shp)
 
 	shp->shm_perm.krgops = shm_ids(ns).krgops;
 
+	IPCDEBUG (DBG_KERIPC_SHM_NEWSEG, 2, "New SHM (id %d(%d)) : done\n",
+	       shp->shm_perm.id, index);
 err_put:
 	_kddm_put_object(shm_ids(ns).krgops->data_kddm_set, index);
 
@@ -172,6 +193,9 @@ void krg_ipc_shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
 
 	index = ipcid_to_idx(shp->shm_perm.id);
 	key = shp->shm_perm.key;
+
+	IPCDEBUG (DBG_KERIPC_SHM_NEWSEG, 2, "Destroy shm %d(%d)\n", shp->shm_perm.id,
+	       index);
 
 	mm_set = shp->shm_file->f_dentry->d_inode->i_mapping->kddm_set;
 
@@ -270,6 +294,8 @@ void krg_shm_exit_ns(struct ipc_namespace *ns)
 
 void shm_handler_init(void)
 {
+	IPCDEBUG (DBG_KERIPC_INITS, 1, "Start\n");
+
 	shmid_object_cachep = kmem_cache_create("shmid_object",
 						sizeof(shmid_object_t),
 						0, SLAB_PANIC, NULL);

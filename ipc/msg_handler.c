@@ -23,6 +23,9 @@
 #include "krgmsg.h"
 #include "krgipc_mobility.h"
 
+#include "debug_keripc.h"
+#define MODULE_NAME "IPC MSG"
+
 struct msgkrgops {
 	struct krgipc_ops krgops;
 	struct kddm_set *master_kddm_set;
@@ -53,6 +56,8 @@ static struct kern_ipc_perm *kcb_ipc_msg_lock(struct ipc_ids *ids, int id)
 
 	index = ipcid_to_idx(id);
 
+	IPCDEBUG(DBG_KERIPC_MSG_LOCK, 1, "->Lock msg queue %d(%d)\n", id, index);
+
 	msq_object = _kddm_grab_object_no_ft(ids->krgops->data_kddm_set, index);
 
 	if (!msq_object)
@@ -61,13 +66,17 @@ static struct kern_ipc_perm *kcb_ipc_msg_lock(struct ipc_ids *ids, int id)
 	msq = msq_object->local_msq;
 
 	BUG_ON(!msq);
-
+	IPCDEBUG(DBG_KERIPC_MSG_LOCK, 5, "--> msq->q_perm.lock %d\n", msq->q_perm.id);
 	mutex_lock(&msq->q_perm.mutex);
+	IPCDEBUG(DBG_KERIPC_MSG_LOCK, 5, "<-- msq->q_perm.lock %d\n", msq->q_perm.id);
 
 	if (msq->q_perm.deleted) {
 		mutex_unlock(&msq->q_perm.mutex);
 		goto error;
 	}
+
+	IPCDEBUG(DBG_KERIPC_MSG_LOCK, 1, "<- Lock msg queue %d(%d) done: %p\n",
+	       id, index, msq);
 
 	return &(msq->q_perm);
 
@@ -84,8 +93,10 @@ static void kcb_ipc_msg_unlock(struct kern_ipc_perm *ipcp)
 
 	index = ipcid_to_idx(ipcp->id);
 
-	if (ipcp->deleted)
+	if (ipcp->deleted) {
 		deleted = 1;
+		BUG();
+	}
 
 	_kddm_put_object(ipcp->krgops->data_kddm_set, index);
 
@@ -93,6 +104,9 @@ static void kcb_ipc_msg_unlock(struct kern_ipc_perm *ipcp)
 		mutex_unlock(&ipcp->mutex);
 
 	rcu_read_unlock();
+
+	IPCDEBUG(DBG_KERIPC_MSG_LOCK, 1, "<- Unlock msg queue %d(%d) : done\n",
+	       ipcp->id, index);
 }
 
 static struct kern_ipc_perm *kcb_ipc_msg_findkey(struct ipc_ids *ids, key_t key)
@@ -128,6 +142,9 @@ int krg_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 	BUG_ON(!msg_ids(ns).krgops);
 
 	index = ipcid_to_idx(msq->q_perm.id);
+
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "New msg queue : id %d(%d) (%p)\n", msq->q_perm.id,
+	       index, msq);
 
 	msq_object = _kddm_grab_object_manual_ft(
 		msg_ids(ns).krgops->data_kddm_set, index);
@@ -167,6 +184,8 @@ int krg_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 err_put:
 	_kddm_put_object(msg_ids(ns).krgops->data_kddm_set, index);
 
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "%d(%d) (%p): %d\n", msq->q_perm.id,
+		 index, msq, err);
 	return err;
 }
 
@@ -180,6 +199,9 @@ void krg_ipc_msg_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 	index = ipcid_to_idx(msq->q_perm.id);
 	key = msq->q_perm.key;
 
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "Destroy msg queue %d(%d)\n", msq->q_perm.id,
+	       index);
+
 	if (key != IPC_PRIVATE) {
 		_kddm_grab_object_no_ft(ipcp->krgops->key_kddm_set, key);
 		_kddm_remove_frozen_object(ipcp->krgops->key_kddm_set, key);
@@ -190,6 +212,8 @@ void krg_ipc_msg_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 	_kddm_grab_object_no_ft(master_set, index);
 	_kddm_remove_frozen_object(master_set, index);
 
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "REALLY Destroy msg queue %d(%d)\n", msq->q_perm.id,
+	       index);
 	local_msg_unlock(msq);
 
 	_kddm_remove_frozen_object(ipcp->krgops->data_kddm_set, index);
@@ -220,6 +244,10 @@ long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 	enum rpc_error err;
 	int index;
 	struct msgsnd_msg msg;
+
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "-> Begin - msqid: %d, mtype: %ld, "
+	       "tgid: %d, size %zd\n",
+	       msqid, mtype, tgid, msgsz);
 
 	msg.requester = kerrighed_node_id;
 	msg.msqid = msqid;
@@ -256,9 +284,15 @@ long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 	desc = rpc_begin(IPC_MSG_SEND, *master_node);
 	_kddm_put_object(master_set, index);
 
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "contact node %d for msgq %d(%d)\n",
+	       *master_node, msqid, index);
+
 	rpc_pack_type(desc, msg);
 	rpc_pack_type(desc, msgsz);
 	rpc_pack(desc, 0, buffer, msgsz);
+
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "Waiting answer for msgq %d(%d)\n",
+	       msqid, index);
 
 	err = rpc_unpack(desc, RPC_FLAGS_INTR, &r, sizeof(r));
 	if (err == RPC_EINTR) {
@@ -266,6 +300,8 @@ long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 					     &current->blocked));
 		r = -EINTR;
 	}
+
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "<- End with result %ld\n", r);
 
 	rpc_end(desc, 0);
 
@@ -286,11 +322,18 @@ static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 	ns = find_get_krg_ipcns();
 	BUG_ON(!ns);
 
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "-> Begin msqid: %d, msgtyp: %ld, tgid: %d\n",
+	       msg->msqid, msg->mtype, msg->tgid);
+
 	rpc_unpack_type(desc, msgsz);
+
+	IPCDEBUG(DBG_KERIPC_MSG, 5, "size: %zd\n", msgsz);
 
 	mtext = kmalloc(msgsz, GFP_KERNEL);
 
 	rpc_unpack(desc, 0, mtext, msgsz);
+
+	IPCDEBUG(DBG_KERIPC_MSG, 3, "** calling __do_msgsnd\n");
 
 	sigfillset(&sigset);
 	sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
@@ -301,7 +344,12 @@ static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 	sigprocmask(SIG_SETMASK, &oldsigset, NULL);
 	flush_signals(current);
 
+	IPCDEBUG(DBG_KERIPC_MSG, 3, "** Sending answer %ld for msgq %d\n",
+	       r, msg->msqid);
+
 	rpc_pack_type(desc, r);
+
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "<- End \n");
 
 	kfree(mtext);
 
@@ -336,8 +384,13 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 	msg.msgflg = msgflg;
 	msg.tgid = tgid;
 
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "-> Begin msqid: %d, msgtyp: %ld, tgid: %d\n",
+	       msqid, msgtyp, tgid);
+
 	/* TODO: manage ipc namespace */
 	index = ipcid_to_idx(msqid);
+
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "Del msg queue %d\n", msqid);
 
 	master_set = krgipc_ops_master_set(msg_ids(ns).krgops);
 
@@ -359,8 +412,13 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 	desc = rpc_begin(IPC_MSG_RCV, *master_node);
 	_kddm_put_object(master_set, index);
 
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "contact node %d for msgq %d(%d)\n",
+	       *master_node, msqid, index);
+
 	rpc_pack_type(desc, msg);
 	rpc_pack_type(desc, msgsz);
+
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "** Waiting answer (max size=%zd)\n", msgsz);
 
 	err = rpc_unpack(desc, RPC_FLAGS_INTR, &r, sizeof(r));
 	if (!err) {
@@ -383,6 +441,8 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 		r = -EINTR;
 	}
 
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "<- End %ld\n", r);
+
 	rpc_end(desc, 0);
 	return r;
 }
@@ -400,7 +460,13 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 	ns = find_get_krg_ipcns();
 	BUG_ON(!ns);
 
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "-> Begin - msqid: %d, msgtyp: %ld, tgid: %d\n",
+	       msg->msqid, msg->msgtyp, msg->tgid);
+
 	rpc_unpack_type(desc, msgsz);
+
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "** msqid: %d, msgtyp: %ld, tgid: %d, max size: %zd\n",
+	       msg->msqid, msg->msgtyp, msg->tgid, msgsz);
 
 	mtext = kmalloc(msgsz, GFP_KERNEL);
 
@@ -413,11 +479,15 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 	sigprocmask(SIG_SETMASK, &oldsigset, NULL);
 	flush_signals(current);
 
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "** sending %ld bytes\n", r);
+
 	rpc_pack_type(desc, r);
 	if (r > 0) {
 		rpc_pack_type(desc, pmtype); /* send the real type of msg */
 		rpc_pack(desc, 0, mtext, r);
 	}
+
+	IPCDEBUG(DBG_KERIPC_MSG, 2, "<- End\n");
 
 	kfree(mtext);
 
@@ -532,6 +602,8 @@ void msg_handler_init(void)
 	rpc_register_void(IPC_MSG_SEND, handle_do_msg_send, 0);
 	rpc_register_void(IPC_MSG_RCV, handle_do_msg_rcv, 0);
 	rpc_register_void(IPC_MSG_CHKPT, handle_msg_checkpoint, 0);
+
+	IPCDEBUG(DBG_KERIPC_INITS, 1, "IPC Msg Server configured\n");
 }
 
 

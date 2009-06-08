@@ -23,6 +23,8 @@
 #include "util.h"
 #include "krgmsg.h"
 
+#define MODULE_NAME "IPC Handler"
+#include "debug_keripc.h"
 
 struct ipc_namespace *find_get_krg_ipcns(void)
 {
@@ -63,6 +65,8 @@ int krg_ipc_get_maxid(struct ipc_ids* ids)
 	max_id = ipc_map->alloc_map - 1;
 	_kddm_put_object(ids->krgops->map_kddm_set, 0);
 
+	IPCDEBUG(DBG_KERIPC_IPC_MAP, 2, "Return max_id = %d\n", max_id);
+
 	return max_id;
 }
 
@@ -80,13 +84,18 @@ int krg_ipc_get_new_id(struct ipc_ids* ids)
 			offset = find_first_zero_bit(&ipc_map->alloc_map,
 						     BITS_PER_LONG);
 
+			IPCDEBUG(DBG_KERIPC_IPC_MAP, 4, "Found bit %d in map "
+			       "nr %d\n", offset, i);
+
 			if (offset < BITS_PER_LONG) {
 
 				id = (i-1) * BITS_PER_LONG + offset;
 				set_bit(offset, &ipc_map->alloc_map);
 				if (id >= max_id->alloc_map)
 					max_id->alloc_map = id + 1;
-			}
+			} else
+				IPCDEBUG(DBG_KERIPC_IPC_MAP, 4, "No free bit "
+				       "found in map nr %d\n", i);
 		}
 
 		_kddm_put_object(ids->krgops->map_kddm_set, i);
@@ -94,6 +103,8 @@ int krg_ipc_get_new_id(struct ipc_ids* ids)
 	}
 
 	_kddm_put_object(ids->krgops->map_kddm_set, 0);
+
+	IPCDEBUG(DBG_KERIPC_IPC_MAP, 2, "Allocated id : %d\n", id);
 
 	return id;
 }
@@ -131,6 +142,7 @@ void krg_ipc_rmid(struct ipc_ids* ids, int index)
 	int i, offset;
 
 	/* Clear the corresponding entry in the bit field */
+	IPCDEBUG(DBG_KERIPC_IPC_MAP, 2, "Remove ipc id at index %d\n", index);
 
 	i = 1 + index / BITS_PER_LONG;
 	offset = index % BITS_PER_LONG;
@@ -146,6 +158,9 @@ void krg_ipc_rmid(struct ipc_ids* ids, int index)
 	/* Check if max_id must be adjusted */
 
 	max_id = _kddm_grab_object(ids->krgops->map_kddm_set, 0);
+
+	IPCDEBUG(DBG_KERIPC_IPC_MAP, 4, "Max id = %ld\n",
+	       max_id->alloc_map - 1);
 
 	if (max_id->alloc_map != index + 1)
 		goto done;
@@ -170,6 +185,9 @@ void krg_ipc_rmid(struct ipc_ids* ids, int index)
 
 	max_id->alloc_map = 0;
 done:
+	IPCDEBUG(DBG_KERIPC_IPC_MAP, 4, "Max id is now = %ld\n",
+	       max_id->alloc_map - 1);
+
 	_kddm_put_object(ids->krgops->map_kddm_set, 0);
 
 	return;
@@ -370,6 +388,8 @@ void ipc_procfs_exit(void)
 
 void ipc_handler_init(void)
 {
+	IPCDEBUG(DBG_KERIPC_INITS, 1, "Initialise IPC handler\n");
+
 	ipc_procfs_start();
 }
 

@@ -5,7 +5,6 @@
  *
  *  Copyright (C) 2007-2008 Matthieu Fertré - INRIA
  */
-
 #include <linux/sem.h>
 #include <linux/lockdep.h>
 #include <linux/security.h>
@@ -20,6 +19,9 @@
 #include "util.h"
 #include "krgsem.h"
 
+#include "debug_keripc.h"
+#define MODULE_NAME "Sem array linker"
+
 struct kmem_cache *semarray_object_cachep;
 
 /** Create a local instance of an remotly existing Semaphore.
@@ -32,6 +34,10 @@ struct sem_array *create_local_sem(struct ipc_namespace *ns,
 	struct sem_array *sma;
 	int size_sems;
 	int retval;
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+	       "Sem %p %d - nbsems: %ld\n", received_sma, received_sma->sem_perm.id,
+	       received_sma->sem_nsems);
 
 	size_sems = received_sma->sem_nsems * sizeof (struct sem);
 	sma = ipc_rcu_alloc(sizeof (*sma) + size_sems);
@@ -61,6 +67,10 @@ struct sem_array *create_local_sem(struct ipc_namespace *ns,
 	sma->sem_perm.krgops = sem_ids(ns).krgops;
 	local_sem_unlock(sma);
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "Local sem_array created %d (%p)\n",
+	       sma->sem_perm.id, sma);
+
 	return sma;
 
 err_security_free:
@@ -83,6 +93,10 @@ static inline void update_sem_queues(struct sem_array *sma,
 	list_for_each_entry_safe(q, tq, &received_sma->remote_sem_pending, list) {
 
 		int is_local = 0;
+
+		IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+		       "Checking if sem_queue (%d %d) is local\n",
+		       sma->sem_perm.id, q->pid);
 
 		/* checking if the sem_queue is local */
 		list_for_each_entry(local_q, &sma->sem_pending, list) {
@@ -115,6 +129,10 @@ static inline void update_sem_queues(struct sem_array *sma,
 	}
 
 	BUG_ON(!list_empty(&received_sma->remote_sem_pending));
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+	       "Update Sem queues %p %p: DONE\n", sma, received_sma);
+
 }
 
 /** Update a local instance of a remotly existing IPC semaphore.
@@ -125,6 +143,15 @@ static void update_local_sem(struct sem_array *local_sma,
 			     struct sem_array *received_sma)
 {
 	int size_sems;
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+	       "Update Sem %p %p\n",
+	       received_sma, local_sma);
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 1,
+	       "Update Sem %d - nb_sems : %ld %ld\n",
+	       received_sma->sem_perm.id, local_sma->sem_nsems,
+	       received_sma->sem_nsems);
 
 	size_sems = local_sma->sem_nsems * sizeof (struct sem);
 
@@ -138,6 +165,11 @@ static void update_local_sem(struct sem_array *local_sma,
 
 	/* updating semqueues list */
 	update_sem_queues(local_sma, received_sma);
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 1,
+	       "Update Sem %d %p: DONE\n",
+	       received_sma->sem_perm.id, local_sma);
+
 }
 
 /*****************************************************************************/
@@ -152,6 +184,10 @@ int semarray_alloc_object (struct kddm_obj * obj_entry,
 {
 	semarray_object_t *sem_object;
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 1,
+	       "Alloc object (%ld;%ld), obj_entry %p\n",
+	       set->id, objid, obj_entry);
+
 	sem_object = kmem_cache_alloc(semarray_object_cachep, GFP_KERNEL);
 	if (!sem_object)
 		return -ENOMEM;
@@ -159,6 +195,10 @@ int semarray_alloc_object (struct kddm_obj * obj_entry,
 	sem_object->local_sem = NULL;
 	sem_object->mobile_sem_base = NULL;
 	obj_entry->object = sem_object;
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "Alloc object (%ld;%ld): done %p\n",
+	       set->id, objid, sem_object);
 
 	return 0;
 }
@@ -200,6 +240,10 @@ int semarray_insert_object (struct kddm_obj * obj_entry,
 	semarray_object_t *sem_object;
 	struct sem_array *sem;
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 1,
+	       "Insert object (%ld;%ld), obj_entry %p, sem_obj %p\n",
+	       set->id, objid, obj_entry, obj_entry->object);
+
 	sem_object = obj_entry->object;
 	BUG_ON(!sem_object);
 
@@ -220,6 +264,10 @@ int semarray_insert_object (struct kddm_obj * obj_entry,
 
 	update_local_sem(sem_object->local_sem,
 			 &sem_object->imported_sem);
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "Insert object (%ld;%ld) : done %p\n",
+	       set->id, objid, sem_object);
 
 	return 0;
 }
@@ -246,13 +294,20 @@ int semarray_invalidate_object (struct kddm_obj * obj_entry,
 	BUG_ON(!list_empty(&sem_object->imported_sem.sem_pending));
 	BUG_ON(!list_empty(&sem_object->imported_sem.remote_sem_pending));
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 1, "Invalidate object (%ld;%ld)\n",
+	       set->id, objid);
+
 	/* freeing the semundo list */
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3, "Free all the semundos\n");
+
 	list_for_each_entry_safe(un, tu, &sma->list_id, list_id) {
 		list_del(&un->list_id);
 		kfree(un);
 	}
 
 	/* freeing the remote semqueues */
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3, "Free all the remote semqueues\n");
+
 	list_for_each_entry_safe(q, tq, &sma->remote_sem_pending, list) {
 		list_del(&q->list);
 		free_semqueue(q);
@@ -274,6 +329,9 @@ int semarray_remove_object(void *object, struct kddm_set * set,
 	semarray_object_t *sem_object;
 	struct sem_array *sma;
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 1, "remove object (%ld;%ld)\n",
+	       set->id, objid);
+
 	sem_object = object;
 	if (sem_object) {
 		struct ipc_namespace *ns;
@@ -293,6 +351,10 @@ int semarray_remove_object(void *object, struct kddm_set * set,
 		put_ipc_ns(ns);
 	}
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "remove object (%ld;%ld) : done\n",
+	       set->id, objid);
+
 	return 0;
 }
 
@@ -300,27 +362,46 @@ static inline void __export_semarray(struct rpc_desc *desc,
 				     const semarray_object_t *sem_object,
 				     const struct sem_array* sma)
 {
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 2,
+	       "Exporting semarray %d\n", sma->sem_perm.id);
+
 	rpc_pack(desc, 0, sma, sizeof(struct sem_array));
 	rpc_pack(desc, 0, sma->sem_base, sma->sem_nsems * sizeof (struct sem));
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "Exporting semarray %d: DONE\n", sma->sem_perm.id);
 }
+
 
 static inline void __export_semundos(struct rpc_desc *desc,
 				     const struct sem_array* sma)
 {
 	long nb_semundo = 0;
 	struct sem_undo *un;
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 2,
+	       "->  sma: %d\n", sma->sem_perm.id);
 
 	list_for_each_entry(un, &sma->list_id, list_id)
 		nb_semundo++;
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "Exporting %ld semundos for sem %d\n", nb_semundo, sma->sem_perm.id);
+
 
 	rpc_pack_type(desc, nb_semundo);
 
 	list_for_each_entry(un, &sma->list_id, list_id) {
 		BUG_ON(!list_empty(&un->list_proc));
+		IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+		       "* Exporting semundo %d,%ld\n",
+		       sma->sem_perm.id, un->proc_list_id);
 
 		rpc_pack(desc, 0, un, sizeof(struct sem_undo) +
 			 sma->sem_nsems * sizeof(short));
 	}
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "Exporting semundos for sem %d: DONE\n", sma->sem_perm.id);
 }
 
 static inline void __export_one_local_semqueue(struct rpc_desc *desc,
@@ -333,29 +414,59 @@ static inline void __export_one_local_semqueue(struct rpc_desc *desc,
 	/* Make remote_sleeper_pid(q2) equal to q->sleeper's pid */
 	q2.sleeper = (void*)((long)(task_pid_knr(q->sleeper)));
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+	       "sma: %d, pid %d\n",
+	       q->semid, q->pid);
+
 	rpc_pack_type(desc, q2);
 	if (q->nsops)
 		rpc_pack(desc, 0, q->sops,
 			 q->nsops * sizeof(struct sembuf));
+	else {
+		IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+		       "no sops to export\n");
+	}
 
 	if (q->undo) {
 		BUG_ON(!list_empty(&q->undo->list_proc));
+		IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+		       "sma: %d, proc_list_id: %ld\n",
+		       q->semid, q->undo->proc_list_id);
+
 		rpc_pack_type(desc, q->undo->proc_list_id);
+	} else {
+		IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+		       "no undo to export\n");
 	}
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+	       "sma: %d, pid %d: done\n",
+	       q->semid, q->pid);
 }
 
 static inline void __export_one_remote_semqueue(struct rpc_desc *desc,
 						const struct sem_queue* q)
 {
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+	       "-> export remote sem_queue (sma: %d, tgid: %d, pid: %d)\n",
+	       q->semid, q->pid, remote_sleeper_pid(q));
+
 	rpc_pack(desc, 0, q, sizeof(struct sem_queue));
 	if (q->nsops)
 		rpc_pack(desc, 0, q->sops,
 			 q->nsops * sizeof(struct sembuf));
 
 	if (q->undo) {
+		IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+		       "sma: %d, proc_list_id: %ld",
+		       q->semid, q->undo->proc_list_id);
 		BUG_ON(!list_empty(&q->undo->list_proc));
 		rpc_pack_type(desc, q->undo->proc_list_id);
 	}
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+	       "<- export remote sem_queue (sma: %d, "
+	       "tgid: %d, pid: %d): done\n",
+	       q->semid, q->pid, remote_sleeper_pid(q));
 }
 
 static inline void __export_semqueues(struct rpc_desc *desc,
@@ -363,6 +474,9 @@ static inline void __export_semqueues(struct rpc_desc *desc,
 {
 	struct sem_queue *q;
 	long nb_sem_pending = 0;
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 2,
+	       "Exporting semqueues for sem %d\n", sma->sem_perm.id);
 
 	/* count local sem_pending */
 	list_for_each_entry(q, &sma->sem_pending, list)
@@ -374,6 +488,10 @@ static inline void __export_semqueues(struct rpc_desc *desc,
 
 	rpc_pack_type(desc, nb_sem_pending);
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "Exporting %ld semqueues for sem %d\n",
+	       nb_sem_pending, sma->sem_perm.id);
+
 	/* send local sem_queues */
 	list_for_each_entry(q, &sma->sem_pending, list)
 		__export_one_local_semqueue(desc, q);
@@ -381,6 +499,9 @@ static inline void __export_semqueues(struct rpc_desc *desc,
 	/* send remote sem_queues */
 	list_for_each_entry(q, &sma->remote_sem_pending, list)
 		__export_one_remote_semqueue(desc, q);
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "Exporting semqueues for sem %d: done\n", sma->sem_perm.id);
 }
 
 /** Export an object
@@ -402,9 +523,15 @@ int semarray_export_object (struct rpc_desc *desc,
 
 	BUG_ON(!sma);
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3, "export semaphore %d\n",
+	       sma->sem_perm.id);
+
 	__export_semarray(desc, sem_object, sma);
 	__export_semundos(desc, sma);
 	__export_semqueues(desc, sma);
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3, "export semaphore %d: done\n",
+	       sma->sem_perm.id);
 
 	return 0;
 }
@@ -414,6 +541,9 @@ static inline int __import_semarray(struct rpc_desc *desc,
 {
 	struct sem_array buffer;
 	int size_sems;
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 2,
+		 "Importing semarray...\n");
 
 	rpc_unpack_type(desc, buffer);
 	sem_object->imported_sem = buffer;
@@ -431,6 +561,9 @@ static inline int __import_semarray(struct rpc_desc *desc,
 	INIT_LIST_HEAD(&sem_object->imported_sem.remote_sem_pending);
 	INIT_LIST_HEAD(&sem_object->imported_sem.list_id);
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 2,
+	       "Importing semarray for sem %d\n",
+	       sem_object->imported_sem.sem_perm.id);
 	return 0;
 }
 
@@ -443,8 +576,14 @@ static inline int __import_semundos(struct rpc_desc *desc,
 	size_undo = sizeof(struct sem_undo) +
 		sma->sem_nsems * sizeof(short);
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 1, "Import semundos for sem %d\n",
+	       sma->sem_perm.id);
+
 	rpc_unpack_type(desc, nb_semundo);
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "Waiting to receive %ld semundos for sem %d\n",
+	       nb_semundo, sma->sem_perm.id);
 	BUG_ON(!list_empty(&sma->list_id));
 
 	for (i=0; i < nb_semundo; i++) {
@@ -455,11 +594,17 @@ static inline int __import_semundos(struct rpc_desc *desc,
 		rpc_unpack(desc, 0, undo, size_undo);
 		INIT_LIST_HEAD(&undo->list_id);
 		INIT_LIST_HEAD(&undo->list_proc);
+		IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+		       "* Importing semundo %d,%ld\n",
+		       sma->sem_perm.id, undo->proc_list_id);
 
 		undo->semadj = (short *) &undo[1];
 		list_add(&undo->list_id, &sma->list_id);
 	}
 
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+	       "Importing semundos for sem %d\n", sma->sem_perm.id);
 	return 0;
 
 unalloc_undos:
@@ -486,6 +631,10 @@ static inline int import_one_semqueue(struct rpc_desc *desc,
 	if (!q)
 		goto exit;
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 4,
+	       "-> import sem_queue (sma: %d, pid ?)\n",
+	       sma->sem_perm.id);
+
 	rpc_unpack(desc, 0, q, sizeof(struct sem_queue));
 	INIT_LIST_HEAD(&q->list);
 
@@ -495,17 +644,24 @@ static inline int import_one_semqueue(struct rpc_desc *desc,
 		if (!q->sops)
 			goto unalloc_q;
 		rpc_unpack(desc, 0, q->sops, q->nsops * sizeof(struct sembuf));
+	} else {
+		IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+		       "no sops to import\n");
 	}
 
 	if (q->undo) {
 		rpc_unpack_type(desc, undo_proc_list_id);
-
+		IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5, "proc_list_id: %ld\n",
+		       undo_proc_list_id);
 		list_for_each_entry(undo, &sma->list_id, list_id) {
 			if (undo->proc_list_id == undo_proc_list_id) {
 				q->undo = undo;
 				goto undo_found;
 			}
 		}
+	} else {
+		IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 5,
+		       "no undo to import\n");
 	}
 
 undo_found:
@@ -516,6 +672,9 @@ undo_found:
 	list_add(&q->list, &sma->remote_sem_pending);
 
 	BUG_ON(!q->sleeper);
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 4,
+	       "<- import sem_queue (sma: %d, tgid: %d, pid: %d): done\n",
+	       sma->sem_perm.id, q->pid, remote_sleeper_pid(q));
 	return r;
 
 unalloc_q:
@@ -531,11 +690,18 @@ static inline int __import_semqueues(struct rpc_desc *desc,
 	long nb_sempending, i;
 	int r;
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 2,
+	       "Importing semqueues for sem %d\n", sma->sem_perm.id);
+
 	r = rpc_unpack_type(desc, nb_sempending);
 	if (r)
 		goto err;
 
 	BUG_ON(!list_empty(&sma->remote_sem_pending));
+
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "Importing %ld semqueues for sem %d\n",
+	       nb_sempending, sma->sem_perm.id);
 
 	for (i=0; i < nb_sempending; i++) {
 		r = import_one_semqueue(desc, sma);
@@ -555,6 +721,9 @@ static inline int __import_semqueues(struct rpc_desc *desc,
 #endif
 
 err:
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "Importing semqueues for sem %d: DONE - r=%d\n", sma->sem_perm.id, r);
+
 	return r;
 }
 
@@ -583,6 +752,9 @@ int semarray_import_object (struct rpc_desc *desc,
 	int r = 0;
 	sem_object = obj_entry->object;
 
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 2,
+	       "Importing sem (%p)\n", sem_object);
+
 	r = __import_semarray(desc, sem_object);
 	if (r)
 		goto err;
@@ -604,6 +776,10 @@ unimport_semundos:
 	__unimport_semundos(&sem_object->imported_sem);
 
 err:
+	IPCDEBUG(DBG_KERIPC_SEMARRAY_LINKER, 3,
+	       "Importing sem %d (%p - %p): DONE - r=%d\n",
+	       sem_object->imported_sem.sem_perm.id, sem_object,
+	       obj_entry->object, r);
 	return r;
 }
 

@@ -22,6 +22,14 @@
 #include "krgshm.h"
 #include "ipc_handler.h"
 
+#include "debug_keripc.h"
+
+#define MODULE_NAME "Shm Mem linker  "
+
+#ifdef SHM_MEM_LINKER_DEBUG
+#define DEBUG_THIS_MODULE
+#endif
+
 extern int memory_first_touch (struct kddm_obj * obj_entry,
 			       struct kddm_set * set, objid_t objid,int flags);
 
@@ -68,6 +76,10 @@ int shm_memory_insert_page(struct kddm_obj *objEntry, struct kddm_set *kddm,
 	ns = find_get_krg_ipcns();
 	BUG_ON(!ns);
 
+	IPCDEBUG (DBG_KERIPC_PAGE_FAULTS, 3, "Insert page %p (%d;%ld;%ld) count"
+	       " %d\n", objEntry->object, kddm->ns->id, kddm->id, objid,
+	       page_count(objEntry->object));
+
 	shm_id = *(int *) kddm->private_data;
 
 	shp = local_shm_lock(ns, shm_id);
@@ -91,6 +103,10 @@ int shm_memory_insert_page(struct kddm_obj *objEntry, struct kddm_set *kddm,
 	}
 	unlock_page(page);
 
+	IPCDEBUG (DBG_KERIPC_PAGE_FAULTS, 3, "Insert page (%ld;%ld) %p (@ %p) : "
+	       "done (count = %d)\n", kddm->id, objid, page,
+	       page_address(page), page_count (page));
+
 error:
 	put_ipc_ns(ns);
 
@@ -111,8 +127,14 @@ int shm_memory_invalidate_page (struct kddm_obj * objEntry,
 {
 	int res ;
 
+	IPCDEBUG (DBG_KERIPC_PAGE_FAULTS, 3, "Invalidate page (%ld;%ld)\n",
+	       kddm->id, objid);
+
 	if (objEntry->object) {
 		struct page *page = (struct page *) objEntry->object;
+		IPCDEBUG (DBG_KERIPC_PAGE_FAULTS, 3, "Page (%ld;%ld) (count = "
+		       "%d;%d) - flags : 0x%08lx\n", kddm->id, objid,
+		       page_count (page), page_mapcount(page), page->flags);
 
 		BUG_ON (page->mapping == NULL);
 		BUG_ON (TestSetPageLocked(page));
@@ -158,6 +180,9 @@ int shm_memory_invalidate_page (struct kddm_obj * objEntry,
 #endif
 	}
 
+	IPCDEBUG (DBG_KERIPC_PAGE_FAULTS, 3, "Invalidate page (%ld;%ld) : done\n",
+	       kddm->id, objid);
+
 	return 0;
 }
 
@@ -173,8 +198,14 @@ int shm_memory_remove_page (void *object,
 			    struct kddm_set * set,
 			    objid_t objid)
 {
+	IPCDEBUG (DBG_KERIPC_PAGE_FAULTS, 3, "remove page (%ld;%ld)\n", set->id,
+	       objid);
+
 	if (object)
 		page_cache_release ((struct page *) object);
+
+	IPCDEBUG (DBG_KERIPC_PAGE_FAULTS, 3, "remove page (%ld;%ld) : done\n",
+	       set->id, objid);
 
 	return 0;
 }
@@ -223,6 +254,13 @@ int shmem_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	objid_t objid;
 	int write_access = vmf->flags & FAULT_FLAG_WRITE;
 
+	IPCDEBUG (DBG_KERIPC_PAGE_FAULTS, 1, "no page activated at 0x%08lx for "
+	       "process %s (%d - %p). Access : %d in vma [0x%08lx:0x%08lx] "
+		  "(0x%08lx) - file: 0x%p, anon_vma : 0x%p\n", (unsigned long) vmf->virtual_address,
+	       current->comm, task_pid_knr(current), current, write_access,
+	       vma->vm_start, vma->vm_end, (unsigned long) vma, vma->vm_file,
+	       vma->anon_vma);
+
 	address = (unsigned long)(vmf->virtual_address) & PAGE_MASK;
 
 	kddm = inode->i_mapping->kddm_set;
@@ -250,6 +288,11 @@ int shmem_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 	kddm_put_object (kddm_def_ns, kddm->id, objid);
 
+	IPCDEBUG (DBG_KERIPC_PAGE_FAULTS, 4, "Done: page (%ld;%ld) at %p "
+	       "(count %d;%d) - mapping %p (anon : %d)\n", kddm->id, objid,
+	       page, page_count (page), page_mapcount(page), page->mapping,
+	       PageAnon(page));
+
 	vmf->page = page;
 	return 0;
 }
@@ -272,6 +315,10 @@ struct page *shmem_memory_wppage (struct vm_area_struct *vma,
 
 	BUG_ON(!vma);
 
+	IPCDEBUG (DBG_KERIPC_PAGE_FAULTS, 1, "wp page activated at 0x%08lx in"
+	       "vma [0x%08lx:0x%08lx] (0x%08lx)\n", address,
+	       vma->vm_start, vma->vm_end, (long) vma);
+
 	kddm = inode->i_mapping->kddm_set;
 
 	BUG_ON(!kddm);
@@ -291,6 +338,9 @@ struct page *shmem_memory_wppage (struct vm_area_struct *vma,
 
 	kddm_put_object (kddm_def_ns, kddm->id, objid);
 
+	IPCDEBUG (DBG_KERIPC_PAGE_FAULTS, 1, "Done : page at 0x%p has count %d/%d"
+	       "\n", page, page_count (page), page_mapcount (page));
+
 	return page;
 }
 
@@ -308,6 +358,9 @@ struct vm_operations_struct krg_shmem_vm_ops = {
 static int krg_shmem_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct shm_file_data *sfd;
+
+	IPCDEBUG(DBG_KERIPC_SHM_MAP, 2, "mmap shm %ld to vma [0x%08lx:0x%08lx]\n",
+	      file->f_dentry->d_inode->i_ino, vma->vm_start, vma->vm_end);
 
 	BUG_ON(!file->private_data); /*shm_file_data(file) */
 
@@ -327,6 +380,9 @@ static int krg_shmem_mmap(struct file *file, struct vm_area_struct *vma)
         file_accessed(file);
 	vma->vm_ops = &krg_shmem_vm_ops;
 	vma->vm_flags |= VM_KDDM;
+
+	IPCDEBUG(DBG_KERIPC_SHM_MAP, 2, "mmap to vma [0x%08lx:0x%08lx] : done\n",
+	      vma->vm_start, vma->vm_end);
 
 	return 0;
 }

@@ -42,6 +42,7 @@
 
 #ifdef CONFIG_KRG_IPC
 #include <kddm/kddm.h>
+#include "debug_keripc.h"
 #include "ipcmap_io_linker.h"
 #include "ipc_handler.h"
 #include "msg_handler.h"
@@ -1272,6 +1273,8 @@ int is_krg_ipc(struct ipc_ids *ids)
 int init_keripc(void)
 {
 	printk("KrgIPC initialisation : start\n");
+
+	init_ipc_debug();
 
 	ipcmap_object_cachep = kmem_cache_create("ipcmap_object",
 						 sizeof(ipcmap_object_t),

@@ -5,6 +5,11 @@
  *
  *  Copyright (C) 2007-2008 Matthieu Fertré - INRIA
  */
+
+#include "debug_keripc.h"
+
+#define MODULE_NAME "System V semaphore"
+
 #include <linux/ipc.h>
 #include <linux/ipc_namespace.h>
 #include <linux/msg.h>
@@ -21,6 +26,9 @@
 #include "ipcmap_io_linker.h"
 #include "util.h"
 #include "krgsem.h"
+
+#include "debug_keripc.h"
+#define MODULE_NAME "System V semaphore"
 
 struct semkrgops {
 	struct krgipc_ops krgops;
@@ -66,7 +74,11 @@ static struct kern_ipc_perm *kcb_ipc_sem_lock(struct ipc_ids *ids, int id)
 
 	index = ipcid_to_idx(id);
 
+	IPCDEBUG(DBG_KERIPC_SEM_LOCK, 1, "->Lock sem_array %d(%d)\n", id, index);
+
 	sem_object = _kddm_grab_object_no_ft(ids->krgops->data_kddm_set, index);
+
+	IPCDEBUG(DBG_KERIPC_SEM_LOCK, 5, "End grab %p\n", sem_object);
 
 	if (!sem_object)
 		goto error;
@@ -75,7 +87,9 @@ static struct kern_ipc_perm *kcb_ipc_sem_lock(struct ipc_ids *ids, int id)
 
 	BUG_ON(!sma);
 
+	IPCDEBUG(DBG_KERIPC_SEM_LOCK, 5, "--> sma->sem_perm.lock\n");
 	mutex_lock(&sma->sem_perm.mutex);
+	IPCDEBUG(DBG_KERIPC_SEM_LOCK, 5, "<-- sma->sem_perm.lock\n");
 
 	if (sma->sem_perm.deleted) {
 		mutex_unlock(&sma->sem_perm.mutex);
@@ -83,6 +97,9 @@ static struct kern_ipc_perm *kcb_ipc_sem_lock(struct ipc_ids *ids, int id)
 	}
 
 	return &(sma->sem_perm);
+
+	IPCDEBUG(DBG_KERIPC_SEM_LOCK, 1, "<- Lock sem_array %d(%d) done: %p\n",
+	       id, index, sma);
 
 error:
 	_kddm_put_object(ids->krgops->data_kddm_set, index);
@@ -97,6 +114,9 @@ static void kcb_ipc_sem_unlock(struct kern_ipc_perm *ipcp)
 
 	index = ipcid_to_idx(ipcp->id);
 
+	IPCDEBUG(DBG_KERIPC_SEM_LOCK, 1, "-> Unlock sem_array %d(%d)\n",
+	       ipcp->id, index);
+
 	if (ipcp->deleted)
 		deleted = 1;
 
@@ -106,6 +126,9 @@ static void kcb_ipc_sem_unlock(struct kern_ipc_perm *ipcp)
 		mutex_unlock(&ipcp->mutex);
 
 	rcu_read_unlock();
+
+	IPCDEBUG(DBG_KERIPC_SEM_LOCK, 1, "<- Unlock sem_array %d(%d) : done\n",
+	       ipcp->id, index);
 }
 
 static struct kern_ipc_perm *kcb_ipc_sem_findkey(struct ipc_ids *ids, key_t key)
@@ -139,6 +162,9 @@ int krg_ipc_sem_newary(struct ipc_namespace *ns, struct sem_array *sma)
 	BUG_ON(!sem_ids(ns).krgops);
 
 	index = ipcid_to_idx(sma->sem_perm.id);
+
+	IPCDEBUG(DBG_KERIPC_SEM, 2, "New sem_array : id %d(%d) (%p)\n",
+	       sma->sem_perm.id, index, sma);
 
 	sem_object = _kddm_grab_object_manual_ft(
 		sem_ids(ns).krgops->data_kddm_set, index);
@@ -176,6 +202,9 @@ int krg_ipc_sem_newary(struct ipc_namespace *ns, struct sem_array *sma)
 
 	sma->sem_perm.krgops = sem_ids(ns).krgops;
 
+	IPCDEBUG(DBG_KERIPC_SEM, 2, "New sem_array (id %d(%d)) : done\n",
+	       sma->sem_perm.id, index);
+
 	return 0;
 }
 
@@ -192,6 +221,9 @@ static inline void __remove_semundo_from_proc_list(struct sem_array *sma,
 
 	if (!undo_list)
 		goto exit;
+
+	IPCDEBUG(DBG_KERIPC_SEM, 2, "SemID: %d, ListID: %ld\n",
+	      sma->sem_perm.id, proc_list_id);
 
 	prev = NULL;
 	for (undo_id = undo_list->list; undo_id; undo_id = next) {
@@ -212,6 +244,9 @@ static inline void __remove_semundo_from_proc_list(struct sem_array *sma,
 	BUG();
 
 exit:
+	IPCDEBUG(DBG_KERIPC_SEM, 5, "Process %ld has %d sem_undos\n",
+	      proc_list_id, atomic_read(&undo_list->semcnt));
+
 	_kddm_put_object(undo_list_set, proc_list_id);
 }
 
@@ -222,6 +257,9 @@ void krg_ipc_sem_freeary(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 	struct sem_array *sma = container_of(ipcp, struct sem_array, sem_perm);
 
 	index = ipcid_to_idx(ipcp->id);
+
+	IPCDEBUG(DBG_KERIPC_SEM, 2, "Destroy sem_array %d(%d)\n", sma->sem_perm.id,
+	       index);
 
 	/* removing the related semundo from the list per process */
 	list_for_each_entry_safe(un, tu, &sma->list_id, list_id) {
@@ -237,10 +275,16 @@ void krg_ipc_sem_freeary(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 					   ipcp->key);
 	}
 
+	IPCDEBUG(DBG_KERIPC_SEM, 4, "Really Destroy sem_array %d(%d)\n",
+	       sma->sem_perm.id, index);
+
 	local_sem_unlock(sma);
 	_kddm_remove_frozen_object(sem_ids(ns).krgops->data_kddm_set, index);
 
 	krg_ipc_rmid(&sem_ids(ns), index);
+
+	IPCDEBUG(DBG_KERIPC_SEM, 2, "Destroy sem_array %d: done\n",
+	       index);
 }
 
 struct ipcsem_wakeup_msg {
@@ -260,6 +304,10 @@ void handle_ipcsem_wakeup_process(struct rpc_desc *desc, void *_msg,
 
 	ns = find_get_krg_ipcns();
 	BUG_ON(!ns);
+
+	IPCDEBUG(DBG_KERIPC_SEM, 2,
+	       "try to wake up process %d blocked on sem %d\n",
+	       msg->pid, msg->sem_id);
 
 	/* take only a local lock because the requester node has the kddm lock
 	   on the semarray */
@@ -289,6 +337,10 @@ found:
 
 	local_sem_unlock(sma);
 
+	IPCDEBUG(DBG_KERIPC_SEM, 2,
+	       "try to wake up process %d blocked on sem %d (error: %d): done\n",
+	       msg->pid, msg->sem_id, msg->error);
+
 	rpc_pack_type(desc, msg->error);
 
 	put_ipc_ns(ns);
@@ -303,6 +355,10 @@ void krg_ipc_sem_wakeup_process(struct sem_queue *q, int error)
 	msg.sem_id = q->semid;
 	msg.pid = remote_sleeper_pid(q); /* q->pid contains the tgid */
 	msg.error = error;
+
+	IPCDEBUG(DBG_KERIPC_SEM, 2,
+	       "Ask node %d to wake up process %d (error: %d) blocked on sem %d\n",
+	       q->node, msg.pid, error, q->semid);
 
 	desc = rpc_begin(IPC_SEM_WAKEUP, q->node);
 	rpc_pack_type(desc, msg);
@@ -326,6 +382,8 @@ static inline struct semundo_list_object * __create_semundo_proc_list(
 
 	/* get a random id */
 	undo_list_id = get_unique_id(&semops->undo_list_unique_id_root);
+
+	IPCDEBUG(DBG_KERIPC_SEM, 5, "Unique id: %lu\n", undo_list_id);
 
 	undo_list = _kddm_grab_object_manual_ft(undo_list_set, undo_list_id);
 
@@ -373,6 +431,10 @@ int create_semundo_proc_list(struct task_struct *task)
 	}
 
 	BUG_ON(atomic_read(&undo_list->refcnt) != 1);
+
+	IPCDEBUG(DBG_KERIPC_SEM, 3,
+	      "UNDO: Lazy creation of semundo (export) %lu for process %d\n",
+	      task->sysvsem.undo_list_id, task_pid_knr(task));
 
 	_kddm_put_object(undo_list_set, task->sysvsem.undo_list_id);
 err:
@@ -437,6 +499,10 @@ int share_existing_semundo_proc_list(struct task_struct *task,
 	task->sysvsem.undo_list_id = undo_list_id;
 	atomic_inc(&undo_list->refcnt);
 
+	IPCDEBUG(DBG_KERIPC_SEM, 3,
+	      "UNDO: Process %d share semundo list %lu with %d processes\n",
+	      task_pid_knr(task), undo_list_id, atomic_read(&undo_list->refcnt));
+
 exit_put:
 	_kddm_put_object(undo_list_set, undo_list_id);
 exit:
@@ -465,11 +531,20 @@ int krg_ipc_sem_copy_semundo(unsigned long clone_flags,
 			goto exit;
 		}
 
+		IPCDEBUG(DBG_KERIPC_SEM, 3,
+		       "UNDO: Processes %d and %d will share "
+		       "their undos list (%lu)\n",
+		       task_pid_knr(current), task_pid_knr(tsk), current->sysvsem.undo_list_id);
+
 		if (current->sysvsem.undo_list_id != UNIQUE_ID_NONE)
 			r = share_existing_semundo_proc_list(
 				tsk, current->sysvsem.undo_list_id);
 		else
 			r = __share_new_semundo(tsk);
+
+		IPCDEBUG(DBG_KERIPC_SEM, 3,
+		      "UNDO: Processes %d and %d share semundo list %lu\n",
+		      task_pid_knr(tsk), task_pid_knr(current), current->sysvsem.undo_list_id);
 
 	} else
 		/* undolist will be only created when needed */
@@ -510,6 +585,12 @@ int add_semundo_to_proc_list(struct semundo_list_object *undo_list, int semid)
 	undo_id->semid = semid;
 	undo_id->next = undo_list->list;
 	undo_list->list = undo_id;
+	IPCDEBUG(DBG_KERIPC_SEM, 5, "Add %p (%d) in sem_undos list of Process %d\n",
+	      undo_id, undo_id->semid, task_pid_knr(current));
+
+	IPCDEBUG(DBG_KERIPC_SEM, 5, "Process %d has %d sem_undos\n",
+	      task_pid_knr(current), atomic_read(&undo_list->semcnt));
+
 exit:
 	return r;
 }
@@ -533,6 +614,10 @@ struct sem_undo * krg_ipc_sem_find_undo(struct sem_array* sma)
 		/* create a undolist if not yet allocated */
 		undo_list = __create_semundo_proc_list(current, undo_list_set);
 
+		IPCDEBUG(DBG_KERIPC_SEM, 3,
+		      "UNDO: Create undolist for process %d: %lu - %p\n",
+		      task_pid_knr(current), current->sysvsem.undo_list_id, undo_list);
+
 		if (IS_ERR(undo_list)) {
 			undo = ERR_PTR(PTR_ERR(undo_list));
 			goto exit;
@@ -541,10 +626,15 @@ struct sem_undo * krg_ipc_sem_find_undo(struct sem_array* sma)
 		BUG_ON(atomic_read(&undo_list->semcnt) != 0);
 
 	} else {
+		IPCDEBUG(DBG_KERIPC_SEM, 5, "sma:%d, undolist_id:%ld\n",
+		      sma->sem_perm.id, current->sysvsem.undo_list_id);
+
 		/* check in the undo list of the sma */
 		list_for_each_entry(undo, &sma->list_id, list_id) {
 			if (undo->proc_list_id ==
 			    current->sysvsem.undo_list_id) {
+				IPCDEBUG(DBG_KERIPC_SEM, 5,
+				      "Allready in sma list: DONE\n");
 				goto exit;
 			}
 		}
@@ -605,6 +695,9 @@ static inline void __remove_semundo_from_sem_list(struct ipc_namespace *ns,
 	sma = sem_lock(ns, semid);
 	if (IS_ERR(sma))
 		return;
+
+	IPCDEBUG(DBG_KERIPC_SEM, 5, "Removing semundo (%d, %ld)\n",
+	      semid, undo_list_id);
 
 	list_for_each_entry_safe(un, tu, &sma->list_id, list_id) {
 		if (un->proc_list_id == undo_list_id) {
@@ -675,6 +768,9 @@ void krg_ipc_sem_exit_sem(struct task_struct * task)
 	}
 	if (!atomic_dec_and_test(&undo_list->refcnt))
 		goto exit_wo_action;
+
+	IPCDEBUG(DBG_KERIPC_SEM, 5, "Semundo list %ld contains %d sem_undos\n",
+	      undo_list_id, atomic_read(&undo_list->semcnt));
 
 	for (undo_id = undo_list->list; undo_id; undo_id = next) {
 		next = undo_id->next;
