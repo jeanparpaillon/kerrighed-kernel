@@ -12,6 +12,7 @@
 #include <kerrighed/types.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/krgflags.h>
+#include <kerrighed/debug_tools2.h>
 #include <linux/cluster_barrier.h>
 #include <linux/unique_id.h>
 #include <net/krgrpc/rpc.h>
@@ -566,6 +567,8 @@ void __init kerrighed_init(void){
 	init_ids();
 
 	printk("Kerrighed: stage 1\n");
+
+	debug_init("kerrighed");
 
 	init_sysfs();
 	krg_wq = create_workqueue("krg");
