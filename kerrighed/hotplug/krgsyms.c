@@ -3,6 +3,7 @@
  */
 
 #include <kerrighed/krgsyms.h>
+#include <linux/module.h>
 #include <linux/hashtable.h>
 #include <linux/init.h>
 
@@ -42,6 +43,7 @@ int krgsyms_register(enum krgsyms_val v, void* p)
 
 	return 0;
 };
+EXPORT_SYMBOL(krgsyms_register);
 
 int krgsyms_unregister(enum krgsyms_val v)
 {
@@ -59,6 +61,7 @@ int krgsyms_unregister(enum krgsyms_val v)
 
 	return 0;
 };
+EXPORT_SYMBOL(krgsyms_unregister);
 
 enum krgsyms_val krgsyms_export(void* p)
 {
