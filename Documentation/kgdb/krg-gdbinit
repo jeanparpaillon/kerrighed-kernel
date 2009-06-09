@@ -54,7 +54,7 @@ document dmesg
 end
 
 define task
-	set $t = $arg0
+	set $t = (struct task_struct *) $arg0
 
 	printf "Task %d %s:\n", $t->pid, $t->comm
 	printf "  task_struct:\t0x%lx\n", $t
