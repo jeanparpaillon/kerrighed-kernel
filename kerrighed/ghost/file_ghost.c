@@ -147,6 +147,7 @@ int set_ghost_fs(ghost_fs_t *oldfs, uid_t uid, gid_t gid)
 	__set_ghost_fs(oldfs);
 	oldfs->cred = override_creds(new_cred);
 	put_cred(new_cred);
+	r = 0;
 
 err:
 	return r;
