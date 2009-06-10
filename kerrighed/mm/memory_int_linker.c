@@ -225,8 +225,8 @@ int anon_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 			ret = VM_FAULT_OOM;
 			goto exit_error;
 		}
-		copy_user_highpage(new_page, page, address, vma);
-		page_cache_release(page);
+		copy_user_highpage(new_page, vmf->page, address, vma);
+		page_cache_release(vmf->page);
 		page = new_page;
 
 		_kddm_set_object(set, objid, page);
