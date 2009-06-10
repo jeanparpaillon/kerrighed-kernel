@@ -614,7 +614,7 @@ struct kddm_obj;
 static inline void set_pte_obj_entry(pte_t *ptep, struct kddm_obj *obj)
 {
 	pte_t pte = __pte((unsigned long)obj);
-	pte = pte_set_flags(*ptep, _PAGE_OBJ_ENTRY);
+	pte = pte_set_flags(pte, _PAGE_OBJ_ENTRY);
 	set_pte(ptep, pte);
 }
 
