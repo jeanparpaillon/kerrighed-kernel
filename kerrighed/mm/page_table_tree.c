@@ -403,16 +403,17 @@ static struct kddm_obj *kddm_pt_get_obj_entry (struct kddm_set *set,
 {
 	struct mm_struct *mm = set->obj_set;
 	struct kddm_obj *obj_entry;
+	spinlock_t *ptl;
 	pte_t *ptep;
 
-	ptep = get_pte_no_lock(mm, objid * PAGE_SIZE);
+	ptep = get_locked_pte(mm, objid * PAGE_SIZE, &ptl);
 	if (!ptep)
 		return ERR_PTR(-ENOMEM);
 
 	obj_entry = get_obj_entry_from_pte(mm, objid * PAGE_SIZE, ptep,
 					   new_obj);
 
-	pte_unmap(ptep);
+	pte_unmap_unlock(ptep, ptl);
 
 	if (obj_entry == new_obj)
 		check_create_vma(mm, objid * PAGE_SIZE);
