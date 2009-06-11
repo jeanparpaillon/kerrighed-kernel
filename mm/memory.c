@@ -1990,14 +1990,18 @@ static int do_wp_page(struct mm_struct *mm, struct vm_area_struct *vma,
 			goto reuse;
 		goto gotten;
 	}
-
+#ifdef CONFIG_KRG_MM
+	else {
+		if (vma->vm_flags & VM_KDDM) {
+			page_cache_get(old_page);
+			goto gotten;
+		}
+	}
+#endif
 	/*
 	 * Take out anonymous pages first, anonymous shared vmas are
 	 * not dirty accountable.
 	 */
-#ifdef CONFIG_KRG_MM
-	if (!(vma->vm_flags & VM_KDDM)) {
-#endif
 	if (PageAnon(old_page)) {
 		if (!trylock_page(old_page)) {
 			page_cache_get(old_page);
@@ -2078,9 +2082,6 @@ static int do_wp_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		get_page(dirty_page);
 		reuse = 1;
 	}
-#ifdef CONFIG_KRG_MM
-	}
-#endif
 
 	if (reuse) {
 reuse:
@@ -2144,10 +2145,6 @@ gotten:
 	 * Re-check the pte - we dropped the lock
 	 */
 	page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
-#ifdef CONFIG_KRG_MM
-	if (pfn_to_page(pte_pfn(*page_table)) == new_page)
-		orig_pte = *page_table;
-#endif
 	if (likely(pte_same(*page_table, orig_pte))) {
 		if (old_page) {
 			if (!PageAnon(old_page)) {
@@ -2789,20 +2786,7 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * Should we do an early C-O-W break?
 	 */
 	page = vmf.page;
-#ifdef CONFIG_KRG_MM
-	if ((vma->vm_flags & VM_KDDM) &&
-	    (!page->mapping || PageAnon(page))) {
-		anon = 1;
-		if (unlikely(anon_vma_prepare(vma))) {
-			ret = VM_FAULT_OOM;
-			goto out;
-		}
-	}
-	if (flags & FAULT_FLAG_WRITE &&
-	    !(vma->vm_flags & VM_KDDM)) {
-#else
 	if (flags & FAULT_FLAG_WRITE) {
-#endif
 		if (!(vma->vm_flags & VM_SHARED)) {
 			anon = 1;
 			if (unlikely(anon_vma_prepare(vma))) {
@@ -2874,20 +2858,11 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * handle that later.
 	 */
 	/* Only go through if we didn't race with anybody else... */
-#ifdef CONFIG_KRG_MM
-	if (pte_same(*page_table, orig_pte) || pte_obj_entry(page_table) ||
-	   (pfn_to_page(pte_pfn(*page_table)) == page)) {
-#else
 	if (likely(pte_same(*page_table, orig_pte))) {
-#endif
 		flush_icache_page(vma, page);
 		entry = mk_pte(page, vma->vm_page_prot);
 		if (flags & FAULT_FLAG_WRITE)
 			entry = maybe_mkwrite(pte_mkdirty(entry), vma);
-#ifdef CONFIG_KRG_MM
-		else if (vma->vm_flags & VM_KDDM)
-			entry = pte_wrprotect(entry);
-#endif
 		if (anon) {
 			inc_mm_counter(mm, anon_rss);
 			page_add_new_anon_rmap(page, vma, address);
