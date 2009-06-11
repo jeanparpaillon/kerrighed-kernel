@@ -614,7 +614,7 @@ int import_vma_pages (ghost_t * ghost,
 
 		BUG_ON (unlikely(anon_vma_prepare(vma)));
 
-		page_add_anon_rmap(new_page, vma, address);
+		page_add_new_anon_rmap(new_page, vma, address);
 
 		page_addr = kmap (new_page);
 		r = ghost_read (ghost, page_addr, PAGE_SIZE);
