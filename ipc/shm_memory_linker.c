@@ -17,6 +17,7 @@
 #include <linux/msg.h>
 #include <linux/mm_inline.h>
 #include <linux/kernel.h>
+#include <linux/swap.h>
 #include <kddm/kddm.h>
 #include "krgshm.h"
 
@@ -36,7 +37,8 @@ extern int memory_import_object (struct kddm_obj *objEntry,
 extern int memory_export_object (struct rpc_desc *desc,
 				 struct kddm_obj *objEntry);
 
-
+extern void map_kddm_page (struct vm_area_struct *vma, unsigned long address,
+			   struct page *page, int write);
 
 /*****************************************************************************/
 /*                                                                           */
@@ -232,6 +234,11 @@ int shmem_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 		page->mapping = inode->i_mapping;
 	}
 
+	map_kddm_page (vma, address, page, write_access);
+
+	inc_mm_counter(vma->vm_mm, file_rss);
+	page_add_file_rmap(page);
+
 	kddm_put_object (kddm_def_ns, ctnr->id, objid);
 
 	vmf->page = page;
@@ -265,6 +272,11 @@ struct page *shmem_memory_wppage (struct vm_area_struct *vma,
 
 	if (!page->mapping)
 		page->mapping = inode->i_mapping;
+
+	map_kddm_page (vma, address, page, 1);
+
+	if (page != old_page)
+		page_add_file_rmap(page);
 
 	kddm_put_object (kddm_def_ns, ctnr->id, objid);
 

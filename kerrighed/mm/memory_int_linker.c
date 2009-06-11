@@ -158,7 +158,34 @@ do_prefetch:
 /*                                                                           */
 /*****************************************************************************/
 
+static inline pte_t maybe_mkwrite(pte_t pte, struct vm_area_struct *vma)
+{
+	if (likely(vma->vm_flags & VM_WRITE))
+		pte = pte_mkwrite(pte);
+	return pte;
+}
 
+void map_kddm_page(struct vm_area_struct *vma,
+		   unsigned long address,
+		   struct page *page,
+		   int write)
+{
+	struct mm_struct *mm = vma->vm_mm;
+	spinlock_t *ptl;
+	pte_t *ptep, pte;
+
+	ptep = get_locked_pte(mm, address, &ptl);
+	BUG_ON(!ptep);
+
+	pte = mk_pte(page, vma->vm_page_prot);
+	if (write)
+		pte = maybe_mkwrite(pte_mkdirty(pte), vma);
+	else
+		pte = pte_wrprotect(pte);
+	set_pte_at(mm, address, ptep, pte);
+	update_mmu_cache(vma, address, pte);
+	pte_unmap_unlock(ptep, ptl);
+}
 
 /** Handle a nopage fault on an anonymous VMA.
  * @author Renaud Lottiaux
@@ -277,6 +304,8 @@ done:
 		}
 	}
 
+	map_kddm_page(vma, objid * PAGE_SIZE, page, write_access);
+
 	vmf->page = page;
 
 	_kddm_put_object (set, objid);
@@ -324,6 +353,8 @@ struct page *anon_memory_wppage (struct vm_area_struct *vma,
 
 	if (old_page && old_page != page)
 		copy_user_highpage(page, old_page, address, vma);
+
+	map_kddm_page(vma, objid * PAGE_SIZE, page, 1);
 
 	_kddm_put_object (set, objid);
 

@@ -2113,26 +2113,11 @@ gotten:
 		if (!new_page)
 			goto oom;
 
-		if (new_page != old_page) {
-			/* Unlike the kernel COW function, the KDDM one does
-			 * all the job (unmap, count decrement, etc). Nothing
-			 * more has to be done by the kernel.
-			 */
-			page_cache_release(old_page);
-			old_page = NULL;
-			goto install_page;
-		}
-
-		/* We have just a write access upgrade to do... */
-
-		page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
-		entry = mk_pte(new_page, vma->vm_page_prot);
-		entry = maybe_mkwrite(pte_mkdirty(entry), vma);
-		set_pte_at(mm, address, page_table, entry);
-		update_mmu_cache(vma, address, entry);
 		if (old_page)
 			page_cache_release(old_page);
-		goto unlock;
+
+		ret |= VM_FAULT_WRITE;
+		return ret;
 	}
 #endif /* CONFIG_KRG_MM */
 
@@ -2158,9 +2143,6 @@ gotten:
 	/*
 	 * Re-check the pte - we dropped the lock
 	 */
-#ifdef CONFIG_KRG_MM
-install_page:
-#endif
 	page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
 #ifdef CONFIG_KRG_MM
 	if (pfn_to_page(pte_pfn(*page_table)) == new_page)
@@ -2795,6 +2777,14 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	else
 		VM_BUG_ON(!PageLocked(vmf.page));
 
+#ifdef CONFIG_KRG_MM
+	/*
+	 * If we are in a KDDM linked VMA, all the mapping job has been done
+	 * by the Kerrighed MM layer.
+	 */
+	if (vma->vm_flags & VM_KDDM)
+		return ret;
+#endif
 	/*
 	 * Should we do an early C-O-W break?
 	 */
