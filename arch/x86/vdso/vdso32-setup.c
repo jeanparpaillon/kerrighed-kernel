@@ -310,35 +310,20 @@ int __init sysenter_setup(void)
 }
 
 #ifdef CONFIG_KRG_MM
-int import_vdso_context(struct mm_struct *mm)
+void import_vdso_context(struct vm_area_struct *vma)
 {
-	unsigned long addr;
-	int ret;
-
 	if (vdso_enabled != VDSO_ENABLED) {
-		BUG_ON(!mm->context.vdso
-		       && mm->context.vdso != (void *)VDSO_HIGH_BASE);
-		return 0;
+		BUG_ON(!vma->vm_mm->context.vdso
+		       && vma->vm_mm->context.vdso != (void *)VDSO_HIGH_BASE);
+		return;
 	}
 
-	addr = get_unmapped_area(NULL, 0, PAGE_SIZE, 0, 0);
-	if (IS_ERR_VALUE(addr)) {
-		ret = addr;
-		goto err;
-	}
+	if (compat_uses_vma || !compat) {
+		vma->vm_private_data = vdso_pages;
 
-	if (compat_uses_vma) {
-		ret = install_special_mapping(mm, addr, PAGE_SIZE,
-					      VM_READ|VM_EXEC|
-					      VM_MAYREAD|VM_MAYWRITE|VM_MAYEXEC|
-					      VM_ALWAYSDUMP,
-					      vdso32_pages);
-		if (ret)
-			goto err;
+		BUG_ON(vma->vm_start != vma->vm_mm->context.vdso);
+		BUG_ON(vma->vm_end != vma->vm_start + vdso_size);
 	}
-	mm->context.vdso = (void *)addr;
-err:
-	return ret;
 }
 
 int import_mm_struct_end(struct mm_struct *mm, struct task_struct *task)

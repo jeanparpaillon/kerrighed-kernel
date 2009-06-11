@@ -45,6 +45,7 @@ void unimport_mm_struct(struct task_struct *task);
 
 void __vma_link_file(struct vm_area_struct *vma);
 
+extern struct vm_operations_struct special_mapping_vmops;
 
 /*****************************************************************************/
 /*                                                                           */
@@ -232,9 +233,12 @@ int export_process_pages(struct epm_action *action,
 	BUG_ON (vma == NULL);
 
 	while (vma != NULL) {
-		r = export_vma_pages (ghost, vma);
-		if (r)
-			goto out;
+
+		if (vma->vm_ops != &special_mapping_vmops) {
+			r = export_vma_pages (ghost, vma);
+			if (r)
+				goto out;
+		}
 		vma = vma->vm_next;
 	}
 
@@ -270,8 +274,6 @@ static int export_one_vma (struct epm_action *action,
 	krgsyms_val_t vm_ops_type, initial_vm_ops_type;
 	int r;
 
-	BUG_ON (vma->vm_private_data);
-
 	/* First, check if we need to link the VMA to the anon kddm_set */
 
 	if (tsk->mm->anon_vma_kddm_set)
@@ -297,6 +299,8 @@ static int export_one_vma (struct epm_action *action,
 	initial_vm_ops_type = krgsyms_export (vma->initial_vm_ops);
 	if (vma->initial_vm_ops && initial_vm_ops_type == KRGSYMS_UNDEF)
 		goto out;
+
+	BUG_ON(vma->vm_private_data && vm_ops_type != KRGSYMS_VM_OPS_SPECIAL_MAPPING);
 
 	r = ghost_write (ghost, &vm_ops_type, sizeof (krgsyms_val_t));
 	if (r)
@@ -630,8 +634,6 @@ err_read:
 	return r;
 }
 
-
-
 /** This function imports the physical memory pages of a process
  *  @author Renaud Lottiaux, Matthieu Fertré
  *
@@ -655,9 +657,12 @@ int import_process_pages(struct epm_action *action,
 	BUG_ON (vma == NULL);
 
 	while (vma != NULL) {
-		r = import_vma_pages (ghost, mm, vma);
-		if (r)
-			goto exit;
+
+		if (vma->vm_ops != &special_mapping_vmops) {
+			r = import_vma_pages (ghost, mm, vma);
+			if (r)
+				goto exit;
+		}
 		vma = vma->vm_next;
 	}
 
@@ -735,6 +740,7 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 		BUG();
 	}
 	old->vm_ops = vma->vm_ops;
+	old->vm_private_data = vma->vm_private_data;
 	old->vm_pgoff = vma->vm_pgoff;
 	if (old->vm_file) {
 		if (old->vm_file != vma->vm_file) {
@@ -829,6 +835,9 @@ static int import_one_vma (struct epm_action *action,
 		restore_initial_vm_ops(vma);
 
 	vma->anon_vma = NULL;
+
+	if (vm_ops_type == KRGSYMS_VM_OPS_SPECIAL_MAPPING)
+		import_vdso_context(vma);
 
 	r = reconcile_vmas(tsk->mm, vma, last_end);
 	if (r)
@@ -925,8 +934,6 @@ static int import_context_struct(ghost_t * ghost, struct mm_struct *mm)
 		if (r)
 			goto exit;
 	}
-
-	import_vdso_context(mm);
 
 	mutex_init(&mm->context.lock);
 #endif

@@ -97,32 +97,15 @@ static unsigned long vdso_addr(unsigned long start, unsigned len)
 }
 
 #ifdef CONFIG_KRG_MM
-int import_vdso_context(struct mm_struct *mm)
+void import_vdso_context(struct vm_area_struct *vma)
 {
-	unsigned long addr;
-	int ret;
-
 	if (!vdso_enabled)
-		return 0;
+		return;
 
-	addr = vdso_addr(mm->start_stack, vdso_size);
-	addr = get_unmapped_area(NULL, addr, vdso_size, 0, 0);
-	if (IS_ERR_VALUE(addr)) {
-		ret = addr;
-		goto error;
-	}
+	vma->vm_private_data = vdso_pages;
 
-	ret = install_special_mapping(mm, addr, vdso_size,
-				      VM_READ|VM_EXEC|
-				      VM_MAYREAD|VM_MAYWRITE|VM_MAYEXEC|
-				      VM_ALWAYSDUMP,
-				      vdso_pages);
-	if (ret)
-		goto error;
-
-	mm->context.vdso = (void *)addr;
-error:
-	return ret;
+	BUG_ON(vma->vm_start != (unsigned long)vma->vm_mm->context.vdso);
+	BUG_ON(vma->vm_end != vma->vm_start + vdso_size);
 }
 
 int import_mm_struct_end(struct mm_struct *mm, struct task_struct *task)

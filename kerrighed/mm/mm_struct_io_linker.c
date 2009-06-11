@@ -142,7 +142,7 @@ int mm_import_object (struct kddm_obj *obj_entry,
 		mm->arg_end = src_mm.arg_end;
 		mm->env_start = src_mm.env_start;
 		mm->env_end = src_mm.env_end;
-
+		mm->context.vdso = src_mm.context.vdso;
 	}
 
 	/* Update non static MM values */
