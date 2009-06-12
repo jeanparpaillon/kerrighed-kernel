@@ -202,7 +202,7 @@ int anon_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	struct kddm_set *set;
 	objid_t objid;
 	unsigned long address;
-	int ret = 0;
+	int ret = VM_FAULT_MINOR;
 	int write_access = vmf->flags & FAULT_FLAG_WRITE;
 
 	address = (unsigned long)(vmf->virtual_address) & PAGE_MASK;
@@ -240,7 +240,7 @@ int anon_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 		 * load it */
 
 		ret = vma->initial_vm_ops->fault(vma, vmf);
-		if (ret)
+		if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE)))
 			goto exit_error;
 
 		/* Copy the cache page into an anonymous page (copy on write
@@ -253,6 +253,12 @@ int anon_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 			goto exit_error;
 		}
 		copy_user_highpage(new_page, vmf->page, address, vma);
+
+		if (ret & VM_FAULT_LOCKED) {
+			unlock_page(vmf->page);
+			ret &= ~VM_FAULT_LOCKED;
+		}
+
 		page_cache_release(vmf->page);
 		page = new_page;
 
@@ -308,9 +314,9 @@ done:
 
 	vmf->page = page;
 
+exit_error:
 	_kddm_put_object (set, objid);
 
-exit_error:
 	return ret;
 }
 

@@ -2765,6 +2765,15 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE)))
 		return ret;
 
+#ifdef CONFIG_KRG_MM
+	/*
+	 * If we are in a KDDM linked VMA, all the mapping job has been done
+	 * by the Kerrighed MM layer.
+	 */
+	if (vma->vm_flags & VM_KDDM)
+		return ret;
+#endif
+
 	/*
 	 * For consistency in subsequent calls, make the faulted page always
 	 * locked.
@@ -2774,14 +2783,6 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	else
 		VM_BUG_ON(!PageLocked(vmf.page));
 
-#ifdef CONFIG_KRG_MM
-	/*
-	 * If we are in a KDDM linked VMA, all the mapping job has been done
-	 * by the Kerrighed MM layer.
-	 */
-	if (vma->vm_flags & VM_KDDM)
-		return ret;
-#endif
 	/*
 	 * Should we do an early C-O-W break?
 	 */

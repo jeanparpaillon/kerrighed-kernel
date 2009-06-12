@@ -742,6 +742,10 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 	old->vm_ops = vma->vm_ops;
 	old->vm_private_data = vma->vm_private_data;
 	old->vm_pgoff = vma->vm_pgoff;
+	if (!vma->anon_vma) {
+		anon_vma_unlink(old);
+		old->anon_vma = NULL;
+	}
 	if (old->vm_file) {
 		if (old->vm_file != vma->vm_file) {
 			printk ("reconcile_vma: file old %p - new %p\n",
