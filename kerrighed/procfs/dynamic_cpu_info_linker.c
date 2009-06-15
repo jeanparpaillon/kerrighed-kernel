@@ -12,6 +12,8 @@
 #include <kerrighed/workqueue.h>
 #include <kddm/kddm.h>
 
+#include <asm/cputime.h>
+
 #include "dynamic_cpu_info_linker.h"
 
 #include <kerrighed/debug.h>
@@ -53,6 +55,11 @@ static void update_dynamic_cpu_info_worker(struct work_struct *data)
 		/* Compute data for stat proc file */
 
 		dynamic_cpu_info->stat = kstat_cpu(i);
+#ifdef arch_idle_time
+		dynamic_cpu_info->stat.cpustat.idle =
+			cputime64_add(dynamic_cpu_info->stat.cpustat.idle,
+				      arch_idle_time(i));
+#endif
 		dynamic_cpu_info->total_intr = 0;
 		for (j = 0; j < NR_IRQS; j++) {
 			unsigned int *irqs =

@@ -312,7 +312,9 @@ static void handle_generic_proc_read(struct rpc_desc *desc, void *_msg,
 {
 	struct generic_proc_read_msg *msg = _msg;
 	struct task_struct *tsk;
-	unsigned long page;
+	struct cred *cred;
+	const struct cred *old_cred = NULL;
+	unsigned long page = 0;
 	int res;
 	int err;
 
@@ -322,12 +324,25 @@ static void handle_generic_proc_read(struct rpc_desc *desc, void *_msg,
 	get_task_struct(tsk);
 	rcu_read_unlock();
 
+	res = -ENOMEM;
+	cred = prepare_creds();
+	if (!cred)
+		goto out_res;
+	err = unpack_creds(desc, cred);
+	if (err) {
+		put_cred(cred);
+		goto out_err_cancel;
+	}
+	old_cred = override_creds(cred);
+	put_cred(cred);
+
 	page = __get_free_page(GFP_TEMPORARY);
 	if (!page)
 		res = -ENOMEM;
 	else
 		res = proc_read(tsk, (char *)page);
 
+out_res:
 	err = rpc_pack_type(desc, res);
 	if (err)
 		goto out_err_cancel;
@@ -341,6 +356,8 @@ out:
 	put_task_struct(tsk);
 	if (page)
 		free_page(page);
+	if (old_cred)
+		revert_creds(old_cred);
 	if (err)
 		res = err;
 	return;
@@ -368,6 +385,9 @@ static int generic_proc_read(struct proc_distant_pid_info *task,
 		goto out_err;
 
 	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto out_err_cancel;
+	err = pack_creds(desc, current_cred());
 	if (err)
 		goto out_err_cancel;
 
@@ -658,7 +678,9 @@ static void handle_generic_proc_show(struct rpc_desc *desc, void *_msg,
 {
 	struct generic_proc_show_msg *msg = _msg;
 	struct task_struct *tsk;
-	unsigned long page;
+	struct cred *cred;
+	const struct cred *old_cred = NULL;
+	unsigned long page = 0;
 	int fd = -1;
 	size_t count;
 	int res;
@@ -670,11 +692,21 @@ static void handle_generic_proc_show(struct rpc_desc *desc, void *_msg,
 	get_task_struct(tsk);
 	rcu_read_unlock();
 
-	page = __get_free_page(GFP_KERNEL);
-	if (!page) {
-		res = -ENOMEM;
+	res = -ENOMEM;
+	cred = prepare_creds();
+	if (!cred)
+		goto out_err;
+	err = unpack_creds(desc, cred);
+	if (err) {
+		put_cred(cred);
 		goto out_err;
 	}
+	old_cred = override_creds(cred);
+	put_cred(cred);
+
+	page = __get_free_page(GFP_KERNEL);
+	if (!page)
+		goto out_err;
 
 	res = krg_proc_handler_single_getfd(tsk, proc_show);
 	if (res < 0)
@@ -705,6 +737,8 @@ out:
 		sys_close(fd);
 	if (page)
 		free_page(page);
+	if (old_cred)
+		revert_creds(old_cred);
 	put_task_struct(tsk);
 	if (err)
 		res = err;
@@ -767,6 +801,9 @@ static int generic_proc_show(struct file *file,
 		file->private_data = private;
 
 		err = rpc_pack_type(desc, msg);
+		if (err)
+			goto out_err_cancel;
+		err = pack_creds(desc, current_cred());
 		if (err)
 			goto out_err_cancel;
 	} else {

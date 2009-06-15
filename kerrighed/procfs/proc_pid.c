@@ -266,7 +266,7 @@ static struct dentry *krg_proc_pident_instantiate(struct inode *dir,
 	const struct krg_pid_entry *p = ptr;
 	struct inode *inode;
 	struct proc_distant_pid_info *new_info;
-	struct dentry *error = ERR_PTR(-EINVAL);
+	struct dentry *error = ERR_PTR(-ENOENT);
 
 	inode = krg_proc_pid_make_inode(dir->i_sb, task);
 	if (!inode)
