@@ -163,7 +163,12 @@ int configfs_symlink(struct inode *dir, struct dentry *dentry, const char *symna
 	if (ret)
 		goto out_put;
 
+#ifdef CONFIG_KRG_SCHED
+	ret = type->ct_item_ops->allow_link(parent_item, target_item,
+					    dentry->d_name.name);
+#else
 	ret = type->ct_item_ops->allow_link(parent_item, target_item);
+#endif
 	if (!ret) {
 		mutex_lock(&configfs_symlink_mutex);
 		ret = create_link(parent_item, target_item, dentry);

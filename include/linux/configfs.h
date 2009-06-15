@@ -225,7 +225,11 @@ struct configfs_item_operations {
 	void (*release)(struct config_item *);
 	ssize_t	(*show_attribute)(struct config_item *, struct configfs_attribute *,char *);
 	ssize_t	(*store_attribute)(struct config_item *,struct configfs_attribute *,const char *, size_t);
+#ifdef CONFIG_KRG_SCHED
+	int (*allow_link)(struct config_item *src, struct config_item *target, const char *);
+#else
 	int (*allow_link)(struct config_item *src, struct config_item *target);
+#endif
 	int (*drop_link)(struct config_item *src, struct config_item *target);
 };
 
