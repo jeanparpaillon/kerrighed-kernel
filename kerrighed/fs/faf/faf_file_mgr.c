@@ -88,7 +88,7 @@ int get_ckp_faf_file_krg_desc (int index,
 	if (!file_name)
 		goto exit;
 
-	name_len = strlen (file_name);
+	name_len = strlen (file_name) + 1;
 	size = sizeof (regular_file_krg_desc_t) + name_len;
 
 	data = kmalloc (size, GFP_KERNEL);
@@ -97,14 +97,15 @@ int get_ckp_faf_file_krg_desc (int index,
 		goto exit;
 	}
 
-	strncpy (data->filename, file_name, name_len + 1);
-
-	data->file_objid = file->f_objid;
-	data->flags = file->f_flags & (~(O_FAF_SRV | O_FAF_CLT));
-	data->mode = file->f_mode;
-	data->pos = file->f_pos;
 	data->sysv = 0;
-	data->ctnrid = KDDM_SET_UNUSED;
+	data->file.filename = (char *) &data[1];
+
+	strncpy(data->file.filename, file_name, name_len);
+
+	data->file.flags = file->f_flags & (~(O_FAF_SRV | O_FAF_CLT));
+	data->file.mode = file->f_mode;
+	data->file.pos = file->f_pos;
+	data->file.ctnrid = KDDM_SET_UNUSED;
 
 	*desc = data;
 	*desc_size = size;

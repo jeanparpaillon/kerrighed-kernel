@@ -37,7 +37,6 @@ int init_kermm(void)
 	printk("KerMM initialisation : start\n");
 
 	krgsyms_register (KRGSYMS_VM_OPS_NULL, &null_vm_ops);
-	krgsyms_register (KRGSYMS_VM_OPS_SHMEM, &shmem_vm_ops);
 	krgsyms_register (KRGSYMS_VM_OPS_FILE_GENERIC, &generic_file_vm_ops);
 	special_mapping_vm_ops_krgsyms_register ();
 	krgsyms_register (KRGSYMS_VM_OPS_MEMORY_KDDM_VMOPS,
@@ -76,7 +75,6 @@ void cleanup_kermm (void)
 	mm_server_finalize();
 	mm_struct_finalize();
 
-	krgsyms_unregister (KRGSYMS_VM_OPS_SHMEM);
 	krgsyms_unregister (KRGSYMS_VM_OPS_FILE_GENERIC);
 	special_mapping_vm_ops_krgsyms_unregister ();
 	krgsyms_unregister (KRGSYMS_VM_OPS_MEMORY_KDDM_VMOPS);

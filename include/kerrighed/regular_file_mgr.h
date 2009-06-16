@@ -16,16 +16,22 @@
  *--------------------------------------------------------------------------*/
 
 typedef struct regular_file_krg_desc {
-	kddm_set_id_t ctnrid;
-	unique_id_t file_objid;
-	unsigned int flags;
-	mode_t mode;
-	loff_t pos;
-	int shmid;
 	int sysv;
-	unsigned int uid;
-	unsigned int gid;
-	char filename[1];
+	union {
+		struct {
+			fmode_t f_mode;
+			int shmid;
+		} shm;
+		struct {
+			umode_t mode;
+			loff_t pos;
+			unsigned int flags;
+			unsigned int uid;
+			unsigned int gid;
+			kddm_set_id_t ctnrid;
+			char *filename;
+		} file;
+	};
 } regular_file_krg_desc_t;
 
 struct epm_action;

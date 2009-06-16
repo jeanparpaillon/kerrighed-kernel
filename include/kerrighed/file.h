@@ -27,6 +27,7 @@ extern struct kddm_set *dvfs_file_struct_ctnr;
 
 #ifdef CONFIG_KRG_IPC
 extern struct file_operations krg_shm_file_operations;
+extern const struct file_operations shm_file_operations;
 #endif
 
 /*--------------------------------------------------------------------------*

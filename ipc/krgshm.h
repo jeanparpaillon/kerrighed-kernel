@@ -15,7 +15,10 @@ void krg_ipc_shm_rmkey(struct ipc_namespace *ns, key_t key);
 
 /** Exported variables  **/
 
-extern struct vm_operations_struct krg_shm_vm_ops;
+extern struct vm_operations_struct shm_vm_ops;
+extern struct vm_operations_struct krg_shmem_vm_ops;
+
+extern const struct file_operations shm_file_operations;
 
 /** Exported functions  **/
 
@@ -27,9 +30,6 @@ struct shm_file_data {
 };
 
 #define shm_file_data(file) (*((struct shm_file_data **)&(file)->private_data))
-
-void shm_open(struct vm_area_struct *shmd);
-void shm_close(struct vm_area_struct *shmd);
 
 static inline struct shmid_kernel* local_shm_lock(struct ipc_namespace *ns,
 						  int id)
@@ -43,6 +43,7 @@ static inline struct shmid_kernel* local_shm_lock(struct ipc_namespace *ns,
 }
 
 struct shmid_kernel *shm_lock(struct ipc_namespace *ns, int id);
+struct shmid_kernel *shm_lock_check(struct ipc_namespace *ns, int id);
 
 static inline void local_shm_unlock(struct shmid_kernel *shp)
 {

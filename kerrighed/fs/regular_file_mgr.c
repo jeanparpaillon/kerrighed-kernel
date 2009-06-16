@@ -37,13 +37,14 @@ struct file *reopen_file_entry_from_krg_desc (struct task_struct *task,
 	BUG_ON (!task);
 	BUG_ON (!desc);
 
-	file = open_physical_file (desc->filename, desc->flags, desc->mode,
-				   desc->uid, desc->gid);
+	file = open_physical_file (desc->file.filename, desc->file.flags,
+				   desc->file.mode, desc->file.uid,
+				   desc->file.gid);
 
 	if (IS_ERR (file))
 		return file;
 
-	file->f_pos = desc->pos;
+	file->f_pos = desc->file.pos;
 
 	return file;
 }
@@ -67,13 +68,15 @@ struct file *create_file_entry_from_krg_desc (struct task_struct *task,
 	override_cred->fsgid = task->cred->fsgid;
 	old_cred = override_creds(override_cred);
 
-	file = filp_open(desc->filename, desc->flags, desc->mode);
+	file = filp_open(desc->file.filename,
+			 desc->file.flags,
+			 desc->file.mode);
 
 	if (IS_ERR (file))
 		return file;
 
-	file->f_pos = desc->pos;
-	file->f_dentry->d_inode->i_mode |= desc->mode;
+	file->f_pos = desc->file.pos;
+	file->f_dentry->d_inode->i_mode |= desc->file.mode;
 
 	revert_creds(old_cred);
 	put_cred(override_cred);
@@ -98,12 +101,14 @@ struct file *import_regular_file_from_krg_desc (struct task_struct *task,
 	BUG_ON (!task);
 	BUG_ON (!desc);
 
+	desc->file.filename = (char *) &desc[1];
+
 #ifdef CONFIG_KRG_IPC
 	if (desc->sysv)
 		return reopen_shm_file_entry_from_krg_desc (task, desc);
 #endif
 
-	if (desc->ctnrid != KDDM_SET_UNUSED)
+	if (desc->file.ctnrid != KDDM_SET_UNUSED)
 		return create_file_entry_from_krg_desc (task, desc);
 	else
 		return reopen_file_entry_from_krg_desc (task, desc);
@@ -153,7 +158,9 @@ int get_regular_file_krg_desc (struct file *file,
 	int r = -ENOENT;
 
 #ifdef CONFIG_KRG_IPC
-	if (file->f_op == &krg_shm_file_operations) {
+	BUG_ON(file->f_op == &krg_shm_file_operations);
+
+	if (file->f_op == &shm_file_operations) {
 		r = get_shm_file_krg_desc(file, desc, desc_size);
 		goto exit;
 	}
@@ -164,7 +171,7 @@ int get_regular_file_krg_desc (struct file *file,
 	if (!file_name)
 		goto exit;
 
-	name_len = strlen (file_name);
+	name_len = strlen (file_name) + 1;
 	size = sizeof (regular_file_krg_desc_t) + name_len;
 
 	data = kmalloc (size, GFP_KERNEL);
@@ -173,19 +180,20 @@ int get_regular_file_krg_desc (struct file *file,
 		goto exit;
 	}
 
-	strncpy (data->filename, file_name, name_len + 1);
-
-	data->file_objid = file->f_objid;
-	data->flags = file->f_flags;
-	data->mode = file->f_dentry->d_inode->i_mode & S_IRWXUGO;
-	data->pos = file->f_pos;
 	data->sysv = 0;
-	data->uid = file->f_cred->uid;
-	data->gid = file->f_cred->gid;
+	data->file.filename = (char *) &data[1];
+
+	strncpy(data->file.filename, file_name, name_len);
+
+	data->file.flags = file->f_flags;
+	data->file.mode = file->f_dentry->d_inode->i_mode & S_IRWXUGO;
+	data->file.pos = file->f_pos;
+	data->file.uid = file->f_cred->uid;
+	data->file.gid = file->f_cred->gid;
 	if (file->f_dentry->d_inode->i_mapping->kddm_set)
-		data->ctnrid = file->f_dentry->d_inode->i_mapping->kddm_set->id;
+		data->file.ctnrid = file->f_dentry->d_inode->i_mapping->kddm_set->id;
 	else
-		data->ctnrid = KDDM_SET_UNUSED;
+		data->file.ctnrid = KDDM_SET_UNUSED;
 
 	*desc = data;
 	*desc_size = size;

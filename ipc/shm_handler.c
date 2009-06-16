@@ -245,6 +245,8 @@ void shm_handler_init(void)
 
 	BUG_ON(IS_ERR (shmmap_struct_kddm_set));
 
+	krgsyms_register(KRGSYMS_VM_OPS_SHM, &shm_vm_ops);
+
 	init_shm_ops(&init_ipc_ns);
 
 	printk("Shm Server configured\n");

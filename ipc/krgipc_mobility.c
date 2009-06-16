@@ -7,8 +7,10 @@
 
 #include <linux/sched.h>
 #include <linux/nsproxy.h>
+#include <linux/ima.h>
 #include <linux/ipc.h>
 #include <linux/ipc_namespace.h>
+#include <linux/file.h>
 #include <linux/msg.h>
 #include <linux/sem.h>
 #include <linux/shm.h>
@@ -51,8 +53,9 @@ int get_shm_file_krg_desc (struct file *file,
 		goto exit;
 	}
 
-	data->shmid = file->f_dentry->d_inode->i_ino ;
 	data->sysv = 1;
+	data->shm.shmid = file->f_dentry->d_inode->i_ino;
+	data->shm.f_mode = file->f_mode;
 	*desc = data;
 	*desc_size = size;
 
@@ -67,30 +70,78 @@ struct file *reopen_shm_file_entry_from_krg_desc(struct task_struct *task,
 	int shmid;
 	int err = 0;
 	struct shmid_kernel *shp;
+	struct shm_file_data *sfd;
 	struct file *file = NULL;
 	regular_file_krg_desc_t *desc = _desc;
+	struct ipc_namespace *ns;
+	struct path path;
 
 	BUG_ON (!task);
 	BUG_ON (!desc);
 
-	shmid = desc->shmid;
+	ns = &init_ipc_ns;
 
-	shp = shm_lock(&init_ipc_ns, shmid);
-	if (!shp) {
-		err = -EINVAL;
+	shmid = desc->shm.shmid;
+
+	down_read(&shm_ids(ns).rw_mutex);
+	shp = shm_lock_check(&init_ipc_ns, shmid);
+	if (IS_ERR(shp)) {
+		err = PTR_ERR(shp);
+		up_read(&shm_ids(ns).rw_mutex);
 		goto out;
 	}
 
-	file = shp->shm_file;
-	get_file (file);
+	path.dentry = dget(shp->shm_file->f_path.dentry);
+	path.mnt    = shp->shm_file->f_path.mnt;
 	shp->shm_nattch++;
 	shm_unlock(shp);
+	up_read(&shm_ids(ns).rw_mutex);
 
+	sfd = kzalloc(sizeof(*sfd), GFP_KERNEL);
+	if (!sfd) {
+		err = -ENOMEM;
+		goto out_put_dentry;
+	}
+
+	file = alloc_file(path.mnt, path.dentry, desc->shm.f_mode,
+			  &shm_file_operations);
+	if (!file) {
+		err = -ENOMEM;
+		goto out_free;
+	}
+	ima_shm_check(file);
+
+	file->private_data = sfd;
+	file->f_mapping = shp->shm_file->f_mapping;
+
+	sfd->id = shp->shm_perm.id;
+	sfd->ns = get_ipc_ns(ns);
+	sfd->file = shp->shm_file;
+	sfd->file->private_data = sfd;
+	sfd->vm_ops = &krg_shmem_vm_ops;
 out:
 	if (err)
 		file = ERR_PTR(err);
 
 	return file;
+
+out_free:
+	kfree(sfd);
+out_put_dentry:
+	dput(path.dentry);
+
+	down_write(&shm_ids(ns).rw_mutex);
+	shp = shm_lock(ns, shmid);
+	BUG_ON(IS_ERR(shp));
+	shp->shm_nattch--;
+	if (shp->shm_nattch == 0 &&
+	    shp->shm_perm.mode & SHM_DEST)
+		shm_destroy(ns, shp);
+	else
+		shm_unlock(shp);
+	up_write(&shm_ids(ns).rw_mutex);
+
+	goto out;
 }
 
 int export_ipc_namespace(struct epm_action *action,

@@ -287,9 +287,7 @@ struct page *shmem_memory_wppage (struct vm_area_struct *vma,
 
 /* Init the Kerrighed SHM file operations structure */
 
-struct vm_operations_struct krg_shm_vm_ops = {
-	open:	shm_open,
-	close:	shm_close,
+struct vm_operations_struct krg_shmem_vm_ops = {
 	fault:	shmem_memory_fault,
 	wppage:	shmem_memory_wppage,
 };
@@ -306,7 +304,7 @@ static int krg_shmem_mmap(struct file *file, struct vm_area_struct *vma)
 	BUG_ON(sfd->ns != &init_ipc_ns);
 
         file_accessed(file);
-	vma->vm_ops = &krg_shm_vm_ops;
+	vma->vm_ops = &krg_shmem_vm_ops;
 	vma->vm_flags |= VM_KDDM;
 
 	return 0;

@@ -59,8 +59,14 @@ struct shm_file_data {
 #define shm_file_data(file) (*((struct shm_file_data **)&(file)->private_data))
 #endif
 
-static const struct file_operations shm_file_operations;
-static struct vm_operations_struct shm_vm_ops;
+#ifndef CONFIG_KRG_IPC
+static
+#endif
+const struct file_operations shm_file_operations;
+#ifndef CONFIG_KRG_IPC
+static
+#endif
+struct vm_operations_struct shm_vm_ops;
 
 #ifndef CONFIG_KRG_IPC
 #define shm_ids(ns)	((ns)->ids[IPC_SHM_IDS])
@@ -70,10 +76,8 @@ static struct vm_operations_struct shm_vm_ops;
 #endif
 
 static int newseg(struct ipc_namespace *, struct ipc_params *);
-#ifndef CONFIG_KRG_IPC
 static void shm_open(struct vm_area_struct *vma);
 static void shm_close(struct vm_area_struct *vma);
-#endif
 
 #ifndef CONFIG_KRG_IPC
 static
@@ -134,7 +138,7 @@ void __init shm_init (void)
  * shm_lock_(check_) routines are called in the paths where the rw_mutex
  * is not necessarily held.
  */
-#ifndef CONFIG_KRG_MM
+#ifndef CONFIG_KRG_IPC
 static inline
 #endif
 struct shmid_kernel *shm_lock(struct ipc_namespace *ns, int id)
@@ -147,7 +151,10 @@ struct shmid_kernel *shm_lock(struct ipc_namespace *ns, int id)
 	return container_of(ipcp, struct shmid_kernel, shm_perm);
 }
 
-static inline struct shmid_kernel *shm_lock_check(struct ipc_namespace *ns,
+#ifndef CONFIG_KRG_IPC
+static inline
+#endif
+struct shmid_kernel *shm_lock_check(struct ipc_namespace *ns,
 						int id)
 {
 	struct kern_ipc_perm *ipcp = ipc_lock_check(&shm_ids(ns), id);
@@ -165,10 +172,7 @@ static inline void shm_rmid(struct ipc_namespace *ns, struct shmid_kernel *s)
 
 
 /* This is called by fork, once for every shm attach. */
-#ifndef CONFIG_KRG_IPC
-static
-#endif
-void shm_open(struct vm_area_struct *vma)
+static void shm_open(struct vm_area_struct *vma)
 {
 	struct file *file = vma->vm_file;
 	struct shm_file_data *sfd = shm_file_data(file);
@@ -237,10 +241,7 @@ void shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
  * The descriptor has already been removed from the current->mm->mmap list
  * and will later be kfree()d.
  */
-#ifndef CONFIG_KRG_IPC
-static
-#endif
-void shm_close(struct vm_area_struct *vma)
+static void shm_close(struct vm_area_struct *vma)
 {
 	struct file * file = vma->vm_file;
 	struct shm_file_data *sfd = shm_file_data(file);
@@ -360,14 +361,20 @@ int is_file_shm_hugepages(struct file *file)
 	return ret;
 }
 
-static const struct file_operations shm_file_operations = {
+#ifndef CONFIG_KRG_IPC
+static
+#endif
+const struct file_operations shm_file_operations = {
 	.mmap		= shm_mmap,
 	.fsync		= shm_fsync,
 	.release	= shm_release,
 	.get_unmapped_area	= shm_get_unmapped_area,
 };
 
-static struct vm_operations_struct shm_vm_ops = {
+#ifndef CONFIG_KRG_IPC
+static
+#endif
+struct vm_operations_struct shm_vm_ops = {
 	.open	= shm_open,	/* callback for a new vm-area open */
 	.close	= shm_close,	/* callback for when the vm-area is released */
 	.fault	= shm_fault,
@@ -1120,11 +1127,7 @@ SYSCALL_DEFINE1(shmdt, char __user *, shmaddr)
 		 * a fragment created by mprotect() and/or munmap(), or it
 		 * otherwise it starts at this address with no hassles.
 		 */
-#ifdef CONFIG_KRG_IPC
-		if ((vma->vm_ops == &shm_vm_ops || vma->vm_ops == &krg_shm_vm_ops) &&
-#else
 		if ((vma->vm_ops == &shm_vm_ops) &&
-#endif
 			(vma->vm_start - addr)/PAGE_SIZE == vma->vm_pgoff) {
 
 
@@ -1153,11 +1156,7 @@ SYSCALL_DEFINE1(shmdt, char __user *, shmaddr)
 		next = vma->vm_next;
 
 		/* finding a matching vma now does not alter retval */
-#ifdef CONFIG_KRG_IPC
-		if ((vma->vm_ops == &shm_vm_ops || vma->vm_ops == &krg_shm_vm_ops) &&
-#else
 		if ((vma->vm_ops == &shm_vm_ops) &&
-#endif
 			(vma->vm_start - addr)/PAGE_SIZE == vma->vm_pgoff)
 
 			do_munmap(mm, vma->vm_start, vma->vm_end - vma->vm_start);

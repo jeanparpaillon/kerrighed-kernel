@@ -39,7 +39,6 @@ void remove_vma_list(struct mm_struct *mm, struct vm_area_struct *vma);
 /** Exported Variables **/
 
 extern struct kmem_cache *mm_cachep;
-extern struct vm_operations_struct shmem_vm_ops;
 extern struct vm_operations_struct generic_file_vm_ops ;
 
 int special_mapping_vm_ops_krgsyms_register(void);
