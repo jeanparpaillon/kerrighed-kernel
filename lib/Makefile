@@ -18,6 +18,8 @@ ifdef CONFIG_KRGRPC
 lib-y += hashtable.o unique_id.o
 endif
 
+lib-$(CONFIG_MODULE_HOOK) += module_hook.o
+
 lib-$(CONFIG_MMU) += ioremap.o
 lib-$(CONFIG_SMP) += cpumask.o
 
