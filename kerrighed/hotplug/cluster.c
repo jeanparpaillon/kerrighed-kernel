@@ -63,7 +63,6 @@ static void init_prekerrighed_process(void)
 	struct task_struct *g, *t;
 #endif
 
-	down_write(&kerrighed_init_sem);
 	read_lock(&tasklist_lock);
 
 #ifdef CONFIG_KRG_PROC
@@ -98,10 +97,7 @@ static void init_prekerrighed_process(void)
 	} while_each_thread(g, t);
 #endif /* CONFIG_KRG_PROC */
 
-	hooks_start();
-
 	read_unlock(&tasklist_lock);
-	up_write(&kerrighed_init_sem);
 };
 
 static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
@@ -125,9 +121,11 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 	if (err)
 		goto cancel;
 
+	down_write(&kerrighed_init_sem);
 	init_prekerrighed_process();
-
 	__nodes_add(&start_msg);
+	hooks_start();
+	up_write(&kerrighed_init_sem);
 
 	rpc_enable_all();
 
