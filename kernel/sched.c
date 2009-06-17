@@ -2835,6 +2835,9 @@ unsigned long nr_running(void)
 
 	return sum;
 }
+#ifdef CONFIG_KRG_SCHED
+EXPORT_SYMBOL(nr_running);
+#endif
 
 unsigned long nr_uninterruptible(void)
 {

@@ -6,6 +6,7 @@
 #include <kerrighed/hotplug.h>
 
 krgnodemask_t krgnode_possible_map;
+EXPORT_SYMBOL(krgnode_possible_map);
 krgnodemask_t krgnode_online_map;
 krgnodemask_t krgnode_present_map;
 

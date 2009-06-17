@@ -25,6 +25,7 @@ void init_node_discovering(void);
 
 /* Node id */
 kerrighed_node_t kerrighed_node_id = -1;
+EXPORT_SYMBOL(kerrighed_node_id);
 
 /* Number of active nodes in the cluster */
 kerrighed_node_t kerrighed_nb_nodes = -1;
