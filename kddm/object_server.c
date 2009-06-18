@@ -34,12 +34,6 @@ static inline void forward_object_server_msg (struct kddm_obj * obj_entry,
 
 	BUG_ON(prob_owner == kerrighed_node_id);
 
-	msg->ttl--;
-	if (msg->ttl == 0) {
-		printk ("KDDM protocol loop detected\n");
-		BUG();
-	}
-
 	msg->req_id = 0;
 	rpc_async(msg_type, prob_owner, _msg, sizeof(msg_server_t));
 }
