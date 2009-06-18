@@ -15,7 +15,7 @@ pgtable_t pte_alloc_one(struct mm_struct *mm, unsigned long address)
 
 #ifdef CONFIG_KRG_MM
 	if (in_atomic())
-		pte = alloc_pages(GFP_ATOMIC, 0);
+		pte = alloc_pages(GFP_ATOMIC|__GFP_ZERO, 0);
 	else
 #endif
 #ifdef CONFIG_HIGHPTE
