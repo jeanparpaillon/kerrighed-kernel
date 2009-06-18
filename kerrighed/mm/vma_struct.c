@@ -28,16 +28,13 @@ int alloc_fake_vma(struct mm_struct *mm,
 	struct anon_vma *anon_vma;
 	int r = 0;
 
-	vma = kmem_cache_alloc(vm_area_cachep, GFP_ATOMIC);
+	vma = kmem_cache_zalloc(vm_area_cachep, GFP_ATOMIC);
 	if (!vma)
 		return -ENOMEM;
 
 	partial_init_vma (mm, vma);
 	vma->vm_start = start;
 	vma->vm_end = end;
-	vma->vm_file = NULL;
-	vma->vm_ops = NULL;
-	vma->anon_vma = NULL;
 	vma->vm_flags = VM_READ | VM_WRITE | VM_MAYREAD | VM_MAYWRITE |
 		VM_MAYEXEC;
 
