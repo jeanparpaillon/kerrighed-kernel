@@ -37,6 +37,7 @@ static inline void local_sem_unlock(struct sem_array *sma)
 	local_ipc_unlock(&(sma)->sem_perm);
 }
 
+/* caller is responsible to call kfree(q->undo) before if needed */
 static inline void free_semqueue(struct sem_queue *q)
 {
 	if (q->sops)

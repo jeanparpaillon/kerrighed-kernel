@@ -674,10 +674,10 @@ static void freeary(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 
 		/* __freeary is called on every nodes where the semarray exists:
 		 * no need to care about remote pending processes */
-		free_semqueue(q);
-
 		if (q->undo)
 			kfree(q->undo);
+
+		free_semqueue(q);
 	}
 #endif
 
