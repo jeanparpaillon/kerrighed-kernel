@@ -119,7 +119,13 @@ int __copy_in_user(void __user *dst, const void __user *src, unsigned size)
 	int ret = 0;
 
 	might_fault();
+#ifdef CONFIG_KRG_FAF
+	/* Combine two remote accesses into a single one */
+	if (!__builtin_constant_p(size)
+	    || unlikely(test_thread_flag(TIF_RUACCESS)))
+#else
 	if (!__builtin_constant_p(size))
+#endif
 		return copy_user_generic((__force void *)dst,
 					 (__force void *)src, size);
 	switch (size) {

@@ -53,7 +53,11 @@
 102:
 	.section .fixup,"ax"
 103:	addl %ecx,%edx			/* ecx is zerorest also */
+#ifdef CONFIG_KRG_FAF
+	jmp copy_user_check_ruaccess
+#else
 	jmp copy_user_handle_tail
+#endif
 	.previous
 
 	.section __ex_table,"a"
@@ -132,6 +136,10 @@ ENDPROC(bad_from_user)
  */
 ENTRY(copy_user_generic_unrolled)
 	CFI_STARTPROC
+#ifdef CONFIG_KRG_FAF
+	pushq_cfi %rdx	/* save count */
+	CFI_REL_OFFSET rdx,0
+#endif
 	cmpl $8,%edx
 	jb 20f		/* less then 8 bytes, go to byte copy loop */
 	ALIGN_DESTINATION
@@ -179,6 +187,10 @@ ENTRY(copy_user_generic_unrolled)
 	decl %ecx
 	jnz 21b
 23:	xor %eax,%eax
+#ifdef CONFIG_KRG_FAF
+	leaq 8(%rsp),%rsp
+	CFI_ADJUST_CFA_OFFSET -8
+#endif
 	ret
 
 	.section .fixup,"ax"
@@ -188,7 +200,11 @@ ENTRY(copy_user_generic_unrolled)
 40:	lea (%rdx,%rcx,8),%rdx
 	jmp 60f
 50:	movl %ecx,%edx
+#ifdef CONFIG_KRG_FAF
+60:	jmp copy_user_check_ruaccess
+#else
 60:	jmp copy_user_handle_tail /* ecx is zerorest also */
+#endif
 	.previous
 
 	.section __ex_table,"a"
@@ -239,6 +255,10 @@ ENTRY(copy_user_generic_string)
 	CFI_STARTPROC
 	andl %edx,%edx
 	jz 4f
+#ifdef CONFIG_KRG_FAF
+	pushq_cfi %rdx	/* save count */
+	CFI_REL_OFFSET rdx,0
+#endif
 	cmpl $8,%edx
 	jb 2f		/* less than 8 bytes, go to byte copy loop */
 	ALIGN_DESTINATION
@@ -250,13 +270,21 @@ ENTRY(copy_user_generic_string)
 2:	movl %edx,%ecx
 3:	rep
 	movsb
+#ifdef CONFIG_KRG_FAF
+	leaq 8(%rsp),%rsp
+	CFI_ADJUST_CFA_OFFSET -8
+#endif
 4:	xorl %eax,%eax
 	ret
 
 	.section .fixup,"ax"
 11:	lea (%rdx,%rcx,8),%rcx
 12:	movl %ecx,%edx		/* ecx is zerorest also */
+#ifdef CONFIG_KRG_FAF
+	jmp copy_user_check_ruaccess
+#else
 	jmp copy_user_handle_tail
+#endif
 	.previous
 
 	.section __ex_table,"a"
@@ -266,3 +294,70 @@ ENTRY(copy_user_generic_string)
 	.previous
 	CFI_ENDPROC
 ENDPROC(copy_user_generic_string)
+
+#ifdef CONFIG_KRG_FAF
+ENTRY(copy_user_check_ruaccess)
+	CFI_STARTPROC
+	cmpl %edx,(%rsp)
+	leaq 8(%rsp),%rsp
+	jne copy_user_handle_tail
+	GET_THREAD_INFO(%rax)
+	testl $_TIF_RUACCESS,TI_flags(%rax)
+	jz copy_user_handle_tail
+	cmpq $-1,TI_addr_limit(%rax)
+	je copy_user_handle_tail
+	jmp krg_copy_user_generic
+	CFI_ENDPROC
+ENDPROC(copy_user_check_ruaccess)
+
+/*
+ * Inputs: rax is the address of the hook to call
+ *         the hook's arg (up to 4) are already passed in conventional order
+ * Outputs: rax is 0 if the hook was called, non zero otherwise
+ *	    if rax is 0, rdx is the hook's result.
+ *
+ * Called from inline assembly, so save all possibly clobbered registers
+ */
+ENTRY(usercopy_check_ruaccess)
+	CFI_STARTPROC
+	pushq_cfi %r8
+	CFI_REL_OFFSET r8,0
+	GET_THREAD_INFO(%r8)
+	testl $_TIF_RUACCESS,TI_flags(%r8)
+	jz back_to_local
+	cmpq $-1,TI_addr_limit(%r8)
+	je back_to_local
+	pushq_cfi %rdi
+	CFI_REL_OFFSET rdi,0
+	pushq_cfi %rsi
+	CFI_REL_OFFSET rsi,0
+	pushq_cfi %rcx
+	CFI_REL_OFFSET rcx,0
+	pushq_cfi %r9
+	CFI_REL_OFFSET r9,0
+	pushq_cfi %r10
+	CFI_REL_OFFSET r10,0
+	pushq_cfi %r11
+	CFI_REL_OFFSET r11,0
+	call *%rax
+	movq %rax,%rdx
+	xorl %eax,%eax
+	popq_cfi %r11
+	CFI_RESTORE r11
+	popq_cfi %r10
+	CFI_RESTORE r10
+	popq_cfi %r9
+	CFI_RESTORE r9
+	popq_cfi %rcx
+	CFI_RESTORE rcx
+	popq_cfi %rsi
+	CFI_RESTORE rsi
+	popq_cfi %rdi
+	CFI_RESTORE rdi
+back_to_local:
+	popq_cfi %r8
+	CFI_RESTORE r8
+	ret
+	CFI_ENDPROC
+ENDPROC(usercopy_check_ruaccess)
+#endif
