@@ -183,7 +183,7 @@ struct mm_struct *krg_dup_mm(struct task_struct *tsk, struct mm_struct *src_mm)
 	/* The duplicated mm does not yet belong to any real process */
 	atomic_set(&mm->mm_ltasks, 0);
 
-        err = __dup_mmap(mm, src_mm, DUP_ANON_ONLY);
+        err = __dup_mmap(mm, src_mm, 1);
         if (err)
                 goto exit_put_mm;
 

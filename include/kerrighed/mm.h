@@ -15,8 +15,6 @@
 #endif
 #endif
 
-#define DUP_ANON_ONLY 0x00000001
-
 /** Exported Functions **/
 
 int alloc_ldt(mm_context_t *pc, int mincount, int reload) ;
@@ -25,7 +23,7 @@ struct vm_area_struct *remove_vma(struct vm_area_struct *vma);
 #define allocate_mm()	(kmem_cache_alloc(mm_cachep, GFP_KERNEL))
 #define free_mm(mm)	(kmem_cache_free(mm_cachep, (mm)))
 struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p);
-int __dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm, int flags);
+int __dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm, int anon_only);
 void detach_vmas_to_be_unmapped(struct mm_struct *mm,
 				struct vm_area_struct *vma,
 				struct vm_area_struct *prev,
