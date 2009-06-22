@@ -115,6 +115,9 @@
 			                  KERMM_PROC_BASE + 0, \
 					   struct kermm_new_local_data)
 
+#define KSYS_RUACCESS_AUTOTEST	     _IO(KERRIGHED_PROC_MAGIC, \
+					 KERMM_PROC_BASE + 2)
+
 /*
  * Enhanced Process Management related kerrighed syscalls
  */

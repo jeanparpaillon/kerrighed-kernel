@@ -220,6 +220,8 @@ enum rpcid {
 
 	KDDM_BENCH,
 
+	RUACCESS_AUTOTEST,
+
 	RPCID_MAX // Must be the last one
 };
 

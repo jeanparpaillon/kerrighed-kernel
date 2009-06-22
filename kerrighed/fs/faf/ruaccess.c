@@ -16,7 +16,11 @@
 #include <linux/errno.h>
 #include <kerrighed/faf.h>
 #include <kerrighed/hotplug.h>
+#include <kerrighed/krginit.h>
+#include <kerrighed/krg_services.h>
+#include <kerrighed/krg_syscalls.h>
 #include <net/krgrpc/rpc.h>
+#include <net/krgrpc/rpcid.h>
 
 
 enum ruaccess_op {
@@ -178,6 +182,21 @@ out:
 	return err;
 }
 
+#define OP_NAME(name) [RUACCESS_##name] = #name
+static const char *op_name[] = {
+	OP_NAME(COPY),
+	OP_NAME(STRNCPY),
+	OP_NAME(STRNLEN),
+	OP_NAME(CLEAR),
+};
+
+#define TYPE_NAME(name) [RUACCESS_##name] = #name
+static const char *type_name[] = {
+	TYPE_NAME(TO),
+	TYPE_NAME(FROM),
+	TYPE_NAME(IN),
+};
+
 static int do_ruaccess(struct ruaccess_req *req, unsigned long *ret, void *buf)
 {
 	struct ruaccess_desc *ru_desc;
@@ -185,6 +204,8 @@ static int do_ruaccess(struct ruaccess_req *req, unsigned long *ret, void *buf)
 	unsigned long count;
 	int err;
 
+	printk("%d do_ruaccess: op=%s type=%s len=%lu\n",
+	       current->pid, op_name[req->op], type_name[req->type], req->len);
 	ru_desc = ruaccess_desc_find();
 	BUG_ON(!ru_desc);
 	err = ru_desc->err;
@@ -214,6 +235,8 @@ static int do_ruaccess(struct ruaccess_req *req, unsigned long *ret, void *buf)
 	err = rpc_unpack_type(desc, *ret);
 	if (err)
 		goto out_err;
+
+	printk("%d do_ruaccess: ret=%lu\n", current->pid, *ret);
 
 out:
 	return err;
@@ -410,6 +433,9 @@ static int handle_ruaccess_req(struct rpc_desc *desc, const struct ruaccess_req 
 	unsigned long count;
 	int err;
 
+	printk("%d handle_ruaccess_req: op=%s type=%s len=%lu\n",
+	       current->pid, op_name[req->op], type_name[req->type], req->len);
+
 	if (req->type == RUACCESS_TO || req->type == RUACCESS_FROM) {
 		err = -ENOMEM;
 		buf = kmalloc(req->len, GFP_KERNEL);
@@ -463,8 +489,398 @@ int handle_ruaccess(struct rpc_desc *desc)
 	return err;
 }
 
+struct ruaccess_autotest {
+	int str_len;
+	int __user *read_str_len;
+	unsigned char __user *str[14];
+	__u64 __user *u64[3];
+	__u32 __user *u32[3];
+	__u16 __user *u16[3];
+	__u8 __user *u8[3];
+	int __user *compat;
+};
+
+static int ruaccess_autotest(void __user *arg)
+{
+	struct ruaccess_autotest __user *at = arg;
+#ifdef CONFIG_COMPAT
+	int compat = 1;
+#else
+	int compat = 0;
+#endif
+	struct rpc_desc *desc;
+	int res;
+	int err = -ENOMEM;
+
+	desc = rpc_begin(RUACCESS_AUTOTEST,
+			 krgnode_next_possible_in_ring(kerrighed_node_id));
+	if (!desc)
+		goto out;
+	err = rpc_pack_type(desc, arg);
+	if (err)
+		goto cancel;
+	err = handle_ruaccess(desc);
+	if (err)
+		goto cancel;
+	err = rpc_unpack_type(desc, res);
+	if (err)
+		goto cancel;
+	err = res;
+end:
+	rpc_end(desc, 0);
+out:
+	if (!err)
+		err = put_user(compat, at->compat);
+	return err;
+cancel:
+	rpc_cancel(desc);
+	goto end;
+}
+
+static
+void handle_ruaccess_autotest(struct rpc_desc *desc, void *msg, size_t size)
+{
+	struct ruaccess_autotest __user *uautotest = *(void **)msg;
+	struct ruaccess_autotest autotest;
+	char *buf = NULL;
+	int read_str_len;
+	__u64 u64;
+	__u32 u32;
+#if BITS_PER_LONG < 64
+	__u32 u32_2;
+#endif
+	__u16 u16;
+	__u8 u8;
+	int res, err;
+
+	err = prepare_ruaccess(desc);
+	if (err)
+		goto cancel;
+
+	res = -EFAULT;
+	if (copy_from_user(&autotest, uautotest, sizeof(autotest)))
+		goto cleanup;
+
+	res = -ENOMEM;
+	buf = kmalloc(autotest.str_len + 1, GFP_KERNEL);
+	if (!buf)
+		goto cleanup;
+
+	/* read str_len */
+	/* with get_user() */
+	res = get_user(read_str_len, &uautotest->str_len);
+	if (res)
+		goto cleanup;
+	res = -EINVAL;
+	if (read_str_len != autotest.str_len)
+		goto cleanup;
+	/* with __get_user() */
+	res = -EFAULT;
+	if (!access_ok(VERIFY_READ, &uautotest->str_len,
+		       sizeof(uautotest->str_len)))
+		goto cleanup;
+	res = __get_user(read_str_len, &uautotest->str_len);
+	if (res)
+		goto cleanup;
+	res = -EINVAL;
+	if (read_str_len != autotest.str_len)
+		goto cleanup;
+
+	/* write read_str_len */
+	/* with copy_to_user() */
+	res = -EFAULT;
+	if (copy_to_user(&autotest.read_str_len[0],
+			 &autotest.str_len,
+			 sizeof(autotest.str_len)))
+		goto cleanup;
+	/* with put_user() */
+	res = put_user(autotest.str_len, &autotest.read_str_len[1]);
+	if (res)
+		goto cleanup;
+	/* with __put_user() */
+	res = -EFAULT;
+	if (!access_ok(VERIFY_WRITE, &autotest.read_str_len[2],
+		       sizeof(autotest.str_len)))
+		goto cleanup;
+	res = __put_user(autotest.str_len, &autotest.read_str_len[2]);
+	if (res)
+		goto cleanup;
+
+	/* strnlen_user() */
+	read_str_len = strnlen_user(autotest.str[0], autotest.str_len / 2);
+	res = put_user(read_str_len, &autotest.read_str_len[3]);
+	if (res)
+		goto cleanup;
+	/*
+	 * There seems to be no real rule for an arch defining __strnlen_user()
+	 * or not. Just list them in the condition.
+	 */
+#if defined(CONFIG_X86_64)
+	res = -EFAULT;
+	/* __strnlen_user() */
+	if (!access_ok(VERIFY_READ, autotest.str[0], autotest.str_len / 2))
+		goto cleanup;
+	read_str_len = __strnlen_user(autotest.str[0], autotest.str_len / 2);
+	res = put_user(read_str_len, &autotest.read_str_len[4]);
+	if (res)
+		goto cleanup;
+#endif
+
+	/* get_user()/put_user() */
+#if BITS_PER_LONG == 64
+	u64 = 0xb6b6b6b6b6b6b6b6;
+	res = get_user(u64, autotest.u64[0]);
+	if (res)
+		goto cleanup;
+#else
+	u32 = 0xb6b6b6b6;
+	res = get_user(u32, (__u32 *)autotest.u64[0]);
+	if (res)
+		goto cleanup;
+	u32_2 = 0xb6b6b6b6;
+	res = get_user(u32_2, (__u32 *)autotest.u64[0] + 1);
+	if (res)
+		goto cleanup;
+#ifdef __LITTLE_ENDIAN
+	u64 = (__u64)u32_2 << 32 | u32;
+#else /* __LITTLE_ENDIAN */
+	u64 = (__u64)u32 << 32 | u32_2;
+#endif /* __LITTLE_ENDIAN */
+#endif
+	res = put_user(u64, autotest.u64[1]);
+	if (res)
+		goto cleanup;
+	u32 = 0xb6b6b6b6;
+	res = get_user(u32, autotest.u32[0]);
+	if (res)
+		goto cleanup;
+	res = put_user(u32, autotest.u32[1]);
+	if (res)
+		goto cleanup;
+	u16 = 0xb6b6;
+	res = get_user(u16, autotest.u16[0]);
+	if (res)
+		goto cleanup;
+	res = put_user(u16, autotest.u16[1]);
+	if (res)
+		goto cleanup;
+	u8 = 0xb6;
+	res = get_user(u8, autotest.u8[0]);
+	if (res)
+		goto cleanup;
+	res = put_user(u8, autotest.u8[1]);
+	if (res)
+		goto cleanup;
+
+	/* __get_user() / __put_user() */
+#if BITS_PER_LONG == 64
+	u64 = 0xb6b6b6b6b6b6b6b6;
+	res = __get_user(u64, autotest.u64[0]);
+	if (res)
+		goto cleanup;
+#else
+	u32 = 0xb6b6b6b6;
+	res = __get_user(u32, (__u32 *)autotest.u64[0]);
+	if (res)
+		goto cleanup;
+	u32_2 = 0xb6b6b6b6;
+	res = __get_user(u32_2, (__u32 *)autotest.u64[0] + 1);
+	if (res)
+		goto cleanup;
+#ifdef __LITTLE_ENDIAN
+	u64 = (__u64)u32_2 << 32 | u32;
+#else /* __LITTLE_ENDIAN */
+	u64 = (__u64)u32 << 32 | u32_2;
+#endif /* __LITTLE_ENDIAN */
+#endif
+	res = -EFAULT;
+	if (!access_ok(VERIFY_WRITE, autotest.u64[2], 8))
+		goto cleanup;
+	res = __put_user(u64, autotest.u64[2]);
+	if (res)
+		goto cleanup;
+	u32 = 0xb6b6b6b6;
+	res = __get_user(u32, autotest.u32[0]);
+	if (res)
+		goto cleanup;
+	res = -EFAULT;
+	if (!access_ok(VERIFY_WRITE, autotest.u32[2], 4))
+		goto cleanup;
+	res = __put_user(u32, autotest.u32[2]);
+	if (res)
+		goto cleanup;
+	u16 = 0xb6b6;
+	res = __get_user(u16, autotest.u16[0]);
+	if (res)
+		goto cleanup;
+	res = -EFAULT;
+	if (!access_ok(VERIFY_WRITE, autotest.u16[2], 2))
+		goto cleanup;
+	res = __put_user(u16, autotest.u16[2]);
+	if (res)
+		goto cleanup;
+	u8 = 0xb6;
+	res = __get_user(u8, autotest.u8[0]);
+	if (res)
+		goto cleanup;
+	res = -EFAULT;
+	if (!access_ok(VERIFY_WRITE, autotest.u8[2], 8))
+		goto cleanup;
+	res = __put_user(u8, autotest.u8[2]);
+	if (res)
+		goto cleanup;
+
+	/* strncpy_from_user() */
+	/* truncated string */
+	/* with strncpy_from_user() and copy_to_user() */
+	memset(buf, 0xb6, autotest.str_len + 1);
+	read_str_len = strncpy_from_user(buf,
+					 autotest.str[0],
+					 autotest.str_len / 2);
+	res = put_user(read_str_len, &autotest.read_str_len[5]);
+	if (res)
+		goto cleanup;
+	res = -EFAULT;
+	if (read_str_len >= 0 &&
+	    copy_to_user(autotest.str[1], buf, read_str_len))
+		goto cleanup;
+	/* with __strncpy_from_user() and __copy_to_user() */
+	if (!access_ok(VERIFY_READ, autotest.str[0], autotest.str_len / 2))
+		goto cleanup;
+	memset(buf, 0xb6, autotest.str_len + 1);
+	read_str_len = __strncpy_from_user(buf,
+					   autotest.str[0],
+					   autotest.str_len / 2);
+	res = put_user(read_str_len, &autotest.read_str_len[6]);
+	if (res)
+		goto cleanup;
+	res = -EFAULT;
+	if (!access_ok(VERIFY_WRITE, autotest.str[2], read_str_len))
+		goto cleanup;
+	if (read_str_len >= 0 &&
+	    __copy_to_user(autotest.str[2], buf, read_str_len))
+		goto cleanup;
+	/* full string */
+	/* with strncpy_from_user() and copy_to_user() */
+	memset(buf, 0xb6, autotest.str_len + 1);
+	read_str_len = strncpy_from_user(buf,
+					 autotest.str[0],
+					 autotest.str_len + 1);
+	res = put_user(read_str_len, &autotest.read_str_len[7]);
+	if (res)
+		goto cleanup;
+	res = -EFAULT;
+	if (read_str_len >= 0 &&
+	    copy_to_user(autotest.str[3], buf, read_str_len + 1))
+		goto cleanup;
+	/* with __strncpy_from_user() and __copy_to_user() */
+	if (!access_ok(VERIFY_READ, autotest.str[0], autotest.str_len + 1))
+		goto cleanup;
+	memset(buf, 0xb6, autotest.str_len + 1);
+	read_str_len = __strncpy_from_user(buf,
+					   autotest.str[0],
+					   autotest.str_len + 1);
+	res = put_user(read_str_len, &autotest.read_str_len[8]);
+	if (res)
+		goto cleanup;
+	res = -EFAULT;
+	if (!access_ok(VERIFY_WRITE, autotest.str[4], read_str_len + 1))
+		goto cleanup;
+	if (read_str_len >= 0 &&
+	    copy_to_user(autotest.str[4], buf, read_str_len + 1))
+		goto cleanup;
+
+	/* copy_from_user() + copy_to_user() */
+	res = -EFAULT;
+	memset(buf, 0xb6, autotest.str_len + 1);
+	if (copy_from_user(buf, autotest.str[0], autotest.str_len + 1))
+		goto cleanup;
+	if (copy_to_user(autotest.str[5], buf, autotest.str_len + 1))
+		goto cleanup;
+	/* __copy_from_user() + __copy_to_user() */
+	if (!access_ok(VERIFY_WRITE, autotest.str[6], autotest.str_len + 1))
+		goto cleanup;
+	memset(buf, 0xb6, autotest.str_len + 1);
+	if (__copy_from_user(buf, autotest.str[0], autotest.str_len + 1))
+		goto cleanup;
+	if (__copy_to_user(autotest.str[6], buf, autotest.str_len + 1))
+		goto cleanup;
+
+	/* __copy_from_user_nocache() + __copy_to_user() */
+	if (!access_ok(VERIFY_WRITE, autotest.str[7], autotest.str_len + 1))
+		goto cleanup;
+	memset(buf, 0xb6, autotest.str_len + 1);
+	if (__copy_from_user_nocache(buf, autotest.str[0], autotest.str_len + 1))
+		goto cleanup;
+	if (__copy_to_user(autotest.str[7], buf, autotest.str_len + 1))
+		goto cleanup;
+
+#ifdef CONFIG_COMPAT
+	/* copy_in_user() */
+	if (copy_in_user(autotest.str[8], autotest.str[0], autotest.str_len + 1))
+		goto cleanup;
+	if (!access_ok(VERIFY_WRITE, autotest.str[9], autotest.str_len + 1))
+		goto cleanup;
+	if (__copy_in_user(autotest.str[9], autotest.str[0], autotest.str_len + 1))
+		goto cleanup;
+#endif
+
+	pagefault_disable();
+
+	/* __copy_from_user_inatomic() + __copy_to_user_inatomic() */
+	/* Must fail with ruaccess */
+	if (!access_ok(VERIFY_WRITE, autotest.str[10], autotest.str_len + 1))
+		goto cleanup_pagefault_enable;
+	if (!__copy_from_user_inatomic(buf, autotest.str[0], autotest.str_len + 1))
+		goto cleanup_pagefault_enable;
+	if (!__copy_to_user_inatomic(autotest.str[10], buf, autotest.str_len + 1))
+		goto cleanup_pagefault_enable;
+
+	/* __copy_from_user_inatomic_nocache() + __copy_to_user_inatomic() */
+	/* Must fail with ruaccess */
+	if (!access_ok(VERIFY_WRITE, autotest.str[11], autotest.str_len + 1))
+		goto cleanup_pagefault_enable;
+	if (!__copy_from_user_inatomic_nocache(buf, autotest.str[0], autotest.str_len + 1))
+		goto cleanup_pagefault_enable;
+	if (!__copy_to_user_inatomic(autotest.str[11], buf, autotest.str_len + 1))
+		goto cleanup_pagefault_enable;
+
+	pagefault_enable();
+
+	/* clear_user() */
+	if (clear_user(autotest.str[12], autotest.str_len))
+		goto cleanup;
+	if (!access_ok(VERIFY_WRITE, autotest.str[13], autotest.str_len))
+		goto cleanup;
+	if (__clear_user(autotest.str[13], autotest.str_len))
+		goto cleanup;
+
+	res = 0;
+
+cleanup:
+	kfree(buf);
+	err = cleanup_ruaccess(desc);
+	if (err)
+		goto cancel;
+	err = rpc_pack_type(desc, res);
+	if (err)
+		goto cancel;
+out:
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto out;
+
+cleanup_pagefault_enable:
+	pagefault_enable();
+	goto cleanup;
+}
+
 int ruaccess_start(void)
 {
+	rpc_register_void(RUACCESS_AUTOTEST, handle_ruaccess_autotest, 0);
+	register_proc_service(KSYS_RUACCESS_AUTOTEST, ruaccess_autotest);
 	return 0;
 }
 
