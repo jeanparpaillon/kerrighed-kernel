@@ -637,6 +637,9 @@ static void __page_check_anon_rmap(struct page *page,
 	struct anon_vma *anon_vma = vma->anon_vma;
 	anon_vma = (void *) anon_vma + PAGE_MAPPING_ANON;
 	BUG_ON(page->mapping != (struct address_space *)anon_vma);
+#ifdef CONFIG_KRG_MM
+	if (!(vma->vm_flags & VM_KDDM))
+#endif
 	BUG_ON(page->index != linear_page_index(vma, address));
 #endif
 }
