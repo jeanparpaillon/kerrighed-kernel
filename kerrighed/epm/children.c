@@ -998,6 +998,28 @@ out:
 	return obj;
 }
 
+pid_t krg_get_real_parent_pid(struct task_struct *task)
+{
+	struct children_kddm_object *parent_obj;
+	pid_t real_parent_pid, parent_pid;
+
+	if (task->real_parent != baby_sitter)
+		return task_pid_vnr(task->real_parent);
+
+	BUG_ON(current->nsproxy->pid_ns != &init_pid_ns);
+	parent_obj = krg_parent_children_readlock(task);
+	if (!parent_obj) {
+		real_parent_pid = 1;
+	} else {
+		krg_get_parent(parent_obj, task->pid,
+			       &parent_pid, &real_parent_pid);
+		krg_children_unlock(parent_obj);
+	}
+
+	return real_parent_pid;
+}
+EXPORT_SYMBOL(krg_get_real_parent_pid);
+
 /*
  * @author Louis Rilling
  *

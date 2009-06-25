@@ -39,6 +39,8 @@ void krg_forget_original_remote_parent(struct task_struct *parent,
 				       struct task_struct *reaper);
 pid_t krg_get_real_parent_tgid(struct task_struct *task,
 			       struct pid_namespace *ns);
+pid_t krg_get_real_parent_pid(struct task_struct *task,
+			      struct pid_namespace *ns);
 int krg_get_parent(struct children_kddm_object *obj, pid_t pid,
 		   pid_t *parent_pid, pid_t *real_parent_pid);
 struct children_kddm_object *krg_children_writelock(pid_t tgid);
