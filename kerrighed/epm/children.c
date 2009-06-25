@@ -178,6 +178,9 @@ static int children_export_object(struct rpc_desc *desc,
 	retval = rpc_pack_type(desc, obj->nr_threads);
 	if (unlikely(retval))
 		goto out;
+	retval = rpc_pack_type(desc, obj->self_exec_id);
+	if (unlikely(retval))
+		goto out;
 	list_for_each_entry(child, &obj->children, sibling) {
 		retval = rpc_pack_type(desc, *child);
 		if (unlikely(retval))
@@ -206,6 +209,9 @@ static int children_import_object(struct kddm_obj *obj_entry,
 	if (unlikely(retval))
 		goto out;
 	retval = rpc_unpack_type(desc, obj->nr_threads);
+	if (unlikely(retval))
+		goto out;
+	retval = rpc_unpack_type(desc, obj->self_exec_id);
 	if (unlikely(retval))
 		goto out;
 
@@ -1001,13 +1007,13 @@ out:
 pid_t krg_get_real_parent_pid(struct task_struct *task)
 {
 	struct children_kddm_object *parent_obj;
-	pid_t real_parent_pid, parent_pid;
+	pid_t real_parent_pid, parent_pid, real_parent_tgid;
 
 	if (task->real_parent != baby_sitter)
 		return task_pid_vnr(task->real_parent);
 
 	BUG_ON(current->nsproxy->pid_ns != &init_pid_ns);
-	parent_obj = krg_parent_children_readlock(task);
+	parent_obj = krg_parent_children_readlock(task, &real_parent_tgid);
 	if (!parent_obj) {
 		real_parent_pid = 1;
 	} else {
