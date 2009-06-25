@@ -283,6 +283,12 @@ static int export_notifier(struct epm_action *action,
 
 /* export_audit_context() is located in kernel/auditsc.c */
 
+static int export_exec_ids(struct epm_action *action,
+			   ghost_t *ghost, struct task_struct *task)
+{
+	return 0;
+}
+
 static int export_rt_mutexes(struct epm_action *action,
 			     ghost_t *ghost, struct task_struct *task)
 {
@@ -516,6 +522,10 @@ static int export_task(struct epm_action *action,
 	if (r)
 		goto error;
 
+	r = export_exec_ids(action, ghost, task);
+	if (r)
+		goto error;
+
 error:
 	return r;
 }
@@ -586,6 +596,10 @@ static void unimport_io_context(struct task_struct *task)
 static void unimport_rt_mutexes(struct task_struct *task)
 {
 	/* TODO */
+}
+
+static void unimport_exec_ids(struct task_struct *task)
+{
 }
 
 /* unimport_audit_context() is located in kernel/auditsc.c */
@@ -694,6 +708,7 @@ static void unimport_preempt_notifiers(struct task_struct *task)
 static void unimport_task(struct epm_action *action,
 			  struct task_struct *ghost_task)
 {
+	unimport_exec_ids(ghost_task);
 	unimport_delays(ghost_task);
 #ifdef CONFIG_KRG_IPC
 	unimport_sysv_sem(ghost_task);
@@ -1010,6 +1025,15 @@ static int import_notifier(struct epm_action *action,
 }
 
 /* import_audit_context() is located in kernel/auditsc.c */
+
+static int import_exec_ids(struct epm_action *action,
+			   ghost_t *ghost, struct task_struct *task)
+{
+	if (action->type == EPM_REMOTE_CLONE
+	    && !(action->remote_clone.clone_flags & (CLONE_PARENT|CLONE_THREAD)))
+		task->parent_exec_id = task->self_exec_id;
+	return 0;
+}
 
 static int import_rt_mutexes(struct epm_action *action,
 			     ghost_t *ghost, struct task_struct *task)
@@ -1398,8 +1422,14 @@ static struct task_struct *import_task(struct epm_action *action,
 	if (retval)
 		goto err_delays;
 
+	retval = import_exec_ids(action, ghost, task);
+	if (retval)
+		goto err_exec_ids;
+
 	return task;
 
+err_exec_ids:
+	unimport_delays(task);
 err_delays:
 #ifdef CONFIG_KRG_IPC
 	unimport_sysv_sem(task);
