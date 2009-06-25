@@ -410,6 +410,19 @@ error:
 	return r;
 }
 
+static int cr_add_exe_file_to_shared_table(struct task_struct *task)
+{
+	int r = 0;
+
+#ifdef CONFIG_PROC_FS
+	r = cr_add_file_to_shared_table(task, -1, task->mm->exe_file);
+	if (r == -ENOKEY) /* the file was already in the list */
+		r = 0;
+#endif
+
+	return r;
+}
+
 static int cr_export_later_mm_struct(struct epm_action *action,
 				     ghost_t *ghost,
 				     struct task_struct *task)
@@ -434,6 +447,10 @@ static int cr_export_later_mm_struct(struct epm_action *action,
 		r = 0;
 		goto exit;
 	}
+
+	r = cr_add_exe_file_to_shared_table(task);
+	if (r)
+		goto exit;
 
 	r = cr_add_vmas_files_to_shared_table(task);
 
@@ -533,6 +550,12 @@ int export_mm_struct(struct epm_action *action,
 	r = export_context_struct(ghost, mm);
 	if (r)
 		goto up_mmap_sem;
+
+#ifdef CONFIG_KRG_DVFS
+	r = export_mm_exe_file(action, ghost, tsk);
+	if (r)
+		goto up_mmap_sem;
+#endif
 
 	r = export_vmas(action, ghost, tsk);
 	if (r)
@@ -732,6 +755,12 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 		old->vm_start = vma->vm_start;
 
 	old->vm_page_prot = vma->vm_page_prot;
+
+	if ((!old->vm_flags & VM_EXECUTABLE) && (vma->vm_flags & VM_EXECUTABLE))
+		added_exe_file_vma(mm);
+	if ((old->vm_flags & VM_EXECUTABLE) && (!vma->vm_flags & VM_EXECUTABLE))
+		removed_exe_file_vma(mm);
+
 	old->vm_flags = vma->vm_flags;
 	old->initial_vm_ops = vma->initial_vm_ops;
 	if (old->vm_ops && (old->vm_ops != vma->vm_ops)) {
@@ -805,7 +834,7 @@ static int import_one_vma (struct epm_action *action,
 	/* Import the vm_area_struct */
 	r = ghost_read (ghost, vma, sizeof (struct vm_area_struct));
 	if (r)
-		goto exit_free_vma;
+		goto err_vma;
 
 	partial_init_vma(tsk->mm, vma);
 
@@ -813,20 +842,18 @@ static int import_one_vma (struct epm_action *action,
 	/* Import the associated file */
 	r = import_vma_file (action, ghost, tsk, vma);
 	if (r)
-		goto exit_free_vma;
+		goto err_vma;
 #endif
 
 	/* Import the vm_ops type of the vma */
 	r = ghost_read (ghost, &vm_ops_type, sizeof (krgsyms_val_t));
 	if (r)
-		goto exit_free_vma;
-
-	vma->vm_ops = krgsyms_import (vm_ops_type);
-
+		goto err_vm_ops;
 	r = ghost_read (ghost, &initial_vm_ops_type, sizeof (krgsyms_val_t));
 	if (r)
-		goto exit_free_vma;
+		goto err_vm_ops;
 
+	vma->vm_ops = krgsyms_import (vm_ops_type);
 	vma->initial_vm_ops = krgsyms_import (initial_vm_ops_type);
 
 	BUG_ON (vma->vm_ops == &generic_file_vm_ops && vma->vm_file == NULL);
@@ -843,15 +870,25 @@ static int import_one_vma (struct epm_action *action,
 	if (vm_ops_type == KRGSYMS_VM_OPS_SPECIAL_MAPPING)
 		import_vdso_context(vma);
 
+	if (vma->vm_flags & VM_EXECUTABLE)
+		added_exe_file_vma(vma->vm_mm);
 	r = reconcile_vmas(tsk->mm, vma, last_end);
 	if (r)
-		goto exit_free_vma;
+		goto err_reconcile;
 
 exit:
 	return r;
 
-exit_free_vma:
-	remove_vma(vma);
+err_reconcile:
+	if (vma->vm_flags & VM_EXECUTABLE)
+		removed_exe_file_vma(vma->vm_mm);
+err_vm_ops:
+#ifdef CONFIG_KRG_DVFS
+	if (vma->vm_file)
+		fput(vma->vm_file);
+#endif
+err_vma:
+	kmem_cache_free(vm_area_cachep, vma);
 	goto exit;
 }
 
@@ -1068,6 +1105,12 @@ int import_mm_struct (struct epm_action *action,
 
 	/* Just paranoia check */
 	BUG_ON(mm->core_state);
+
+#ifdef CONFIG_KRG_DVFS
+	r = import_mm_exe_file(action, ghost, tsk);
+	if (r)
+		goto err;
+#endif
 
 	r = import_vmas (action, ghost, tsk);
 	if (r < 0)

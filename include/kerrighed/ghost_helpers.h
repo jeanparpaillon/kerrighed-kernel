@@ -82,6 +82,9 @@ int export_files_struct (struct epm_action *action,
 int export_fs_struct (struct epm_action *action,
 		      ghost_t *ghost, struct task_struct *tsk);
 
+int export_mm_exe_file(struct epm_action *action, ghost_t *ghost,
+		       struct task_struct *tsk);
+
 int export_vma_file (struct epm_action *action, ghost_t * ghost,
                      struct task_struct *tsk, struct vm_area_struct *vma);
 
@@ -111,6 +114,9 @@ int import_files_struct (struct epm_action *action,
  */
 int import_fs_struct (struct epm_action *action,
 		      ghost_t *ghost, struct task_struct *tsk);
+
+int import_mm_exe_file(struct epm_action *action, ghost_t *ghost,
+		       struct task_struct *tsk);
 
 int import_vma_file (struct epm_action *action, ghost_t *ghost,
                      struct task_struct *tsk, struct vm_area_struct *vma);

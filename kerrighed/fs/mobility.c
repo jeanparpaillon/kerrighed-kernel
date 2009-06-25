@@ -348,6 +348,32 @@ err_write:
 	return r;
 }
 
+int export_mm_exe_file(struct epm_action *action, ghost_t *ghost,
+		       struct task_struct *tsk)
+{
+	int dump = 0, r = 0;
+
+#ifdef CONFIG_PROC_FS
+	if (tsk->mm->exe_file) {
+		dump = 1;
+		r = ghost_write(ghost, &dump, sizeof(int));
+		if (r)
+			goto exit;
+
+		if (action->type == EPM_CHECKPOINT) {
+			BUG_ON(action->checkpoint.shared != CR_SAVE_NOW);
+			r = cr_ghost_write_file_id(ghost, tsk->mm->exe_file);
+		} else
+			r = export_one_open_file(action, ghost, tsk, -1,
+						 tsk->mm->exe_file);
+	} else
+		r = ghost_write(ghost, &dump, sizeof(int));
+
+exit:
+#endif
+	return r;
+}
+
 /** Export the open files array of a process
  *  @author  Geoffroy Vallee, Renaud Lottiaux
  *
@@ -1211,6 +1237,32 @@ int import_vma_file (struct epm_action *action,
 	}
 
 err_read:
+	return r;
+}
+
+int import_mm_exe_file(struct epm_action *action, ghost_t *ghost,
+		       struct task_struct *tsk)
+{
+	int dump, r = 0;
+
+	BUG_ON(action->type == EPM_CHECKPOINT
+	       && action->restart.shared == CR_LINK_ONLY);
+
+#ifdef CONFIG_PROC_FS
+	r = ghost_read(ghost, &dump, sizeof(int));
+	if (r)
+		goto exit;
+
+	if (dump) {
+		if (action->type == EPM_CHECKPOINT)
+			r = cr_link_to_file(action, ghost, tsk,
+					    &tsk->mm->exe_file);
+		else
+			r = import_one_open_file(action, ghost, tsk, -1,
+						 &tsk->mm->exe_file);
+	}
+exit:
+#endif
 	return r;
 }
 

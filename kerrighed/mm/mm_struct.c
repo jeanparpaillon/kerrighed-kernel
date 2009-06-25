@@ -7,6 +7,7 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/file.h>
+#include <linux/proc_fs.h>
 #include <kerrighed/krginit.h>
 #include <asm/uaccess.h>
 #include <kerrighed/krg_services.h>
@@ -63,6 +64,10 @@ int reinit_mm(struct mm_struct *mm)
 	spin_lock (&mmlist_lock);
 	list_add (&mm->mmlist, &init_mm.mmlist);
 	spin_unlock (&mmlist_lock);
+#ifdef CONFIG_PROC_FS
+	mm->exe_file = NULL;
+	mm->num_exe_file_vmas = 0;
+#endif
 
 	return 0;
 }
@@ -191,6 +196,12 @@ struct mm_struct *krg_dup_mm(struct task_struct *tsk, struct mm_struct *src_mm)
 
 	if (src_mm->anon_vma_kddm_set)
 		break_distributed_cow_put(src_mm->anon_vma_kddm_set, src_mm);
+
+	dup_mm_exe_file(src_mm, mm);
+#ifdef CONFIG_PROCFS
+	/* reinit_mm() reset it */
+	mm->num_exe_file_vmas = src_mm->num_exe_file_vmas;
+#endif
 
 	/* MM not used locally -> drop the mm_users count
 	 * (was setup to 1 in alloc and inc in
