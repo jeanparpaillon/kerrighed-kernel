@@ -854,9 +854,8 @@ found:
 	return leader;
 }
 
-static inline int local_join_relatives(struct app_struct *app)
+static inline void local_join_relatives(struct app_struct *app)
 {
-	int r = 0;
 	task_state_t *t;
 	struct task_struct *tsk;
 
@@ -866,8 +865,6 @@ static inline int local_join_relatives(struct app_struct *app)
 		join_local_relatives(tsk);
 		krg_pid_link_task(tsk->pid);
 	}
-
-	return r;
 }
 
 /*
@@ -1023,11 +1020,7 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 		goto error;
 
 	/* join all together */
-	r = local_join_relatives(app);
-
-	r = send_result(desc, r);
-	if (r)
-		goto error;
+	local_join_relatives(app);
 
 	/* complete the import of shared objects */
 	local_restart_shared_complete(app, fake);
@@ -1147,11 +1140,6 @@ static int global_do_restart(struct app_kddm_object *obj,
 		goto error;
 
 	/* asking to rebuild children_object if r == 0 */
-	r = ask_nodes_to_continue(desc, obj->nodes, r);
-	if (r)
-		goto error;
-
-	/* join all together if r == 0*/
 	r = ask_nodes_to_continue(desc, obj->nodes, r);
 	if (r)
 		goto error;
