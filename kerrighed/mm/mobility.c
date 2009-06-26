@@ -859,8 +859,10 @@ static int import_one_vma (struct epm_action *action,
 	BUG_ON (vma->vm_ops == &generic_file_vm_ops && vma->vm_file == NULL);
 
 	if (action->type == EPM_REMOTE_CLONE
-	    && !(action->remote_clone.clone_flags & CLONE_VM))
+	    && !(action->remote_clone.clone_flags & CLONE_VM)) {
 		check_link_vma_to_anon_memory_kddm_set (vma);
+		vma->vm_flags &= ~VM_LOCKED;
+	}
 
 	if (action->type == EPM_CHECKPOINT)
 		restore_initial_vm_ops(vma);
@@ -1118,6 +1120,10 @@ int import_mm_struct (struct epm_action *action,
 
 	mm->hiwater_rss = get_mm_rss(mm);
 	mm->hiwater_vm = mm->total_vm;
+
+	if (action->type == EPM_REMOTE_CLONE
+	    && !(action->remote_clone.clone_flags & CLONE_VM))
+		mm->locked_vm = 0;
 
 	if (action->type == EPM_CHECKPOINT)
 		r = import_process_pages(action, ghost, mm);
