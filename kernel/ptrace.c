@@ -757,6 +757,11 @@ repeat:
 			goto repeat;
 		}
 
+#ifdef CONFIG_KRG_EPM
+		if (current->parent == baby_sitter)
+			ret = -EPERM;
+		else
+#endif
 		ret = security_ptrace_traceme(current->parent);
 #ifdef CONFIG_KRG_EPM
 		if (!ret)
