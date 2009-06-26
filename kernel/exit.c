@@ -80,26 +80,6 @@ static
 #endif
 void exit_mm(struct task_struct * tsk);
 
-#ifdef CONFIG_KRG_EPM
-void krg_rehash_restarted_thread(struct task_struct *tsk,
-				 struct task_struct *leader)
-{
-	write_lock_irq(&tasklist_lock);
-
-	detach_pid(tsk, PIDTYPE_PGID);
-	detach_pid(tsk, PIDTYPE_SID);
-	tsk->group_leader = leader;
-	list_del_rcu(&tsk->tasks);
-
-	INIT_LIST_HEAD(&tsk->thread_group);
-	list_add_tail_rcu(&tsk->thread_group, &leader->thread_group);
-
-	write_unlock_irq(&tasklist_lock);
-
-	__get_cpu_var(process_counts)--;
-}
-#endif /* CONFIG_KRG_EPM */
-
 static void __unhash_process(struct task_struct *p)
 {
 	nr_threads--;

@@ -790,29 +790,9 @@ static int local_restore_task_object(struct app_struct *app)
 			krg_task_unlock(task->pid);
 		}
 
-		if (t->restart.pid != t->restart.tgid) {
-
-			if (!was_checkpointed(app, t->restart.tgid)) {
-				r = -E_CR_BADDATA;
-				goto error;
-			}
-			task->task_obj = krg_task_writelock(task->pid);
-
-			write_lock_irq(&tasklist_lock);
-
-			task->task_obj->group_leader = t->restart.tgid;
-
-			task->parent = baby_sitter;
-			task->real_parent = baby_sitter;
-			list_move(&task->sibling, &baby_sitter->children);
-
-			write_unlock_irq(&tasklist_lock);
-
-			krg_task_unlock(task->pid);
-		}
+		BUG_ON(task->task_obj->group_leader != t->restart.tgid);
 	}
 
-error:
 	return r;
 }
 
@@ -885,21 +865,8 @@ static inline int local_join_relatives(struct app_struct *app)
 
 		join_local_relatives(tsk);
 		krg_pid_link_task(tsk->pid);
-
-		if (!is_thread_leader(t)) {
-			struct task_struct *leader = find_thread_leader(app, t);
-			if (!leader) {
-				r = -E_CR_BADDATA;
-				goto err;
-			}
-
-			BUG_ON(tsk->tgid != leader->tgid);
-
-			krg_rehash_restarted_thread(tsk, leader);
-		}
 	}
 
-err:
 	return r;
 }
 

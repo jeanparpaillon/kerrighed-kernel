@@ -78,10 +78,6 @@ void krg_pid_unlink_task(struct pid_kddm_object *obj);
 /* Pid reference tracking */
 void krg_put_pid(struct pid *pid);
 
-/* Checkpoint/restart */
-void krg_rehash_restarted_thread(struct task_struct *p,
-				 struct task_struct *leader);
-
 #endif /* CONFIG_KRG_EPM */
 
 #endif /* __KERRIGHED_PID_H__ */
