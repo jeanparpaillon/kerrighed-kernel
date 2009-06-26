@@ -7,6 +7,8 @@
 
 #include <linux/kernel.h>
 
+#include "debug_proc.h"
+
 #include "proc_internal.h"
 
 /** Initial function of the module

@@ -87,6 +87,8 @@ int export_cred(struct epm_action *action,
 	int i, err;
 
 #ifdef CONFIG_KEYS
+	DEBUG(DBG_CRED_MOB, 1, "At this time,"
+	      " cannot migrate keys informations... gloups!\n");
 	return -EBUSY;
 #endif
 #ifdef CONFIG_SECURITY
