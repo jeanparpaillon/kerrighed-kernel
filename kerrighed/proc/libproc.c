@@ -7,6 +7,11 @@
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/pid.h>
+
+#include "debug_proc.h"
+
+#define MODULE_NAME "libproc"
+
 #include <kddm/io_linker.h>
 
 /* Generic function to assign a default owner to a pid-named kddm object */

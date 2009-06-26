@@ -28,6 +28,10 @@
 #include <kerrighed/scheduler/info.h>
 #endif
 
+#include "debug_proc.h"
+
+#define MODULE_NAME "krg exit"
+
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/workqueue.h>
 #endif
@@ -61,6 +65,10 @@ static void handle_do_notify_parent(struct rpc_desc *desc,
 	struct sighand_struct *psig;
 	int sig = req->info.si_signo;
 	int err, ret;
+
+	DEBUG(DBG_EXIT, 2, "%d -> %d signo=%d status=%d code=%d\n",
+	      req->info.si_pid, req->parent_pid, sig,
+	      req->info.si_status, req->info.si_code);
 
 	ret = sig;
 
@@ -104,6 +112,9 @@ static void handle_do_notify_parent(struct rpc_desc *desc,
 	err = rpc_pack_type(desc, ret);
 	if (err)
 		rpc_cancel(desc);
+
+	DEBUG(DBG_EXIT, 2, "%d -> %d ret=%d sig=%d err=%d\n",
+	      req->info.si_pid, req->parent_pid, ret, sig, err);
 }
 
 /*
@@ -126,6 +137,9 @@ int krg_do_notify_parent(struct task_struct *task, struct siginfo *info)
 	req.ptrace = task->ptrace;
 	req.info = *info;
 
+	DEBUG(DBG_EXIT, 1, "%d -> %d (%d), exit_signal=%d exit_code=0x%x\n",
+	      task_pid_knr(task), req.parent_pid, parent_node,
+	      task->exit_signal, task->exit_code);
 	desc = rpc_begin(PROC_DO_NOTIFY_PARENT, parent_node);
 	if (!desc)
 		goto err;
@@ -138,6 +152,9 @@ int krg_do_notify_parent(struct task_struct *task, struct siginfo *info)
 	rpc_end(desc, 0);
 
 out:
+	if (!err && ret < 0)
+		DEBUG(DBG_EXIT, 1, "%d -> %d, exit_signal=-1\n",
+		      task_pid_knr(task), req.parent_pid);
 	if (!err)
 		return ret;
 	return 0;
@@ -304,6 +321,9 @@ static void handle_wait_task_zombie(struct rpc_desc *desc,
 	int retval;
 	int err = -ENOMEM;
 
+	DEBUG(DBG_EXIT, 1, "%d -> %d options=%#x\n",
+	      req->real_parent_tgid, req->pid, req->options);
+
 	read_lock(&tasklist_lock);
 	p = find_task_by_kpid(req->pid);
 	BUG_ON(!p);
@@ -335,6 +355,7 @@ static void handle_wait_task_zombie(struct rpc_desc *desc,
 				  &res.status, &res.ru);
 	if (!retval)
 		read_unlock(&tasklist_lock);
+	DEBUG(DBG_EXIT, 2, "retval=%d\n", retval);
 
 	err = rpc_pack_type(desc, retval);
 	if (err)
@@ -346,10 +367,14 @@ static void handle_wait_task_zombie(struct rpc_desc *desc,
 			goto err_cancel;
 	}
 
+	DEBUG(DBG_EXIT, 1, "%d -> %d retval=%d\n",
+	      req->real_parent_tgid, req->pid, retval);
 	return;
 
 err_cancel:
 	rpc_cancel(desc);
+	DEBUG(DBG_EXIT, 1, "%d -> %d failed err=%d\n",
+	      req->real_parent_tgid, req->pid, err);
 }
 
 int krg_wait_task_zombie(pid_t pid, kerrighed_node_t zombie_location,
@@ -363,6 +388,9 @@ int krg_wait_task_zombie(pid_t pid, kerrighed_node_t zombie_location,
 	struct rpc_desc *desc;
 	bool noreap = options & WNOWAIT;
 	int err;
+
+	DEBUG(DBG_EXIT, 1, "%d -> %d options=%#x\n",
+	      task_tgid_knr(current), pid, options);
 
 	/*
 	 * Zombie's location does not need to remain locked since it won't
@@ -443,6 +471,7 @@ int krg_wait_task_zombie(pid_t pid, kerrighed_node_t zombie_location,
 out:
 	rpc_end(desc, 0);
 
+	DEBUG(DBG_EXIT, 1, "%d retval=%d err=%d\n", req.pid, retval, err);
 	return retval;
 
 err_cancel:
@@ -599,11 +628,16 @@ void krg_finish_exit_notify(struct task_struct *task, int signal, void *cookie)
 
 void krg_release_task(struct task_struct *p)
 {
+	DEBUG(DBG_EXIT, 1,
+	      "%d (%p) exit_code=0x%x\n", task_pid_knr(p), p->stack, p->exit_code);
+
 #ifdef CONFIG_KRG_EPM
 	krg_exit_application(p);
 	krg_unhash_process(p);
 	if (p->exit_state != EXIT_MIGRATION) {
 #endif /* CONFIG_KRG_EPM */
+		DEBUG(DBG_EXIT, 1, "%d exit_code=0x%x\n", task_pid_knr(p), p->exit_code);
+
 		krg_task_free(p);
 #ifdef CONFIG_KRG_EPM
 		if (krg_action_pending(p, EPM_MIGRATE))
@@ -725,6 +759,8 @@ void proc_krg_exit_start(void)
 			  handle_notify_remote_child_reaper, 0);
 	rpc_register_void(PROC_WAIT_TASK_ZOMBIE, handle_wait_task_zombie, 0);
 #endif
+
+	DEBUG(DBG_EXIT, 1, "Done\n");
 }
 
 /**

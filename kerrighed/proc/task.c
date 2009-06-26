@@ -26,6 +26,10 @@
 #include <kerrighed/task.h>
 #include <kerrighed/pid.h>
 
+#include "debug_proc.h"
+
+#define MODULE_NAME "task"
+
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/libproc.h>
 #include <kddm/kddm.h>
@@ -37,8 +41,11 @@ static struct kddm_set *task_kddm_set;
 
 void krg_task_get(struct task_kddm_object *obj)
 {
-	if (obj)
+	if (obj) {
 		kref_get(&obj->kref);
+		DEBUG(DBG_TASK_KDDM, 4, "%d count=%d\n",
+		      obj->pid, atomic_read(&obj->kref.refcount));
+	}
 }
 
 static void task_free(struct kref *kref)
@@ -48,13 +55,18 @@ static void task_free(struct kref *kref)
 	obj = container_of(kref, struct task_kddm_object, kref);
 	BUG_ON(!obj);
 
+	DEBUG(DBG_TASK_KDDM, 2, "%d\n", obj->pid);
+
 	kmem_cache_free(task_kddm_obj_cachep, obj);
 }
 
 void krg_task_put(struct task_kddm_object *obj)
 {
-	if (obj)
+	if (obj) {
+		DEBUG(DBG_TASK_KDDM, 4, "%d count=%d\n",
+		      obj->pid, atomic_read(&obj->kref.refcount));
 		kref_put(&obj->kref, task_free);
+	}
 }
 
 /*
@@ -65,10 +77,12 @@ static int task_alloc_object(struct kddm_obj *obj_entry,
 {
 	struct task_kddm_object *p;
 
+	DEBUG(DBG_TASK_KDDM, 4, "%lu\n", objid);
 	p = kmem_cache_alloc(task_kddm_obj_cachep, GFP_KERNEL);
 	if (!p)
 		return -ENOMEM;
 
+	DEBUG(DBG_TASK_KDDM, 3, "%lu 0x%p\n", objid, p);
 	p->node = KERRIGHED_NODE_ID_NONE;
 	p->task = NULL;
 	p->pid = objid;
@@ -112,6 +126,8 @@ static int task_import_object(struct rpc_desc *desc,
 	struct task_kddm_object *dest = obj_entry->object;
 	struct task_kddm_object src;
 	int retval;
+
+	DEBUG(DBG_TASK_KDDM, 3, "%d dest=0x%p\n", dest->pid, dest);
 
 	retval = rpc_unpack_type(desc, src);
 	if (retval)
@@ -201,6 +217,8 @@ static int task_export_object(struct rpc_desc *desc,
 	struct task_kddm_object *src = obj_entry->object;
 	struct task_struct *tsk;
 
+	DEBUG(DBG_TASK_KDDM, 3, "%d src=0x%p\n", src->pid, src);
+
 	read_lock(&tasklist_lock);
 	tsk = src->task;
 	if (likely(tsk)) {
@@ -228,6 +246,8 @@ static int task_remove_object(void *object,
 			      struct kddm_set *set, objid_t objid)
 {
 	struct task_kddm_object *obj = object;
+
+	DEBUG(DBG_TASK_KDDM, 3, "%d 0x%p\n", obj->pid, obj);
 
 	krg_task_unlink(obj, 0);
 
@@ -350,6 +370,7 @@ void krg_task_abort(struct task_struct *task)
 
 void __krg_task_free(struct task_struct *task)
 {
+	DEBUG(DBG_TASK_KDDM, 2, "%d\n", task_pid_knr(task));
 	_kddm_remove_object(task_kddm_set, task_pid_knr(task));
 }
 
@@ -367,6 +388,7 @@ void __krg_task_unlink(struct task_kddm_object *obj, int need_update)
 {
 	BUG_ON(!obj);
 
+	DEBUG(DBG_TASK_KDDM, 2, "%d\n", obj->pid);
 	if (obj->task) {
 		if (need_update)
 			task_update_object(obj);
@@ -410,6 +432,7 @@ struct task_kddm_object *krg_task_readlock(pid_t pid)
 		/* Marker for unlock. Dirty but temporary. */
 		obj->write_locked = 0;
 	}
+	DEBUG(DBG_TASK_KDDM, 2, "%d (0x%p)\n", pid, obj);
 
 	return obj;
 }
@@ -445,6 +468,7 @@ static struct task_kddm_object *task_writelock(pid_t pid, int nested)
 		/* Marker for unlock. Dirty but temporary. */
 		obj->write_locked = 1;
 	}
+	DEBUG(DBG_TASK_KDDM, 2, "%d (0x%p)\n", pid, obj);
 
 	return obj;
 }
@@ -490,6 +514,7 @@ struct task_kddm_object *krg_task_create_writelock(pid_t pid)
 	} else {
 		_kddm_put_object(task_kddm_set, pid);
 	}
+	DEBUG(DBG_TASK_KDDM, 2, "%d (0x%p)\n", pid, obj);
 
 	return obj;
 }
@@ -503,6 +528,7 @@ void krg_task_unlock(pid_t pid)
 	if (!(pid & GLOBAL_PID_MASK))
 		return;
 
+	DEBUG(DBG_TASK_KDDM, 2, "%d\n", pid);
 	{
 		/*
 		 * Dirty tricks here. Hopefully it should be temporary waiting
@@ -584,6 +610,8 @@ kerrighed_node_t krg_lock_pid_location(pid_t pid)
 #ifdef CONFIG_KRG_EPM
 		if (likely(node != KERRIGHED_NODE_ID_NONE))
 			break;
+		DEBUG(DBG_TASK_KDDM, 4, "%s node=%d, backing off\n",
+		      current->comm, node);
 		/*
 		 * Task is migrating.
 		 * Back off and hope that it will stop migrating.
@@ -628,6 +656,7 @@ void proc_task_start(void)
 	if (IS_ERR(task_kddm_set))
 		OOM;
 
+	DEBUG(DBG_TASK_KDDM, 1, "Done\n");
 }
 
 /**

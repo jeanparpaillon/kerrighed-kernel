@@ -7,6 +7,10 @@
 
 #include <linux/kernel.h>
 
+#include "debug_proc.h"
+
+#define MODULE_NAME "proc"
+
 #include "proc_internal.h"
 
 /** Initial function of the module
@@ -15,6 +19,8 @@
 int init_proc(void)
 {
 	printk("Proc initialisation: start\n");
+
+	init_proc_debug();
 
 	proc_task_start();
 	proc_krg_exit_start();
