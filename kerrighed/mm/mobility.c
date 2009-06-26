@@ -387,6 +387,42 @@ err:
 	return r;
 }
 
+static int export_mm_counters(struct epm_action *action,
+			      ghost_t *ghost,
+			      struct mm_struct* mm)
+{
+	int r;
+
+	/* TODO: handle VM_DONTCOPY and EPM_REMOTE_CLONE */
+
+	r = ghost_write(ghost, &mm->total_vm, sizeof(unsigned long));
+	if (r)
+		goto err;
+
+	r = ghost_write(ghost, &mm->locked_vm, sizeof(unsigned long));
+	if (r)
+		goto err;
+
+	r = ghost_write(ghost, &mm->shared_vm, sizeof(unsigned long));
+	if (r)
+		goto err;
+
+	r = ghost_write(ghost, &mm->exec_vm, sizeof(unsigned long));
+	if (r)
+		goto err;
+
+	r = ghost_write(ghost, &mm->stack_vm, sizeof(unsigned long));
+	if (r)
+		goto err;
+
+	r = ghost_write(ghost, &mm->reserved_vm, sizeof(unsigned long));
+	if (r)
+		goto err;
+
+err:
+	return r;
+}
+
 static int cr_add_vmas_files_to_shared_table(struct task_struct *task)
 {
 	int r = 0;
@@ -558,6 +594,10 @@ int export_mm_struct(struct epm_action *action,
 #endif
 
 	r = export_vmas(action, ghost, tsk);
+	if (r)
+		goto up_mmap_sem;
+
+	r = export_mm_counters(action, ghost, mm);
 	if (r)
 		goto up_mmap_sem;
 
@@ -984,6 +1024,41 @@ exit:
 	return r;
 }
 
+static int import_mm_counters(struct epm_action *action,
+			      ghost_t *ghost,
+			      struct mm_struct* mm)
+{
+	int r;
+
+	/* TODO: handle VM_DONTCOPY and EPM_REMOTE_CLONE */
+
+	r = ghost_read(ghost, &mm->total_vm, sizeof(unsigned long));
+	if (r)
+		goto err;
+
+	r = ghost_read(ghost, &mm->locked_vm, sizeof(unsigned long));
+	if (r)
+		goto err;
+
+	r = ghost_read(ghost, &mm->shared_vm, sizeof(unsigned long));
+	if (r)
+		goto err;
+
+	r = ghost_read(ghost, &mm->exec_vm, sizeof(unsigned long));
+	if (r)
+		goto err;
+
+	r = ghost_read(ghost, &mm->stack_vm, sizeof(unsigned long));
+	if (r)
+		goto err;
+
+	r = ghost_read(ghost, &mm->reserved_vm, sizeof(unsigned long));
+	if (r)
+		goto err;
+
+err:
+	return r;
+}
 
 static int cr_link_to_mm_struct(struct epm_action *action,
 				ghost_t *ghost,
@@ -1116,6 +1191,10 @@ int import_mm_struct (struct epm_action *action,
 
 	r = import_vmas (action, ghost, tsk);
 	if (r < 0)
+		goto err;
+
+	r = import_mm_counters(action, ghost, mm);
+	if (r)
 		goto err;
 
 	mm->hiwater_rss = get_mm_rss(mm);
