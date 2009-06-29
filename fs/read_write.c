@@ -398,7 +398,7 @@ static inline loff_t file_pos_read(struct file *file)
 {
 #ifdef CONFIG_KRG_DVFS
 	if (file->f_flags & O_KRG_SHARED)
-		return krg_file_pos_read(file);
+		file->f_pos = krg_file_pos_read(file);
 #endif
 	return file->f_pos;
 }
@@ -407,7 +407,7 @@ static inline void file_pos_write(struct file *file, loff_t pos)
 {
 #ifdef CONFIG_KRG_DVFS
 	if (file->f_flags & O_KRG_SHARED)
-		return krg_file_pos_write(file, pos);
+		krg_file_pos_write(file, pos);
 #endif
 	file->f_pos = pos;
 }
