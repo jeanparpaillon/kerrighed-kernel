@@ -796,9 +796,9 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 
 	old->vm_page_prot = vma->vm_page_prot;
 
-	if ((!old->vm_flags & VM_EXECUTABLE) && (vma->vm_flags & VM_EXECUTABLE))
+	if (!(old->vm_flags & VM_EXECUTABLE) && (vma->vm_flags & VM_EXECUTABLE))
 		added_exe_file_vma(mm);
-	if ((old->vm_flags & VM_EXECUTABLE) && (!vma->vm_flags & VM_EXECUTABLE))
+	if ((old->vm_flags & VM_EXECUTABLE) && !(vma->vm_flags & VM_EXECUTABLE))
 		removed_exe_file_vma(mm);
 
 	old->vm_flags = vma->vm_flags;
