@@ -147,7 +147,7 @@ loff_t vfs_llseek(struct file *file, loff_t offset, int origin)
 #ifdef CONFIG_KRG_DVFS
 	loff_t pos;
 	if (file->f_flags & O_KRG_SHARED)
-		krg_file_pos_read(file);
+		file->f_pos = krg_file_pos_read(file);
 #endif
 	fn = no_llseek;
 	if (file->f_mode & FMODE_LSEEK) {
