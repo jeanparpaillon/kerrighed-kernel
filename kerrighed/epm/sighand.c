@@ -516,6 +516,7 @@ int import_sighand_struct(struct epm_action *action,
 		break;
 	case EPM_CHECKPOINT:
 		tsk->sighand = cr_sighand_alloc();
+		krg_objid = tsk->sighand->krg_objid;
 
 		r = ghost_read(ghost,
 			       &tsk->sighand->action,
