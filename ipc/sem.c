@@ -88,6 +88,7 @@
 #include "util.h"
 #ifdef CONFIG_KRG_IPC
 #include <linux/random.h>
+#include <kerrighed/pid.h>
 #include "krgsem.h"
 #endif
 
@@ -1531,9 +1532,9 @@ int __copy_semundo(unsigned long clone_flags, struct task_struct *tsk);
 
 int copy_semundo(unsigned long clone_flags, struct task_struct *tsk)
 {
-/* 	if (kh_ipc_sem_copy_semundo */
-/* 	    && current->mm && (tsk->pid & GLOBAL_PID_MASK)) */
-/* 		return kh_ipc_sem_copy_semundo(clone_flags, tsk); */
+	if (kh_ipc_sem_copy_semundo
+	    && current->mm && (tsk->pid & GLOBAL_PID_MASK))
+		return kh_ipc_sem_copy_semundo(clone_flags, tsk);
 
 	return __copy_semundo(clone_flags, tsk);
 }
