@@ -1084,7 +1084,9 @@ NORET_TYPE void do_exit(long code)
 {
 	struct task_struct *tsk = current;
 	int group_dead;
-
+#ifdef CONFIG_KRG_MM
+	struct mm_struct *mm = NULL;
+#endif
 	profile_task_exit(tsk);
 
 	WARN_ON(atomic_read(&tsk->fs_excl));
@@ -1150,9 +1152,15 @@ NORET_TYPE void do_exit(long code)
 
 	tsk->exit_code = code;
 	taskstats_exit(tsk, group_dead);
-
+#ifdef CONFIG_KRG_MM
+	if (tsk->mm && tsk->mm->mm_id)
+		mm = tsk->mm;
+#endif
 	exit_mm(tsk);
-
+#ifdef CONFIG_KRG_MM
+	if (mm)
+		KRGFCT(kh_mm_release)(mm, notify);
+#endif
 	if (group_dead)
 		acct_process();
 	trace_sched_process_exit(tsk);
