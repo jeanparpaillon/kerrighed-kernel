@@ -86,10 +86,7 @@ static inline int populate_fs_struct (ghost_t * ghost,
 		goto error;
 
 	r = user_path_dir(buffer, path);
-	if (r)
-		goto error;
 
-	path_get(path);
 error:
 	return r;
 }
