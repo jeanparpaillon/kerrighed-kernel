@@ -58,6 +58,8 @@ static int restart_block_krgsyms_register(void)
 		retval = posix_cpu_timers_krgsyms_register();
 	if (!retval)
 		retval = select_krgsyms_register();
+	if (!retval)
+		retval = futex_krgsyms_register();
 
 	return retval;
 }
@@ -77,6 +79,8 @@ static int restart_block_krgsyms_unregister(void)
 		retval = posix_cpu_timers_krgsyms_unregister();
 	if (!retval)
 		retval = select_krgsyms_unregister();
+	if (!retval)
+		retval = futex_krgsyms_unregister();
 
 	return retval;
 }
