@@ -1328,6 +1328,7 @@ int import_fs_struct (struct epm_action *action,
 		return -ENOMEM;
 
 	fs->users = 1;
+	fs->in_exec = 0;
 	rwlock_init (&fs->lock);
 
 	/* Import the umask value */
