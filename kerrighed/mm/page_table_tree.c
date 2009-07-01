@@ -437,6 +437,8 @@ static inline void __kddm_pt_insert_object(struct mm_struct *mm,
 	page->obj_entry = obj_entry;
 	atomic_inc(&page->_kddm_count);
 	inc_mm_counter(mm, anon_rss);
+
+	__SetPageUptodate(page);
 }
 
 
