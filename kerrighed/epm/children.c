@@ -1017,6 +1017,8 @@ pid_t krg_get_real_parent_pid(struct task_struct *task)
 	if (!parent_obj) {
 		real_parent_pid = 1;
 	} else {
+		/* gcc ... */
+		real_parent_pid = 0;
 		krg_get_parent(parent_obj, task->pid,
 			       &parent_pid, &real_parent_pid);
 		krg_children_unlock(parent_obj);
