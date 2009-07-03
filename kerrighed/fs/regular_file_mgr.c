@@ -53,33 +53,19 @@ struct file *create_file_entry_from_krg_desc (struct task_struct *task,
                                               regular_file_krg_desc_t *desc)
 {
 	struct file *file = NULL;
-	const struct cred *old_cred;
-	struct cred *override_cred;
 
 	BUG_ON (!task);
 	BUG_ON (!desc);
 
-	/* Set FS uid & gid to the user ones */
-	override_cred = prepare_creds();
-	if (!override_cred)
-		return ERR_PTR(-ENOMEM);
-
-	override_cred->fsuid = task->cred->fsuid;
-	override_cred->fsgid = task->cred->fsgid;
-	old_cred = override_creds(override_cred);
-
-	file = filp_open(desc->file.filename,
-			 desc->file.flags,
-			 desc->file.mode);
+	file = open_physical_file(desc->file.filename, desc->file.flags,
+				  desc->file.mode,
+				  task->cred->fsuid, task->cred->fsgid);
 
 	if (IS_ERR (file))
 		return file;
 
 	file->f_pos = desc->file.pos;
 	file->f_dentry->d_inode->i_mode |= desc->file.mode;
-
-	revert_creds(old_cred);
-	put_cred(override_cred);
 
 	return file;
 }
