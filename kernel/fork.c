@@ -935,12 +935,14 @@ static int copy_signal(unsigned long clone_flags, struct task_struct *tsk)
 	struct signal_struct *sig;
 
 #ifdef CONFIG_KRG_EPM
-	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid)
+	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid) {
 		/*
 		 * This is a process migration or restart: signal_struct is
 		 * already setup.
 		 */
+		tsk->signal->curr_target = tsk;
 		return 0;
+	}
 
 	if (!krg_current)
 #endif
