@@ -745,6 +745,8 @@ static int copy_mm(unsigned long clone_flags, struct task_struct * tsk)
 		atomic_inc(&oldmm->mm_users);
 #ifdef CONFIG_KRG_MM
 #ifdef CONFIG_KRG_EPM
+		/* Forking the ghost do not create a real new task. No need
+		 * to inc the mm_task counter */
 		if (!krg_current)
 #endif
 			KRGFCT(kh_mm_get)(oldmm);
@@ -1592,7 +1594,10 @@ bad_fork_cleanup_namespaces:
 bad_fork_cleanup_mm:
 #ifdef CONFIG_KRG_MM
 	if (p->mm && p->mm->mm_id && (clone_flags & CLONE_VM))
-		KRGFCT(kh_mm_release)(p->mm, 1);
+#ifdef CONFIG_KRG_EPM
+		if (!krg_current)
+#endif
+			KRGFCT(kh_mm_release)(p->mm, 1);
 #endif
 #ifdef CONFIG_KRG_EPM
 	if (p->mm)

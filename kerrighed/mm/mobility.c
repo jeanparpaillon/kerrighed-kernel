@@ -1104,6 +1104,7 @@ static inline int do_import_mm_struct(struct epm_action *action,
 			  return r;
 		  mm = krg_get_mm(mm_id);
 		  if (mm)
+			  /* Reflect the belonging to the ghost task struct */
 			  atomic_inc(&mm->mm_users);
 	}
 
