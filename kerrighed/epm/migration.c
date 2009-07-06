@@ -79,7 +79,9 @@ static int migration_implemented(struct task_struct *task)
 	task_lock(task);
 
 	/* No kernel thread, no task sharing its VM */
-	if ((task->flags & PF_KTHREAD) || atomic_read(&task->mm->mm_ltasks) > 1)
+	if ((task->flags & PF_KTHREAD)
+	    || !task->mm
+	    || atomic_read(&task->mm->mm_ltasks) > 1)
 		goto out_unlock;
 
 	/* No task sharing its signal handlers */
