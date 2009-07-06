@@ -69,6 +69,8 @@ static inline int populate_fs_struct (ghost_t * ghost,
 				      char *buffer,
 				      struct path *path)
 {
+	struct path root;
+	struct nameidata nd;
 	int len, r;
 
 	r = ghost_read (ghost, &len, sizeof (int));
@@ -85,7 +87,12 @@ static inline int populate_fs_struct (ghost_t * ghost,
 	if (r)
 		goto error;
 
-	r = user_path_dir(buffer, path);
+	get_physical_root(&root);
+	r = vfs_path_lookup(root.dentry, root.mnt, buffer, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &nd);
+	path_put(&root);
+	if (r)
+		goto error;
+	*path = nd.path;
 
 error:
 	return r;

@@ -24,11 +24,21 @@
 
 char *physical_d_path(const struct path *path, char *tmp)
 {
+	struct path ns_root;
 	char *pathname;
 
+	/* Mnt namespace is already pinned by path->mnt */
+	if (!path->mnt->mnt_ns)
+		/* Not exportable */
+		return NULL;
+
+	ns_root.mnt = path->mnt->mnt_ns->root;
+	ns_root.dentry = ns_root.mnt->mnt_root;
 	spin_lock(&dcache_lock);
-	pathname = __d_path(path, &init_task.fs->root, tmp, PAGE_SIZE);
+	pathname = __d_path(path, &ns_root, tmp, PAGE_SIZE);
 	spin_unlock(&dcache_lock);
+	BUG_ON(ns_root.mnt != path->mnt->mnt_ns->root
+	       || ns_root.dentry != ns_root.mnt->mnt_root);
 
 	if (IS_ERR(pathname))
 		return NULL;
@@ -77,12 +87,8 @@ struct file *open_physical_file (char *filename,
 {
 	const struct cred *old_cred;
 	struct cred *override_cred;
-	struct path old_root;
+	struct path prev_root;
 	struct file *file;
-
-	/* no need to lock the fs_struct: we are in a kernel-thread importing
-	   file from the ghost */
-	old_root = current->fs->root;
 
 	override_cred = prepare_creds();
 	if (!override_cred)
@@ -92,16 +98,14 @@ struct file *open_physical_file (char *filename,
 	override_cred->fsgid = fsgid;
 	old_cred = override_creds(override_cred);
 
-	read_lock(&init_task.fs->lock);
-	current->fs->root = init_task.fs->root;
-	read_unlock(&init_task.fs->lock);
+	chroot_to_physical_root(&prev_root);
 
 	file = filp_open (filename, flags, mode);
 
+	chroot_to_prev_root(&prev_root);
+
 	revert_creds(old_cred);
 	put_cred(override_cred);
-
-	current->fs->root = old_root;
 
 	return file;
 }
