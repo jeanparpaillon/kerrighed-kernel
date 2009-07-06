@@ -35,7 +35,19 @@
 #include <kerrighed/action.h>
 #include <kerrighed/debug.h>
 #include <asm/ptrace.h>
+#ifdef CONFIG_KRG_DEBUG
+#include <asm/sections.h>
+#endif
+
+#define MODULE_NAME "ghost"
+
+#include "debug_epm.h"
+
 #include "epm_internal.h"
+
+#ifdef CONFIG_KRG_DEBUG
+#define MAGIC_BASE 424242
+#endif
 
 /* Export */
 
@@ -43,8 +55,12 @@
 int export_exec_domain(struct epm_action *action,
 		       ghost_t *ghost, struct task_struct *task)
 {
-	if (task_thread_info(task)->exec_domain != &default_exec_domain)
+	if (task_thread_info(task)->exec_domain != &default_exec_domain) {
+		DEBUG(DBG_GHOST_MNGMT, 1,
+		      "Cannot ghost a process using an exec_domain != "
+		      "default_exec_domain\n");
 		return -EPERM;
+	}
 
 	return 0;
 }
@@ -58,6 +74,9 @@ int export_restart_block(struct epm_action *action,
 
 	fn_id = krgsyms_export(ti->restart_block.fn);
 	if (fn_id == KRGSYMS_UNDEF) {
+#ifdef CONFIG_KRG_DEBUG
+		BUG();
+#endif
 		r = -EBUSY;
 		goto out;
 	}
@@ -106,8 +125,12 @@ static int export_binfmt(struct epm_action *action,
 	int binfmt_id;
 
 	binfmt_id = krgsyms_export(task->binfmt);
-	if (binfmt_id == KRGSYMS_UNDEF)
+	if (binfmt_id == KRGSYMS_UNDEF) {
+#ifdef CONFIG_KRG_DEBUG
+		BUG();
+#endif
 		return -EPERM;
+	}
 
 	return ghost_write(ghost, &binfmt_id, sizeof(int));
 }
@@ -253,9 +276,12 @@ static int export_uts_namespace(struct epm_action *action,
 {
 	int err = 0;
 
-	if (task->nsproxy->uts_ns != task->nsproxy->krg_ns->root_uts_ns)
+	if (task->nsproxy->uts_ns != task->nsproxy->krg_ns->root_uts_ns) {
 		/* UTS namespace sharing is not implemented yet */
+		DEBUG(DBG_GHOST_MNGMT, 1, "Cannot export processes"
+		      " using a non default UTS namespace!\n");
 		err = -EPERM;
+	}
 
 	return err;
 }
@@ -265,9 +291,12 @@ static int export_net_namespace(struct epm_action *action,
 {
 	int err = 0;
 
-	if (task->nsproxy->net_ns != task->nsproxy->krg_ns->root_net_ns)
+	if (task->nsproxy->net_ns != task->nsproxy->krg_ns->root_net_ns) {
 		/* Net namespace sharing is not implemented yet */
+		DEBUG(DBG_GHOST_MNGMT, 1, "Cannot export processes"
+		      " using a non default net namespace!\n");
 		err = -EPERM;
+	}
 
 	return err;
 }
@@ -429,6 +458,9 @@ static int export_krg_structs(struct epm_action *action,
 		retval = ghost_write(ghost, &retval, sizeof(retval));
 	}
 
+	DEBUG(DBG_GHOST_MNGMT, 3, "ghost of the process %s created retval=%d\n",
+	      task->comm, retval);
+
 	return retval;
 }
 
@@ -450,6 +482,23 @@ static int export_task(struct epm_action *action,
 		       struct pt_regs *l_regs)
 {
 	int r;
+#ifdef CONFIG_KRG_DEBUG
+	int magic = MAGIC_BASE;
+#define DEBUG_WRITE_MAGIC				     \
+	do {						     \
+		DEBUG(DBG_GHOST_MNGMT, 3, "%d %d\n",	     \
+		      task_pid_knr(task), magic - MAGIC_BASE);	     \
+		r = ghost_write(ghost, &magic, sizeof(int)); \
+		magic++;				     \
+		if (r)					     \
+			goto error;			     \
+	} while (0)
+#else
+#define DEBUG_WRITE_MAGIC do {} while (0)
+#endif
+
+	DEBUG(DBG_GHOST_MNGMT, 1, "Start exporting process %s (%d)\n",
+	      task->comm, task_pid_knr(task));
 
 #define GOTO_ERROR goto ERROR_LABEL
 #define ERROR_LABEL error
@@ -471,6 +520,8 @@ static int export_task(struct epm_action *action,
 
 #ifndef CONFIG_KRG_IPC
 	if (task->sysvsem.undo_list) {
+		DEBUG(DBG_GHOST_MNGMT, 1,
+		      "Cannot ghost a process using semaphore\n");
 		r = -EBUSY;
 		GOTO_ERROR;
 	}
@@ -504,6 +555,8 @@ static int export_task(struct epm_action *action,
 	if (r)
 		GOTO_ERROR;
 
+	DEBUG_WRITE_MAGIC;
+
 #ifdef CONFIG_KRG_SCHED
 	r = export_krg_sched_info(action, ghost, task);
 	if (r)
@@ -519,6 +572,8 @@ static int export_task(struct epm_action *action,
 		GOTO_ERROR;
 #endif
 
+	DEBUG_WRITE_MAGIC;
+
 	r = export_binfmt(action, ghost, task);
 	if (r)
 		GOTO_ERROR;
@@ -526,6 +581,8 @@ static int export_task(struct epm_action *action,
 	r = export_vfork_done(action, ghost, task);
 	if (r)
 		GOTO_ERROR;
+
+	DEBUG_WRITE_MAGIC;
 
 	r = export_cred(action, ghost, task);
 	if (r)
@@ -538,6 +595,8 @@ static int export_task(struct epm_action *action,
 	r = export_thread_struct(action, ghost, task);
 	if (r)
 		GOTO_ERROR;
+
+	DEBUG_WRITE_MAGIC;
 
 #ifdef CONFIG_KRG_DVFS
 	r = export_fs_struct(action, ghost, task);
@@ -556,6 +615,8 @@ static int export_task(struct epm_action *action,
 	if (r)
 		GOTO_ERROR;
 
+	DEBUG_WRITE_MAGIC;
+
 	r = export_children(action, ghost, task);
 	if (r)
 		GOTO_ERROR;
@@ -566,6 +627,9 @@ static int export_task(struct epm_action *action,
 	if (r)
 		GOTO_ERROR;
 
+	DEBUG_WRITE_MAGIC;
+
+	DEBUG(DBG_GHOST_MNGMT, 2, "save_signal_struct : starting...\n");
 	r = export_private_signals(action, ghost, task);
 	if (r)
 		GOTO_ERROR;
@@ -575,6 +639,8 @@ static int export_task(struct epm_action *action,
 	r = export_sighand_struct(action, ghost, task);
 	if (r)
 		GOTO_ERROR;
+
+	DEBUG_WRITE_MAGIC;
 
 #ifdef CONFIG_KRG_IPC
 	r = export_sysv_sem(action, ghost, task);
@@ -593,7 +659,10 @@ static int export_task(struct epm_action *action,
 #undef ERROR_LABEL
 #undef GOTO_ERROR
 
+	DEBUG_WRITE_MAGIC;
+
 error:
+	DEBUG(DBG_GHOST_MNGMT, 1, "end: r=%d\n", r);
 	return r;
 
 error_pids:
@@ -615,6 +684,15 @@ int export_process(struct epm_action *action,
 {
 	int r;
 
+	DEBUG(DBG_GHOST_API, 1, "starting...\n");
+
+	if (match_debug("epm", DBG_GHOST_API, 1)) {
+		printk("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$"
+		       "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n");
+		printk("$$$ Start exporting process %s (%d: %p %p)\n",
+		       task->comm, task_pid_knr(task), &_stext, &_etext);
+	}
+
 	r = export_task(action, ghost, task, regs);
 	if (r)
 		goto error;
@@ -623,7 +701,10 @@ int export_process(struct epm_action *action,
 	if (r)
 		goto error_app;
 
+	DEBUG(DBG_GHOST_API, 2, "sending kerrighed struct\n");
+
 error:
+	DEBUG(DBG_GHOST_API, 1, "end r=%d\n", r);
 	return r;
 
 error_app:
@@ -1030,6 +1111,8 @@ static int import_pids(struct epm_action *action,
 	}
 
 	for (; type < max_type; type++) {
+		DEBUG(DBG_GHOST_MNGMT, 3, "PidType: %u\n", type);
+
 		retval = import_pid(action, ghost, &task->pids[type]);
 		if (retval) {
 			__unimport_pids(task, type);
@@ -1313,6 +1396,8 @@ static int import_krg_structs(struct epm_action *action,
 	krg_task_unlock(obj->pid);
 
 out:
+	DEBUG(DBG_GHOST_MNGMT, 1, "done\n");
+
 	return retval;
 }
 
@@ -1332,7 +1417,26 @@ static struct task_struct *import_task(struct epm_action *action,
 				       struct pt_regs *l_regs)
 {
 	struct task_struct *task;
+#ifdef CONFIG_KRG_DEBUG
+	int magic = MAGIC_BASE;
+	int magic_read = 0;
+#define DEBUG_READ_MAGIC(n)						    \
+	do {								    \
+		DEBUG(DBG_GHOST_MNGMT, 3, "%d %d\n",			    \
+		      task->pid, magic - MAGIC_BASE);			    \
+		retval = ghost_read(ghost, &magic_read, sizeof(int));	    \
+		if (retval)						    \
+			goto err_magic_##n;				    \
+		if (magic_read != magic)				    \
+			PANIC("Bad magic number in import_task(" #n ")\n"); \
+		magic++;						    \
+	} while (0)
+#else
+#define DEBUG_READ_MAGIC(n) do {} while (0)
+#endif
 	int retval;
+
+	DEBUG(DBG_GHOST_MNGMT, 1, "starting...\n");
 
 	/* No-op calls, here for symmetry */
 	BUG_ON(import_preempt_notifiers(action, ghost, NULL)
@@ -1475,6 +1579,8 @@ static struct task_struct *import_task(struct epm_action *action,
 	if (retval)
 		goto err_group_leader;
 
+	DEBUG_READ_MAGIC(1);
+
 #ifdef CONFIG_KRG_SCHED
 	retval = import_krg_sched_info(action, ghost, task);
 	if (retval)
@@ -1491,6 +1597,8 @@ static struct task_struct *import_task(struct epm_action *action,
 		goto err_mm_struct;
 #endif
 
+	DEBUG_READ_MAGIC(2);
+
 	retval = import_binfmt(action, ghost, task);
 	if (retval)
 		goto err_binfmt;
@@ -1498,6 +1606,8 @@ static struct task_struct *import_task(struct epm_action *action,
 	retval = import_vfork_done(action, ghost, task);
 	if (retval)
 		goto err_vfork_done;
+
+	DEBUG_READ_MAGIC(3);
 
 	retval = import_cred(action, ghost, task);
 	if (retval)
@@ -1510,6 +1620,8 @@ static struct task_struct *import_task(struct epm_action *action,
 	retval = import_thread_struct(action, ghost, task);
 	if (retval)
 		goto err_thread_struct;
+
+	DEBUG_READ_MAGIC(4);
 
 #ifdef CONFIG_KRG_DVFS
 	retval = import_fs_struct(action, ghost, task);
@@ -1528,6 +1640,8 @@ static struct task_struct *import_task(struct epm_action *action,
 	if (retval)
 		goto err_sched;
 
+	DEBUG_READ_MAGIC(5);
+
 	retval = import_children(action, ghost, task);
 	if (retval)
 		goto err_children;
@@ -1537,6 +1651,8 @@ static struct task_struct *import_task(struct epm_action *action,
 	retval = import_kddm_info_struct(action, ghost, task);
 	if (retval)
 		goto err_kddm_info_struct;
+
+	DEBUG_READ_MAGIC(6);
 
 	retval = import_private_signals(action, ghost, task);
 	if (retval)
@@ -1548,6 +1664,8 @@ static struct task_struct *import_task(struct epm_action *action,
 	retval = import_sighand_struct(action, ghost, task);
 	if (retval)
 		goto err_sighand_struct;
+
+	DEBUG_READ_MAGIC(7);
 
 #ifdef CONFIG_KRG_IPC
 	retval = import_sysv_sem(action, ghost, task);
@@ -1563,8 +1681,15 @@ static struct task_struct *import_task(struct epm_action *action,
 	if (retval)
 		goto err_exec_ids;
 
+	DEBUG_READ_MAGIC(8);
+
+	DEBUG(DBG_GHOST_MNGMT, 1, "end\n");
 	return task;
 
+#ifdef CONFIG_KRG_DEBUG
+err_magic_8:
+	unimport_exec_ids(task);
+#endif
 err_exec_ids:
 	unimport_delays(task);
 err_delays:
@@ -1572,18 +1697,27 @@ err_delays:
 	unimport_sysv_sem(task);
 err_sysv_sem:
 #endif
+#ifdef CONFIG_KRG_DEBUG
+err_magic_7:
+#endif
 	unimport_sighand_struct(task);
 err_sighand_struct:
 	unimport_signal_struct(task);
 err_signal_struct:
 	unimport_private_signals(task);
 err_signals:
+#ifdef CONFIG_KRG_DEBUG
+err_magic_6:
+#endif
 	unimport_kddm_info_struct(task);
 err_kddm_info_struct:
 	unimport_krg_structs(action, task);
 err_krg_structs:
 	unimport_children(action, task);
 err_children:
+#ifdef CONFIG_KRG_DEBUG
+err_magic_5:
+#endif
 	unimport_sched(task);
 err_sched:
 	unimport_cgroups(task);
@@ -1594,16 +1728,25 @@ err_files_struct:
 	unimport_fs_struct(task);
 err_fs_struct:
 #endif
+#ifdef CONFIG_KRG_DEBUG
+err_magic_4:
+#endif
 	unimport_thread_struct(task);
 err_thread_struct:
 	unimport_audit_context(task);
 err_audit_context:
 	unimport_cred(task);
 err_cred:
+#ifdef CONFIG_KRG_DEBUG
+err_magic_3:
+#endif
 	unimport_vfork_done(task);
 err_vfork_done:
 	unimport_binfmt(task);
 err_binfmt:
+#ifdef CONFIG_KRG_DEBUG
+err_magic_2:
+#endif
 #ifdef CONFIG_KRG_MM
 	unimport_mm_struct(task);
 err_mm_struct:
@@ -1613,6 +1756,9 @@ err_sched_info:
 #ifdef CONFIG_KRG_SCHED
 	unimport_krg_sched_info(task);
 err_krg_sched_info:
+#endif
+#ifdef CONFIG_KRG_DEBUG
+err_magic_1:
 #endif
 	unimport_group_leader(task);
 err_group_leader:
@@ -1646,21 +1792,27 @@ err_alloc_task:
 
 static void free_ghost_task(struct task_struct *task)
 {
+	DEBUG(DBG_G_TASK, 1, "starting...\n");
 	BUG_ON(!task);
 	BUG_ON(!list_empty(&task->sibling));
 	BUG_ON(!list_empty(&task->ptrace_entry));
 	BUG_ON(!list_empty(&task->thread_group));
 	free_task_struct(task);
+	DEBUG(DBG_G_TASK, 1, "done\n");
 }
 
 void free_ghost_process(struct task_struct *ghost)
 {
+	DEBUG(DBG_GHOST_MNGMT, 1, "starting...\n");
+
 #ifdef CONFIG_KRG_MM
 	free_ghost_mm(ghost);
+	DEBUG(DBG_GHOST_MNGMT, 2, "free_ghost_mm done\n");
 #endif
 
 #ifdef CONFIG_KRG_DVFS
 	free_ghost_files(ghost);
+	DEBUG(DBG_GHOST_MNGMT, 2, "free_ghost_files done\n");
 #endif
 
 	free_ghost_audit_context(ghost);
@@ -1671,8 +1823,12 @@ void free_ghost_process(struct task_struct *ghost)
 	kmem_cache_free(kddm_info_cachep, ghost->kddm_info);
 
 	free_ghost_thread_info(ghost);
+	DEBUG(DBG_GHOST_MNGMT, 2, "free_ghost_thread_info done\n");
 
 	free_ghost_task(ghost);
+	DEBUG(DBG_GHOST_MNGMT, 2, "free_ghost_task done\n");
+
+	DEBUG(DBG_GHOST_MNGMT, 1, "done\n");
 }
 
 static int register_pids(struct task_struct *task, struct epm_action *action)
@@ -1718,7 +1874,14 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	pid_t real_parent_tgid;
 	int retval;
 
+	DEBUG(DBG_GHOST_MNGMT, 1, "starting...\n");
+
 	BUG_ON(!l_regs || !tskRecv);
+
+	DEBUG(DBG_GHOST_MNGMT, 3, "Ghost process has %d users of its mm\n",
+	      atomic_read(&tskRecv->mm->mm_users));
+	DEBUG(DBG_GHOST_MNGMT, 3, "Ghost process has %d references to its mm\n",
+	      atomic_read(&tskRecv->mm->mm_count));
 
 	/*
 	 * The active process must be considered as remote until all links
@@ -1778,6 +1941,8 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 		 */
 		flags &= ~CSIGNAL;
 		flags = flags | action->remote_clone.clone_flags;
+		DEBUG(DBG_GHOST_MNGMT, 3, "flags=%lx child_tidptr=%p\n",
+		      flags, child_tidptr);
 		stack_start = action->remote_clone.stack_start;
 		stack_size = action->remote_clone.stack_size;
 		parent_tidptr = action->remote_clone.parent_tidptr;
@@ -1795,6 +1960,9 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	krg_current = NULL;
 
 	if (IS_ERR(newTsk)) {
+		DEBUG(DBG_GHOST_MNGMT, 1,
+		      "copy_process() failed: %d\n", (int)PTR_ERR(newTsk));
+
 		__krg_task_unlock(tskRecv);
 
 		if (action->type == EPM_REMOTE_CLONE)
@@ -1842,8 +2010,12 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 
 	__krg_task_unlock(tskRecv);
 
+	DEBUG(DBG_GHOST_MNGMT, 3, "active task struct created\n");
+
 	retval = register_pids(newTsk, action);
 	BUG_ON(retval);
+
+	DEBUG(DBG_GHOST_MNGMT, 3, "pids registered\n");
 
 	if (action->type == EPM_MIGRATE
 	    || action->type == EPM_CHECKPOINT) {
@@ -1855,6 +2027,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 		    || !list_empty(&tskRecv->pending.list)) {
 			unsigned long flags;
 
+			DEBUG(DBG_GHOST_MNGMT, 2, "pending with something\n");
 			if (!lock_task_sighand(newTsk, &flags))
 				BUG();
 			list_splice(&tskRecv->pending.list,
@@ -1873,8 +2046,11 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 		 */
 		set_tsk_thread_flag(newTsk, TIF_SIGPENDING);
 	}
+	DEBUG(DBG_GHOST_MNGMT, 3, "Signal fix done\n");
 
 	newTsk->files->next_fd = tskRecv->files->next_fd;
+
+	DEBUG(DBG_GHOST_MNGMT, 3, "next_fd fix done\n");
 
 	if (action->type == EPM_MIGRATE
 	    || action->type == EPM_CHECKPOINT) {
@@ -1890,6 +2066,8 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 
 		/* Restore flags changed by copy_process() */
 		newTsk->flags = tskRecv->flags;
+
+		DEBUG(DBG_GHOST_MNGMT, 3, "times and flags fixed\n");
 	}
 	newTsk->flags &= ~PF_STARTING;
 
@@ -1900,6 +2078,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	 * child.
 	 */
 	join_local_relatives(newTsk);
+	DEBUG(DBG_GHOST_MNGMT, 2, "process links created\n");
 
 #ifdef CONFIG_KRG_SCHED
 	post_import_krg_sched_info(newTsk);
@@ -1907,6 +2086,11 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 
 	/* Now the process can be made world-wide visible. */
 	krg_set_pid_location(newTsk);
+
+	DEBUG(DBG_GHOST_MNGMT, 3, "fpu_counter=%d\n", newTsk->fpu_counter);
+
+	DEBUG(DBG_GHOST_MNGMT, 1, "new process pid: %d\n", task_pid_knr(newTsk));
+	DEBUG(DBG_GHOST_MNGMT, 1, "done...\n");
 
 	return newTsk;
 }
@@ -1919,7 +2103,10 @@ struct task_struct *import_process(struct epm_action *action,
 	struct pt_regs regs;
 	int err;
 
+	DEBUG(DBG_GHOST_API, 1, "Starting...\n");
+
 	/* Process importation */
+	DEBUG(DBG_GHOST_API, 2, "action=%d\n", action->type);
 
 	if (action->type == EPM_MIGRATE) {
 		/*
@@ -1952,6 +2139,14 @@ struct task_struct *import_process(struct epm_action *action,
 	}
 	BUG_ON(!ghost_task);
 
+#ifdef CONFIG_KRG_DEBUG
+	if (match_debug("epm", DBG_GHOST_API, 1)) {
+		printk("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$"
+		       "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n");
+		printk("$$$ Start importing process %p %p\n", &_stext, &_etext);
+	}
+#endif
+
 	active_task = create_new_process_from_ghost(ghost_task, &regs, action);
 	if (IS_ERR(active_task)) {
 		err = PTR_ERR(active_task);
@@ -1965,6 +2160,8 @@ struct task_struct *import_process(struct epm_action *action,
 	if (err)
 		goto err_application;
 
+	DEBUG(DBG_GHOST_API, 1, "Done\n");
+
 	return active_task;
 
 err_application:
@@ -1973,5 +2170,6 @@ err_application:
 err_active_task:
 	unimport_task(action, ghost_task);
 err_task:
+	DEBUG(DBG_GHOST_API, 1, "end r=%d\n", err);
 	return ERR_PTR(err);
 }

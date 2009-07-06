@@ -10,6 +10,11 @@
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
 #include <net/krgrpc/rpc.h>
+
+#include "debug_epm.h"
+
+#define MODULE_NAME "net ghost"
+
 #include "ghost.h"
 
 pid_t send_task(struct rpc_desc *desc,
@@ -35,6 +40,8 @@ pid_t send_task(struct rpc_desc *desc,
 	if (err)
 		goto out_close;
 
+	DEBUG(DBG_MIGRATION, 1, "Process sent, waiting for its local pid\n");
+
 	err = rpc_unpack_type(desc, pid_remote_task);
 	post_export_process(action, ghost, tsk);
 	if (err) {
@@ -45,6 +52,19 @@ pid_t send_task(struct rpc_desc *desc,
 
 out_close:
 	ghost_close(ghost);
+
+	if (!err) {
+		DEBUG(DBG_MIGRATION, 1, "Remote_pid = %d\n", pid_remote_task);
+		DEBUG(DBG_MIGRATION, 1,
+		      "*********************************************************\n");
+		DEBUG(DBG_MIGRATION, 1,
+		      "*********************************************************\n");
+
+		DEBUG(DBG_MIGRATION, 1, "migration succeed\n");
+	}
+
+	DEBUG(DBG_MIGRATION, 1, "EPM action %d: done (send task %d on desc "
+	      "id %ld)\n", action->type, task_pid_knr(tsk), desc->desc_id);
 
 out:
 	return err ? err : pid_remote_task;
@@ -57,6 +77,8 @@ struct task_struct *recv_task(struct rpc_desc *desc, struct epm_action *action)
 	pid_t pid;
 	int err;
 
+	DEBUG(DBG_MIGRATION, 1, "start\n");
+
 	ghost = create_network_ghost(GHOST_READ | GHOST_WRITE, desc);
 	if (IS_ERR(ghost))
 		goto err_ghost;
@@ -64,6 +86,7 @@ struct task_struct *recv_task(struct rpc_desc *desc, struct epm_action *action)
 	new_tsk = import_process(action, ghost);
 	if (IS_ERR(new_tsk))
 		goto err_close;
+	DEBUG(DBG_MIGRATION, 1, "%d imported\n", task_pid_knr(new_tsk));
 
 	pid = task_pid_knr(new_tsk);
 	err = rpc_pack_type(desc, pid);
@@ -71,6 +94,9 @@ struct task_struct *recv_task(struct rpc_desc *desc, struct epm_action *action)
 		goto err_close;
 
 	ghost_close(ghost);
+
+	DEBUG(DBG_MIGRATION, 1, "EPM action %d: done (recv task %d on desc "
+	      "id %ld)\n", action->type, task_pid_knr(new_tsk), desc->desc_id);
 
 	return new_tsk;
 

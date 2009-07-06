@@ -31,6 +31,10 @@
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 
+#include "debug_epm.h"
+
+#define MODULE_NAME "signal"
+
 struct signal_struct_kddm_object {
 	struct signal_struct *signal;
 	atomic_t count;
@@ -113,6 +117,7 @@ static int signal_struct_alloc_object(struct kddm_obj *obj_entry,
 	struct signal_struct *sig;
 
 	obj = signal_struct_kddm_object_alloc();
+	DEBUG(DBG_SIGNAL, 3, "%lu (0x%p)\n", objid, obj);
 	if (!obj)
 		return -ENOMEM;
 
@@ -144,6 +149,7 @@ static int signal_struct_first_touch(struct kddm_obj *obj_entry,
 	atomic_set(&obj->count, 1);
 
 	obj_entry->object = obj;
+	DEBUG(DBG_SIGNAL, 3, "%lu (0x%p)\n", objid, obj);
 
 	return 0;
 }
@@ -162,6 +168,8 @@ static int signal_struct_import_object(struct rpc_desc *desc,
 	struct signal_struct *dest = obj->signal;
 	struct signal_struct tmp_sig;
 	int retval;
+
+	DEBUG(DBG_SIGNAL, 3, "%lu (0x%p)\n", obj->signal->krg_objid, obj);
 
 	retval = rpc_unpack_type(desc, tmp_sig);
 	if (retval)
@@ -264,6 +272,8 @@ static int signal_struct_export_object(struct rpc_desc *desc,
 	unsigned long flags;
 	int retval;
 
+	DEBUG(DBG_SIGNAL, 3, "%lu (0x%p)\n", obj->signal->krg_objid, obj);
+
 	rcu_read_lock();
 	tsk = find_task_by_kpid(obj->signal->krg_objid);
 	/*
@@ -313,6 +323,10 @@ static int signal_struct_remove_object(void *object,
 	/* Ensure that no thread uses this signal_struct copy */
 	down_write(&obj->remove_sem);
 	up_write(&obj->remove_sem);
+
+	DEBUG(DBG_SIGNAL, 3, "%lu (0x%p), keep=%d, %d\n",
+	      objid, obj, obj->keep_on_remove,
+	      atomic_read(&obj->signal->count));
 
 	if (!obj->keep_on_remove) {
 		struct signal_struct *sig = obj->signal;
@@ -371,6 +385,7 @@ static struct signal_struct *cr_signal_alloc(objid_t id)
 
 	obj = ____krg_signal_alloc(sig, id);
 	BUG_ON(!obj);
+	DEBUG(DBG_SIGNAL, 2, "%ld (0x%p)\n", id, obj);
 
 	return sig;
 }
@@ -405,6 +420,7 @@ static void __krg_signal_alloc(struct task_struct *task, struct pid *pid)
 
 	obj = ____krg_signal_alloc(sig, tgid);
 	BUG_ON(!obj);
+	DEBUG(DBG_SIGNAL, 2, "%d (0x%p)\n", tgid, obj);
 	krg_signal_unlock(sig);
 }
 
@@ -446,6 +462,7 @@ static struct signal_struct_kddm_object *__krg_signal_readlock(objid_t id)
 		return NULL;
 	}
 	BUG_ON(!obj->signal);
+	DEBUG(DBG_SIGNAL, 2, "%ld (0x%p)\n", id, obj);
 
 	return obj;
 }
@@ -476,6 +493,7 @@ static struct signal_struct_kddm_object *__krg_signal_writelock(objid_t id)
 		return NULL;
 	}
 	BUG_ON(!obj->signal);
+	DEBUG(DBG_SIGNAL, 2, "%ld (0x%p)\n", id, obj);
 	return obj;
 }
 
@@ -505,8 +523,10 @@ struct signal_struct *krg_signal_writelock(struct signal_struct *sig)
  */
 void krg_signal_unlock(struct signal_struct *sig)
 {
-	if (sig)
+	if (sig) {
+		DEBUG(DBG_SIGNAL, 2, "%lu\n", sig->krg_objid);
 		_kddm_put_object(signal_struct_kddm_set, sig->krg_objid);
+	}
 }
 
 /* Assumes that the associated kddm object is write locked. */
@@ -516,6 +536,7 @@ void krg_signal_share(struct signal_struct *sig)
 	int count;
 
 	count = atomic_inc_return(&obj->count);
+	DEBUG(DBG_SIGNAL, 1, "%ld (0x%p), %d\n", sig->krg_objid, obj, count);
 }
 
 struct signal_struct *krg_signal_exit(struct signal_struct *sig)
@@ -530,6 +551,7 @@ struct signal_struct *krg_signal_exit(struct signal_struct *sig)
 	obj = __krg_signal_writelock(id);
 	BUG_ON(obj != sig->kddm_obj);
 	count = atomic_dec_return(&obj->count);
+	DEBUG(DBG_SIGNAL, 1, "%ld (0x%p), %d\n", id, obj, count);
 	if (count == 0) {
 		krg_signal_unlock(sig);
 		BUG_ON(obj->keep_on_remove);
@@ -799,6 +821,7 @@ int export_signal_struct(struct epm_action *action,
 	case EPM_CHECKPOINT: {
 		struct signal_struct *sig =
 			krg_signal_readlock(tsk->signal);
+		DEBUG(DBG_GHOST_MNGMT, 4, "Begin - pid:%d\n", task_pid_knr(tsk));
 		r = ghost_write(ghost, sig, sizeof(*sig));
 		if (!r)
 			r = export_sigpending(ghost,
@@ -811,6 +834,7 @@ int export_signal_struct(struct epm_action *action,
 		if (!r)
 			r = export_posix_timers(ghost, tsk);
 		krg_signal_unlock(sig);
+		DEBUG(DBG_GHOST_MNGMT, 4, "End - pid:%d\n", task_pid_knr(tsk));
 		break;
 	} default:
 		break;
@@ -922,6 +946,7 @@ out_mig_unlock:
 	case EPM_CHECKPOINT: {
 		struct signal_struct tmp_sig;
 
+		DEBUG(DBG_GHOST_MNGMT, 4,"Begin - pid:%d\n", task_pid_knr(tsk));
 		sig = cr_signal_alloc(krg_objid);
 
 		r = ghost_read(ghost, &tmp_sig, sizeof(tmp_sig));
@@ -1006,6 +1031,7 @@ out_mig_unlock:
 			goto err_free_signal;
 
 		krg_signal_unlock(sig);
+		DEBUG(DBG_GHOST_MNGMT, 4,"End - pid:%d\n", task_pid_knr(tsk));
 		break;
 
 err_free_signal:
@@ -1162,6 +1188,8 @@ void unimport_private_signals(struct task_struct *task)
 int epm_signal_start(void)
 {
 	unsigned long cache_flags = SLAB_PANIC;
+
+	DEBUG(DBG_SIGNAL, 1, "Starting the signal manager...\n");
 
 #ifdef CONFIG_DEBUG_SLAB
 	cache_flags |= SLAB_POISON;

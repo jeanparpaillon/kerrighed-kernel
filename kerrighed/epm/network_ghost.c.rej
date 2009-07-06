@@ -1,0 +1,11 @@
+diff a/kerrighed/epm/network_ghost.c b/kerrighed/epm/network_ghost.c	(rejected hunks)
+@@ -46,6 +46,9 @@ pid_t send_task(struct rpc_desc *desc,
+ out_close:
+ 	ghost_close(ghost);
+ 
++	DEBUG(DBG_MIGRATION, 1, "EPM action %d: done (send task %d on desc "
++	      "id %ld)\n", action->type, tsk->pid, desc->desc_id);
++
+ out:
+ 	return err ? err : pid_remote_task;
+ }

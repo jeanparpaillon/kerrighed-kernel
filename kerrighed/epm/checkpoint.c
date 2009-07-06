@@ -25,6 +25,11 @@
 #include <kerrighed/ghost.h>
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/debug.h>
+
+#include "debug_epm.h"
+
+#define MODULE_NAME "checkpoint"
+
 #include "ghost.h"
 #include "epm_internal.h"
 #include "checkpoint.h"
@@ -49,12 +54,21 @@ int can_be_checkpointed(struct task_struct *task_to_checkpoint)
 	rcu_read_unlock();
 
 	/* Check permissions */
-	if (!permissions_ok(task_to_checkpoint))
+	if (!permissions_ok(task_to_checkpoint)) {
+		DEBUG(DBG_CKPT, 3,
+		      "[%d] Permission denied (uid:%d, %d - euid:%d, %d)\n",
+		      task_pid_knr(task_to_checkpoint), current_uid(),
+		      task_uid(task_to_checkpoint), current_euid(),
+		      task_euid(task_to_checkpoint));
 		goto exit;
+	}
 
 	/* Check capabilities */
-	if (!can_use_krg_cap(task_to_checkpoint, CAP_CHECKPOINTABLE))
+	if (!can_use_krg_cap(task_to_checkpoint, CAP_CHECKPOINTABLE)) {
+		DEBUG(DBG_CKPT, 3, "[%d] Task don't have right capabilities\n",
+		      task_pid_knr(task_to_checkpoint));
 		goto exit;
+	}
 
 	return 1; /* means true */
 
@@ -83,6 +97,9 @@ static int checkpoint_task_to_ghost(struct epm_action *action,
 {
 	int r = -EINVAL;
 
+	DEBUG(DBG_CKPT, 2, "Checkpoint task %s(%d)\n", task_to_checkpoint->comm,
+	      task_pid_knr(task_to_checkpoint));
+
 	if (task_to_checkpoint == NULL) {
 		PANIC("Task to checkpoint is NULL!!\n");
 		goto exit;
@@ -97,7 +114,16 @@ static int checkpoint_task_to_ghost(struct epm_action *action,
 	if (!r)
 		post_export_process(action, ghost, task_to_checkpoint);
 
+	if (krg_current != NULL)
+		PANIC("krg_current not NULL\n");
+
+	DEBUG(DBG_CKPT, 2, "public pid of the current task : %d\n",
+	      current->pid);
+
 exit:
+	DEBUG(DBG_CKPT, 2, "Checkpoint of task %s(%d) : done with error %d\n",
+	      task_to_checkpoint->comm, task_pid_knr(task_to_checkpoint), r);
+
 	return r;
 }
 
@@ -186,11 +212,17 @@ static void krg_task_checkpoint(int sig, struct siginfo *info,
 	struct epm_action action;
 	int r = 0;
 
+	DEBUG(DBG_CKPT, 1, "%s(%d) - options: %d\n", current->comm,
+	      task_pid_knr(current), si_option(*info));
+
 	/* do we really take a checkpoint ? */
 	if (si_option(*info) != CHKPT_ONLY_STOP) {
 		action.type = EPM_CHECKPOINT;
 		action.checkpoint.shared = CR_SAVE_LATER;
 		r = checkpoint_task(&action, current, regs);
+
+		DEBUG(DBG_CKPT, 1, "%s(%d): r=%d\n", current->comm,
+				task_pid_knr(current), r);
 	}
 
 	set_current_state(TASK_UNINTERRUPTIBLE);

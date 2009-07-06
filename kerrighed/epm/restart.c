@@ -19,6 +19,11 @@
 #include <kerrighed/application.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
+
+#include "debug_epm.h"
+
+#define MODULE_NAME "restart"
+
 #include "ghost.h"
 #include "pid.h"
 #include "restart.h"
@@ -41,10 +46,14 @@ struct task_struct *restart_task_from_ghost(struct epm_action *action,
 	struct task_struct *newTsk = NULL;
 	int err;
 
+	DEBUG(DBG_RESTART, 1, "restore_datas_process : starting...\n");
+
 	/* Reserve pid */
+	DEBUG(DBG_RESTART, 2, "try to reserve pidmap %d\n", pid);
 	err = reserve_pid(pid);
 
 	if (err) {
+		DEBUG(DBG_RESTART, 1, "Failed to allocate %d: %d\n", pid, err);
 		newTsk = ERR_PTR(-E_CR_PIDBUSY);
 		goto exit;
 	}
@@ -52,13 +61,20 @@ struct task_struct *restart_task_from_ghost(struct epm_action *action,
 	/* Recreate the process */
 
 	newTsk = import_process(action, ghost);
-	if (IS_ERR(newTsk))
+	if (IS_ERR(newTsk)) {
+		DEBUG(DBG_RESTART, 1, "restarting failure: %ld\n",
+		      PTR_ERR(newTsk));
 		goto unimport_process;
+	}
 	BUG_ON(!newTsk);
 
 	/* Link pid kddm object and task kddm obj */
+	DEBUG(DBG_RESTART, 2, "Link pid kddm object and task kddm obj :"
+	      "pid %d\n", pid);
 	err = krg_pid_link_task(pid);
 	if (err) {
+		DEBUG(DBG_RESTART, 1, "Error linking task and pid %d: %d\n",
+		      pid, err);
 		newTsk = ERR_PTR(err);
 		goto exit;
 	}
@@ -148,10 +164,15 @@ struct task_struct *restart_task(struct epm_action *action,
 struct task_struct *restart_process(pid_t pid, long app_id, int chkpt_sn)
 {
 	struct epm_action action;
+	struct task_struct *tsk;
+
+	DEBUG(DBG_RESTART, 1, "process to restore %d\n", pid);
 
 	/* Check if the process has not been already restarted */
 	if (find_task_by_kpid(pid) != NULL)
 		return ERR_PTR(-EALREADY);
+
+	DEBUG(DBG_RESTART, 2, "RESTART A PROCESS\n");
 
 	action.type = EPM_CHECKPOINT;
 	action.restart.shared = CR_LINK_ONLY;
@@ -159,5 +180,14 @@ struct task_struct *restart_process(pid_t pid, long app_id, int chkpt_sn)
 
 	BUG_ON(!action.restart.app);
 
-	return restart_task(&action, pid, app_id, chkpt_sn);
+	tsk = restart_task(&action, pid, app_id, chkpt_sn);
+
+	if (IS_ERR(tsk)) {
+		DEBUG(DBG_RESTART, 2, "Process (%d) restoration failed\n", pid);
+		return tsk;
+	}
+
+	DEBUG(DBG_RESTART, 1, "RESTART DONE\n");
+
+	return tsk;
 }

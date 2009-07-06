@@ -25,6 +25,11 @@
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
+
+#include "../debug_epm.h"
+
+#define MODULE_NAME "application checkpoint"
+
 #include "app_frontier.h"
 #include "app_utils.h"
 #include "../checkpoint.h"
@@ -40,6 +45,8 @@ static inline int save_app_kddm_object(struct app_kddm_object *obj,
 	int magic = 4342338;
 	int r = 0;
 	u32 linux_version;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", obj->app_id);
 
 	__set_ghost_fs(&oldfs);
 
@@ -102,6 +109,7 @@ err_write:
 exit:
 	unset_ghost_fs(&oldfs);
 
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld - r=%d\n", obj->app_id, r);
 	return r;
 }
 
@@ -163,6 +171,7 @@ static inline int write_task_parent_links(task_state_t *t,
 	}
 
 error:
+	DEBUG(DBG_APP_CKPT, 5, "End - Pid: %d, r=%d\n", task_pid_knr(t->task), r);
 	return r;
 }
 
@@ -177,6 +186,8 @@ static inline int save_local_app(struct app_struct *app, int chkpt_sn)
 	int null = -1;
 	task_state_t *t;
 	struct list_head *tmp, *element;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", app->app_id);
 
 	__set_ghost_fs(&oldfs);
 
@@ -224,6 +235,7 @@ err_write:
 exit:
 	unset_ghost_fs(&oldfs);
 
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld, r=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -238,6 +250,8 @@ static inline void __chkpt_task_req(struct task_struct *task)
 	int r;
 
 	BUG_ON(!task);
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Pid: %d\n", task_pid_knr(task));
 
 	if (!can_be_checkpointed(task)) {
 		set_task_chkpt_result(task, -EPERM);
@@ -257,6 +271,7 @@ static inline void __chkpt_task_req(struct task_struct *task)
 	if (!wake_up_process(task)) {
 		set_task_chkpt_result(task, -EAGAIN);
 	}
+	DEBUG(DBG_APP_CKPT, 1, "End - Pid: %d\n", task_pid_knr(task));
 }
 
 /*--------------------------------------------------------------------------*/
@@ -268,6 +283,8 @@ static inline int __get_next_chkptsn(long app_id, int original_sn)
 	struct nameidata nd;
 	int version = original_sn;
 
+	DEBUG(DBG_APP_CKPT, 4, "Begin - AppID: %ld, version: %d\n", app_id,
+	      original_sn);
 	do {
 		version++;
 		dirname = get_chkpt_dir(app_id, version);
@@ -279,10 +296,14 @@ static inline int __get_next_chkptsn(long app_id, int original_sn)
 		error = path_lookup(dirname, 0, &nd);
 		if (!error)
 			path_put(&nd.path);
+		DEBUG(DBG_APP_CKPT, 5, "lookup -%s- ? %d\n", dirname, error);
 		kfree(dirname);
 	} while (error != -ENOENT);
 
 error:
+	DEBUG(DBG_APP_CKPT, 4, "End - AppID: %ld, version: %d\n", app_id,
+	      version);
+
 	return version;
 }
 
@@ -301,6 +322,8 @@ static inline int __local_do_chkpt(struct app_struct *app, int chkpt_sn)
 
 	BUG_ON(list_empty(&app->tasks));
 
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", app->app_id);
+
 	app->chkpt_sn = chkpt_sn;
 
 	r = save_local_app(app, chkpt_sn);
@@ -314,18 +337,21 @@ static inline int __local_do_chkpt(struct app_struct *app, int chkpt_sn)
 		tmp = tsk->task;
 
 		if (tsk->chkpt_result != PCUS_OPERATION_OK) {
-			printk("Pid: %d, result: %d\n", tmp->pid, tsk->chkpt_result);
+			printk("Pid: %d, result: %d\n", task_pid_knr(tmp), tsk->chkpt_result);
 			BUG();
 		}
 
 		tsk->chkpt_result = PCUS_CHKPT_IN_PROGRESS;
 		BUG_ON(tmp == current);
+		DEBUG(DBG_APP_CKPT, 1, " Checkpoint Process %d\n",
+				task_pid_knr(tmp));
 		__chkpt_task_req(tmp);
 	}
 
 	wait_for_completion(&app->tasks_chkpted);
 	r = get_local_tasks_chkpt_result(app);
 exit:
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld, r=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -344,6 +370,7 @@ static void handle_do_chkpt(struct rpc_desc *desc, void *_msg, size_t size)
 	const struct cred *old_cred = NULL;
 	int r;
 
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", msg->app_id);
 	BUG_ON(!app);
 
 	BUG_ON(app->cred);
@@ -393,6 +420,8 @@ static int global_do_chkpt(struct app_kddm_object *obj, int flags)
 	struct rpc_desc *desc;
 	struct checkpoint_request_msg msg;
 	int r , err_rpc, one_terminal;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", obj->app_id);
 
 	r = __get_next_chkptsn(obj->app_id, obj->chkpt_sn);
 	if (r < 0)
@@ -447,6 +476,8 @@ exit_rpc:
 	rpc_end(desc, 0);
 
 exit:
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld - return=%d\n",
+	      obj->app_id, r);
 	return r;
 
 err_rpc:
@@ -566,10 +597,13 @@ long get_appid(const struct checkpoint_info *info)
 		goto exit;
 	}
 
-	if (info->flags & APP_FROM_PID)
+	if (info->flags & APP_FROM_PID) {
+		DEBUG(DBG_APP_CKPT, 1, "FROM PID\n");
 		r = get_appid_from_pid(info->app_id);
-	else
+	} else {
+		DEBUG(DBG_APP_CKPT, 1, "FROM APPID\n");
 		r = info->app_id;
+	}
 
 exit:
 	return r;

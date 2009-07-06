@@ -43,6 +43,11 @@
 #include <kerrighed/hotplug.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
+
+#include "debug_epm.h"
+
+#define MODULE_NAME "migration"
+
 #include "remote_clone.h"
 #include "network_ghost.h"
 #include "epm_internal.h"
@@ -62,6 +67,7 @@ static int migration_implemented(struct task_struct *task)
 {
 	int ret = 0;
 
+	DEBUG(DBG_MIGRATION, 3, "%d KDDM objects?\n", task_pid_knr(task));
 	if (!task->sighand->krg_objid || !task->signal->krg_objid
 	    || !task->task_obj || !task->children_obj
 	    || (task->real_parent != baby_sitter
@@ -73,12 +79,14 @@ static int migration_implemented(struct task_struct *task)
 	 * Note: currently useless, since CLONE_THREAD implies CLONE_VM, but
 	 * will become useful when CLONE_VM will be supported.
 	 */
+	DEBUG(DBG_MIGRATION, 3, "%d single threaded?\n", task_pid_knr(task));
 	if (!thread_group_empty(task))
 		goto out;
 
 	task_lock(task);
 
 	/* No kernel thread, no task sharing its VM */
+	DEBUG(DBG_MIGRATION, 3, "%d private mm?\n", task_pid_knr(task));
 	if ((task->flags & PF_KTHREAD)
 	    || !task->mm
 	    || atomic_read(&task->mm->mm_ltasks) > 1)
@@ -89,14 +97,17 @@ static int migration_implemented(struct task_struct *task)
 	 * Note: currently useless since CLONE_SIGHAND implies CLONE_VM, but
 	 * will become useful when CLONE_VM will be supported
 	 */
+	DEBUG(DBG_MIGRATION, 3, "%d private sighand?\n", task_pid_knr(task));
 	if (atomic_read(&task->sighand->count) > 1)
 		goto out_unlock;
 
 	/* No task sharing its file descriptors table */
+	DEBUG(DBG_MIGRATION, 3, "%d private files?\n", task_pid_knr(task));
 	if (!task->files || atomic_read(&task->files->count) > 1)
 		goto out_unlock;
 
 	/* No task sharing its fs_struct */
+	DEBUG(DBG_MIGRATION, 3, "%d private fs?\n", task_pid_knr(task));
 	if (!task->fs || task->fs->users > 1)
 		goto out_unlock;
 
@@ -171,10 +182,15 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	migration.migrate.pid = task_pid_knr(tsk);
 	migration.migrate.target = target;
 
+	DEBUG(DBG_MIGRATION, 1, "%d -> %d ...\n", task_pid_knr(tsk), target);
+
 	krg_unset_pid_location(tsk);
 
 	__krg_task_writelock(tsk);
+	DEBUG(DBG_MIGRATION, 3,
+	      "moving the migrated task from its local relations\n");
 	leave_all_relatives(tsk);
+	DEBUG(DBG_MIGRATION, 3, "process is now alone and can be migrated\n");
 	__krg_task_unlock(tsk);
 
 	/*
@@ -221,6 +237,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 		cleanup_vfork_done(tsk);
 	}
 
+	DEBUG(DBG_MIGRATION, 1, "Done\n");
 	return remote_pid > 0 ? 0 : remote_pid;
 }
 
@@ -230,8 +247,13 @@ static void krg_task_migrate(int sig, struct siginfo *info,
 	struct task_struct *tsk = current;
 	int r = 0;
 
+	DEBUG(DBG_MIGRATION, 1, "%s(%d) -> %d\n",
+	      tsk->comm, task_pid_knr(tsk), si_node(*info));
+
 	r = do_task_migrate(tsk, regs, si_node(*info));
 
+	DEBUG(DBG_MIGRATION, 1, "%s(%d): r=%d\n",
+	      tsk->comm, task_pid_knr(tsk), r);
 	if (!r) {
 #ifdef CONFIG_KRG_SCHED
 		module_hook_call(&kmh_migration_end, 0);
@@ -252,18 +274,23 @@ static void handle_migrate(struct rpc_desc *desc, void *msg, size_t size)
 	struct epm_action *action = msg;
 	struct task_struct *task;
 
+	DEBUG(DBG_MIGRATION, 1, "start\n");
 	task = recv_task(desc, action);
 	if (!task) {
 		rpc_cancel(desc);
+		DEBUG(DBG_MIGRATION, 1, "failed\n");
 		return;
 	}
 
+	DEBUG(DBG_MIGRATION, 1, "0x%p:%d\n", task, task_pid_knr(task));
 #ifdef CONFIG_KRG_SCHED
 	module_hook_call(&kmh_migration_end, (unsigned long)task);
 #endif
 	krg_action_stop(task, EPM_MIGRATE);
 
+	DEBUG(DBG_MIGRATION, 3, "before wake up\n");
 	wake_up_new_task(task, CLONE_VM);
+	DEBUG(DBG_MIGRATION, 1, "done\n");
 }
 
 /* Expects tasklist_lock locked */
@@ -273,11 +300,19 @@ static int do_migrate_process(struct task_struct *task,
 	struct siginfo info;
 	int retval;
 
+	DEBUG(DBG_MIGRATION, 2,
+	      "Migration initialization"
+	      " for process %s (of pid %d) to node %d\n",
+	      task->comm, task_pid_knr(task), destination_node_id);
+
 	if (!krgnode_online(destination_node_id))
 		return -ENONET;
 
-	if (destination_node_id == kerrighed_node_id)
+	if (destination_node_id == kerrighed_node_id) {
+		DEBUG(DBG_MIGRATION, 2,
+		      "Loopback migration... Nothing to do !\n");
 		return 0;
+	}
 
 	if (!migration_implemented(task)) {
 		printk("do_migrate_process: trying to migrate a thread"
@@ -351,6 +386,10 @@ int __migrate_linux_threads(struct task_struct *task,
 exit:
 	read_unlock(&tasklist_lock);
 
+	DEBUG(DBG_MIGR_API, 2, "Migration of (%d) : done with error %d\n",
+	      task_pid_knr(task), r);
+	DEBUG(DBG_MIGR_API, 1, "stop %d\n", r);
+
 	return r;
 }
 EXPORT_SYMBOL(__migrate_linux_threads);
@@ -387,13 +426,19 @@ static int migrate_remote_process(pid_t pid,
 				  kerrighed_node_t destination_node_id)
 {
 	struct migration_request_msg msg;
+	int ret = -ESRCH;
+
+	DEBUG(DBG_MIGR_API, 1, "%d scope=%d\n", pid, scope);
 
 	msg.pid = pid;
 	msg.scope = scope;
 	msg.destination_node_id = destination_node_id;
 
-	return krg_remote_syscall_simple(PROC_REQUEST_MIGRATION, pid,
-					 &msg, sizeof(msg));
+	ret = krg_remote_syscall_simple(PROC_REQUEST_MIGRATION, pid,
+					&msg, sizeof(msg));
+
+	DEBUG(DBG_MIGR_API, 1, "ret=%d\n", ret);
+	return ret;
 }
 
 int migrate_linux_threads(pid_t pid,
@@ -413,6 +458,8 @@ int migrate_linux_threads(pid_t pid,
 
 	if (!task || (task->flags & PF_AWAY)) {
 		rcu_read_unlock();
+		DEBUG(DBG_MIGR_API, 1,
+		      "task (pid=%d) to migrate not found locally\n", pid);
 		return migrate_remote_process(pid, scope, dest_node);
 	}
 
@@ -434,9 +481,18 @@ EXPORT_SYMBOL(migrate_linux_threads);
  */
 int sys_migrate_process(pid_t tgid, kerrighed_node_t dest_node)
 {
+	int r;
+
 	if (dest_node < 0 || dest_node >= KERRIGHED_MAX_NODES)
 		return -EINVAL;
-	return migrate_linux_threads(tgid, MIGR_GLOBAL_PROCESS, dest_node);
+
+	DEBUG(DBG_MIGR_API, 1, "Starting %d -> %d ...\n", tgid, dest_node);
+
+	r = migrate_linux_threads(tgid, MIGR_GLOBAL_PROCESS, dest_node);
+
+	DEBUG(DBG_MIGR_API, 1, "Done %d -> %d r=%d\n", tgid, dest_node, r);
+
+	return r;
 }
 
 /**
@@ -448,9 +504,18 @@ int sys_migrate_process(pid_t tgid, kerrighed_node_t dest_node)
  */
 int sys_migrate_thread(pid_t pid, kerrighed_node_t dest_node)
 {
+	int r;
+
 	if (dest_node < 0 || dest_node >= KERRIGHED_MAX_NODES)
 		return -EINVAL;
-	return migrate_linux_threads(pid, MIGR_THREAD, dest_node);
+
+	DEBUG(DBG_MIGR_API, 1, "Starting %d -> %d ...\n", pid, dest_node);
+
+	r = migrate_linux_threads(pid, MIGR_THREAD, dest_node);
+
+	DEBUG(DBG_MIGR_API, 1, "Done %d -> %d r=%d\n", pid, dest_node, r);
+
+	return r;
 }
 
 #ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
@@ -463,12 +528,16 @@ void krg_syscall_exit(long syscall_nr)
 
 int epm_migration_start(void)
 {
+	DEBUG(DBG_MIGRATION, 1, "Migration server init\n");
+
 	krg_handler[KRG_SIG_MIGRATE] = krg_task_migrate;
 	if (rpc_register_void(RPC_EPM_MIGRATE, handle_migrate, 0))
 		BUG();
 	if (rpc_register_int(PROC_REQUEST_MIGRATION,
 			     handle_migrate_remote_process, 0))
 		BUG();
+
+	DEBUG(DBG_MIGRATION, 1, "Done\n");
 
 	return 0;
 }

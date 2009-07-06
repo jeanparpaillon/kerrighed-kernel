@@ -15,6 +15,11 @@
 #include <kerrighed/application.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
+
+#include "../debug_epm.h"
+
+#define MODULE_NAME "Application Frontier"
+
 #include "../checkpoint.h"
 
 /*--------------------------------------------------------------------------*
@@ -72,6 +77,9 @@ static inline int no_more_brother(struct task_struct *task)
 static inline long __get_appid_from_task(struct task_struct *task)
 {
 	long r = 0;
+
+	DEBUG(DBG_APP_CKPT, 4, "looking for application of task %d\n",
+	      task_pid_knr(task));
 
 	if (!can_be_checkpointed(task)) {
 		r = -EPERM;

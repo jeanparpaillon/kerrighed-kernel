@@ -21,6 +21,12 @@
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
+
+/* -------------------------- DEBUG */
+#include "../debug_epm.h"
+
+#define MODULE_NAME "Application Restart"
+
 #include "../pid.h"
 #include "../restart.h"
 #include "../epm_internal.h"
@@ -38,6 +44,8 @@ static inline int restore_app_kddm_object(struct app_kddm_object *obj,
 	int magic = 4342338;
 	u32 linux_version;
 	char compile_info[MAX_GHOST_STRING];
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", app_id);
 
 	__set_ghost_fs(&oldfs);
 
@@ -147,6 +155,7 @@ err_read:
 err_open:
 	unset_ghost_fs(&oldfs);
 
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld, r=%d\n", app_id, r);
 	return r;
 
 err_kernel_version:
@@ -196,6 +205,10 @@ static inline int read_task_parent_links(struct app_struct *app,
 					       real_parent_tgid,
 					       pgrp, session);
 
+	DEBUG(DBG_APP_CKPT, 2, "Import Process [%d], pgrp:%d,"
+	      "Parent (real/tgid): %d (%d/%d)\n",
+	      pid, pgrp, parent, real_parent, real_parent_tgid);
+
 	if (IS_ERR(task_desc)) {
 		r = PTR_ERR(task_desc);
 		goto err_alloc;
@@ -224,6 +237,9 @@ static inline int restore_local_app(long app_id, int chkpt_sn,
 	struct app_struct *app = NULL;
 	kerrighed_node_t r_node_id;
 
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld, nodeid: %d, duplicate: %d\n",
+	      app_id, node_id, duplicate);
+
 	__set_ghost_fs(&oldfs);
 
 	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn,
@@ -242,8 +258,13 @@ static inline int restore_local_app(long app_id, int chkpt_sn,
 		krgnodes_clear(app->restart.replacing_nodes);
 	} else {
 		do {
+			DEBUG(DBG_APP_CKPT, 2, "%d waiting creation of initial "
+			      " app_struct (replaces node %d)\n",
+			      current->pid, node_id);
 			__set_current_state(TASK_UNINTERRUPTIBLE);
 			schedule_timeout(HZ);
+			DEBUG(DBG_APP_CKPT, 2, "End of waiting creation of"
+			      " initial app_struct\n");
 			app = find_local_app(app_id);
 		} while (app == NULL);
 	}
@@ -294,6 +315,8 @@ err_read:
 	ghost_close(ghost);
 
 err_open:
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld, r=%d\n", app_id, r);
+
 	unset_ghost_fs(&oldfs);
 
 	/* the local app_struct will be deleted later in case of error */
@@ -305,7 +328,12 @@ err_open:
 static inline int __local_init_restart(long app_id, int chkpt_sn,
 				       kerrighed_node_t node_id, int duplicate)
 {
-	return restore_local_app(app_id, chkpt_sn, node_id, duplicate);
+	int r;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", app_id);
+
+	r = restore_local_app(app_id, chkpt_sn, node_id, duplicate);
+	return r;
 }
 
 struct init_restart_msg {
@@ -323,6 +351,8 @@ static void handle_init_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	struct cred *cred;
 	const struct cred *old_cred;
 	int r;
+
+	DEBUG(DBG_APP_CKPT, 1, "app_id : %ld\n", msg->app_id);
 
 	if (msg->recovery) {
 		r = rpc_unpack_type(desc, n);
@@ -393,6 +423,8 @@ __find_node_for_restart(kerrighed_node_t *first_avail_node,
 
 out:
 	*first_avail_node = n+1;
+	DEBUG(DBG_APP_CKPT, 5, "EMERGENCY- Node %d have been chosen to replace node %d\n",
+	      n, node_id);
 	return n;
 }
 
@@ -406,6 +438,8 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn,
 	kerrighed_node_t node, recovery_node;
 	int duplicate = 0;
 	int r;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", obj->app_id);
 
 	r = restore_app_kddm_object(obj, obj->app_id, chkpt_sn, one_terminal);
 	if (r)
@@ -421,6 +455,8 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn,
 	krgnodes_clear(nodes);
 	krgnodes_clear(nodes_to_replace);
 	for_each_krgnode_mask(node, obj->nodes){
+		DEBUG(DBG_APP_CKPT, 5, "Adding %d in vector ?\n", node);
+
 		if (likely(krgnode_online(node)))
 			krgnode_set(node, nodes);
 		else
@@ -469,15 +505,22 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn,
 		if (r)
 			goto err_rpc;
 
+		DEBUG(DBG_APP_CKPT, 5, "EMERGENCY- Waiting returns from %d (%d)\n",
+		      recovery_node, node);
+
 		r = rpc_unpack_type_from(desc, recovery_node, r);
 		if (r)
 			goto err_rpc;
+
+		DEBUG(DBG_APP_CKPT, 5, "EMERGENCY- %d (%d) returns %d\n",
+		      recovery_node, node, r);
 
 		rpc_end(desc, 0);
 	}
 
 	krgnodes_copy(obj->nodes, nodes);
 exit:
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld - r=%d\n", obj->app_id, r);
 	return r;
 
 err_rpc:
@@ -527,6 +570,7 @@ static inline int __restart_process(struct app_struct *app,
 	task->application = app;
 	t->task = task;
 error:
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld, return=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -572,11 +616,15 @@ static inline int add_unique_pid(pids_list_t *orphan_pids, pid_t pid)
 	int r = 0;
 	unique_pid_t *upid;
 
+	DEBUG(DBG_APP_CKPT, 5, "try to add %d\n", pid);
+
 	/* check the pid is not already in the list */
 	list_for_each_entry(upid, &(orphan_pids->pids), next) {
 		if (upid->pid == pid)
 			goto end;
 	}
+
+	DEBUG(DBG_APP_CKPT, 5, "adding %d ...\n", pid);
 
 	/* add the pid in the list */
 	upid = kmalloc(sizeof(unique_pid_t), GFP_KERNEL);
@@ -589,6 +637,7 @@ static inline int add_unique_pid(pids_list_t *orphan_pids, pid_t pid)
 	list_add_tail(&upid->next, &(orphan_pids->pids));
 	orphan_pids->nb++;
 end:
+	DEBUG(DBG_APP_CKPT, 5, "DONE: %d\n", r);
 	return r;
 }
 
@@ -597,6 +646,8 @@ static inline int send_pids_list(pids_list_t *orphan_pids,
 {
 	int r = 0;
 	unique_pid_t *upid;
+
+	DEBUG(DBG_APP_CKPT, 5, "Begin\n");
 
 	r = rpc_pack_type(desc, orphan_pids->nb);
 	if (r)
@@ -608,6 +659,7 @@ static inline int send_pids_list(pids_list_t *orphan_pids,
 	}
 
 err:
+	DEBUG(DBG_APP_CKPT, 5, "End - r=%d\n", r);
 	return r;
 }
 
@@ -616,6 +668,8 @@ static inline void free_pids_list(pids_list_t *orphan_pids)
 	unique_pid_t *upid;
 	struct list_head *element, *tmp;
 
+	DEBUG(DBG_APP_CKPT, 5, "Begin\n");
+
 	list_for_each_safe(element, tmp, &(orphan_pids->pids)) {
 		upid = list_entry(element, unique_pid_t, next);
 
@@ -623,6 +677,8 @@ static inline void free_pids_list(pids_list_t *orphan_pids)
 		kfree(upid);
 	}
 	orphan_pids->nb = 0;
+
+	DEBUG(DBG_APP_CKPT, 5, "End\n");
 }
 
 static inline int return_orphan_sessions_and_prgps(struct app_struct *app,
@@ -633,6 +689,8 @@ static inline int return_orphan_sessions_and_prgps(struct app_struct *app,
 	pids_list_t orphan_pids;
 	INIT_LIST_HEAD(&orphan_pids.pids);
 	orphan_pids.nb = 0;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", app->app_id);
 
 	/* first, build a list of orphan pids of session(s) and pgrp(s) */
 	list_for_each_entry(t, &app->tasks, next_task) {
@@ -753,6 +811,7 @@ static inline int local_do_restart(struct app_struct *app,
 	task_state_t *t;
 
 	BUG_ON(app == NULL);
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", app->app_id);
 	BUG_ON(list_empty(&app->tasks));
 
 	list_for_each_entry(t, &app->tasks, next_task) {
@@ -772,6 +831,7 @@ static inline int local_do_restart(struct app_struct *app,
 		}
 	}
 exit:
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld, return=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -781,6 +841,8 @@ static int local_replace_parent(struct app_struct *app,
 {
 	task_state_t *t;
 	int r = 0, checkpointed;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", app->app_id);
 
 	list_for_each_entry(t, &app->tasks, next_task) {
 
@@ -813,12 +875,22 @@ static int local_restore_task_object(struct app_struct *app)
 	task_state_t *t;
 	struct task_struct *task;
 
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", app->app_id);
+
 	list_for_each_entry(t, &app->tasks, next_task) {
+		DEBUG(DBG_APP_CKPT, 3, "pid:%d, tgid: %d, parent:%d, pgrp:%d\n",
+		      t->restart.pid, t->restart.tgid, t->restart.parent,
+		      t->restart.pgrp);
 		task = t->task;
 
 		if (t->restart.parent != 1) {
 
 			task->task_obj = __krg_task_writelock(task);
+
+			DEBUG(DBG_APP_CKPT, 3,
+			      "pid:%d, tgid: %d, parent:%d, real_parent:%d\n",
+			      t->restart.pid, t->restart.tgid,
+			      t->restart.parent, t->restart.real_parent);
 
 			write_lock_irq(&tasklist_lock);
 
@@ -839,6 +911,7 @@ static int local_restore_task_object(struct app_struct *app)
 		BUG_ON(task->task_obj->group_leader != t->restart.tgid);
 	}
 
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld, return=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -852,6 +925,10 @@ static inline int task_restore_children_object(task_state_t *t)
 
 	BUG_ON(!(t->restart.real_parent_tgid & GLOBAL_PID_MASK));
 	obj = krg_children_writelock(t->restart.real_parent_tgid);
+
+	DEBUG(DBG_APP_CKPT, 3, "pid:%d, tgid:%d/%d, parent:%d, parent_tgid:%d\n",
+	      t->restart.pid, t->restart.tgid, t->task->task_obj->group_leader,
+	      t->restart.real_parent, t->restart.real_parent_tgid);
 
 	r = krg_new_child(obj, t->restart.real_parent, t->task);
 
@@ -869,10 +946,13 @@ static inline int local_restore_children_object(struct app_struct *app)
 	int r = 0;
 	task_state_t *t;
 
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", app->app_id);
+
 	list_for_each_entry(t, &app->tasks, next_task) {
 		task_restore_children_object(t);
 	}
 
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld, return=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -899,11 +979,31 @@ static inline void local_join_relatives(struct app_struct *app)
 	task_state_t *t;
 	struct task_struct *tsk;
 
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", app->app_id);
+
 	list_for_each_entry(t, &app->tasks, next_task) {
 		tsk = t->task;
 
+		DEBUG(DBG_APP_CKPT, 5, "Task: %d (tgid: %d/%d)\n"
+		      "parent: %d\n"
+		      "real parent: %d (tgid: %d)\n",
+		      task_pid_knr(tsk), task_tgid_knr(tsk),
+		      tsk->task_obj->group_leader,
+		      tsk->task_obj->parent,
+		      tsk->task_obj->real_parent,
+		      tsk->task_obj->real_parent_tgid);
+
 		join_local_relatives(tsk);
 		krg_pid_link_task(task_pid_knr(tsk));
+
+		DEBUG(DBG_APP_CKPT, 5, "Task: %d (tgid: %d/%d)\n"
+		      "parent: %d\n"
+		      "real parent: %d (tgid: %d)\n",
+		      task_pid_knr(tsk), task_tgid_knr(tsk),
+		      tsk->task_obj->group_leader,
+		      tsk->task_obj->parent,
+		      tsk->task_obj->real_parent,
+		      tsk->task_obj->real_parent_tgid);
 	}
 }
 
@@ -920,6 +1020,8 @@ static void local_abort_restart(struct app_struct *app,
 	struct task_struct *task;
 	int r;
 
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", app->app_id);
+
 	/* killall restarted processes */
 	spin_lock(&app->lock);
 	while (!list_empty(&app->tasks)) {
@@ -933,6 +1035,8 @@ static void local_abort_restart(struct app_struct *app,
 			spin_unlock(&app->lock);
 
 			/* kill the process which was already restarted */
+			DEBUG(DBG_APP_CKPT, 1, "Killing %d\n",
+					task_pid_knr(task));
 			/*
 			 * We first need to unregister the task from the
 			 * application else the task will try to do it by
@@ -972,6 +1076,7 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	struct cred *cred;
 	const struct cred *old_cred = NULL;
 
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", msg->app_id);
 	BUG_ON(app == NULL);
 
 	BUG_ON(app->cred);
@@ -1075,6 +1180,8 @@ error:
 	/* call fput on the terminal file imported by rcv_terminal_desc */
 	app_put_terminal(app);
 
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld, return=%d\n", app->app_id, r);
+
 	if (app->cred) {
 		app->cred = NULL;
 		put_cred(cred);
@@ -1102,6 +1209,8 @@ static int global_do_restart(struct app_kddm_object *obj,
 	struct restart_request_msg msg;
 	pids_list_t orphan_pids;
 	int r=0;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld\n", obj->app_id);
 
 	/* prepare message */
 	msg.requester = kerrighed_node_id;
@@ -1201,6 +1310,8 @@ exit_free_pid:
 exit:
 	rpc_end(desc, 0);
 
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld, return=%d\n",
+	      obj->app_id, r);
 	return r;
 
 error:
@@ -1228,6 +1339,9 @@ int app_restart(struct restart_request *req,
 	struct file *term = NULL;
 	int r = 0;
 	int one_terminal;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - Appid: %ld v%d\n",
+	      req->app_id, req->chkpt_sn);
 
 	obj = kddm_grab_object(kddm_def_ns, APP_KDDM_ID, req->app_id);
 
@@ -1274,6 +1388,8 @@ exit:
 exit_app_busy:
 		kddm_put_object(kddm_def_ns, APP_KDDM_ID, req->app_id);
 
+	DEBUG(DBG_APP_CKPT, 1, "End - Appid: %ld, return: %d\n",
+	      req->app_id, r);
 	return r;
 }
 

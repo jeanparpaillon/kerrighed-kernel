@@ -94,6 +94,7 @@ deffct(proc);
 #ifdef CONFIG_KRG_EPM
 deffct(ghost);
 deffct(epm);
+deffct(arch);
 #endif
 #ifdef CONFIG_KRG_SCHED
 deffct(scheduler);
@@ -400,6 +401,11 @@ int init_kerrighed_upper_layers(void)
 #endif
 
 #ifdef CONFIG_KRG_EPM
+#ifdef CONFIG_KRG_DEBUG
+	if (init_arch())
+		goto err_arch;
+#endif
+
 	if (init_epm())
 		goto err_epm;
 #endif
@@ -420,6 +426,10 @@ int init_kerrighed_upper_layers(void)
 #ifdef CONFIG_KRG_EPM
 	cleanup_epm();
       err_epm:
+#ifdef CONFIG_KRG_DEBUG
+	cleanup_arch();
+      err_arch:
+#endif
 #endif
 #ifdef CONFIG_KRG_IPC
 	cleanup_keripc();

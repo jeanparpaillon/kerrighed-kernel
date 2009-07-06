@@ -20,6 +20,10 @@
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 
+#include "debug_epm.h"
+
+#define MODULE_NAME "sighand"
+
 struct sighand_struct_kddm_object {
 	struct sighand_struct *sighand;
 	atomic_t count;
@@ -72,6 +76,7 @@ static int sighand_struct_alloc_object(struct kddm_obj *obj_entry,
 	struct sighand_struct *sig;
 
 	obj = sighand_struct_kddm_object_alloc();
+	DEBUG(DBG_SIGHAND, 3, "%lu (0x%p)\n", objid, obj);
 	if (!obj)
 		return -ENOMEM;
 
@@ -103,6 +108,7 @@ static int sighand_struct_first_touch(struct kddm_obj *obj_entry,
 	atomic_set(&obj->count, 1);
 
 	obj_entry->object = obj;
+	DEBUG(DBG_SIGHAND, 3, "%lu (0x%p)\n", objid, obj_entry->object);
 
 	return 0;
 }
@@ -119,6 +125,8 @@ static int sighand_struct_import_object(struct rpc_desc *desc,
 	struct sighand_struct *dest;
 	struct sighand_struct tmp;
 	int retval;
+
+	DEBUG(DBG_SIGHAND, 3, "%lu (0x%p)\n", obj->sighand->krg_objid, obj);
 
 	retval = rpc_unpack_type(desc, tmp);
 	if (likely(!retval))
@@ -148,6 +156,8 @@ static int sighand_struct_export_object(struct rpc_desc *desc,
 	struct sighand_struct_kddm_object *obj = obj_entry->object;
 	struct sighand_struct *src;
 	int retval;
+
+	DEBUG(DBG_SIGHAND, 3, "%lu (0x%p)\n", obj->sighand->krg_objid, obj);
 
 	src = obj->sighand;
 	retval = rpc_pack_type(desc, *src);
@@ -179,6 +189,10 @@ static int sighand_struct_remove_object(void *object,
 	/* Ensure that no thread uses this sighand_struct copy */
 	down_write(&obj->remove_sem);
 	up_write(&obj->remove_sem);
+
+	DEBUG(DBG_SIGHAND, 3, "%lu (0x%p), keep=%d, %d\n",
+	      objid, obj, obj->keep_on_remove,
+	      atomic_read(&obj->sighand->count));
 
 	if (!obj->keep_on_remove) {
 		BUG_ON(waitqueue_active(&obj->sighand->signalfd_wqh));
@@ -213,6 +227,7 @@ struct sighand_struct *krg_sighand_readlock(objid_t id)
 		return NULL;
 	}
 	BUG_ON(!obj->sighand);
+	DEBUG(DBG_SIGHAND, 2, "%lu (0x%p)\n", id, obj);
 
 	return obj->sighand;
 }
@@ -231,6 +246,7 @@ struct sighand_struct *krg_sighand_writelock(objid_t id)
 		return NULL;
 	}
 	BUG_ON(!obj->sighand);
+	DEBUG(DBG_SIGHAND, 2, "%lu (0x%p)\n", id, obj);
 
 	return obj->sighand;
 }
@@ -241,6 +257,7 @@ struct sighand_struct *krg_sighand_writelock(objid_t id)
  */
 void krg_sighand_unlock(objid_t id)
 {
+	DEBUG(DBG_SIGHAND, 2, "%lu\n", id);
 	_kddm_put_object(sighand_struct_kddm_set, id);
 }
 
@@ -293,6 +310,7 @@ static void __krg_sighand_alloc(struct task_struct *task,
 
 	obj = ____krg_sighand_alloc(sig);
 	BUG_ON(!obj);
+	DEBUG(DBG_SIGHAND, 2, "%lu (0x%p)\n", sig->krg_objid, obj);
 	krg_sighand_unlock(sig->krg_objid);
 }
 
@@ -331,6 +349,7 @@ struct sighand_struct *cr_sighand_alloc(void)
 
 	obj = ____krg_sighand_alloc(sig);
 	BUG_ON(!obj);
+	DEBUG(DBG_SIGHAND, 2, "%lu (0x%p)\n", sig->krg_objid, obj);
 
 	return sig;
 }
@@ -347,6 +366,8 @@ void krg_sighand_share(struct task_struct *task)
 	int count;
 
 	count = atomic_inc_return(&obj->count);
+	DEBUG(DBG_SIGHAND, 1, "%lu (0x%p), %d\n",
+	      task->sighand->krg_objid, obj, count);
 }
 
 objid_t krg_sighand_exit(struct sighand_struct *sig)
@@ -360,6 +381,7 @@ objid_t krg_sighand_exit(struct sighand_struct *sig)
 
 	krg_sighand_writelock(id);
 	count = atomic_dec_return(&obj->count);
+	DEBUG(DBG_SIGHAND, 1, "%lu (0x%p), %d\n", id, obj, count);
 	if (count == 0) {
 		krg_sighand_unlock(id);
 		BUG_ON(obj->keep_on_remove);
@@ -420,6 +442,7 @@ int export_sighand_struct(struct epm_action *action,
 			  ghost_t *ghost, struct task_struct *tsk)
 {
 	int r;
+	DEBUG(DBG_GHOST_MNGMT, 3, "%lu\n", tsk->sighand->krg_objid);
 
 	if (action->type == EPM_CHECKPOINT
 	    && action->checkpoint.shared == CR_SAVE_LATER) {
@@ -432,10 +455,13 @@ int export_sighand_struct(struct epm_action *action,
 	if (r)
 		goto err_write;
 
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_CHECKPOINT) {
+		DEBUG(DBG_GHOST_MNGMT, 4, "Begin - pid:%d\n", task_pid_knr(tsk));
 		r = ghost_write(ghost,
 				&tsk->sighand->action,
 				sizeof(tsk->sighand->action));
+		DEBUG(DBG_GHOST_MNGMT, 4, "End - pid:%d\n", task_pid_knr(tsk));
+	}
 
 err_write:
 	return r;
@@ -487,6 +513,8 @@ int import_sighand_struct(struct epm_action *action,
 	if (r)
 		goto err_read;
 
+	DEBUG(DBG_GHOST_MNGMT, 3, "%lu\n", krg_objid);
+
 	switch (action->type) {
 	case EPM_MIGRATE:
 		tsk->sighand = krg_sighand_writelock(krg_objid);
@@ -503,6 +531,7 @@ int import_sighand_struct(struct epm_action *action,
 		krg_sighand_unlock(krg_objid);
 		break;
 	case EPM_CHECKPOINT:
+		DEBUG(DBG_GHOST_MNGMT, 4, "Begin - pid:%d\n", tsk->pid);
 		tsk->sighand = cr_sighand_alloc();
 		krg_objid = tsk->sighand->krg_objid;
 
@@ -516,6 +545,7 @@ int import_sighand_struct(struct epm_action *action,
 		atomic_set(&tsk->sighand->count, 1);
 
 		krg_sighand_unlock(krg_objid);
+		DEBUG(DBG_GHOST_MNGMT, 4, "End - pid:%d\n", tsk->pid);
 		break;
 	default:
 		PANIC("Case not supported: %d\n", action->type);
@@ -598,6 +628,8 @@ struct shared_object_operations cr_shared_sighand_struct_ops = {
 int epm_sighand_start(void)
 {
 	unsigned long cache_flags = SLAB_PANIC;
+
+	DEBUG(DBG_SIGHAND, 1, "Starting the sighand manager...\n");
 
 #ifdef CONFIG_DEBUG_SLAB
 	cache_flags |= SLAB_POISON;
