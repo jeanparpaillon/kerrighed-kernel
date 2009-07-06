@@ -26,7 +26,9 @@ char *physical_d_path(const struct path *path, char *tmp)
 	char *pathname;
 	int len;
 
+	spin_lock(&dcache_lock);
 	pathname = __d_path(path, &init_task.fs->root, tmp, PAGE_SIZE);
+	spin_unlock(&dcache_lock);
 
 	if (IS_ERR(pathname))
 		return NULL;
