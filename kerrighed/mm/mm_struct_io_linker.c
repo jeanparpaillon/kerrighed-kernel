@@ -83,7 +83,9 @@ int mm_export_object (struct rpc_desc *desc,
 
 	krgnode_set (desc->client, mm->copyset);
 
-	rpc_pack(desc, 0, mm, sizeof(struct mm_struct));
+	rpc_pack(desc, 0, &mm->mm_id, sizeof(unique_id_t));
+	rpc_pack(desc, 0, &mm->anon_vma_kddm_id, sizeof(unique_id_t));
+	rpc_pack(desc, 0, &mm->context.vdso, sizeof(void*));
 
 	get_unmap_id = krgsyms_export(mm->get_unmapped_area);
 	BUG_ON(mm->get_unmapped_area && get_unmap_id == KRGSYMS_UNDEF);
@@ -107,59 +109,39 @@ int mm_export_object (struct rpc_desc *desc,
 int mm_import_object (struct kddm_obj *obj_entry,
 		      struct rpc_desc *desc)
 {
-	struct mm_struct *mm, src_mm;
+	struct mm_struct *mm;
 	krgsyms_val_t unmap_id, get_unmap_id;
 	struct kddm_set *set;
+	unique_id_t mm_id, kddm_id;
+	void *context_vdso;
 	int r;
 
 	mm = obj_entry->object;
 
-	r = rpc_unpack (desc, 0, &src_mm, sizeof(struct mm_struct));
+	r = rpc_unpack (desc, 0, &mm_id, sizeof(unique_id_t));
+	if (r)
+		return r;
+
+	r = rpc_unpack (desc, 0, &kddm_id, sizeof(unique_id_t));
+	if (r)
+		return r;
+
+	r = rpc_unpack (desc, 0, &context_vdso, sizeof(void*));
 	if (r)
 		return r;
 
 	if (mm == NULL) {
 		/* First import */
-		set = _find_get_kddm_set(kddm_def_ns, src_mm.anon_vma_kddm_id);
+		set = _find_get_kddm_set(kddm_def_ns, kddm_id);
 		BUG_ON (set == NULL);
 
 		mm = set->obj_set;
-		mm->mm_id = src_mm.mm_id;
+		mm->mm_id = mm_id;
 		atomic_inc(&mm->mm_users);
 		obj_entry->object = mm;
 		put_kddm_set(set);
-		/* Copy static MM values */
-		mm->mmap_base = src_mm.mmap_base;
-		mm->task_size = src_mm.task_size;
-		mm->def_flags = src_mm.def_flags;
-		mm->start_code = src_mm.start_code;
-		mm->end_code = src_mm.end_code;
-		mm->start_data = src_mm.start_data;
-		mm->end_data = src_mm.end_data;
-		mm->start_brk = src_mm.start_brk;
-		mm->start_stack = src_mm.start_stack;
-		mm->arg_start = src_mm.arg_start;
-		mm->arg_end = src_mm.arg_end;
-		mm->env_start = src_mm.env_start;
-		mm->env_end = src_mm.env_end;
-		mm->context.vdso = src_mm.context.vdso;
+		mm->context.vdso = context_vdso;
 	}
-
-	/* Update non static MM values */
-
-	mm->cached_hole_size = src_mm.cached_hole_size;
-	mm->free_area_cache = src_mm.free_area_cache;
-	mm->mm_tasks = src_mm.mm_tasks;
-	mm->hiwater_rss = src_mm.hiwater_rss;
-	mm->hiwater_vm = src_mm.hiwater_vm;
-	mm->total_vm = src_mm.total_vm;
-	mm->locked_vm = src_mm.locked_vm;
-	mm->shared_vm = src_mm.shared_vm;
-	mm->exec_vm = src_mm.exec_vm;
-	mm->stack_vm = src_mm.stack_vm;
-	mm->reserved_vm = src_mm.reserved_vm;
-	mm->brk = src_mm.brk;
-	mm->flags = src_mm.flags;
 
 	r = rpc_unpack_type(desc, get_unmap_id);
 	if (r)
