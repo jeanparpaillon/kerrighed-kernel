@@ -194,6 +194,7 @@ static inline pte_t *kddm_pt_lookup_pte (struct mm_struct *mm,
 	pgd_t *pgd;
 	pud_t *pud;
 	pmd_t *pmd;
+	pte_t *pte;
 
 	pgd = pgd_offset(mm, address);
 	pud = pud_offset(pgd, address);
@@ -204,7 +205,11 @@ static inline pte_t *kddm_pt_lookup_pte (struct mm_struct *mm,
 	if (pmd_none(*pmd) || unlikely(pmd_bad(*pmd)))
 		return NULL;
 
-	return pte_offset_map_lock(mm, pmd, address, ptl);
+	pte = pte_offset_map_lock(mm, pmd, address, ptl);
+	if (!pte)
+		pte_unmap_unlock(ptep, *ptl);
+
+	return pte;
 }
 
 
