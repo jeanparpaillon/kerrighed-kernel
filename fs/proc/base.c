@@ -1510,6 +1510,12 @@ static int proc_pid_readlink(struct dentry * dentry, char __user * buffer, int b
 		goto out;
 
 	error = do_proc_readlink(&path, buffer, buflen);
+#ifdef CONFIG_KRG_FAF
+	if (!path.dentry && path.mnt) {
+		fput((struct file *)path.mnt);
+		goto out;
+	}
+#endif
 	path_put(&path);
 out:
 	return error;
@@ -1769,13 +1775,14 @@ static int proc_fd_info(struct inode *inode, struct path *path, char *info)
 			if (path) {
 				*path = file->f_path;
 				path_get(&file->f_path);
-			}
 #ifdef CONFIG_KRG_FAF
-			if (file->f_flags & O_FAF_CLT) {
-				path->mnt = (struct vfsmount *)file;
-				path->dentry = NULL;
-			}
+				if (file->f_flags & O_FAF_CLT) {
+					get_file(file);
+					path->mnt = (struct vfsmount *)file;
+					/* path->dentry = NULL; */
+				}
 #endif
+			}
 			if (info)
 #ifdef CONFIG_KRG_FAF
 				snprintf(info, PROC_FDINFO_MAX,

@@ -709,15 +709,10 @@ void handle_faf_d_path (struct rpc_desc* desc,
 	buff = kmalloc (msg->count, GFP_KERNEL);
 
 	file = fcheck_files (current->files, msg->server_fd);
-	if (file) {
-		file_name = physical_d_path(&file->f_path, buff);
-		len = strlen (file_name) + 1;
-	}
-	else {
-		file_name = buff;
-		file_name[0] = 0;
-		len = 1;
-	}
+	/* Remote caller holds a reference so it can't disappear. */
+	BUG_ON(!file);
+	file_name = physical_d_path(&file->f_path, buff);
+	len = strlen(file_name) + 1;
 
 	rpc_pack(desc, 0, file_name, len);
 
