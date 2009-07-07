@@ -24,7 +24,6 @@
 char *physical_d_path(const struct path *path, char *tmp)
 {
 	char *pathname;
-	int len;
 
 	spin_lock(&dcache_lock);
 	pathname = __d_path(path, &init_task.fs->root, tmp, PAGE_SIZE);
@@ -32,12 +31,6 @@ char *physical_d_path(const struct path *path, char *tmp)
 
 	if (IS_ERR(pathname))
 		return NULL;
-
-	len = strlen(pathname);
-	if (len >= 10) {
-		if (strcmp (pathname + len - 10, " (deleted)") == 0)
-			pathname[len - 10] = 0;
-	}
 
 	return pathname;
 }
