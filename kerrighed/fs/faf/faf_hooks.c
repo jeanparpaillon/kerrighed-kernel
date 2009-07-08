@@ -87,6 +87,9 @@ off_t krg_faf_lseek (struct file * file,
 	off_t r;
 	struct rpc_desc* desc;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	msg.server_fd = data->server_fd;
 	msg.offset = offset;
 	msg.origin = origin;
@@ -98,6 +101,9 @@ off_t krg_faf_lseek (struct file * file,
 	rpc_unpack_type(desc, r);
 
 	rpc_end(desc, 0);
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
 
 	return r;
 }
@@ -122,6 +128,9 @@ long krg_faf_llseek (struct file *file,
 	long r;
 	struct rpc_desc* desc;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	msg.server_fd = data->server_fd;
 	msg.offset_high = offset_high;
 	msg.offset_low = offset_low;
@@ -135,6 +144,9 @@ long krg_faf_llseek (struct file *file,
 	rpc_unpack(desc, 0, result, sizeof(*result));
 
 	rpc_end(desc, 0);
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
 
 	return r;
 }
@@ -158,9 +170,14 @@ ssize_t krg_faf_read (struct file * file,
 	int err;
 	struct rpc_desc* desc;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	kbuff = kmalloc (PAGE_SIZE, GFP_KERNEL);
-	if (!kbuff)
-		return -ENOMEM;
+	if (!kbuff) {
+		nr = -ENOMEM;
+		goto out;
+	}
 
 	msg.server_fd = data->server_fd;
 	msg.count = count;
@@ -195,6 +212,10 @@ err:
 
 	kfree (kbuff);
 
+out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, nr);
+
 	return nr;
 }
 
@@ -218,9 +239,14 @@ ssize_t krg_faf_write (struct file * file,
 	int err;
 	struct rpc_desc* desc;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	kbuff = kmalloc (PAGE_SIZE, GFP_KERNEL);
-	if (!kbuff)
-		return -ENOMEM;
+	if (!kbuff) {
+		r = -ENOMEM;
+		goto out;
+	}
 
 	msg.server_fd = data->server_fd;
 	msg.count = count;
@@ -257,6 +283,10 @@ err:
 
 	kfree (kbuff);
 
+out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -276,6 +306,9 @@ long krg_faf_ioctl (struct file *file,
 	long r;
 	struct rpc_desc *desc;
 	int err;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
 
 	msg.server_fd = data->server_fd;
 	msg.cmd = cmd;
@@ -298,6 +331,9 @@ long krg_faf_ioctl (struct file *file,
 	rpc_end(desc, 0);
 
 out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 
 out_cancel:
@@ -326,6 +362,9 @@ long krg_faf_fcntl (struct file *file,
 	struct rpc_desc *desc;
 	int err;
 	long r;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
 
 	msg.server_fd = data->server_fd;
 	msg.cmd = cmd;
@@ -364,6 +403,8 @@ out_end:
 	rpc_end(desc, 0);
 
 out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
 	return r;
 
 cancel:
@@ -388,6 +429,9 @@ long krg_faf_fcntl64 (struct file *file,
 	long r;
 	struct rpc_desc* desc;
 	int err;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
 
 	msg.server_fd = data->server_fd;
 	msg.cmd = cmd;
@@ -427,6 +471,9 @@ out_end:
 	rpc_end(desc, 0);
 
 out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 
 cancel:
@@ -450,6 +497,9 @@ long krg_faf_fstat (struct file *file,
 	long r;
 	struct rpc_desc* desc;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	msg.server_fd = data->server_fd;
 
 	desc = rpc_begin(RPC_FAF_FSTAT, data->server_id);
@@ -462,6 +512,9 @@ long krg_faf_fstat (struct file *file,
 	rpc_end(desc, 0);
 
 	*statbuf = buffer;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
 
 	return r;
 }
@@ -477,9 +530,15 @@ long krg_faf_fsync (struct file *file)
 	struct faf_rw_msg msg;
 	long r;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	msg.server_fd = data->server_fd;
 
 	r = rpc_sync(RPC_FAF_FSYNC, data->server_id, &msg, sizeof(msg));
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
 
 	return r;
 }
@@ -496,10 +555,16 @@ long krg_faf_flock (struct file *file,
 	struct faf_ctl_msg msg;
 	long r;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	msg.server_fd = data->server_fd;
 	msg.cmd = cmd;
 
 	r = rpc_sync(RPC_FAF_FLOCK, data->server_id, &msg, sizeof(msg));
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
 
 	return r;
 }
@@ -517,6 +582,9 @@ char *faf_d_path(struct file *file, char *buff, int size)
 	struct rpc_desc* desc;
 	int len;
 	int err;
+
+	DEBUG ("server", 2, -1, faf_srv_id(file), faf_srv_fd(file),
+	       file->f_objid, NULL, file, FAF_LOG_ENTER, 0);
 
 	if (file->f_flags & O_FAF_SRV)
 		return d_path(&file->f_path, buff, size);
@@ -543,6 +611,9 @@ char *faf_d_path(struct file *file, char *buff, int size)
 out_end:
 	rpc_end(desc, 0);
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, IS_ERR(buff) ? PTR_ERR(buff) : 0);
+
 	return buff;
 
 err_cancel:
@@ -561,6 +632,9 @@ long krg_faf_bind (struct file * file,
 	struct faf_bind_msg msg;
 	long r;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	msg.server_fd = data->server_fd;
 
 	r = move_addr_to_kernel(umyaddr, addrlen, (struct sockaddr *)&msg.sa);
@@ -570,6 +644,9 @@ long krg_faf_bind (struct file * file,
 	msg.addrlen = addrlen;
 	r = rpc_sync(RPC_FAF_BIND, data->server_id, &msg, sizeof(msg));
 out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -583,6 +660,9 @@ long krg_faf_connect (struct file * file,
 	struct faf_bind_msg msg;
 	long r;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	msg.server_fd = data->server_fd;
 
 	r = move_addr_to_kernel(uservaddr, addrlen, (struct sockaddr *)&msg.sa);
@@ -593,6 +673,9 @@ long krg_faf_connect (struct file * file,
 	r = rpc_sync(RPC_FAF_CONNECT, data->server_id, &msg, sizeof(msg));
 
 out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -603,11 +686,17 @@ long krg_faf_listen (struct file * file,
 	struct faf_listen_msg msg;
 	int r;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	msg.server_fd = data->server_fd;
 
 	msg.backlog = backlog;
 
 	r = rpc_sync(RPC_FAF_LISTEN, data->server_id, &msg, sizeof(msg));
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
 
 	return r;
 }
@@ -628,6 +717,9 @@ long krg_faf_accept(struct file * file,
 	int fd;
 	struct rpc_desc* desc;
 	unsigned long objid;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
 
 	BUG_ON (data->server_id == kerrighed_node_id);
 
@@ -692,6 +784,9 @@ long krg_faf_accept(struct file * file,
 	newfile->f_objid = objid;
 	dvfs_file->file = newfile;
 
+	DEBUG ("server", 2, -1, data->server_id, data->server_fd, objid,
+	       NULL, newfile, FAF_LOG_ACCEPT_DONE, dvfs_file);
+
 	put_dvfs_file_struct (objid);
 
 	if (upeer_sockaddr) {
@@ -705,6 +800,9 @@ long krg_faf_accept(struct file * file,
 	r = fd;
 
 out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 
 err_cancel:
@@ -730,6 +828,9 @@ long krg_faf_getsockname (struct file * file,
 	struct rpc_desc *desc;
 	int r = -EFAULT;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	msg.server_fd = data->server_fd;
 	if (get_user(msg.addrlen, usockaddr_len))
 		goto out;
@@ -747,6 +848,9 @@ long krg_faf_getsockname (struct file * file,
 				      usockaddr, usockaddr_len);
 
 out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -760,6 +864,9 @@ long krg_faf_getpeername (struct file * file,
 	int sa_len;
 	struct rpc_desc *desc;
 	int r;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
 
 	msg.server_fd = data->server_fd;
 
@@ -777,6 +884,9 @@ long krg_faf_getpeername (struct file * file,
 		r = move_addr_to_user((struct sockaddr *)&sa, sa_len,
 				      usockaddr, usockaddr_len);
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -789,6 +899,9 @@ long krg_faf_send (struct file * file,
 	struct faf_send_msg msg;
 	int r;
 	void *buff;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
 
 	buff = vmalloc(len);
 	if (!buff) {
@@ -817,6 +930,9 @@ long krg_faf_send (struct file * file,
 	vfree(buff);
 
 out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -831,6 +947,9 @@ long krg_faf_sendto (struct file * file,
 	struct faf_sendto_msg msg;
 	void *buff;
 	int r;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
 
 	if (addr) {
 		r = move_addr_to_kernel(addr, addr_len, (struct sockaddr *)&msg.sa);
@@ -867,6 +986,9 @@ long krg_faf_sendto (struct file * file,
 	vfree(buff);
 
 out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -882,6 +1004,9 @@ long krg_faf_recv (struct file * file,
 	int r;
 	void *buff;
 	struct rpc_desc* desc;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
 
 	buff = vmalloc(size);
 	if (!buff)
@@ -905,6 +1030,9 @@ long krg_faf_recv (struct file * file,
 
 	vfree(buff);
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -922,6 +1050,9 @@ long krg_faf_recvfrom (struct file * file,
 	struct sockaddr_storage sa;
 	int sa_len;
 	struct rpc_desc* desc;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
 
 	r = -EFAULT;
 	if (addr) {
@@ -974,6 +1105,9 @@ out_free:
 	vfree(buff);
 
 out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -984,11 +1118,17 @@ long krg_faf_shutdown (struct file * file,
 	struct faf_shutdown_msg msg ;
 	int r;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	msg.server_fd = data->server_fd;
 
 	msg.how = how;
 
 	r = rpc_sync(RPC_FAF_SHUTDOWN, data->server_id, &msg, sizeof(msg));
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
 
 	return r;
 }
@@ -1003,6 +1143,9 @@ long krg_faf_setsockopt (struct file * file,
 	struct faf_setsockopt_msg msg;
 	struct rpc_desc *desc;
 	int r, err;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
 
 	msg.server_fd = data->server_fd;
 
@@ -1031,6 +1174,9 @@ out_end:
 	rpc_end(desc, 0);
 
 out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 
 err_cancel:
@@ -1051,6 +1197,9 @@ long krg_faf_getsockopt (struct file * file,
 	struct faf_getsockopt_msg msg;
 	int r, err;
 	struct rpc_desc *desc;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
 
 	msg.server_fd = data->server_fd;
 
@@ -1079,6 +1228,9 @@ out_end:
 	rpc_end(desc, 0);
 
 out:
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 
 err_cancel:
@@ -1098,6 +1250,9 @@ long krg_faf_sendmsg (struct file * file,
 	int r;
 	struct rpc_desc* desc;
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
+
 	msg.server_fd = data->server_fd;
 
 	msg.flags = flags;
@@ -1110,6 +1265,9 @@ long krg_faf_sendmsg (struct file * file,
 	rpc_unpack_type(desc, r);
 	rpc_end(desc, 0);
 
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -1121,6 +1279,9 @@ long krg_faf_recvmsg(struct file * file,
 	struct faf_sendmsg_msg msg;
 	int r;
 	struct rpc_desc* desc;
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_ENTER, 0);
 
 	msg.server_fd = data->server_fd;
 
@@ -1135,6 +1296,9 @@ long krg_faf_recvmsg(struct file * file,
 	recv_msghdr(desc, msghdr, 1);
 
 	rpc_end(desc, 0);
+
+	DEBUG ("server", 2, -1,data->server_id, data->server_fd, file->f_objid,
+	       NULL, file, FAF_LOG_EXIT, r);
 
 	return r;
 }

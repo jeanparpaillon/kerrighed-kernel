@@ -4,6 +4,8 @@
  *  Copyright (C) 2001-2006, INRIA, Universite de Rennes 1, EDF.
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
+#include "debug_faf.h"
+
 #include <linux/file.h>
 #include <linux/wait.h>
 #include <kddm/kddm.h>
@@ -38,6 +40,9 @@ struct file *create_faf_file_from_krg_desc (struct task_struct *task,
 	faf_client_data_t *desc = _desc, *data;
 	struct file *file = NULL;
 
+	DEBUG("mobility", 3, -1, desc->server_id, desc->server_fd, -1UL,
+	      task, NULL, FAF_LOG_ENTER, 0);
+
 	data = kmem_cache_alloc (faf_client_data_cachep, GFP_KERNEL);
 	if (!data)
 		return NULL;
@@ -60,6 +65,9 @@ struct file *create_faf_file_from_krg_desc (struct task_struct *task,
 	file->private_data = data;
 
 exit:
+	DEBUG("mobility", 3, -1, desc->server_id, desc->server_fd, -1UL,
+	      task, NULL, FAF_LOG_EXIT, 0);
+
 	return file;
 }
 
@@ -102,6 +110,9 @@ int get_faf_file_krg_desc (struct file *file,
 {
 	faf_client_data_t *data, *ldata;
 
+	DEBUG("mobility", 4, 0, faf_srv_id(file), faf_srv_fd(file), -1UL,
+	      NULL, file, FAF_LOG_ENTER, 0);
+
 	data = kmalloc(sizeof(faf_client_data_t), GFP_KERNEL);
 	if (data == NULL)
 		return -ENOMEM;
@@ -121,6 +132,9 @@ int get_faf_file_krg_desc (struct file *file,
 done:
 	*desc = data;
 	*desc_size = sizeof (faf_client_data_t);
+
+	DEBUG("mobility", 4, 0, faf_srv_id(file), faf_srv_fd(file), -1UL,
+	      NULL, file, FAF_LOG_EXIT, 0);
 
 	return 0;
 }
@@ -154,6 +168,9 @@ int faf_file_export (struct epm_action *action,
 
 	BUG_ON(action->type == EPM_CHECKPOINT);
 
+	DEBUG("mobility", 2, index, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, task, file, FAF_LOG_EXPORT_FAF_FILE, 0);
+
 	r = get_faf_file_krg_desc(file, &desc, &desc_size);
 	if (r)
 		goto error;
@@ -162,6 +179,8 @@ int faf_file_export (struct epm_action *action,
 	kfree(desc);
 
 error:
+	DEBUG("mobility", 3, index, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, task, file, FAF_LOG_EXIT, 0);
 	return r;
 }
 
@@ -184,6 +203,8 @@ int faf_file_import (struct epm_action *action,
 	struct file *file;
 	int r, desc_size;
 
+	DEBUG("mobility", 2, -1, -1, -1, 0, task, NULL, FAF_LOG_ENTER, 0);
+
 	BUG_ON(action->type == EPM_CHECKPOINT);
 
 	r = ghost_read_file_krg_desc(ghost, &desc, &desc_size);
@@ -197,6 +218,9 @@ int faf_file_import (struct epm_action *action,
 		goto exit_free_desc;
 	}
 	*returned_file = file;
+
+	DEBUG("mobility", 3, -1, faf_srv_id(file), faf_srv_fd(file), 0, task,
+	      file, FAF_LOG_EXIT, 0);
 
 exit_free_desc:
 	kfree(desc);

@@ -4,6 +4,8 @@
  *  Copyright (C) 2001-2006, INRIA, Universite de Rennes 1, EDF.
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
+#include "debug_faf.h"
+
 #include <linux/file.h>
 #include <linux/fdtable.h>
 #include <linux/magic.h>
@@ -71,6 +73,9 @@ int close_faf_file(struct file * file)
         struct fdtable *fdt;
         int fd = file->f_faf_srv_index;
 
+	DEBUG ("server", 2, -1, faf_srv_id(file), faf_srv_fd(file),
+	       file->f_objid, NULL, file, FAF_LOG_CLOSE_SRV_FILE, 0);
+
 	BUG_ON (!(file->f_flags & O_FAF_SRV));
 	BUG_ON (file_count(file) != 1);
 
@@ -91,6 +96,9 @@ int close_faf_file(struct file * file)
         __put_unused_fd(files, fd);
 
 	spin_unlock(&files->file_lock);
+
+	DEBUG ("server", 3, -1, faf_srv_id(file), faf_srv_fd(file),
+	       file->f_objid, NULL, file, FAF_LOG_EXIT, 0);
 
 	/* Cleanup Kerrighed flags but not objid to pass through the regular
 	 * kernel close file code plus kh_put_file() only.
@@ -212,6 +220,8 @@ void check_activate_faf (struct task_struct *tsk,
 			 struct file *file,
 			 struct epm_action *action)
 {
+	DEBUG ("server", 3, index, faf_srv_id(file), faf_srv_fd(file),
+	       file->f_objid, tsk, file, FAF_LOG_ENTER, 0);
 
 	/* Index < 0 means a mapped file. We do not use FAF for this  */
 	if (index < 0)
@@ -230,6 +240,8 @@ void check_activate_faf (struct task_struct *tsk,
 	setup_faf_file_if_needed(file);
 
 done:
+	DEBUG ("server", 3, index, faf_srv_id(file), faf_srv_fd(file),
+	       file->f_objid, tsk, file, FAF_LOG_EXIT, 0);
 	return;
 }
 
@@ -244,6 +256,20 @@ done:
 extern int ruaccess_start(void);
 extern void ruaccess_exit(void);
 
+#ifdef CONFIG_KRG_DEBUG
+extern struct dentry *dvfs_debug_dentry;
+
+void init_faf_debug(void)
+{
+#ifdef CONFIG_KRG_DEBUG
+	__debug_define("faf", 0, dvfs_debug_dentry);
+#endif
+	DEBUG_MASK("faf", "server");
+	DEBUG_MASK("faf", "hook");
+	DEBUG_MASK("faf", "mobility");
+}
+#endif
+
 void faf_init ()
 {
 	printk("FAF: initialisation : start\n");
@@ -256,6 +282,9 @@ void faf_init ()
 	faf_server_init();
 	faf_hooks_init();
 
+#ifdef CONFIG_KRG_DEBUG
+	init_faf_debug();
+#endif
 	printk("FAF: initialisation : done\n");
 }
 
