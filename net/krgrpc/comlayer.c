@@ -36,6 +36,9 @@
 
 #define REJECT_BACKOFF (HZ / 2)
 
+#define ACK_CLEANUP_WINDOW_SIZE__LOWMEM_MODE 20
+#define MAX_CONSECUTIVE_RECV__LOWMEM_MODE 20
+
 struct tipc_ordering_elem {
 	unsigned long seq_id;
 	struct sk_buff *buf;
@@ -68,7 +71,56 @@ static DECLARE_DELAYED_WORK(tipc_ack_work, tipc_send_ack_worker);
 
 struct workqueue_struct *krgcom_wq;
 
+#ifdef CONFIG_64BIT
+
 static atomic64_t consumed_bytes;
+
+static inline void consumed_bytes_add(long load)
+{
+	atomic64_add(load, &consumed_bytes);
+}
+
+static inline void consumed_bytes_sub(long load)
+{
+	atomic64_sub(load, &consumed_bytes);
+}
+
+s64 rpc_consumed_bytes(void)
+{
+	return atomic64_read(&consumed_bytes);
+}
+
+#else /* !CONFIG_64BIT */
+
+static s64 consumed_bytes;
+static DEFINE_SPINLOCK(consumed_bytes_lock);
+
+static inline void consumed_bytes_add(long load)
+{
+	spin_lock(&consumed_bytes_lock);
+	consumed_bytes += load;
+	spin_unlock(&consumed_bytes_lock);
+}
+
+static inline void consumed_bytes_sub(long load)
+{
+	spin_lock(&consumed_bytes_lock);
+	consumed_bytes -= load;
+	spin_unlock(&consumed_bytes_lock);
+}
+
+s64 rpc_consumed_bytes(void)
+{
+	s64 ret;
+
+	spin_lock(&consumed_bytes_lock);
+	ret = consumed_bytes;
+	spin_unlock(&consumed_bytes_lock);
+
+	return ret;
+}
+
+#endif /* !CONFIG_64BIT */
 
 /*
  * Local definition
@@ -81,7 +133,9 @@ struct tipc_name_seq tipc_seq;
 
 krgnodemask_t nodes_requiring_ack;
 unsigned long last_cleanup_ack[KERRIGHED_MAX_NODES];
+static int ack_cleanup_window_size;
 static int consecutive_recv[KERRIGHED_MAX_NODES];
+static int max_consecutive_recv[KERRIGHED_MAX_NODES];
 
 void __rpc_put_raw_data(void *data){
 	kfree_skb((struct sk_buff*)data);
@@ -132,7 +186,7 @@ static struct rpc_tx_elem *__rpc_tx_elem_alloc(size_t size, int nr_dest)
 	elem = kmem_cache_alloc(rpc_tx_elem_cachep, GFP_ATOMIC);
 	if (!elem)
 		goto oom;
-	atomic64_add(size, &consumed_bytes);
+	consumed_bytes_add(size);
 	elem->data = kmalloc(size, GFP_ATOMIC);
 	if (!elem->data)
 		goto oom_free_elem;
@@ -147,7 +201,7 @@ static struct rpc_tx_elem *__rpc_tx_elem_alloc(size_t size, int nr_dest)
 oom_free_data:
 	kfree(elem->data);
 oom_free_elem:
-	atomic64_sub(size, &consumed_bytes);
+	consumed_bytes_sub(size);
 	kmem_cache_free(rpc_tx_elem_cachep, elem);
 oom:
 	return NULL;
@@ -157,7 +211,7 @@ static void __rpc_tx_elem_free(struct rpc_tx_elem *elem)
 {
 	kfree(elem->link_seq_id);
 	kfree(elem->data);
-	atomic64_sub(elem->iov[1].iov_len, &consumed_bytes);
+	consumed_bytes_sub(elem->iov[1].iov_len);
 	kmem_cache_free(rpc_tx_elem_cachep, elem);
 }
 
@@ -952,7 +1006,7 @@ static void tipc_handler(void *usr_handle,
 	if (h->link_ack_id > rpc_link_send_ack_id[h->from]){
 		rpc_link_send_ack_id[h->from] = h->link_ack_id;
 		if(rpc_link_send_ack_id[h->from] - last_cleanup_ack[h->from]
-			> ACK_CLEANUP_WINDOW_SIZE){
+			> ack_cleanup_window_size){
 			int cpuid;
 			last_cleanup_ack[h->from] = h->link_ack_id;
 			for_each_online_cpu(cpuid){
@@ -977,7 +1031,7 @@ static void tipc_handler(void *usr_handle,
 	}
 
 	// Check if we are receiving lot of packets but sending none
-	if (consecutive_recv[h->from] >= MAX_CONSECUTIVE_RECV){
+	if (consecutive_recv[h->from] >= max_consecutive_recv[h->from]){
 		krgnode_set(h->from, nodes_requiring_ack);
 		queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
 	}
@@ -1136,16 +1190,37 @@ void krg_node_reachable(kerrighed_node_t nodeid){
 void krg_node_unreachable(kerrighed_node_t nodeid){
 }
 
-long rpc_consumed_bytes(void){
-	return atomic64_read(&consumed_bytes);
+void rpc_enable_lowmem_mode(kerrighed_node_t nodeid){
+	max_consecutive_recv[nodeid] = MAX_CONSECUTIVE_RECV__LOWMEM_MODE;
+
+	krgnode_set(nodeid, nodes_requiring_ack);
+	queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
+}
+
+void rpc_disable_lowmem_mode(kerrighed_node_t nodeid){
+	max_consecutive_recv[nodeid] = MAX_CONSECUTIVE_RECV;
+}
+
+void rpc_enable_local_lowmem_mode(void){
+	int cpuid;
+
+	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE__LOWMEM_MODE;
+
+	for_each_online_cpu(cpuid){
+		struct tx_engine *engine = &per_cpu(tipc_tx_engine, cpuid);
+		queue_delayed_work_on(cpuid, krgcom_wq,
+			&engine->cleanup_not_retx_work, 0);
+	}
+}
+
+void rpc_disable_local_lowmem_mode(void){
+	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE;
 }
 
 int comlayer_init(void)
 {
 	int res = 0;
 	long i;
-
-	atomic64_set(&consumed_bytes, 0);
 
 	krgnodes_clear(nodes_requiring_ack);	
 
@@ -1167,11 +1242,14 @@ int comlayer_init(void)
 
 	krgcom_wq = create_workqueue("krgcom");
 
+	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE;
+
 	for (i = 0; i < KERRIGHED_MAX_NODES; i++) {
 		INIT_LIST_HEAD(&tipc_ordering_queue[i]);
 		spin_lock_init(&tipc_ordering_lock[i]);
 		last_cleanup_ack[i] = 0;
 		consecutive_recv[i] = 0;
+		max_consecutive_recv[i] = MAX_CONSECUTIVE_RECV;
 	}
 
 	tipc_ordering_elem_cachep = kmem_cache_create("tipc_ordering_elem",
