@@ -19,8 +19,7 @@
 #endif
 #include <linux/file.h>
 #include <linux/namei.h>
-
-#include "physical_fs.h"
+#include <kerrighed/physical_fs.h>
 
 char *physical_d_path(const struct path *path, char *tmp)
 {

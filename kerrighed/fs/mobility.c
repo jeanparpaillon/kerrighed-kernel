@@ -29,7 +29,7 @@
 #include <kerrighed/file.h>
 #include "mobility.h"
 #include <kerrighed/regular_file_mgr.h>
-#include "physical_fs.h"
+#include <kerrighed/physical_fs.h>
 #include "file_struct_io_linker.h"
 #ifdef CONFIG_KRG_FAF
 #include <kerrighed/faf.h>

@@ -20,8 +20,8 @@
 #include <kerrighed/file.h>
 #include <kerrighed/ghost_helpers.h>
 #include <kerrighed/regular_file_mgr.h>
+#include <kerrighed/physical_fs.h>
 #include "mobility.h"
-#include "physical_fs.h"
 
 /*****************************************************************************/
 /*                                                                           */

@@ -9,8 +9,8 @@
 #include <kddm/kddm.h>
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/file.h>
+#include <kerrighed/physical_fs.h>
 #include "../mobility.h"
-#include "../physical_fs.h"
 #include <kerrighed/action.h>
 #include <kerrighed/app_shared.h>
 #include <kerrighed/app_terminal.h>

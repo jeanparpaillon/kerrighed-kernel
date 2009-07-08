@@ -21,7 +21,7 @@
 
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
-#include "../physical_fs.h"
+#include <kerrighed/physical_fs.h>
 #include <kerrighed/file.h>
 #include "../file_struct_io_linker.h"
 
