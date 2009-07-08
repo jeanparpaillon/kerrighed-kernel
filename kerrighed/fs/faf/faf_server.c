@@ -705,18 +705,35 @@ void handle_faf_d_path (struct rpc_desc* desc,
 	char *buff, *file_name = NULL;
 	struct file *file;
 	int len;
+	int err;
 
 	buff = kmalloc (msg->count, GFP_KERNEL);
 
 	file = fcheck_files (current->files, msg->server_fd);
 	/* Remote caller holds a reference so it can't disappear. */
 	BUG_ON(!file);
-	file_name = physical_d_path(&file->f_path, buff);
-	len = strlen(file_name) + 1;
+	file_name = d_path(&file->f_path, buff, msg->count);
+	if (IS_ERR(file_name))
+		len = PTR_ERR(file_name);
+	else
+		len = strlen(file_name) + 1;
 
-	rpc_pack(desc, 0, file_name, len);
+	err = rpc_pack_type(desc, len);
+	if (err)
+		goto err_cancel;
+	if (len >= 0)
+		err = rpc_pack(desc, 0, file_name, len);
+	if (err)
+		goto err_cancel;
 
+out:
 	kfree (buff);
+
+	return;
+
+err_cancel:
+	rpc_cancel(desc);
+	goto out;
 }
 
 

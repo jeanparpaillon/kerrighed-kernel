@@ -477,6 +477,8 @@ char *faf_d_path(struct file *file, char *buff, int size)
 	faf_client_data_t *data = file->private_data;
 	struct faf_rw_msg msg;
 	struct rpc_desc* desc;
+	int len;
+	int err;
 
 	if (file->f_flags & O_FAF_SRV)
 		return d_path(&file->f_path, buff, size);
@@ -485,11 +487,32 @@ char *faf_d_path(struct file *file, char *buff, int size)
 	msg.count = size;
 
 	desc = rpc_begin(RPC_FAF_D_PATH, data->server_id);
-	rpc_pack_type(desc, msg);
-	rpc_unpack(desc, 0, buff, size);
+	if (!desc)
+		return ERR_PTR(-ENOMEM);
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto err_cancel;
+	err = rpc_unpack_type(desc, len);
+	if (err)
+		goto err_cancel;
+	if (len >= 0) {
+		err = rpc_unpack(desc, 0, buff, len);
+		if (err)
+			goto err_cancel;
+	} else {
+		buff = ERR_PTR(len);
+	}
+out_end:
 	rpc_end(desc, 0);
 
 	return buff;
+
+err_cancel:
+	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
+	buff = ERR_PTR(err);
+	goto out_end;
 }
 
 long krg_faf_bind (struct file * file,
