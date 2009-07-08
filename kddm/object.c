@@ -198,6 +198,7 @@ struct kddm_obj *dup_kddm_obj_entry(struct kddm_obj *src_obj)
 
 	*obj_entry = *src_obj;
 
+	CLEAR_OBJECT_PINNED(obj_entry);
 	atomic_set(&obj_entry->sleeper_count, 0);
 	init_waitqueue_head(&obj_entry->waiting_tsk);
 
