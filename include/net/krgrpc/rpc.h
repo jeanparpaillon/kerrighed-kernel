@@ -161,6 +161,8 @@ int rpc_end(struct rpc_desc *rpc_desc, int flags);
 
 void rpc_free_buffer(struct rpc_data *buf);
 
+long rpc_consumed_bytes(void);
+
 /*
  * Convenient define
  */

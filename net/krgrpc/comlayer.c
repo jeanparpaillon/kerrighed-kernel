@@ -68,6 +68,8 @@ static DECLARE_DELAYED_WORK(tipc_ack_work, tipc_send_ack_worker);
 
 struct workqueue_struct *krgcom_wq;
 
+static atomic64_t consumed_bytes;
+
 /*
  * Local definition
  */
@@ -130,11 +132,13 @@ static struct rpc_tx_elem *__rpc_tx_elem_alloc(size_t size, int nr_dest)
 	elem = kmem_cache_alloc(rpc_tx_elem_cachep, GFP_ATOMIC);
 	if (!elem)
 		goto oom;
+	atomic64_add(size, &consumed_bytes);
 	elem->data = kmalloc(size, GFP_ATOMIC);
 	if (!elem->data)
 		goto oom_free_elem;
 	elem->link_seq_id = kmalloc(sizeof(*elem->link_seq_id) * nr_dest,
 				    GFP_ATOMIC);
+	elem->iov[1].iov_len = size;
 	if (!elem->link_seq_id)
 		goto oom_free_data;
 
@@ -143,6 +147,7 @@ static struct rpc_tx_elem *__rpc_tx_elem_alloc(size_t size, int nr_dest)
 oom_free_data:
 	kfree(elem->data);
 oom_free_elem:
+	atomic64_sub(size, &consumed_bytes);
 	kmem_cache_free(rpc_tx_elem_cachep, elem);
 oom:
 	return NULL;
@@ -152,6 +157,7 @@ static void __rpc_tx_elem_free(struct rpc_tx_elem *elem)
 {
 	kfree(elem->link_seq_id);
 	kfree(elem->data);
+	atomic64_sub(elem->iov[1].iov_len, &consumed_bytes);
 	kmem_cache_free(rpc_tx_elem_cachep, elem);
 }
 
@@ -1130,10 +1136,16 @@ void krg_node_reachable(kerrighed_node_t nodeid){
 void krg_node_unreachable(kerrighed_node_t nodeid){
 }
 
+long rpc_consumed_bytes(void){
+	return atomic64_read(&consumed_bytes);
+}
+
 int comlayer_init(void)
 {
 	int res = 0;
 	long i;
+
+	atomic64_set(&consumed_bytes, 0);
 
 	krgnodes_clear(nodes_requiring_ack);	
 
