@@ -13,6 +13,7 @@
 #include <linux/sched.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/file_ghost.h>
+#include <kerrighed/physical_fs.h>
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -298,6 +299,7 @@ ghost_t *create_file_ghost(int access,
 {
 	struct file *file ;
 	char *file_name;
+	struct path prev_root;
 
 	struct file_ghost_data *ghost_data ;
 	ghost_t *ghost;
@@ -306,6 +308,8 @@ ghost_t *create_file_ghost(int access,
 
 	/* A file ghost can only be used in uni-directional mode */
 	BUG_ON(!(!(access & GHOST_READ) ^ !(access & GHOST_WRITE)));
+
+	chroot_to_physical_root(&prev_root);
 
 	/* Create directory if not exist */
 	if (access & GHOST_WRITE) {
@@ -352,6 +356,9 @@ ghost_t *create_file_ghost(int access,
 	ghost->data = ghost_data;
 	ghost->ops = &ghost_file_ops;
 
+out:
+	chroot_to_prev_root(&prev_root);
+
 	return ghost;
 
 err_ghost:
@@ -359,7 +366,8 @@ err_ghost:
 err_file:
 	filp_close(file, current->files);
 err:
-	return ERR_PTR(r);
+	ghost = ERR_PTR(r);
+	goto out;
 }
 
 /** Create a new file ghost.
