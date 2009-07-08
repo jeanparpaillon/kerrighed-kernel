@@ -364,7 +364,7 @@ scheduler_port_make_group(struct config_group *group, const char *name)
 	if (!peer_type) {
 		spin_unlock(&types_lock);
 
-		request_module(name);
+		request_module("%s", name);
 
 		spin_lock(&types_lock);
 		peer_type = port_type_find(name);

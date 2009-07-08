@@ -728,7 +728,7 @@ static struct config_group *probes_make_group(struct config_group *group,
 		 * "/lib/modules/<version>/extra" directory and added
 		 * to "/lib/modules/<version>/modules.dep" file.
 		 */
-		request_module(name);
+		request_module("%s", name);
 
 		spin_lock(&probes_lock);
 		tmp_probe = probe_find(name);

@@ -325,7 +325,7 @@ struct scheduler_policy *scheduler_policy_new(const char *name)
 		 * into "/lib/modules/<version>/extra" directory and added to
 		 * "/lib/modules/<version>/modules.dep" file.
 		 */
-		request_module(name);
+		request_module("%s", name);
 
 		spin_lock(&policies_lock);
 		type = scheduler_policy_type_find(name);
