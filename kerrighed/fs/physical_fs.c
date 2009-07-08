@@ -9,6 +9,7 @@
 
 #include <linux/fs.h>
 #include <linux/mount.h>
+#include <linux/mnt_namespace.h>
 #include <linux/dcache.h>
 #include <linux/fs_struct.h>
 #include <linux/sched.h>
@@ -33,6 +34,39 @@ char *physical_d_path(const struct path *path, char *tmp)
 		return NULL;
 
 	return pathname;
+}
+
+void get_physical_root(struct path *root)
+{
+	root->mnt = init_task.nsproxy->mnt_ns->root;
+	root->dentry = root->mnt->mnt_root;
+	path_get(root);
+
+	while (d_mountpoint(root->dentry) &&
+	       follow_down(&root->mnt, &root->dentry))
+		;
+}
+
+void chroot_to_physical_root(struct path *prev_root)
+{
+	struct path root;
+
+	get_physical_root(&root);
+	write_lock(&current->fs->lock);
+	*prev_root = current->fs->root;
+	current->fs->root = root;
+	write_unlock(&current->fs->lock);
+}
+
+void chroot_to_prev_root(const struct path *prev_root)
+{
+	struct path root;
+
+	write_lock(&current->fs->lock);
+	root = current->fs->root;
+	current->fs->root = *prev_root;
+	write_unlock(&current->fs->lock);
+	path_put(&root);
 }
 
 struct file *open_physical_file (char *filename,

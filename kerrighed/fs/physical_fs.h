@@ -7,6 +7,11 @@
 #ifndef __PHYSICAL_FS__
 #define __PHYSICAL_FS__
 
+#include <linux/types.h>
+
+struct path;
+struct file;
+
 /*--------------------------------------------------------------------------*
  *                                                                          *
  *                              EXTERN FUNCTIONS                            *
@@ -14,6 +19,11 @@
  *--------------------------------------------------------------------------*/
 
 char *physical_d_path(const struct path *path, char *tmp);
+
+void get_physical_root(struct path *root);
+
+void chroot_to_physical_root(struct path *prev_root);
+void chroot_to_prev_root(const struct path *prev_root);
 
 struct file *open_physical_file(char *filename,
 				int flags, int mode, uid_t fsuid, gid_t fsgid);
