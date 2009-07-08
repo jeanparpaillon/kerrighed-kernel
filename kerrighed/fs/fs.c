@@ -7,6 +7,8 @@
  *  Implementation of functions used to initialize and finalize the
  *  kerfs module.
  */
+#include "debug_fs.h"
+
 #include <linux/module.h>
 #include <linux/proc_fs.h>
 
@@ -34,7 +36,9 @@ int init_dvfs (void)
 	dvfs_file_cachep = kmem_cache_create("dvfs_file",
 					     sizeof(struct dvfs_file_struct),
 					     0, SLAB_PANIC, NULL);
-
+#ifdef CONFIG_KRG_DEBUG
+	init_dvfs_debug();
+#endif
 	register_io_linker (DVFS_FILE_STRUCT_LINKER,
 			    &dvfs_file_struct_io_linker);
 

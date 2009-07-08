@@ -3,6 +3,7 @@
  *
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
+#include "debug_fs.h"
 
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
@@ -23,12 +24,18 @@ int file_alloc_object (struct kddm_obj * obj_entry,
 {
 	struct dvfs_file_struct *dvfs_file;
 
+	DEBUG ("file_io_linker", 4, -1, -1, -1, objid, NULL, NULL,
+	       DVFS_LOG_ENTER, 0);
+
 	dvfs_file = kmem_cache_alloc (dvfs_file_cachep, GFP_KERNEL);
 	if (dvfs_file == NULL)
 		return -ENOMEM;
 
 	dvfs_file->file = NULL;
 	obj_entry->object = dvfs_file;
+
+	DEBUG ("file_io_linker", 4, -1, -1, -1, objid, NULL, NULL,
+	       DVFS_LOG_EXIT, 0);
 
 	return 0;
 }
@@ -54,12 +61,18 @@ int file_remove_object (void *object,
 {
 	struct dvfs_file_struct *dvfs_file;
 
+	DEBUG ("file_io_linker", 2, -1, -1, -1, objid, NULL, NULL,
+	       DVFS_LOG_ENTER, 0);
+
 	dvfs_file = object;
 
 	if (dvfs_file != NULL) {
 		BUG_ON(dvfs_file->file != NULL);
 		kmem_cache_free (dvfs_file_cachep, dvfs_file);
 	}
+
+	DEBUG ("file_io_linker", 3, -1, -1, -1, objid, NULL, NULL,
+	       DVFS_LOG_EXIT, 0);
 
 	return 0;
 }

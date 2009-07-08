@@ -7,6 +7,8 @@
  *  Implementation of functions used to migrate, duplicate and checkpoint
  *  DFS data, process memory and file structures.
  */
+#include "debug_fs.h"
+
 #include <linux/sched.h>
 #include <linux/fs.h>
 #include <linux/file.h>
@@ -49,6 +51,8 @@ void free_ghost_files (struct task_struct *ghost)
 {
 	struct fdtable *fdt;
 
+	DEBUG("mobility", 3, -1, -1, -1, -1UL, NULL, NULL, DVFS_LOG_ENTER, 0);
+
 	BUG_ON (ghost->files == NULL);
 
 	fdt = files_fdtable(ghost->files);
@@ -58,6 +62,8 @@ void free_ghost_files (struct task_struct *ghost)
 
 	exit_files(ghost);
 	exit_fs(ghost);
+
+	DEBUG("mobility", 3, -1, -1, -1, -1UL, NULL, NULL, DVFS_LOG_EXIT, 0);
 }
 
 /*****************************************************************************/
@@ -140,6 +146,10 @@ int export_one_open_file (struct epm_action *action,
 
 	BUG_ON(action->type == EPM_CHECKPOINT);
 
+	DEBUG("mobility", 2, index, faf_srv_id(file),faf_srv_fd(file),
+	      file->f_objid, tsk, file, DVFS_LOG_ENTER_EXPORT_FILE,
+	      epm_target_node(action));
+
 	if (action->type != EPM_CHECKPOINT
 	    && index != MMAPPED_FILE) {
 		if (!file->f_objid)
@@ -164,6 +174,9 @@ int export_one_open_file (struct epm_action *action,
 		goto err_write;
 
 	r = ops->file_export (action, ghost, tsk, index, file);
+
+	DEBUG("mobility", 2, index, faf_srv_id(file),faf_srv_fd(file),
+	      file->f_objid, tsk, file, DVFS_LOG_EXIT_EXPORT_FILE, 0);
 
 err_write:
 	return r;
@@ -373,6 +386,10 @@ int export_vma_file (struct epm_action *action,
 	int vm_file_type;
 	int r;
 
+	DEBUG("mobility", 2, -1, faf_srv_id(vma->vm_file),
+	      faf_srv_fd(vma->vm_file), dvfs_objid(vma->vm_file), tsk,
+	      vma->vm_file, DVFS_LOG_ENTER_EXPORT_VMA, vma);
+
 	/* Creation of the vm_file ghost */
 
 	if (vma->vm_file == NULL)
@@ -396,6 +413,10 @@ int export_vma_file (struct epm_action *action,
 	}
 
 err:
+	DEBUG("mobility", 2, -1, faf_srv_id(vma->vm_file),
+	      faf_srv_fd(vma->vm_file), dvfs_objid(vma->vm_file),
+	      tsk, vma->vm_file, DVFS_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -447,6 +468,8 @@ int export_open_files (struct epm_action *action,
 	BUG_ON (!tsk);
 	BUG_ON(action->type == EPM_CHECKPOINT);
 
+	DEBUG("mobility", 3, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_ENTER, 0);
+
 	/* Export files opened by the process */
 	for (i = 0; i < last_open_fd; i++) {
 		if (FD_ISSET (i, fdt->open_fds)) {
@@ -465,6 +488,8 @@ int export_open_files (struct epm_action *action,
 	}
 
 exit:
+	DEBUG("mobility", 3, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -654,6 +679,8 @@ int export_files_struct (struct epm_action *action,
 
 	BUG_ON (!tsk);
 
+	DEBUG("mobility", 3, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_ENTER, 0);
+
 	{
 		int magic = 780574;
 
@@ -729,6 +756,8 @@ exit_unlock:
 	rcu_read_unlock();
 
 err:
+	DEBUG("mobility", 3, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_EXIT, r);
+
 	return r;
 }
 
@@ -773,6 +802,8 @@ int export_fs_struct (struct epm_action *action,
 {
 	char *tmp, *file_name;
 	int r, len;
+
+	DEBUG("mobility", 3, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_ENTER, 0);
 
 	if (action->type == EPM_CHECKPOINT &&
 	    action->checkpoint.shared == CR_SAVE_LATER) {
@@ -838,6 +869,8 @@ int export_fs_struct (struct epm_action *action,
 		r = ghost_write (ghost, &magic, sizeof (int));
 	}
 
+	DEBUG("mobility", 3, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_EXIT, 0);
+
 err_write:
 	free_page ((unsigned long) tmp);
 
@@ -893,6 +926,9 @@ int import_one_open_file (struct epm_action *action,
 	if (r)
 		goto err_read;
 
+	DEBUG("mobility", 2, index, -1, -1, objid, task, NULL,
+	      DVFS_LOG_ENTER_IMPORT_FILE, 0);
+
 	ops = krgsyms_import(dvfs_ops_type);
 
 	/* We need to import the file, to avoid leaving unused data in
@@ -907,6 +943,10 @@ int import_one_open_file (struct epm_action *action,
 
 	/* Check if the file struct is already present */
 	file = begin_import_dvfs_file(objid, &dvfs_file);
+
+	DEBUG("mobility", 2, index, faf_srv_id(*returned_file),
+	      faf_srv_fd(*returned_file), objid, task, file,
+	      DVFS_LOG_IMPORT_INFO, *returned_file);
 
 	/* If a file struct was alreay present, use it and discard the one we
 	 * have just created. If f_count == 0, someone else is being freeing
@@ -926,6 +966,9 @@ int import_one_open_file (struct epm_action *action,
 	r = end_import_dvfs_file(objid, dvfs_file, *returned_file, first_import);
 
 exit:
+	DEBUG("mobility", 2, index, r ? -1 : faf_srv_id(*returned_file),
+	      r ? -1 : faf_srv_fd(*returned_file), objid, task,
+	      r ? NULL : *returned_file, DVFS_LOG_EXIT_IMPORT_FILE, r);
 err_read:
 	return r;
 }
@@ -949,6 +992,8 @@ int import_open_files (struct epm_action *action,
 {
 	int i, j, r = 0;
 
+	DEBUG("mobility", 2, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_ENTER, 0);
+
 	BUG_ON(action->type == EPM_CHECKPOINT);
 
 	/* Reception of the files list and their names */
@@ -963,6 +1008,8 @@ int import_open_files (struct epm_action *action,
 		else
 			fdt->fd[i] = NULL;
 	}
+	DEBUG("mobility", 2, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_EXIT, r);
+
 exit:
 	return r;
 
@@ -1064,6 +1111,8 @@ static int cr_link_to_open_files(struct epm_action *action,
 {
 	int i, r = 0;
 
+	DEBUG("mobility", 2, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_ENTER, 0);
+
 	BUG_ON(action->type == EPM_CHECKPOINT
 	       && action->restart.shared == CR_LINK_ONLY);
 
@@ -1085,6 +1134,7 @@ static int cr_link_to_open_files(struct epm_action *action,
 		else
 			fdt->fd[i] = NULL;
 	}
+	DEBUG("mobility", 2, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_EXIT, r);
 
 exit:
 	return r;
@@ -1149,6 +1199,8 @@ int import_files_struct (struct epm_action *action,
 		r = cr_link_to_files_struct(action, ghost, tsk);
 		return r;
 	}
+
+	DEBUG("mobility", 2, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_ENTER, 0);
 
 	/* Import the main files structure */
 
@@ -1234,6 +1286,9 @@ int import_files_struct (struct epm_action *action,
 
 		BUG_ON (!r && magic != 380574);
 	}
+
+	DEBUG("mobility", 2, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_EXIT, r);
+
 	return 0;
 
 exit_free_fdt:
@@ -1360,6 +1415,9 @@ int import_vma_file (struct epm_action *action,
 	int vm_file_type;
 	int r;
 
+	DEBUG("mobility", 2, -1, -1, -1, -1UL, tsk, NULL,
+	      DVFS_LOG_ENTER_IMPORT_VMA, vma);
+
 	/* Import the file type flag */
 	r = ghost_read (ghost, &vm_file_type, sizeof (int));
 	if (r)
@@ -1381,6 +1439,10 @@ int import_vma_file (struct epm_action *action,
 	  default:
 		  BUG();
 	}
+
+	DEBUG("mobility", 2, -1, -1, -1, -1UL, tsk, vma->vm_file,
+	      DVFS_LOG_EXIT, 0);
+
 
 err_read:
 	return r;
@@ -1456,6 +1518,8 @@ int import_fs_struct (struct epm_action *action,
 	char *buffer = (char *) __get_free_page (GFP_KERNEL);
 	int r;
 
+	DEBUG("mobility", 2, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_ENTER, 0);
+
 	if (action->type == EPM_CHECKPOINT
 	    && action->restart.shared == CR_LINK_ONLY) {
 		r = cr_link_to_fs_struct(action, ghost, tsk);
@@ -1506,6 +1570,8 @@ int import_fs_struct (struct epm_action *action,
 
 exit:
 	free_page ((unsigned long) buffer);
+
+	DEBUG("mobility", 2, -1, -1, -1, -1UL, tsk, NULL, DVFS_LOG_EXIT, r);
 
 	return r;
 

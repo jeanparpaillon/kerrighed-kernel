@@ -4,6 +4,8 @@
  *  Copyright (C) 2001-2006, INRIA, Universite de Rennes 1, EDF.
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
+#include "debug_fs.h"
+
 #include <linux/mutex.h>
 #include <linux/sched.h>
 #include <linux/file.h>
@@ -96,14 +98,23 @@ struct file *reopen_file_entry_from_krg_desc (struct task_struct *task,
 	BUG_ON (!task);
 	BUG_ON (!desc);
 
+	DEBUG("reg_file_mgr", 3, -1, -1, -1, -1UL, task, NULL,
+	      DVFS_LOG_ENTER, 0);
+
 	file = open_physical_file (desc->file.filename, desc->file.flags,
 				   desc->file.mode, desc->file.uid,
 				   desc->file.gid);
 
 	if (IS_ERR (file))
-		return file;
+		goto out;
 
 	file->f_pos = desc->file.pos;
+
+out:
+	DEBUG("reg_file_mgr", 3, -1, -1, -1, -1UL, task,
+	      IS_ERR(file) ? NULL : file,
+	      DVFS_LOG_EXIT,
+	      IS_ERR(file) ? PTR_ERR(file) : 0);
 
 	return file;
 }
@@ -116,15 +127,24 @@ struct file *create_file_entry_from_krg_desc (struct task_struct *task,
 	BUG_ON (!task);
 	BUG_ON (!desc);
 
+	DEBUG("reg_file_mgr", 2, -1, -1, -1, -1UL, task, NULL,
+	      DVFS_LOG_ENTER, 0);
+
 	file = open_physical_file(desc->file.filename, desc->file.flags,
 				  desc->file.mode,
 				  task->cred->fsuid, task->cred->fsgid);
 
 	if (IS_ERR (file))
-		return file;
+		goto out;
 
 	file->f_pos = desc->file.pos;
 	file->f_dentry->d_inode->i_mode |= desc->file.mode;
+
+out:
+	DEBUG("reg_file_mgr", 3, -1, -1, -1, -1UL, task,
+	      IS_ERR(file) ? NULL : file,
+	      DVFS_LOG_EXIT,
+	      IS_ERR(file) ? PTR_ERR(file) : 0);
 
 	return file;
 }
@@ -218,6 +238,9 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 	int size = 0, name_len;
 	int r = -ENOENT;
 
+	DEBUG("reg_file_mgr", 4, -1, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_ENTER, 0);
+
 #ifdef CONFIG_KRG_IPC
 	BUG_ON(file->f_op == &krg_shm_file_operations);
 
@@ -274,6 +297,9 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 	*desc_size = size;
 	r = 0;
 exit:
+	DEBUG("reg_file_mgr", 4, -1, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_EXIT, r);
+
 	free_page ((unsigned long) tmp);
 	return r;
 }
@@ -517,12 +543,18 @@ int regular_file_export (struct epm_action *action,
 {
 	int r = 0;
 
+	DEBUG("reg_file_mgr", 2, index, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_EXPORT_REG_FILE, 0);
+
 	BUG_ON(action->type == EPM_CHECKPOINT
 	       && action->checkpoint.shared == CR_SAVE_LATER);
 
 	check_flush_file(action, task->files, file);
 
 	r = ghost_write_regular_file_krg_desc(ghost, file);
+
+	DEBUG("reg_file_mgr", 3, index, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_EXIT, r);
 
 	return r;
 }
@@ -565,6 +597,9 @@ int regular_file_import (struct epm_action *action,
 {
 	void *desc;
 	int desc_size, r = 0;
+
+	DEBUG("reg_file_mgr", 2, -1, -1, -1, -1UL, NULL, NULL,
+	      DVFS_LOG_ENTER, 0);
 
 	BUG_ON(action->type == EPM_CHECKPOINT);
 

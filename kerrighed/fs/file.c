@@ -3,6 +3,7 @@
  *
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
+#include "debug_fs.h"
 
 #include <linux/file.h>
 #include <linux/unique_id.h>
@@ -36,6 +37,9 @@ int create_kddm_file_object(struct file *file)
 
 	file_id = get_unique_id (&file_struct_unique_id_root);
 
+	DEBUG("file", 3, -1, faf_srv_id(file), faf_srv_fd(file),
+	      file_id, NULL, file, DVFS_LOG_ENTER, 0);
+
 	dvfs_file = grab_dvfs_file_struct(file_id);
 	BUG_ON (dvfs_file->file != NULL);
 
@@ -54,6 +58,9 @@ int create_kddm_file_object(struct file *file)
 		put_dvfs_file_struct (file_id);
 	}
 
+	DEBUG("file", 2, -1, faf_srv_id(file), faf_srv_fd(file),
+	      file_id, NULL, file, DVFS_LOG_EXIT_CREATE_OBJID, file_id);
+
 	return 0;
 }
 
@@ -66,6 +73,9 @@ int create_kddm_file_object(struct file *file)
 void check_file_struct_sharing (int index, struct file *file,
 				struct epm_action *action)
 {
+	DEBUG("file", 4, index, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_ENTER, 0);
+
 	/* Do not share the file struct for FAF files or already shared files*/
 	if (file->f_flags & (O_FAF_CLT | O_FAF_SRV | O_KRG_SHARED))
 		goto done;
@@ -98,6 +108,9 @@ share:
 	file->f_flags |= O_KRG_SHARED;
 
 done:
+	DEBUG("file", 4, index, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_EXIT, 0);
+
 	return;
 }
 #endif
@@ -110,9 +123,15 @@ void get_dvfs_file(int index, unsigned long objid)
 	dvfs_file = grab_dvfs_file_struct(objid);
 	file = dvfs_file->file;
 
+	DEBUG("file", 3, index, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_ENTER, NULL);
+
 	dvfs_file->count++;
 
 	put_dvfs_file_struct (objid);
+
+	DEBUG("file", 2, index, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_EXIT_GET_DVFS, dvfs_file);
 }
 
 void put_dvfs_file(int index, struct file *file)
@@ -126,6 +145,8 @@ void put_dvfs_file(int index, struct file *file)
 #ifdef CONFIG_KRG_FAF
 	check_last_faf_client_close(file, dvfs_file);
 #endif
+	DEBUG("file", 2, index, faf_srv_id(file), faf_srv_fd(file),
+	      objid, NULL, file, DVFS_LOG_ENTER_PUT_DVFS, dvfs_file);
 
 	/* else someone has allocated a new structure during the grab */
 
@@ -133,6 +154,9 @@ void put_dvfs_file(int index, struct file *file)
 		_kddm_remove_frozen_object (dvfs_file_struct_ctnr, objid);
 	else
 		put_dvfs_file_struct (objid);
+
+	DEBUG("file", 3, index, -1, -1, objid, NULL, NULL,
+	      DVFS_LOG_EXIT, 0);
 }
 
 /*****************************************************************************/
@@ -153,9 +177,15 @@ loff_t krg_file_pos_read(struct file *file)
 
 	dvfs_file = get_dvfs_file_struct (file->f_objid);
 
+	DEBUG("file", 2, -1, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_ENTER, dvfs_file);
+
 	pos = dvfs_file->f_pos;
 
 	put_dvfs_file_struct (file->f_objid);
+
+	DEBUG("file", 2, -1, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_EXIT, 0);
 
 	return pos;
 }
@@ -171,9 +201,15 @@ void krg_file_pos_write(struct file *file, loff_t pos)
 
 	dvfs_file = grab_dvfs_file_struct (file->f_objid);
 
+	DEBUG("file", 2, -1, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_ENTER, dvfs_file);
+
 	dvfs_file->f_pos = pos;
 
 	put_dvfs_file_struct (file->f_objid);
+
+	DEBUG("file", 2, -1, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_EXIT, 0);
 }
 
 /** Decrease usage count on a dvfs file struct.
@@ -183,9 +219,14 @@ void krg_file_pos_write(struct file *file, loff_t pos)
  */
 void krg_put_file(struct file *file)
 {
+	DEBUG("file", 2, -1, faf_srv_id(file), faf_srv_fd(file),
+	      file->f_objid, NULL, file, DVFS_LOG_ENTER, 0);
+
 	BUG_ON (file->f_objid == 0);
 
 	put_dvfs_file(-1, file);
+
+	DEBUG("file", 3, -1, -1, -1, -1UL, NULL, file, DVFS_LOG_EXIT, 0);
 }
 
 /*****************************************************************************/
