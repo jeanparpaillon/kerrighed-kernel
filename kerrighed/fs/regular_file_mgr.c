@@ -175,6 +175,8 @@ struct file *import_regular_file_from_krg_desc (struct task_struct *task,
 		return reopen_shm_file_entry_from_krg_desc (task, desc);
 #endif
 
+	printk("%s %d: %s\n", __PRETTY_FUNCTION__, current->pid, desc->file.filename);
+
 	if (desc->file.ctnrid != KDDM_SET_UNUSED)
 		return create_file_entry_from_krg_desc (task, desc);
 	else
