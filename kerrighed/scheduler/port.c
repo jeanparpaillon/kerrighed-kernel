@@ -20,6 +20,8 @@
 
 #include "internal.h"
 
+#include "debug_sched.h"
+
 /**
  * Get the scheduler_port_type structure embedding a config_item_type
  *
@@ -110,8 +112,10 @@ static ssize_t scheduler_port_attribute_show(struct config_item *item,
 			to_scheduler_port_attribute(attr);
 		ret = -EACCES;
 
-		if (port_attr->show)
+		if (port_attr->show) {
+			DEBUG(DBG_PORT, 4, "called!\n");
 			ret = port_attr->show(port, port_attr, page);
+		}
 	}
 
 	return ret;
@@ -259,21 +263,31 @@ static int scheduler_port_allow_link(struct config_item *src,
 	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
 		return -EPERM;
 
+	DEBUG(DBG_PORT, 2, "src=%s target=%s\n",
+	      config_item_name(src), config_item_name(target));
+
 	/* At most one source connected at a given time */
 	rcu_read_lock();
 	if (connected(src_port)) {
 		rcu_read_unlock();
+		DEBUG(DBG_PORT, 2, "port %s already connected!\n",
+		      config_item_name(src));
 		return -EPERM;
 	}
 	rcu_read_unlock();
 
-	if (!is_link_target_valid(target))
+	if (!is_link_target_valid(target)) {
+		DEBUG(DBG_PORT, 2, "invalid target %s!\n",
+		      config_item_name(target));
 		return -EINVAL;
+	}
 
 	if (!scheduler_types_compatible(
 		    src_port->sink.type,
-		    to_scheduler_pipe_type(target->ci_type)->source_type))
+		    to_scheduler_pipe_type(target->ci_type)->source_type)) {
+		DEBUG(DBG_PORT, 2, "sink and source types not compatible!\n");
 		return -EINVAL;
+	}
 
 	list = global_config_allow_link_begin(src, name, target);
 	if (IS_ERR(list)) {
@@ -327,6 +341,10 @@ static int scheduler_port_drop_link(struct config_item *src,
 				    struct config_item *target)
 {
 	struct scheduler_port *src_port = to_scheduler_port(src);
+
+	DEBUG(DBG_PORT, 2, "src=%s, target=%s\n",
+	      config_item_name(src), config_item_name(target));
+
 	scheduler_port_drop_peer_source(src_port);
 	return 0;
 }
@@ -375,6 +393,8 @@ scheduler_port_make_group(struct config_group *group, const char *name)
 	rcu_read_lock();
 	if (connected(port)) {
 		rcu_read_unlock();
+		DEBUG(DBG_PORT, 2, "port %s already connected!\n",
+		      config_item_name(&group->cg_item));
 		return ERR_PTR(-EBUSY);
 	}
 	rcu_read_unlock();
@@ -389,9 +409,13 @@ scheduler_port_make_group(struct config_group *group, const char *name)
 	spin_lock(&types_lock);
 	peer_type = port_type_find(name);
 	if (!peer_type) {
+		int ret_code;
+
 		spin_unlock(&types_lock);
 
-		request_module("%s", name);
+		ret_code = request_module("%s", name);
+		DEBUG(DBG_PORT, 1,
+		      "request_module(%s) returned %d\n", name, ret_code);
 
 		spin_lock(&types_lock);
 		peer_type = port_type_find(name);
@@ -400,6 +424,8 @@ scheduler_port_make_group(struct config_group *group, const char *name)
 		peer_owner = peer_type->pipe_type.item_type.ct_owner;
 		if (!peer_type->new || !try_module_get(peer_owner))
 			peer_type = NULL;
+		else
+			DEBUG(DBG_PORT, 3, "owner=0x%p\n", peer_owner);
 	}
 	spin_unlock(&types_lock);
 	err = -ENOENT;
@@ -408,8 +434,10 @@ scheduler_port_make_group(struct config_group *group, const char *name)
 
 	err = -EINVAL;
 	if (!scheduler_types_compatible(port->sink.type,
-					peer_type->pipe_type.source_type))
+					peer_type->pipe_type.source_type)) {
+		DEBUG(DBG_PORT, 2, "sink and source types not compatible!\n");
 		goto err_port;
+	}
 
 	/* Create the new port */
 	err = -ENOMEM;
@@ -510,9 +538,11 @@ static void scheduler_port_release(struct config_item *item)
 	struct scheduler_port_type *type = scheduler_port_type_of(port);
 	struct module *owner = type->pipe_type.item_type.ct_owner;
 
+	DEBUG(DBG_PORT, 1, "%s\n", config_item_name(item));
 	if (type->destroy)
 		type->destroy(port);
 	module_put(owner);
+	DEBUG(DBG_PORT, 3, "owner=0x%p\n", owner);
 }
 
 /* Assumes types_lock held */

@@ -17,6 +17,15 @@ MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Louis Rilling <Louis.Rilling@kerlabs.com>");
 MODULE_DESCRIPTION("Probe tracking migrations");
 
+#undef DBG_MIGRATION_PROBE
+
+#ifdef DBG_MIGRATION_PROBE
+#define DEBUG(topic, level, format, args...) \
+	printk(KERN_DEBUG "[%s]: " format, __PRETTY_FUNCTION__, ## args);
+#else
+#define DEBUG(topic, level, format, args...)
+#endif
+
 static ktime_t last_migration_raised;
 static atomic_t migration_on_going = ATOMIC_INIT(0);
 
@@ -39,6 +48,8 @@ DEFINE_SCHEDULER_PROBE_SOURCE_GET(migration_probe_last_migration,
 
 DEFINE_SCHEDULER_PROBE_SOURCE_SHOW(migration_probe_last_migration, page)
 {
+	DEBUG(DBG_MIGRATION_PROBE, 2, "called!\n");
+
 	/* TODO: Should convert to wall time to have a meaning in userspace */
 	return sprintf(page, "%lld\n", ktime_to_ns(last_migration_raised));
 }
@@ -62,6 +73,8 @@ DEFINE_SCHEDULER_PROBE_SOURCE_GET(migration_probe_migration_ongoing,
 
 DEFINE_SCHEDULER_PROBE_SOURCE_SHOW(migration_probe_migration_ongoing, page)
 {
+	DEBUG(DBG_MIGRATION_PROBE, 2, "called!\n");
+
 	return sprintf(page, "%d\n", atomic_read(&migration_on_going));
 }
 

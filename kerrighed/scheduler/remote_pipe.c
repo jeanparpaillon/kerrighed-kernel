@@ -20,6 +20,8 @@
 #include <net/krgrpc/rpc.h>
 #include <net/krgrpc/rpcid.h>
 
+#include "debug_sched.h"
+
 static void handle_pipe_get_remote_value(struct rpc_desc *desc)
 {
 	struct scheduler_pipe *pipe;
@@ -35,6 +37,7 @@ static void handle_pipe_get_remote_value(struct rpc_desc *desc)
 	err = PTR_ERR(item);
 	if (IS_ERR(item))
 		goto err_cancel;
+	DEBUG(DBG_REMOTE_PIPE, 2, "-> %s\n", config_item_name(item));
 	pipe = to_scheduler_pipe(item);
 	source = pipe->source;
 	types = &scheduler_source_type_of(source)->get_value_types;
@@ -65,6 +68,7 @@ static void handle_pipe_get_remote_value(struct rpc_desc *desc)
 
 	ret = scheduler_source_get_value(source, value_p, nr,
 					 in_value_p, in_nr);
+	DEBUG(DBG_REMOTE_PIPE, 2, "ret=%d\n", ret);
 
 	err = rpc_pack_type(desc, ret);
 	if (err)
@@ -91,6 +95,7 @@ err_put_item:
 	config_item_put(item);
 err_cancel:
 	rpc_cancel(desc);
+	DEBUG(DBG_REMOTE_PIPE, 1, "error=%d\n", err);
 }
 
 static void pipe_get_remote_value_worker(struct work_struct *work)
@@ -102,6 +107,9 @@ static void pipe_get_remote_value_worker(struct work_struct *work)
 	size_t value_type_size = sink->type->get_value_types.out_type_size;
 	int ret;
 	int err;
+
+	DEBUG(DBG_REMOTE_PIPE, 2, "sink=0x%p desc=0x%p\n",
+	      sink, show_desc->desc);
 
 	err = rpc_unpack_type(show_desc->desc, ret);
 	if (err)
@@ -117,6 +125,7 @@ static void pipe_get_remote_value_worker(struct work_struct *work)
 end_request:
 	err = rpc_end(show_desc->desc, 0);
 
+	DEBUG(DBG_PIPE, 2, "ret=%d", show_desc->ret);
 	spin_lock(&show_desc->lock);
 	show_desc->pending = 0;
 	spin_unlock(&show_desc->lock);
@@ -129,6 +138,7 @@ err_cancel:
 		err = -EPIPE;
 	BUG_ON(err >= 0);
 	show_desc->ret = err;
+	DEBUG(DBG_REMOTE_PIPE, 1, "sink=0x%p error=%d\n", sink, err);
 	goto end_request;
 }
 
@@ -143,6 +153,10 @@ static int start_pipe_get_remote_value(
 	struct rpc_desc *desc;
 	size_t in_size = sink->type->get_value_types.in_type_size;
 	int err;
+
+	DEBUG(DBG_REMOTE_PIPE, 1, "sink=0x%p -> %s[%d]\n",
+	      sink,
+	      config_item_name(&local_pipe->config.cg_item), node);
 
 	if (!krgnode_online(node))
 		return -EINVAL;
@@ -172,6 +186,7 @@ static int start_pipe_get_remote_value(
 	show_desc->desc = desc;
 	show_desc->node = node;
 	show_desc->value_p = value_p;
+	DEBUG(DBG_REMOTE_PIPE, 2, "to be continued desc=0x%p\n", desc);
 	queue_work(krg_wq, &show_desc->work);
 	return -EAGAIN;
 
@@ -179,6 +194,7 @@ err_cancel:
 	rpc_cancel(desc);
 	rpc_end(desc, 0);
 	BUG_ON(err == -EAGAIN);
+	DEBUG(DBG_REMOTE_PIPE, 1, "error=%d\n", err);
 	return err;
 }
 
@@ -191,6 +207,10 @@ int scheduler_pipe_get_remote_value(
 {
 	struct remote_pipe_desc *show_desc = &sink->remote_pipe;
 	int ret;
+
+	DEBUG(DBG_REMOTE_PIPE, 1, "sink=0x%p -> %s[%d]\n",
+	      sink,
+	      config_item_name(&local_pipe->config.cg_item), node);
 
 	if (!scheduler_source_type_of(local_pipe->source)->get_value)
 		return -EACCES;
@@ -222,6 +242,7 @@ int scheduler_pipe_get_remote_value(
 	}
 	spin_unlock(&show_desc->lock);
 
+	DEBUG(DBG_REMOTE_PIPE, 1, "ret=%d\n", ret);
 	return ret;
 }
 

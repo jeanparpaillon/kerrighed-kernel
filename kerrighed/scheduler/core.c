@@ -11,6 +11,8 @@
 #include <kerrighed/hotplug.h>
 #include <kerrighed/scheduler/process_set.h>
 
+#include "debug_sched.h"
+
 #include "internal.h"
 
 static struct config_item_type krg_scheduler_type = {
@@ -89,6 +91,8 @@ int init_scheduler(void)
 {
 	int ret;
 	struct config_group **defs = NULL;
+
+	init_scheduler_debug();
 
 	/* per task informations framework */
 	ret = krg_sched_info_start();

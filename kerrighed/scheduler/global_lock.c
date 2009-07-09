@@ -10,6 +10,8 @@
 #include <kddm/kddm.h>
 #include <asm/system.h>
 
+#include "debug_sched.h"
+
 static struct kddm_set *lock_set;
 
 #define ZERO_SIZE_LOCK_OBJECT	((void *) 0xe5e5e5e5)
@@ -72,6 +74,8 @@ int global_lock_try_writelock(unsigned long lock_id)
 	else
 		retval = PTR_ERR(ret);
 
+	DEBUG(DBG_GLOBAL_LOCK, 1, "%lu retval=%d\n", lock_id, retval);
+
 	return retval;
 }
 
@@ -86,6 +90,8 @@ int global_lock_writelock(unsigned long lock_id)
 		retval = -ENOMEM;
 	else
 		retval = PTR_ERR(ret);
+
+	DEBUG(DBG_GLOBAL_LOCK, 1, "%lu retval=%d\n", lock_id, retval);
 
 	return retval;
 }
@@ -107,6 +113,8 @@ int global_lock_readlock(unsigned long lock_id)
 
 void global_lock_unlock(unsigned long lock_id)
 {
+	DEBUG(DBG_GLOBAL_LOCK, 1, "%lu\n", lock_id);
+
 	_kddm_put_object(lock_set, lock_id);
 }
 

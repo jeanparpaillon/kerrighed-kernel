@@ -18,6 +18,19 @@ MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Louis Rilling <Louis.Rilling@kerlabs.com>");
 MODULE_DESCRIPTION("Filter to proactively cache remote values");
 
+#undef DBG_REMOTE_CACHE_FILTER
+#define DBG_LEVEL 4
+
+#ifdef DBG_REMOTE_CACHE_FILTER
+#define DEBUG(topic, level, format, args...) ({	      \
+	if (level <= DBG_LEVEL)			      \
+		printk(KERN_DEBUG "[%s]: " format,    \
+		       __PRETTY_FUNCTION__, ## args); \
+})
+#else
+#define DEBUG(topic, level, format, args...)
+#endif
+
 struct remote_cache_filter {
 	struct scheduler_filter filter;
 	unsigned long remote_values[KERRIGHED_MAX_NODES];
@@ -97,6 +110,7 @@ DEFINE_SCHEDULER_FILTER_ATTRIBUTE_STORE(polling_period, filter, attr, page, coun
 	new_period = msecs_to_jiffies(new_period);
 	rc_lock(f);
 	f->polling_period = new_period;
+	DEBUG(DBG_REMOTE_CACHE_FILTER, 1, "new_period=%lu jiffies\n", new_period);
 	reschedule_next_poll(f);
 	rc_unlock(f);
 
@@ -125,6 +139,7 @@ static int try_get_remote_values(struct remote_cache_filter *f)
 	kerrighed_node_t current_node = f->current_node;
 	int nr = 0;
 	int ret = 0;
+	char nodes_string[(KERRIGHED_MAX_NODES / 4) * 9 / 8 + 1];
 
 	while (current_node != KERRIGHED_NODE_ID_NONE) {
 		ret = scheduler_filter_simple_get_remote_value(
@@ -132,6 +147,8 @@ static int try_get_remote_values(struct remote_cache_filter *f)
 			current_node,
 			&f->remote_values[current_node], 1,
 			NULL, 0);
+		DEBUG(DBG_REMOTE_CACHE_FILTER, 4, "node %d ret=%d\n",
+		      current_node, ret);
 		if (ret == -EAGAIN)
 			break;
 		nr++;
@@ -139,14 +156,20 @@ static int try_get_remote_values(struct remote_cache_filter *f)
 			krgnode_set(current_node, f->available_values);
 		else
 			krgnode_clear(current_node, f->available_values);
+		if (DBG_LEVEL >= 4)
+			krgnodemask_scnprintf(nodes_string, sizeof(nodes_string), f->available_values);
+		DEBUG(DBG_REMOTE_CACHE_FILTER, 4, "node %d available_values=%s\n",
+		      current_node, nodes_string);
 		current_node = krgnode_next_online(current_node);
 		if (current_node == KERRIGHED_MAX_NODES)
 			current_node = KERRIGHED_NODE_ID_NONE;
 	}
 	f->current_node = current_node;
 
-	if (ret == -EACCES)
+	if (ret == -EACCES) {
 		f->active = 0;
+		DEBUG(DBG_REMOTE_CACHE_FILTER, 2, "Deactivation\n");
+	}
 
 	return nr;
 }
@@ -211,6 +234,7 @@ DEFINE_SCHEDULER_FILTER_GET_REMOTE_VALUE(remote_cache_filter, filter,
 		 * remote values
 		 */
 		f->active = 1;
+		DEBUG(DBG_REMOTE_CACHE_FILTER, 2, "Reactivation\n");
 		reschedule_next_poll(f);
 		get_remote_values(f);
 	}

@@ -25,6 +25,8 @@
 
 #include "internal.h"
 
+#include "debug_sched.h"
+
 static inline struct process_set *to_process_set(struct config_item *item)
 {
 	return container_of(to_config_group(item), struct process_set, group);
@@ -310,13 +312,19 @@ struct config_item *process_subset_make_item(struct config_group *group,
 	/* convert string to PID number */
 	/* TODO: ensure that name is exactly an integer */
 	err = -EINVAL;
-	if (sscanf(name, "%d", &id) != 1)
+	if (sscanf(name, "%d", &id) != 1) {
+		printk(KERN_ERR "[%s] error: %s is not valid PID\n",
+		       __PRETTY_FUNCTION__, name);
 		goto err_id;
+	}
 
 	err = -ENOMEM;
 	pset_el = process_set_element_new(id);
-	if (!pset_el)
+	if (!pset_el) {
+		printk(KERN_ERR "[%s] error: cannot allocate memory\n",
+		       __PRETTY_FUNCTION__);
 		goto err_pset_el;
+	}
 
 	/* add ID to the list */
 	/*
@@ -327,6 +335,8 @@ struct config_item *process_subset_make_item(struct config_group *group,
 	process_set_lock(pset);
 	if (process_set_contains_all(pset)) {
 		process_set_unlock(pset);
+		DEBUG(DBG_PROCESS_SET, 1,
+		      "scheduler already handles all processes\n");
 		goto err_handle_all;
 	}
 	process_subset_add_element(psubset, pset_el);
@@ -350,6 +360,9 @@ struct config_item *process_subset_make_item(struct config_group *group,
 	}
 
 	ret = &pset_el->item;
+
+	DEBUG(DBG_PROCESS_SET, 1, "%s successfully added\n",
+	      config_item_name(&pset_el->item));
 
 	return ret;
 
@@ -385,6 +398,8 @@ static void process_subset_drop_item(struct config_group *group,
 	process_set_unlock(pset);
 	synchronize_rcu();
 
+	DEBUG(DBG_PROCESS_SET, 1, "%s successfully removed\n",
+	      config_item_name(item));
 	global_config_drop(&pset_el->global_item);
 }
 
@@ -462,6 +477,8 @@ static ssize_t pset_handle_all_store(struct process_set *pset,
 		}
 
 	if (sscanf(page, "%hd", &val) != 1) {
+		printk(KERN_ERR "<pset_handle_all_store> error: input %s is "
+			"not number\n", page);
 		ret = -EINVAL;
 	} else {
 		spin_lock(&process_set_link_lock);
@@ -603,8 +620,11 @@ struct process_set *process_set_create(void)
 	enum pid_type type;
 
 	pset = kmalloc(sizeof(struct process_set), GFP_KERNEL);
-	if (!pset)
+	if (!pset) {
+		printk(KERN_ERR "[%s] error: Cannot allocate memory\n",
+		       __PRETTY_FUNCTION__);
 		goto err_kmalloc;
+	}
 
 	/* initialize process set. */
 	memset(&pset->group, 0, sizeof(pset->group));

@@ -31,6 +31,19 @@ MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Louis Rilling <Louis.Rilling@kerlabs.com>");
 MODULE_DESCRIPTION("Load balancing policy based on round robin placement");
 
+#undef DBG_RR_BALANCER
+#define DBG_LEVEL 4
+
+#ifdef DBG_RR_BALANCER
+#define DEBUG(topic, level, format, args...) ({	      \
+	if (level <= DBG_LEVEL)			      \
+		printk(KERN_DEBUG "[%s]: " format,    \
+		       __PRETTY_FUNCTION__, ## args); \
+})
+#else
+#define DEBUG(topic, level, format, args...)
+#endif
+
 struct round_robin_balancer {
 	struct scheduler_policy policy;
 	kerrighed_node_t last_target;

@@ -21,6 +21,11 @@
 
 #include "internal.h"
 
+#include "debug_sched.h"
+
+#define perror(format, args...) \
+	printk(KERN_ERR "[%s] error: " format, __PRETTY_FUNCTION__, ## args)
+
 /**
  * This structure represents pluggable probes for measuring various system
  * characteristics (e.g. CPU usage, memory usage, ...). User can implement these
@@ -104,6 +109,19 @@ to_scheduler_probe_source_attribute(struct configfs_attribute *attr)
 			    struct scheduler_probe_source_attribute, config);
 }
 
+/* Structure representing attributes of the root "probes" directory. */
+struct probes_attribute {
+	struct configfs_attribute config_attr;
+	ssize_t (*show)(char *);
+	ssize_t (*store)(const char *, size_t);
+};
+
+static inline
+struct probes_attribute *to_probes_attribute(struct configfs_attribute *attr)
+{
+	return container_of(attr, struct probes_attribute, config_attr);
+}
+
 /* a spinlock protecting access to the list of registered probes. */
 static DEFINE_SPINLOCK(probes_lock);
 /* List of registered probes. */
@@ -135,6 +153,7 @@ static ssize_t scheduler_probe_attribute_show(struct config_item *item,
 	ssize_t ret = 0;
 
 	if (probe_attr->show) {
+		DEBUG(DBG_PROBE, 4, "called!\n");
 		scheduler_probe_lock(probe);
 		ret = probe_attr->show(probe, page);
 		scheduler_probe_unlock(probe);
@@ -353,8 +372,10 @@ ssize_t scheduler_probe_source_attribute_show(struct config_item *item,
 	if (!handled) {
 		ret = -EACCES;
 
+		DEBUG(DBG_PROBE, 4, "item=%s\n", config_item_name(item));
 		source_attr = to_scheduler_probe_source_attribute(attr);
 		if (source_attr->show) {
+			DEBUG(DBG_PROBE, 4, "called!\n");
 			scheduler_probe_source_lock(ps);
 			ret = source_attr->show(page);
 			scheduler_probe_source_unlock(ps);
@@ -392,6 +413,8 @@ ssize_t scheduler_probe_source_attribute_store(struct config_item *item,
 	if (!handled) {
 		ret = -EACCES;
 		if (source_attr->store) {
+			DEBUG(DBG_PROBE, 4, "called!\n");
+
 			scheduler_probe_source_lock(ps);
 			ret = source_attr->store(page, count);
 			scheduler_probe_source_unlock(ps);
@@ -580,8 +603,10 @@ scheduler_probe_create(struct scheduler_probe_type *type,
 	tmp_attrs = kmalloc(sizeof(*tmp_attrs) * (nr_attrs + 2), GFP_KERNEL);
 	tmp_def = kcalloc(num_sources + nr_groups + 1, sizeof(*tmp_def), GFP_KERNEL);
 
-	if (!tmp_probe || !tmp_attrs || !tmp_def)
+	if (!tmp_probe || !tmp_attrs || !tmp_def) {
+		perror("Cannot allocate memory: %s\n", name);
 		goto out_kmalloc;
+	}
 
 	/* initialize attributes */
 	for (i = 0; i < nr_attrs; i++)
@@ -685,15 +710,21 @@ int scheduler_probe_register(struct scheduler_probe *probe)
 {
 	int ret = 0;
 
+	DEBUG(DBG_PROBE, 1, "%s\n", scheduler_probe_name(probe));
+
 	spin_lock(&probes_lock);
-	if (probe_find(scheduler_probe_name(probe)) != NULL)
+	if (probe_find(scheduler_probe_name(probe)) != NULL) {
 		ret = -EEXIST;
-	else
+	} else {
 		/*
 		 * ok, no probe with the same name exists, proceed with
 		 * registration
 		 */
 		list_add(&probe->list, &probes_list);
+		DEBUG(DBG_PROBE, 1,
+		      "registration function called for probe %s!",
+		      scheduler_probe_name(probe));
+	}
 	spin_unlock(&probes_lock);
 
 	return ret;
@@ -747,6 +778,8 @@ static struct config_group *probes_make_group(struct config_group *group,
 	spin_lock(&probes_lock);
 	tmp_probe = probe_find(name);
 	if (!tmp_probe) {
+		int ret_code;
+
 		spin_unlock(&probes_lock);
 
 		/*
@@ -758,7 +791,9 @@ static struct config_group *probes_make_group(struct config_group *group,
 		 * "/lib/modules/<version>/extra" directory and added
 		 * to "/lib/modules/<version>/modules.dep" file.
 		 */
-		request_module("%s", name);
+		ret_code = request_module("%s", name);
+		DEBUG(DBG_PROBE, 1,
+		      "request_module(%s) returned %d\n", name, ret_code);
 
 		spin_lock(&probes_lock);
 		tmp_probe = probe_find(name);
@@ -771,16 +806,21 @@ static struct config_group *probes_make_group(struct config_group *group,
          * in the kernel and has to be manually unloaded first.
 	 */
 	err = -ENOENT;
-	if (!tmp_probe)
+	if (!tmp_probe) {
+		perror("probe %s is not found in list of registered modules\n",
+		       name);
 		goto err_module;
+	}
 
 	/*
 	 * configfs does try_module_get a bit too late for us because we will
 	 * already have scheduled probe refreshment.
 	 */
 	err = -EAGAIN;
-	if (!try_module_get(tmp_probe->group.cg_item.ci_type->ct_owner))
+	if (!try_module_get(tmp_probe->group.cg_item.ci_type->ct_owner)) {
+		perror("module providing probe %s is unloading\n", name);
 		goto err_module;
+	}
 	spin_unlock(&probes_lock);
 
 	global_config_attrs_init_r(&tmp_probe->group);
@@ -871,13 +911,78 @@ static struct configfs_group_operations probes_group_ops = {
 	.drop_item = probes_drop_item,
 };
 
+static ssize_t probes_attribute_show(struct config_item *item,
+				     struct configfs_attribute *attr,
+				     char *page)
+{
+	struct probes_attribute *pa = to_probes_attribute(attr);
+	ssize_t ret = -EACCES;
+	if (pa->show)
+		ret = pa->show(page);
+	return ret;
+}
+
+static ssize_t probes_attribute_store(struct config_item *item,
+				      struct configfs_attribute *attr,
+				      const char *page,
+				      size_t count)
+{
+	struct probes_attribute *pa = to_probes_attribute(attr);
+	ssize_t ret = -EACCES;
+	if (pa->store)
+		ret = pa->store(page, count);
+	return ret;
+}
+
+static struct configfs_item_operations probes_item_ops = {
+	.show_attribute = probes_attribute_show,
+	.store_attribute = probes_attribute_store,
+};
+
+static ssize_t probes_registered_show(char *page)
+{
+	struct scheduler_probe *p;
+	ssize_t count = 0;
+	ssize_t tmp_count;
+
+	spin_lock(&probes_lock);
+	list_for_each_entry(p, &probes_list, list) {
+		tmp_count = snprintf(page + count, PAGE_SIZE - count, "%s ",
+				     config_item_name(&p->group.cg_item));
+		if (tmp_count < 0) {
+			count = tmp_count;
+			break;
+		}
+		count += tmp_count;
+	}
+	spin_unlock(&probes_lock);
+
+	return count;
+}
+
+static struct probes_attribute probes_registered_attr = {
+	.config_attr = {
+		.ca_name = "registered",
+		.ca_owner = THIS_MODULE,
+		.ca_mode = 0444
+	},
+	.show = probes_registered_show,
+};
+
+static struct configfs_attribute *probes_attrs[] = {
+	&probes_registered_attr.config_attr,
+	NULL
+};
+
 /**
  * This struct is ConfigFS-specific. See ConfigFS documentation for its
  * explanation.
  */
 static struct config_item_type probes_type = {
-	.ct_group_ops = &probes_group_ops,
 	.ct_owner = THIS_MODULE,
+	.ct_item_ops = &probes_item_ops,
+	.ct_group_ops = &probes_group_ops,
+	.ct_attrs = probes_attrs,
 };
 
 /**

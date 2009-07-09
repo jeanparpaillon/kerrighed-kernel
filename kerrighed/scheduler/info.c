@@ -595,7 +595,12 @@ void unimport_krg_sched_info(struct task_struct *task)
 
 int krg_sched_info_start(void)
 {
-	sched_info_cachep = KMEM_CACHE(krg_sched_info, SLAB_PANIC);
+	unsigned long cache_flags = SLAB_PANIC;
+
+#ifdef CONFIG_DEBUG_SLAB
+	cache_flags |= SLAB_POISON;
+#endif
+	sched_info_cachep = KMEM_CACHE(krg_sched_info, cache_flags);
 
 	return 0;
 }

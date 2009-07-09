@@ -18,6 +18,11 @@
 
 #include "internal.h"
 
+#include "debug_sched.h"
+
+#define perror(format, args...) \
+	printk(KERN_ERR "[%s] error: " format, __PRETTY_FUNCTION__, ## args)
+
 /* a spinlock protecting access to the list of scheduling policy types */
 static DEFINE_SPINLOCK(policies_lock);
 
@@ -62,6 +67,7 @@ static ssize_t scheduler_policy_attribute_show(struct config_item *item,
 	ssize_t ret = -EACCES;
 
 	if (policy_attr->show) {
+		DEBUG(DBG_POLICY, 4, "called!\n");
 		spin_lock(&policy->lock);
 		ret = policy_attr->show(policy, page);
 		spin_unlock(&policy->lock);
@@ -213,6 +219,8 @@ struct scheduler_policy_type *scheduler_policy_type_find(const char *name)
 	struct list_head *pos;
 	struct scheduler_policy_type *entry;
 
+	DEBUG(DBG_POLICY, 1, "searching for %s \n", name);
+
 	list_for_each(pos, &policies_list) {
 		entry = list_entry(pos, struct scheduler_policy_type, list);
 		if (strcmp(name, entry->name) == 0)
@@ -279,6 +287,8 @@ int scheduler_policy_type_register(struct scheduler_policy_type *type)
 		 */
 		type->item_type.ct_attrs = tmp_attrs;
 		list_add(&type->list, &policies_list);
+		DEBUG(DBG_POLICY, 1, "called for sched policy type %s!",
+		      type->name);
 	}
 	spin_unlock(&policies_lock);
 	if (ret)
@@ -326,6 +336,8 @@ struct scheduler_policy *scheduler_policy_new(const char *name)
 	spin_lock(&policies_lock);
 	type = scheduler_policy_type_find(name);
 	if (!type) {
+		int ret_code;
+
 		spin_unlock(&policies_lock);
 
 		/*
@@ -337,7 +349,9 @@ struct scheduler_policy *scheduler_policy_new(const char *name)
 		 * into "/lib/modules/<version>/extra" directory and added to
 		 * "/lib/modules/<version>/modules.dep" file.
 		 */
-		request_module("%s", name);
+		ret_code = request_module("%s", name);
+		DEBUG(DBG_POLICY, 1,
+		      "request_module(%s) returned %d\n", name, ret_code);
 
 		spin_lock(&policies_lock);
 		type = scheduler_policy_type_find(name);
@@ -352,8 +366,11 @@ struct scheduler_policy *scheduler_policy_new(const char *name)
 	 * unloaded first.
 	 */
 	err = -ENOENT;
-	if (!type)
+	if (!type) {
+		perror("scheduling policy %s is not found in list of "
+		       "registered modules\n", name);
 		goto err_module;
+	}
 
 	/*
 	 * configfs does try_module_get a bit too late for us because a user
@@ -361,8 +378,10 @@ struct scheduler_policy *scheduler_policy_new(const char *name)
 	 * pointing to it.
 	 */
 	err = -EAGAIN;
-	if (!try_module_get(type->item_type.ct_owner))
+	if (!try_module_get(type->item_type.ct_owner)) {
+		perror("module providing sched_policy %s is unloading\n", name);
 		goto err_module;
+	}
 	spin_unlock(&policies_lock);
 
 	tmp_policy = type->ops->new(name);

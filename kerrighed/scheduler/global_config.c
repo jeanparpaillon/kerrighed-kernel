@@ -61,6 +61,11 @@
 #include "string_list.h"
 #include "global_lock.h"
 
+#include "debug_sched.h"
+
+#define perror(format, args...) \
+	printk(KERN_ERR "[%s] error: " format, __PRETTY_FUNCTION__, ## args)
+
 struct global_config_attr {
 	struct list_head list;
 	struct list_head global_list;
@@ -194,6 +199,8 @@ static struct dentry *get_child_dentry(const char *child_name)
 
 		err = vfs_path_lookup(d_dir, scheduler_fs_mount,
 				      child_name, LOOKUP_PARENT, &nd);
+		DEBUG(DBG_GLOBAL_CONFIG, 3,
+		      "vfs_path_lookup returned err=%d\n", err);
 
 		dput(d_dir);
 
@@ -210,6 +217,8 @@ static struct dentry *get_child_dentry(const char *child_name)
 	d_child = lookup_one_len(real_child_name, d_dir, strlen(real_child_name));
 	if (IS_ERR(d_child))
 		mutex_unlock(&d_dir->d_inode->i_mutex);
+	DEBUG(DBG_GLOBAL_CONFIG, 3, "dir=%s real_child_name=%s d_child=0x%p\n",
+	      d_dir->d_name.name, real_child_name, d_child);
 	dput(d_dir);
 	return d_child;
 }
@@ -456,6 +465,9 @@ do_global_config_write(struct rpc_desc *desc, krgnodemask_t *nodes,
 	path = get_full_path(item, attr->ca_name);
 	if (!path)
 		goto err_cancel;
+
+	DEBUG(DBG_GLOBAL_CONFIG, 1, "path=%s count=%zu\n", path, count);
+
 	err = pack_string(desc, path);
 	put_path(path);
 	if (err)
@@ -473,6 +485,9 @@ do_global_config_write(struct rpc_desc *desc, krgnodemask_t *nodes,
 err_cancel:
 	rpc_cancel(desc);
 	rpc_end(desc, 0);
+
+	DEBUG(DBG_GLOBAL_CONFIG, 1, "err=%d\n", err);
+
 	return err;
 }
 
@@ -530,6 +545,8 @@ static void handle_global_config_write(struct rpc_desc *desc,
 	if (err)
 		goto err_buf;
 
+	DEBUG(DBG_GLOBAL_CONFIG, 2, "path=%s count=%zu\n", path, count);
+
 	chroot_to_scheduler_subsystem(&old_root);
 
 	file = filp_open(path, O_WRONLY, 0);
@@ -538,6 +555,7 @@ static void handle_global_config_write(struct rpc_desc *desc,
 		goto chroot_restore;
 	}
 	ret = vfs_write(file, buf, count, &pos);
+	DEBUG(DBG_GLOBAL_CONFIG, 3, "ret=%zd\n", ret);
 	err = filp_close(file, NULL);
 
 	if (ret != count) {
@@ -549,6 +567,7 @@ static void handle_global_config_write(struct rpc_desc *desc,
 chroot_restore:
 	chroot_restore(&old_root);
 
+	DEBUG(DBG_GLOBAL_CONFIG, 1, "err=%d\n", err);
 	rpc_pack_type(desc, err);
 
 	kfree(buf);
@@ -648,6 +667,8 @@ static int handle_global_config_symlink(struct inode *dir,
 	struct path old_root;
 	int err;
 
+	DEBUG(DBG_GLOBAL_CONFIG, 3, "old_name=%s\n", old_name);
+
 	/*
 	 * Temporarily change current's root to configfs'one so that configfs
 	 * can retrieve the right target item
@@ -710,6 +731,7 @@ static void handle_global_config_dir_op(struct rpc_desc *desc,
 	put_child_dentry(d_child);
 
 out_pack:
+	DEBUG(DBG_GLOBAL_CONFIG, 1, "%s err=%d\n", name, err);
 	rpc_pack_type(desc, err);
 	put_string(old_name);
 	put_string(name);
@@ -828,12 +850,18 @@ static int __create_commit(enum config_op op,
 	}
 
 	err = string_list_add_element(list, path);
-	if (err)
+	if (err) {
+		DEBUG(DBG_GLOBAL_CONFIG, 1,
+		      "string_list_add_element %s (err=%d)\n", path, err);
 		goto err_list_add;
+	}
 
 	err = global_config_dir_op(op, path, old_name);
-	if (err)
+	if (err) {
+		perror("some nodes cound not initialize %s (err=%d)\n",
+		       path, err);
 		goto err_dir_op;
+	}
 
 	local_commit(item, path, old_name);
 
@@ -1402,9 +1430,12 @@ int global_config_pack_item(struct rpc_desc *desc, struct config_item *item)
 	char *path = get_full_path(item, NULL);
 	int err;
 
+	DEBUG(DBG_GLOBAL_CONFIG, 1, "%s\n", config_item_name(item));
+
 	if (!path)
 		return -ENOMEM;
 	err = pack_string(desc, path);
+	DEBUG(DBG_GLOBAL_CONFIG, 2, "path=%s\n", path);
 	put_path(path);
 
 	return err;
@@ -1441,6 +1472,7 @@ static struct config_item *get_item(const char *path)
 		next_root = strchr(parent_root + 1, '/');
 		if (next_root)
 			*next_root = '\0';
+		DEBUG(DBG_GLOBAL_CONFIG, 3, "child=%s?\n", parent_root + 1);
 		child = config_group_find_item(parent, parent_root + 1);
 		if (!child)
 			break;
@@ -1462,11 +1494,15 @@ struct config_item *global_config_unpack_get_item(struct rpc_desc *desc)
 	struct config_item *item;
 	char *path = unpack_get_string(desc);
 
+	DEBUG(DBG_GLOBAL_CONFIG, 1, "path=0x%p\n", path);
+
 	if (IS_ERR(path))
 		return (struct config_item *) path;
+	DEBUG(DBG_GLOBAL_CONFIG, 1, "path=%s\n", path);
 	item = get_item(path);
 	put_string(path);
 
+	DEBUG(DBG_GLOBAL_CONFIG, 1, "item=0x%p\n", item);
 	return item;
 }
 
@@ -1479,6 +1515,8 @@ int export_global_config_item(struct epm_action *action, ghost_t *ghost,
 	size_t len = strlen(path);
 	int err;
 
+	DEBUG(DBG_GLOBAL_CONFIG, 1, "%s\n", config_item_name(item));
+
 	if (!path)
 		return -ENOMEM;
 	err = ghost_write(ghost, &len, sizeof(len));
@@ -1487,6 +1525,7 @@ int export_global_config_item(struct epm_action *action, ghost_t *ghost,
 	err = ghost_write(ghost, path, len + 1);
 	if (err)
 		goto put;
+	DEBUG(DBG_GLOBAL_CONFIG, 2, "path=%s\n", path);
 put:
 	put_path(path);
 
@@ -1511,8 +1550,10 @@ int import_global_config_item(struct epm_action *action, ghost_t *ghost,
 	err = ghost_read(ghost, path, len + 1);
 	if (err)
 		goto out_free;
+	DEBUG(DBG_GLOBAL_CONFIG, 1, "path=%s\n", path);
 
 	item = get_item(path);
+	DEBUG(DBG_GLOBAL_CONFIG, 1, "item=0x%p\n", item);
 	/*
 	 * Do not set err if item is error, so that caller can distinguish ghost
 	 * error from item lookup error

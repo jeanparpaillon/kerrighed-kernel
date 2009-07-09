@@ -236,7 +236,12 @@ int string_list_empty(struct string_list_object *object)
 
 int string_list_start(void)
 {
-	string_list_cachep = KMEM_CACHE(string_list_object, SLAB_PANIC);
+	unsigned long cache_flags = SLAB_PANIC;
+
+#ifdef CONFIG_DEBUG_SLAB
+	cache_flags |= SLAB_POISON;
+#endif
+	string_list_cachep = KMEM_CACHE(string_list_object, cache_flags);
 
 	register_io_linker(STRING_LIST_LINKER, &string_list_io_linker);
 

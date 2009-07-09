@@ -31,6 +31,19 @@ MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Louis Rilling <Louis.Rilling@kerlabs.com>");
 MODULE_DESCRIPTION("Simplified MOSIX load balancing policy");
 
+#undef DBG_MOSIX_LOAD_BALANCER
+#define DBG_LEVEL 4
+
+#ifdef DBG_MOSIX_LOAD_BALANCER
+#define DEBUG(topic, level, format, args...) ({	      \
+	if (level <= DBG_LEVEL)			      \
+		printk(KERN_DEBUG "[%s]: " format,    \
+		       __PRETTY_FUNCTION__, ## args); \
+})
+#else
+#define DEBUG(topic, level, format, args...)
+#endif
+
 enum port_id {
 	PORT_LOCAL_LOAD,
 	PORT_REMOTE_LOAD,
@@ -94,8 +107,11 @@ static struct pid *find_target_task(struct mosix_load_balancer *lb)
 		pid = task_pid_knr(p);
 		ret = scheduler_port_get_value(&lb->ports[PORT_PROCESS_LOAD],
 					       &load, 1, &pid, 1);
-		if (ret < 1)
+		if (ret < 1) {
+			DEBUG(DBG_MOSIX_LB, 4, "no load for %d\n", pid);
 			continue;
+		}
+		DEBUG(DBG_MOSIX_LB, 4, "%d load=%lu\n", pid, load);
 		if (load > highest_load) {
 			second_highest_load = highest_load;
 			second_max_p = max_p;
@@ -126,6 +142,7 @@ put_scheduler:
 	scheduler_put(scheduler);
 
 out:
+	DEBUG(DBG_MOSIX_LB, 1, "0x%p target_pid=%d\n", lb, pid_knr(ret_pid));
 	return ret_pid;
 }
 
@@ -148,6 +165,8 @@ static int get_stable_remote_load(struct mosix_load_balancer *lb,
 	if (ret < 1)
 		goto no_load;
 	node_load = lb->tmp_load;
+	DEBUG(DBG_MOSIX_LB, 4, "0x%p node %d, node_load=%lu\n",
+	      lb, node, node_load);
 	ret = scheduler_port_get_remote_value(
 		&lb->ports[PORT_SINGLE_PROCESS_LOAD],
 		node,
@@ -156,11 +175,14 @@ static int get_stable_remote_load(struct mosix_load_balancer *lb,
 	if (ret < 1)
 		goto no_load;
 	single_process_load = lb->tmp_load;
+	DEBUG(DBG_MOSIX_LB, 4, "0x%p node %d, single_process_load=%lu\n",
+	      lb, node, single_process_load);
 
 	*load = node_load + single_process_load * lb->stab_factor / 100;
 	return 0;
 
 no_load:
+	DEBUG(DBG_MOSIX_LB, 4, "0x%p node %d, ret=%d\n", lb, node, ret);
 	return -EAGAIN;
 }
 
@@ -173,6 +195,8 @@ kerrighed_node_t __find_target_node(struct mosix_load_balancer *lb,
 	kerrighed_node_t i;
 	int ret;
 
+	DEBUG(DBG_MOSIX_LB, 1, "0x%p Enter\n", lb);
+
 	lowest_remote_load = high_load;
 
 	__for_each_krgnode_mask(i, nodes) {
@@ -182,11 +206,16 @@ kerrighed_node_t __find_target_node(struct mosix_load_balancer *lb,
 		ret = get_stable_remote_load(lb, i, &remote_load);
 		if (ret)
 			continue;
+		DEBUG(DBG_MOSIX_LB, 4,
+		      "0x%p node %d, stable remote_load=%lu\n",
+		      lb, i, remote_load);
 		if (remote_load < lowest_remote_load) {
 			lowest_remote_load = remote_load;
 			target_node = i;
 		}
 	}
+
+	DEBUG(DBG_MOSIX_LB, 1, "0x%p target_node=%d\n", lb, target_node);
 
 	return target_node;
 }

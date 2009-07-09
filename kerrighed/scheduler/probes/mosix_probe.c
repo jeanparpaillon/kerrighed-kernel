@@ -38,6 +38,15 @@ MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Louis Rilling <Louis.Rilling@kerlabs.com>");
 MODULE_DESCRIPTION("CPU load probe based on MOSIX algorithms");
 
+#undef DBG_MOSIX_PROBE
+
+#ifdef DBG_MOSIX_PROBE
+#define DEBUG(topic, level, format, args...) \
+	printk(KERN_DEBUG "[%s]: " format, __PRETTY_FUNCTION__, ## args);
+#else
+#define DEBUG(topic, level, format, args...)
+#endif
+
 /* Compute processor load every second */
 #define CF HZ
 
@@ -355,6 +364,15 @@ static void kmcb_accumulate_load(unsigned long ticks)
 		mp_calc_load();
 
 		load = mosix_data.mosix_mean_load;
+
+//    printk ("load %ld - mean_load %d - upper_load %ld - stable_export %ld\n",
+//            load, mosix_mean_load, mosix_upper_load,
+//            stable_export);
+
+		DEBUG(DBG_MOSIX_PROBE, 4,
+		      "computed_load : %ld (nr_running() is %lu)\n",
+		      load,
+		      nr_running());
 
 		scheduler_probe_source_notify_update(
 			mosix_probe_sources[VALUE_MEAN_LOAD]);

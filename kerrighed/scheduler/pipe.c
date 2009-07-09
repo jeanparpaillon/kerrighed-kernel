@@ -19,6 +19,12 @@
 #include <kerrighed/scheduler/global_config.h>
 #include <kerrighed/scheduler/pipe.h>
 
+#define MODULE_NAME "sched_pipe"
+#include "debug_sched.h"
+
+#define perror(format, args...) \
+	printk(KERN_ERR "[%s] error: " format, __PRETTY_FUNCTION__, ## args)
+
 void scheduler_source_init(struct scheduler_source *source,
 			   struct scheduler_source_type *type)
 {
@@ -48,6 +54,7 @@ int scheduler_source_get_value(struct scheduler_source *source,
 {
 	struct scheduler_source_type *type = scheduler_source_type_of(source);
 
+	DEBUG(DBG_PIPE, 4, "source=0x%p\n", source);
 	if (!type->get_value)
 		return -EACCES;
 	if (!nr && !in_nr)
@@ -55,6 +62,7 @@ int scheduler_source_get_value(struct scheduler_source *source,
 	if ((nr && !value_p) || (in_nr && !in_value_p))
 		return -EINVAL;
 
+	DEBUG(DBG_PIPE, 4, "called!\n");
 	return type->get_value(source, value_p, nr, in_value_p, in_nr);
 }
 
@@ -63,8 +71,11 @@ ssize_t scheduler_source_show_value(struct scheduler_source *source, char *page)
 	struct scheduler_source_type *type = scheduler_source_type_of(source);
 	ssize_t ret = -EACCES;
 
-	if (type->show_value)
+	DEBUG(DBG_PIPE, 4, "source=0x%p\n", source);
+	if (type->show_value) {
+		DEBUG(DBG_PIPE, 4, "called!\n");
 		ret = type->show_value(source, page);
+	}
 
 	return ret;
 }
@@ -97,6 +108,7 @@ void scheduler_sink_connect(struct scheduler_sink *sink,
 {
 	rcu_assign_pointer(sink->source, source);
 	if (subscribe) {
+		DEBUG(DBG_PIPE, 1, "source=0x%p\n", source);
 		sink->subscribed = 1;
 		scheduler_source_lock(source);
 		list_add_rcu(&sink->pub_sub_list, &source->pub_sub_head);
@@ -108,6 +120,7 @@ void scheduler_sink_disconnect(struct scheduler_sink *sink)
 {
 	if (sink->subscribed) {
 		struct scheduler_source *source = rcu_dereference(sink->source);
+		DEBUG(DBG_PIPE, 1, "source=0x%p\n", source);
 		scheduler_source_lock(source);
 		list_del_rcu(&sink->pub_sub_list);
 		scheduler_source_unlock(source);
@@ -137,6 +150,7 @@ void scheduler_source_publish(struct scheduler_source *source)
 {
 	struct scheduler_sink *subscriber;
 
+	DEBUG(DBG_PIPE, 4, "publisher=0x%p\n", source);
 	rcu_read_lock();
 	list_for_each_entry_rcu(subscriber,
 				&source->pub_sub_head, pub_sub_list)
