@@ -43,6 +43,8 @@
 
 #define FILE_TABLE_SIZE 16
 
+#include "debug_kermm.h"
+
 void unimport_mm_struct(struct task_struct *task);
 
 void __vma_link_file(struct vm_area_struct *vma);
@@ -59,6 +61,11 @@ extern struct vm_operations_struct special_mapping_vmops;
 
 void free_ghost_mm (struct task_struct *tsk)
 {
+	DEBUG ("mobility", 2, 0L, 0L, "Free ghost for task %p - mm %p (count %d"
+	       " - tasks %d - users %d ltasks %d) \n", tsk, tsk->mm,
+	       atomic_read(&tsk->mm->mm_count),atomic_read(&tsk->mm->mm_tasks),
+	       atomic_read(&tsk->mm->mm_users),atomic_read(&tsk->mm->mm_ltasks));
+
 	/* if not NULL, mm_release will try to write in userspace... which
 	 * does not exist anyway since we are in kernel thread context
 	 */
@@ -78,6 +85,8 @@ void free_ghost_mm (struct task_struct *tsk)
 		mmdrop (tsk->active_mm);
 		tsk->active_mm = NULL;
 	}
+
+	DEBUG ("mobility", 2, 0L, 0L, "Free ghost for task %p: done\n", tsk);
 }
 
 
@@ -207,6 +216,7 @@ done:
 	r = ghost_write (ghost, &nr_pages_sent, sizeof (int)) ;
 
 out:
+	DEBUG ("mobility", 3, 0L, 0L, "%d pages sent r=%d\n", nr_pages_sent, r) ;
 	return r;
 }
 
@@ -230,11 +240,16 @@ int export_process_pages(struct epm_action *action,
 
 	BUG_ON (mm == NULL);
 
+	DEBUG ("mobility", 2, 0L, 0L, "Start exporting process pages\n");
+
 	/* Export process VMAs */
 	vma = mm->mmap;
 	BUG_ON (vma == NULL);
 
 	while (vma != NULL) {
+
+		DEBUG ("mobility", 4, 0L, 0L, "Exporting pages from vma "
+		       "[%#016lx:%#016lx]\n", vma->vm_start, vma->vm_end);
 
 		if (vma->vm_ops != &special_mapping_vmops) {
 			r = export_vma_pages (ghost, vma);
@@ -250,6 +265,8 @@ int export_process_pages(struct epm_action *action,
 	}
 
 out:
+	DEBUG ("mobility", 2, 0L, 0L, "Process pages export : done r=%d\n", r);
+
 	return r;
 }
 
@@ -276,6 +293,9 @@ static int export_one_vma (struct epm_action *action,
 {
 	krgsyms_val_t vm_ops_type, initial_vm_ops_type;
 	int r;
+
+	DEBUG ("mobility", 3, 0L, 0L, "vma %p [%#016lx:%#016lx] has flags "
+	       "%#016lx\n", vma, vma->vm_start, vma->vm_end, vma->vm_flags);
 
 	/* First, check if we need to link the VMA to the anon kddm_set */
 
@@ -305,9 +325,14 @@ static int export_one_vma (struct epm_action *action,
 
 	BUG_ON(vma->vm_private_data && vm_ops_type != KRGSYMS_VM_OPS_SPECIAL_MAPPING);
 
+	DEBUG ("mobility", 4, 0L, 0L, "vm_ops type : %d\n", vm_ops_type);
+
 	r = ghost_write (ghost, &vm_ops_type, sizeof (krgsyms_val_t));
 	if (r)
 		goto out;
+
+	DEBUG ("mobility", 4, 0L, 0L, "initial_vm_ops type : %d\n",
+	       initial_vm_ops_type);
 
 	r = ghost_write (ghost, &initial_vm_ops_type, sizeof (krgsyms_val_t));
 
@@ -342,6 +367,9 @@ int export_vmas (struct epm_action *action,
 	if (!file_table)
 		return -ENOMEM;
 
+	DEBUG ("mobility", 4, 0L, 0L, "%d vmas to ghost in mm %p\n",
+	       tsk->mm->map_count, tsk->mm);
+
 	/* Export process VMAs */
 
 	r = ghost_write(ghost, &tsk->mm->map_count, sizeof(int));
@@ -351,6 +379,9 @@ int export_vmas (struct epm_action *action,
 	vma = tsk->mm->mmap;
 
 	while (vma != NULL) {
+		DEBUG ("mobility", 3, 0L, 0L, "Creating the ghost of vma "
+		       "[%#016lx:%#016lx]\n", vma->vm_start, vma->vm_end);
+
 		r = export_one_vma (action, ghost, tsk, vma, file_table);
 		if (r)
 			goto out;
@@ -524,6 +555,13 @@ int export_mm_struct(struct epm_action *action,
 	mm = tsk->mm;
 	exported_mm = mm;
 
+	DEBUG ("mobility", 2, 0L, 0L, "export mm %p to node %d for process %s "
+	       "(%d) with action %d (count %d - tasks %d - users %d ltasks "
+	       "%d)\n", mm, action->migrate.target, tsk->comm, tsk->pid,
+	       action->type, atomic_read(&mm->mm_count),
+	       atomic_read(&mm->mm_tasks), atomic_read(&mm->mm_users),
+	       atomic_read(&mm->mm_ltasks));
+
 	switch (action->type) {
 	  case EPM_CHECKPOINT:
 		  if (action->checkpoint.shared == CR_SAVE_LATER) {
@@ -597,6 +635,11 @@ up_mmap_sem:
 	}
 
 out:
+	DEBUG ("mobility", 2, 0L, 0L, "export mm %p: done (count %d - "
+	       "tasks %d - users %d ltasks %d)\n", mm,
+	       atomic_read(&mm->mm_count), atomic_read(&mm->mm_tasks),
+	       atomic_read(&mm->mm_users), atomic_read(&mm->mm_ltasks));
+
 	return r;
 
 exit_put_mm:
@@ -627,6 +670,8 @@ int import_vma_pages (ghost_t * ghost,
 	pgprot_t prot;
 	int r;
 
+	DEBUG ("mobility", 2, 0L, 0L, "Starting...\n");
+
 	BUG_ON (vma == NULL);
 
 	while (1) {
@@ -635,6 +680,7 @@ int import_vma_pages (ghost_t * ghost,
 		pmd_t *pmd;
 		pte_t *pte;
 
+		DEBUG ("mobility", 5, 0L, 0L, "Receive page virtual address\n");
 		r = ghost_read (ghost, &address, sizeof (unsigned long));
 		if (r)
 			goto err_read;
@@ -678,6 +724,8 @@ int import_vma_pages (ghost_t * ghost,
 	BUG_ON (nr_pages_sent != nr_pages_received);
 
 err_read:
+	DEBUG ("mobility", 2, 0L, 0L, "Done - r=%d\n", r);
+
 	return r;
 }
 
@@ -700,10 +748,15 @@ int import_process_pages(struct epm_action *action,
 
 	BUG_ON (mm == NULL);
 
+	DEBUG ("mobility", 2, 0L, 0L, "Start importing process pages\n");
+
 	vma = mm->mmap;
 	BUG_ON (vma == NULL);
 
 	while (vma != NULL) {
+
+		DEBUG ("mobility", 4, 0L, 0L, "Importing pages from vma "
+		       "[%#016lx:%#016lx]\n", vma->vm_start, vma->vm_end);
 
 		if (vma->vm_ops != &special_mapping_vmops) {
 			r = import_vma_pages (ghost, mm, vma);
@@ -720,6 +773,8 @@ int import_process_pages(struct epm_action *action,
 		BUG_ON (!r && magic != 962134);
 	}
 exit:
+	DEBUG ("mobility", 2, 0L, 0L, "Process pages import : done - r=%d\n", r);
+
 	return r;
 }
 
@@ -747,6 +802,9 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 	struct vm_area_struct *old;
 	int r = 0;
 
+	DEBUG ("mobility", 2, 0L, 0L, "Reconcile VMA %p [%#016lx:%#016lx] in "
+	       "mm %p\n", vma, vma->vm_start, vma->vm_end, mm);
+
 	/* If the is a hole between the last imported VMA and the current one,
 	 * unmap every in between.
 	 */
@@ -754,6 +812,10 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 		unmap_hole (mm, *last_end, vma->vm_start);
 
 	old = find_vma(mm, vma->vm_start);
+
+	if (old)
+		DEBUG ("mobility", 2, 0L, 0L, "Found old VMA %p "
+		       "[%#016lx:%#016lx]\n", vma, vma->vm_start, vma->vm_end);
 
 	/* Easy case: no conflict with existing VMA, just map the new VMA */
 	if (!old || (old->vm_start >= vma->vm_end)) {
@@ -823,6 +885,9 @@ done:
 	*last_end = vma->vm_end;
 
 fail:
+	DEBUG ("mobility", 2, 0L, 0L, "Reconcile: done VMA %p "
+	       "[%#016lx:%#016lx]\n", vma, vma->vm_start, vma->vm_end);
+
 	return r;
 }
 
@@ -848,6 +913,8 @@ static int import_one_vma (struct epm_action *action,
 	krgsyms_val_t vm_ops_type, initial_vm_ops_type;
 	int r;
 
+	DEBUG ("mobility", 2, 0L, 0L, "Receive a vma\n");
+
 	vma = kmem_cache_alloc (vm_area_cachep, GFP_KERNEL);
 	if (!vma)
 		return -ENOMEM;
@@ -866,6 +933,8 @@ static int import_one_vma (struct epm_action *action,
 		goto err_vma;
 #endif
 
+	DEBUG ("mobility", 3, 0L, 0L, "vm_ops reception\n");
+
 	/* Import the vm_ops type of the vma */
 	r = ghost_read (ghost, &vm_ops_type, sizeof (krgsyms_val_t));
 	if (r)
@@ -875,7 +944,11 @@ static int import_one_vma (struct epm_action *action,
 		goto err_vm_ops;
 
 	vma->vm_ops = krgsyms_import (vm_ops_type);
+	DEBUG ("mobility", 4, 0L, 0L, "Type of the vm_ops %d (%p)\n",
+	       vm_ops_type, vma->vm_ops);
 	vma->initial_vm_ops = krgsyms_import (initial_vm_ops_type);
+	DEBUG ("mobility", 4, 0L, 0L, "Type of the initial_vm_ops %d (%p)\n",
+	       initial_vm_ops_type,vma->initial_vm_ops );
 
 	BUG_ON (vma->vm_ops == &generic_file_vm_ops && vma->vm_file == NULL);
 
@@ -895,6 +968,10 @@ static int import_one_vma (struct epm_action *action,
 
 	if (vma->vm_flags & VM_EXECUTABLE)
 		added_exe_file_vma(vma->vm_mm);
+
+	DEBUG ("mobility", 4, 0L, 0L, "Insert the VMA %p [%#016lx:%#016lx] in "
+	       "the mm struct %p\n", vma, vma->vm_start, vma->vm_end, tsk->mm);
+
 	r = reconcile_vmas(tsk->mm, vma, last_end);
 	if (r)
 		goto err_reconcile;
@@ -949,11 +1026,15 @@ static int import_vmas (struct epm_action *action,
 	if (!file_table)
 		return -ENOMEM;
 
+	DEBUG ("mobility", 1, 0L, 0L, "Starting...\n");
+
 	mm = tsk->mm;
 
 	r = ghost_read(ghost, &nr_vma, sizeof(int));
 	if (r)
 		goto exit;
+
+	DEBUG ("mobility", 2, 0L, 0L, "Number of VMA to recevie : %d\n", nr_vma);
 
 	for (i = 0; i < nr_vma; i++) {
 		r = import_one_vma (action, ghost, tsk, &last_end, file_table);
@@ -1019,6 +1100,7 @@ static int import_context_struct(ghost_t * ghost, struct mm_struct *mm)
 	mutex_init(&mm->context.lock);
 #endif
 exit:
+	DEBUG ("mobility", 1, 0L, 0L, "end - r=%d\n", r);
 	return r;
 }
 
@@ -1166,6 +1248,9 @@ int import_mm_struct (struct epm_action *action,
 	struct kddm_set *set;
 	int r;
 
+	DEBUG ("mobility", 2, 0L, 0L, "Importing mm struct for process %d (%s "
+	       "- %p)\n", tsk->pid, tsk->comm, tsk);
+
 	if (action->type == EPM_CHECKPOINT
 	    && action->restart.shared == CR_LINK_ONLY) {
 		r = cr_link_to_mm_struct(action, ghost, tsk);
@@ -1219,6 +1304,11 @@ int import_mm_struct (struct epm_action *action,
 	set = mm->anon_vma_kddm_set;
 
 	krg_put_mm (mm->mm_id);
+
+	DEBUG ("mobility", 2, 0L, 0L, "mm %p imported with action %d (count %d "
+	       "- tasks %d - users %d ltasks %d)\n", mm, action->type,
+	       atomic_read(&mm->mm_count), atomic_read(&mm->mm_tasks),
+	       atomic_read(&mm->mm_users), atomic_read(&mm->mm_ltasks));
 
 	return 0;
 

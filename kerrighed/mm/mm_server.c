@@ -9,6 +9,7 @@
 #include <net/krgrpc/rpc.h>
 #include "mm_struct.h"
 #include "mm_server.h"
+#include "debug_kermm.h"
 
 /** Handler for remote munmap.
  *  @author Renaud Lottiaux
@@ -22,6 +23,10 @@ int handle_do_munmap (struct rpc_desc* desc,
 
 	mm = krg_get_mm(msg->mm_id);
 
+	DEBUG ("mm_struct", 2, 0L, 0L, "Unmap range [0x%016lx:0x%016lx] in mm "
+	       "%p (%ld)\n", msg->start, msg->start + msg->len, mm,
+	       msg->mm_id);
+
 	if (!mm)
 		return 0;
 
@@ -30,6 +35,10 @@ int handle_do_munmap (struct rpc_desc* desc,
 		zap_page_range(vma, msg->start, msg->len, NULL);
 
 	krg_put_mm(msg->mm_id);
+
+	DEBUG ("mm_struct", 2, 0L, 0L, "Unmap range [0x%016lx:0x%016lx] in mm "
+	       "%p (%ld): done\n", msg->start, msg->start + msg->len, mm,
+	       msg->mm_id);
 
 	return 0;
 }

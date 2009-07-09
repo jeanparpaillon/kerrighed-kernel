@@ -7,6 +7,9 @@
 #include <linux/mm.h>
 #include <linux/rmap.h>
 
+#include "debug_kermm.h"
+
+
 void partial_init_vma(struct mm_struct *mm, struct vm_area_struct *vma)
 {
 	vma->vm_mm = mm;
@@ -27,6 +30,8 @@ int alloc_fake_vma(struct mm_struct *mm,
 	struct vm_area_struct *vma;
 	struct anon_vma *anon_vma;
 	int r = 0;
+
+	DEBUG ("vma_struct", 2, 0L, 0L, "Alloc fake vma for mm %p\n", mm);
 
 	vma = kmem_cache_zalloc(vm_area_cachep, GFP_ATOMIC);
 	if (!vma)
@@ -52,6 +57,9 @@ int alloc_fake_vma(struct mm_struct *mm,
 	vma->anon_vma = anon_vma;
 	list_add_tail(&vma->anon_vma_node, &anon_vma->head);
 	spin_unlock(&mm->page_table_lock);
+
+	DEBUG ("vma_struct", 2, 0L, 0L, "VMA %p [0x%016lx:0x%016lx] allocated "
+	       "for mm %p\n", vma, vma->vm_start, vma->vm_end, mm);
 
 	return 0;
 err:

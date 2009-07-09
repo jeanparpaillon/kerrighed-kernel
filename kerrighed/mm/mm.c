@@ -16,6 +16,19 @@
 #include <asm/uaccess.h>
 #include <kerrighed/krgsyms.h>
 #include <kerrighed/mm.h>
+#ifdef CONFIG_KRG_DEBUG
+#include <linux/netpoll.h>
+#include <linux/percpu.h>
+#include <linux/hardirq.h>
+#include <linux/irqflags.h>
+#endif
+
+#include "debug_kermm.h"
+
+#ifdef MODULE_DEBUG
+#define DEBUG_THIS_MODULE
+#endif
+
 #include <kerrighed/hotplug.h>
 #include <kddm/kddm.h>
 #include "page_table_tree.h"
@@ -26,6 +39,54 @@
 #include "mm_server.h"
 #include "injection.h"
 
+#ifdef CONFIG_KRG_DEBUG
+#define KRGMM_DBG_BUF_SIZE 512
+
+struct krgmm_debug_buffer {
+	char buf[KRGMM_DBG_BUF_SIZE];
+	char softirq_buf[KRGMM_DBG_BUF_SIZE];
+	char hardirq_buf[KRGMM_DBG_BUF_SIZE];
+};
+
+static DEFINE_PER_CPU(struct krgmm_debug_buffer, krgmm_dbg_buf);
+
+void krgmm_debug(const char *format, ...)
+{
+	int nc_only = 0;
+	va_list args;
+	int cpu;
+	struct krgmm_debug_buffer *dbg_buf;
+	unsigned long flags;
+	char *buffer;
+
+	if (nc_only) {
+		cpu = get_cpu();
+		dbg_buf = &per_cpu(krgmm_dbg_buf, cpu);
+		flags = 0;
+		if (in_irq()) {
+			local_irq_save(flags);
+			buffer = dbg_buf->hardirq_buf;
+		} else if (in_softirq()) {
+			buffer = dbg_buf->softirq_buf;
+		} else {
+			buffer = dbg_buf->buf;
+		}
+
+		va_start(args, format);
+		vsprintf(buffer, format, args);
+		va_end(args);
+		nc_write_msg(buffer);
+
+		if (in_irq())
+			local_irq_restore(flags);
+		put_cpu();
+	} else {
+		va_start(args, format);
+		vprintk(format, args);
+		va_end(args);
+	}
+}
+#endif
 
 /** Initialisation of the DSM module.
  *  @author Renaud Lottiaux
@@ -57,6 +118,8 @@ int init_kermm(void)
 	mm_struct_init ();
 	mm_server_init();
 	mm_injection_init();
+
+	INIT_MM_DEBUG();
 
 	printk ("KerMM initialisation done\n");
 

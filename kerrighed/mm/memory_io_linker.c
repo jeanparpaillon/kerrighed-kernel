@@ -22,6 +22,8 @@
 #include "memory_int_linker.h"
 #include "page_table_tree.h"
 
+#include "debug_kermm.h"
+
 /*****************************************************************************/
 /*                                                                           */
 /*                       MEMORY KDDM SET IO FUNCTIONS                       */
@@ -36,6 +38,9 @@ int memory_alloc_object (struct kddm_obj * obj_entry,
 			 objid_t objid)
 {
 	struct page *page = alloc_page (GFP_HIGHUSER);
+
+	DEBUG ("io_linker", 4, set->id, objid, "EVENT on page %p: allocated\n",
+	       page);
 
 	if (!page)
 		return -ENOMEM;
@@ -59,6 +64,8 @@ int memory_import_object (struct rpc_desc *desc,
 	struct page *page = obj_entry->object;
 	char *data;
 
+	DEBUG ("io_linker", 4, 0L, 0L, "Import page %p\n", page);
+
 	data = (char *)kmap(page);
 	rpc_unpack(desc, 0, data, PAGE_SIZE);
 	kunmap(page);
@@ -80,6 +87,8 @@ int memory_export_object (struct rpc_desc *desc,
 {
 	struct page *page = (struct page *)obj_entry->object;
 	char *data;
+
+	DEBUG ("io_linker", 4, 0L, 0L, "Export page %p\n", page);
 
 	data = (char *)kmap_atomic(page, KM_USER0);
 	rpc_pack(desc, 0, data, PAGE_SIZE);
@@ -109,6 +118,9 @@ int memory_first_touch (struct kddm_obj * obj_entry,
 	if (!obj_entry->object) {
 		page = alloc_page (GFP_HIGHUSER | __GFP_ZERO);
 
+		DEBUG ("io_linker", 4, set->id, objid, "EVENT on page %p first"
+		       " touched\n", page);
+
 		if (!page)
 			res = -ENOMEM;
 //		else
@@ -134,6 +146,11 @@ int memory_insert_page (struct kddm_obj * obj_entry,
 	struct page *page;
 
 	page = obj_entry->object;
+
+	DEBUG ("io_linker", 3, set->id, objid, "Insert page %p (count %d - "
+	       "mapcount %d - kddm count %d)\n", page, page_count(page),
+	       page_mapcount(page), page_kddm_count(page));
+
 	page->index = objid;
 
 	return 0;
@@ -149,8 +166,16 @@ int memory_invalidate_page (struct kddm_obj * obj_entry,
                             struct kddm_set * set,
                             objid_t objid)
 {
+	DEBUG ("io_linker", 3, set->id, objid, "Invalidate page\n");
+
 	if (obj_entry->object) {
 		struct page *page = (struct page *) obj_entry->object;
+
+		DEBUG ("io_linker", 3, set->id, objid, "EVENT on page %p "
+		       "(count %d - mapcount %d - kddm count %d) flags "
+		       "0x%016lx\n", page, page_count(page),
+		       page_mapcount(page), page_kddm_count(page),
+		       page->flags);
 
 		/* Invalidate page table entry */
 		kddm_pt_invalidate (set, objid, obj_entry, page);
@@ -160,6 +185,8 @@ int memory_invalidate_page (struct kddm_obj * obj_entry,
 		/* Free the page */
 		page_cache_release(page);
 	}
+
+	DEBUG ("io_linker", 3, set->id, objid, "Invalidation done\n");
 
 	return 0;
 }
@@ -177,6 +204,12 @@ void memory_change_state (struct kddm_obj * obj_entry,
 	/* Page to be swap are no more mapped. Nothing to do here. */
 	if (PageSwapCache(page))
 		return;
+
+
+	DEBUG ("io_linker", 3, set->id, objid, "page %p (count %d - mapcount "
+	       "%d - kddm count %d) - mapping %p (anon: %d) to %s\n", page,
+	       page_count(page), page_mapcount(page), page_kddm_count(page),
+	       page->mapping, PageAnon(page), STATE_NAME(state));
 
 	switch (state) {
 	  case READ_COPY :
@@ -198,6 +231,12 @@ void memory_change_state (struct kddm_obj * obj_entry,
 	  default:
 		  break ;
 	}
+
+	DEBUG ("io_linker", 4, set->id, objid, "page %p (count %d - mapcount "
+	       "%d - kddm count %d) - mapping %p (anon: %d) to %s: done\n",
+	       page, page_count(page), page_mapcount(page),
+	       page_kddm_count(page), page->mapping, PageAnon(page),
+	       STATE_NAME(state));
 }
 
 /** Handle a kddm set memory page remove.
@@ -213,6 +252,10 @@ int memory_remove_page (void *object,
 	struct page *page = (struct page *) object;
 	struct kddm_obj *obj_entry = page->obj_entry;
 
+	DEBUG ("io_linker", 3, set->id, objid, "EVENT on page %p (count %d - "
+	       "mapcount %d - kddm count %d)\n", page, page_count(page),
+	       page_mapcount(page), page_kddm_count(page));
+
 	if (page) {
 		/* Invalidate page table entry */
 		kddm_pt_invalidate (set, objid, obj_entry, page);
@@ -222,6 +265,8 @@ int memory_remove_page (void *object,
 		/* Free the page */
 		page_cache_release(page);
 	}
+
+	DEBUG ("io_linker", 4, set->id, objid, "Done\n");
 
 	return 0;
 }

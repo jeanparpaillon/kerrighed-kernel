@@ -22,6 +22,8 @@
 #include "injection.h"
 #include "mm_struct.h"
 
+#include "debug_kermm.h"
+
 kerrighed_node_t last_chosen_node = KERRIGHED_NODE_ID_NONE;
 
 int node_mem_usage[KERRIGHED_MAX_NODES];
@@ -191,19 +193,19 @@ set_mem_usage:
 
 	switch (mem_usage) {
 	  case FREE_MEM:
-//		  printk ("## MEM NOTIFY - Switch local node to FREE_MEM\n");
+		  printk ("## MEM NOTIFY - Switch local node to FREE_MEM\n");
 		  if (old_val == OUT_OF_MEM)
 			  rpc_disable_local_lowmem_mode();
 		  break;
 
 	  case LOW_MEM:
-//		  printk ("## MEM NOTIFY - Switch local node to LOW_MEM\n");
+		  printk ("## MEM NOTIFY - Switch local node to LOW_MEM\n");
 		  if (old_val == OUT_OF_MEM)
 			  rpc_disable_local_lowmem_mode();
 		  break;
 
-	  case OUT_OF_MEM:
-//		  printk ("## MEM NOTIFY - Switch local node to OUT_OF_MEM\n");
+	case OUT_OF_MEM:
+		  printk ("## MEM NOTIFY - Switch local node to OUT_OF_MEM\n");
 		  rpc_enable_local_lowmem_mode();
 		  break;
 	}
@@ -223,6 +225,12 @@ static int flush_page(struct page *page,
        struct kddm_set *set = mm->anon_vma_kddm_set;
        kerrighed_node_t dest_node;
        int r = SWAP_FAIL;
+
+       DEBUG ("injection", 3, set->id, page->index, "Flush page %p (count %d "
+	      "- mapcount %d - kddm count %d) - pte (mm %p, addr 0x%016lx, "
+	      "val 0x%016lx)\n", page, page_count(page), page_mapcount(page),
+	      page_kddm_count(page), mm, page->index * PAGE_SIZE,
+	      pte_val (*pte));
 
        BUG_ON(page->index == 0);
 
@@ -289,6 +297,10 @@ int try_to_flush_page(struct page *page)
         struct vm_area_struct *vma;
 	int ret = SWAP_AGAIN;
 
+	DEBUG ("injection", 2, 0L, page->index, "Flush page %p (count %d "
+	       "- mapcount %d - kddm count %d)\n", page, page_count(page),
+	       page_mapcount(page), page_kddm_count(page));
+
 	krg_notify_mem(OUT_OF_MEM);
 
 	anon_vma = page_lock_anon_vma(page);
@@ -309,6 +321,8 @@ int try_to_flush_page(struct page *page)
 		ret = try_to_flush_one(page, vma);
 
 exit:
+	DEBUG ("injection", 2, 0L, page->index, "Flush page %p: done\n", page);
+
 	return ret;
 }
 

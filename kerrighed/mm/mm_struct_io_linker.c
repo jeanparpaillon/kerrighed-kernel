@@ -10,6 +10,8 @@
 #include "mm_struct.h"
 #include "vma_struct.h"
 
+#include "debug_kermm.h"
+
 
 
 /*****************************************************************************/
@@ -53,6 +55,11 @@ int mm_remove_object (void *object,
 	down_write(&mm->remove_sem);
 	up_write(&mm->remove_sem);
 
+	DEBUG ("mm_struct", 2, set->id, objid, "remove mm %p (count %d - "
+	       "tasks %d - users %d - ltasks %d)\n", mm,
+	       atomic_read(&mm->mm_count), atomic_read(&mm->mm_tasks),
+	       atomic_read(&mm->mm_users), atomic_read(&mm->mm_ltasks));
+
 	/* Take the mmap_sem to avoid race condition with clean_up_mm_struct */
 
 	atomic_inc(&mm->mm_count);
@@ -86,6 +93,11 @@ int mm_export_object (struct rpc_desc *desc,
 	krgsyms_val_t unmap_id, get_unmap_id;
 
 	mm = obj_entry->object;
+
+	DEBUG ("mm_struct", 2, 0L, 0L, "Export mm %p (count %d - tasks %d - "
+	       "users %d - ltasks %d)\n", mm, atomic_read(&mm->mm_count),
+	       atomic_read(&mm->mm_tasks), atomic_read(&mm->mm_users),
+	       atomic_read(&mm->mm_ltasks));
 
 	krgnode_set (desc->client, mm->copyset);
 
@@ -126,6 +138,8 @@ int mm_import_object (struct rpc_desc *desc,
 
 	mm = obj_entry->object;
 
+	DEBUG ("mm_struct", 2, 0L, 0L, "Import mm %p\n", mm);
+
 	r = rpc_unpack (desc, 0, &mm_id, sizeof(unique_id_t));
 	if (r)
 		return r;
@@ -161,6 +175,12 @@ int mm_import_object (struct rpc_desc *desc,
 	if (r)
 		return r;
 	mm->unmap_area = krgsyms_import (unmap_id);
+
+	DEBUG ("mm_struct", 2, 0L, 0L, "Import mm %p: done (count %d - tasks %d "
+	       "- users %d - ltasks %d) - set %p (mm %p)\n", mm,
+	       atomic_read(&mm->mm_count), atomic_read(&mm->mm_tasks),
+	       atomic_read(&mm->mm_users), atomic_read(&mm->mm_ltasks),
+	       mm->anon_vma_kddm_set, mm->anon_vma_kddm_set->obj_set);
 
 	return 0;
 }

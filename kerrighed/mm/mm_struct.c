@@ -21,6 +21,8 @@
 #include "vma_struct.h"
 #include "mm_server.h"
 
+#include "debug_kermm.h"
+
 void (*kh_mm_get) (struct mm_struct *mm) = NULL;
 void (*kh_mm_release) (struct mm_struct *mm, int notify) = NULL;
 
@@ -50,6 +52,8 @@ int reinit_mm(struct mm_struct *mm)
 {
 	unique_id_t mm_id;
 
+	DEBUG ("mm_struct", 2, 0L, 0L, "reinit mm %p\n", mm);
+
 	/* Backup mm_id which is set to 0 in mm_init... */
 	mm_id = mm->mm_id;
 	if (!mm_init(mm, NULL))
@@ -74,6 +78,8 @@ int reinit_mm(struct mm_struct *mm)
 	mm->num_exe_file_vmas = 0;
 #endif
 
+	DEBUG ("mm_struct", 2, 0L, 0L, "reinit mm %p: done\n", mm);
+
 	return 0;
 }
 
@@ -83,6 +89,8 @@ struct mm_struct *alloc_fake_mm(struct mm_struct *src_mm)
 {
 	struct mm_struct *mm;
 	int r;
+
+	DEBUG ("mm_struct", 2, 0L, 0L, "Alloc fake mm with src mm %p\n", src_mm);
 
 	mm = allocate_mm();
 	if (!mm)
@@ -106,6 +114,11 @@ struct mm_struct *alloc_fake_mm(struct mm_struct *src_mm)
 	r = alloc_fake_vma(mm, 0, TASK_SIZE);
 	if (r)
 		goto err_put_mm;
+
+	DEBUG ("mm_struct", 2, 0L, 0L, "mm %p allocated (count %d - tasks %d - "
+	       "users %d ltasks %d)\n", mm, atomic_read(&mm->mm_count),
+	       atomic_read(&mm->mm_tasks), atomic_read(&mm->mm_users),
+	       atomic_read(&mm->mm_ltasks));
 
 	return mm;
 
@@ -140,6 +153,8 @@ void break_distributed_cow(struct kddm_set *set, struct mm_struct *mm)
 	struct vm_area_struct *vma;
 	unsigned long addr;
 
+	DEBUG ("mm_struct", 2, 0L, 0L, "Break cow for mm %p\n", mm);
+
 	for (vma = mm->mmap; vma != NULL; vma = vma->vm_next) {
 		if (vma->vm_ops != &anon_memory_kddm_vmops)
 			continue;
@@ -149,6 +164,8 @@ void break_distributed_cow(struct kddm_set *set, struct mm_struct *mm)
 		     addr += PAGE_SIZE)
 			_kddm_grab_object_no_ft(set, addr / PAGE_SIZE);
 	}
+
+	DEBUG ("mm_struct", 2, 0L, 0L, "Break cow for mm %p : done\n", mm);
 }
 
 
@@ -179,6 +196,10 @@ struct mm_struct *krg_dup_mm(struct task_struct *tsk, struct mm_struct *src_mm)
 {
 	struct mm_struct *mm;
 	int err;
+
+	DEBUG ("mm_struct", 2, 0L, 0L, "Process %s (%d) dup mm %p for task "
+	       "%s (%d)\n", current->comm, current->pid, src_mm, tsk->comm,
+	       tsk->pid);
 
 	if (src_mm->anon_vma_kddm_set)
 		break_distributed_cow(src_mm->anon_vma_kddm_set, src_mm);
@@ -221,6 +242,8 @@ struct mm_struct *krg_dup_mm(struct task_struct *tsk, struct mm_struct *src_mm)
 	 * create_mm_struct_object) */
 	atomic_dec(&mm->mm_users);
 
+	DEBUG ("mm_struct", 2, 0L, 0L, "mm %p duplicated into %p\n", src_mm, mm);
+
         return mm;
 
 exit_put_mm:
@@ -236,6 +259,8 @@ void create_mm_struct_object(struct mm_struct *mm)
 {
 	struct mm_struct *_mm;
 
+	DEBUG ("mm_struct", 2, 0L, 0L, "create object for object %p\n", mm);
+
 	BUG_ON(atomic_read(&mm->mm_ltasks) > 1);
 
 	atomic_inc(&mm->mm_users); // Get a reference count for the KDDM.
@@ -247,6 +272,11 @@ void create_mm_struct_object(struct mm_struct *mm)
 	_kddm_set_object(mm_struct_kddm_set, mm->mm_id, mm);
 
 	krg_put_mm(mm->mm_id);
+
+	DEBUG ("mm_struct", 2, 0L, 0L, "object %ld created for mm %p (count %d -"
+	       " tasks %d - users %d ltasks %d)\n", mm->mm_id, mm,
+	       atomic_read(&mm->mm_count), atomic_read(&mm->mm_tasks),
+	       atomic_read(&mm->mm_users), atomic_read(&mm->mm_ltasks));
 }
 
 
@@ -266,6 +296,10 @@ static struct mm_struct *kcb_copy_mm(struct task_struct * tsk,
 				     unsigned long clone_flags)
 {
 	struct mm_struct *mm = NULL;
+
+	DEBUG ("mm_struct", 2, 0L, 0L, "Process %s (%d) copy mm %p - flags "
+	       "0x%016lx for task %s (%d)\n", current->comm, current->pid,
+	       oldmm, clone_flags, tsk->comm, tsk->pid);
 
 	if (oldmm->anon_vma_kddm_set)
 		break_distributed_cow(oldmm->anon_vma_kddm_set, oldmm);
@@ -296,6 +330,8 @@ done_put:
 	if (oldmm->anon_vma_kddm_set)
 		break_distributed_cow_put(oldmm->anon_vma_kddm_set, oldmm);
 
+	DEBUG ("mm_struct", 2, 0L, 0L, "Copy mm %p into %p: done\n", oldmm, mm);
+
 	return mm;
 }
 
@@ -305,6 +341,10 @@ int init_anon_vma_kddm_set(struct task_struct *tsk,
 {
 	struct vm_area_struct *vma;
 	int r;
+
+	DEBUG ("mm_struct", 2, 0L, 0L, "Process %s (%d) init KDDM in mm %p for "
+	       "task %s (%d)\n", current->comm, current->pid, mm, tsk->comm,
+	       tsk->pid);
 
 	mm->mm_id = 0;
 	krgnodes_clear (mm->copyset);
@@ -320,6 +360,8 @@ int init_anon_vma_kddm_set(struct task_struct *tsk,
 	for (vma = mm->mmap; vma != NULL; vma = vma->vm_next)
 		check_link_vma_to_anon_memory_kddm_set (vma);
 
+	DEBUG ("mm_struct", 2, 0L, 0L, "Copy mm %p: done\n", mm);
+
 	return 0;
 }
 
@@ -327,6 +369,8 @@ int init_anon_vma_kddm_set(struct task_struct *tsk,
 
 static void kcb_do_mmap(struct vm_area_struct *vma)
 {
+	DEBUG ("mm_struct", 2, 0L, 0L, "mmap vma %p in mm %p\n", vma,vma->vm_mm);
+
 	if (vma->vm_mm->anon_vma_kddm_set)
 		check_link_vma_to_anon_memory_kddm_set (vma);
 }
@@ -335,6 +379,11 @@ static void kcb_do_mmap(struct vm_area_struct *vma)
 
 void kcb_mm_get(struct mm_struct *mm)
 {
+	DEBUG ("mm_struct", 2, 0L, 0L, "get mm %p (count %d - tasks %d - users "
+	       "%d ltasks %d)\n", mm, atomic_read(&mm->mm_count),
+	       atomic_read(&mm->mm_tasks), atomic_read(&mm->mm_users),
+	       atomic_read(&mm->mm_ltasks));
+
 	if (!mm)
 		return;
 
@@ -346,6 +395,7 @@ void kcb_mm_get(struct mm_struct *mm)
 	krg_grab_mm(mm->mm_id);
 	atomic_inc (&mm->mm_tasks);
 	krg_put_mm(mm->mm_id);
+	DEBUG ("mm_struct", 2, 0L, 0L, "get mm %p: done\n", mm);
 }
 
 
@@ -353,6 +403,7 @@ void kcb_mm_get(struct mm_struct *mm)
 void clean_up_mm_struct (struct mm_struct *mm)
 {
 	struct vm_area_struct *vma, *next, *prev;
+	DEBUG ("mm_struct", 2, 0L, 0L, "Clean up mm %p\n", mm);
 
 	/* Take the semaphore to avoid race condition with mm_remove_object */
 
@@ -376,12 +427,19 @@ void clean_up_mm_struct (struct mm_struct *mm)
 		vma = next;
 	}
 	up_write(&mm->mmap_sem);
+
+	DEBUG ("mm_struct", 2, 0L, 0L, "Clean up mm %p : done\n", mm);
 }
 
 
 
 static void kcb_mm_release(struct mm_struct *mm, int notify)
 {
+	DEBUG ("mm_struct", 2, 0L, 0L, "release mm %p (count %d - tasks %d - "
+	       "users %d ltasks %d)\n", mm, atomic_read(&mm->mm_count),
+	       atomic_read(&mm->mm_tasks), atomic_read(&mm->mm_users),
+	       atomic_read(&mm->mm_ltasks));
+
 	if (!mm)
 		return;
 
@@ -423,11 +481,18 @@ static void kcb_do_munmap(struct mm_struct *mm,
 	if ((!anon_vma(vma)) || (!mm->mm_id))
 		return;
 
+	DEBUG ("mm_struct", 2, 0L, 0L, "Unmap range [0x%016lx:0x%016lx] in mm "
+	       "%p\n", start, start + len, mm);
+
+
 	msg.mm_id = mm->mm_id;
 	msg.start = start;
 	msg.len = len;
 
 	rpc_sync_m(RPC_MM_MUNMAP, &mm->copyset, &msg, sizeof(msg));
+
+	DEBUG ("mm_struct", 2, 0L, 0L, "Unmap range [0x%016lx:0x%016lx] in mm "
+	       "%p: done\n", start, start + len, mm);
 }
 
 

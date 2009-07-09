@@ -22,10 +22,31 @@
 #include "memory_int_linker.h"
 #include "memory_io_linker.h"
 #include "mm_struct.h"
+
+#include "debug_kermm.h"
+
 #include "page_table_tree.h"
 
 
 struct vm_operations_struct null_vm_ops = {};
+
+
+unsigned long page_hash(struct page *page)
+{
+	long *buff;
+	long hash = 0;
+	int i;
+
+	return 0;
+
+	buff = kmap_atomic(page, KM_USER0);
+
+	for (i = 0; i < PAGE_SIZE / sizeof (long); i++)
+		hash += buff[i];
+
+	kunmap_atomic(kaddr, KM_USER0);
+	return hash;
+}
 
 
 
@@ -45,6 +66,8 @@ int create_anon_vma_kddm_set (struct mm_struct *mm)
 {
 	struct kddm_set *set;
 
+	DEBUG ("int_linker", 2, 0L, 0L, "Create anon vma KDDM for mm %p\n", mm);
+
 	set = __create_new_kddm_set(kddm_def_ns, 0, &kddm_pt_set_ops, mm,
 				    MEMORY_LINKER, kerrighed_node_id,
 				    PAGE_SIZE, NULL, 0, 0);
@@ -53,6 +76,9 @@ int create_anon_vma_kddm_set (struct mm_struct *mm)
 		return PTR_ERR(set);
 
 	set_anon_vma_kddm_set(mm, set);
+
+	DEBUG ("int_linker", 2, 0L, 0L, "Create anon vma KDDM for mm %p: done\n",
+	       mm);
 
 	return 0;
 }
@@ -79,6 +105,10 @@ int check_link_vma_to_anon_memory_kddm_set (struct vm_area_struct *vma)
 {
 	int r = 0;
 
+	DEBUG ("int_linker", 2, 0L, 0L, "Link vma [%#016lx:%#016lx] with "
+	       "offset %ld - file : %#016lx\n",
+	       vma->vm_start, vma->vm_end, vma->vm_pgoff, (long) vma->vm_file);
+
 	if (!anon_vma(vma))
 		return r;
 
@@ -101,6 +131,8 @@ int check_link_vma_to_anon_memory_kddm_set (struct vm_area_struct *vma)
 		vma->initial_vm_ops = vma->vm_ops;
 	vma->vm_ops = &anon_memory_kddm_vmops;
 	vma->vm_flags |= VM_KDDM;
+
+	DEBUG ("int_linker", 2, 0L, 0L, "Done\n");
 
 	return r;
 }
@@ -218,6 +250,13 @@ int anon_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 	objid = address / PAGE_SIZE;
 
+	DEBUG ("int_linker", 1, set->id, objid, "no page activated at %#016lx "
+	       "for process %s (%d - %p). Access : %d in vma [%#016lx:%#016lx]"
+	       " (%#016lx) - file: 0x%p, anon_vma : 0x%p - mm %p\n", address,
+	       current->comm, current->pid, current, write_access,
+	       vma->vm_start, vma->vm_end, (unsigned long) vma, vma->vm_file,
+	       vma->anon_vma, vma->vm_mm);
+
 	if (thread_group_empty(current)) {
 		write_access = 1;
 		if (set->def_owner != kerrighed_node_id)
@@ -229,6 +268,9 @@ int anon_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	{
 		/* Mapped file VMA no page access */
 
+		DEBUG ("int_linker", 4, set->id, objid,
+ 		       "File mapped no page\n");
+
 		/* First, try to check if the page already exist in the anon
 		 * kddm set */
 		if (write_access)
@@ -238,6 +280,9 @@ int anon_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 		if (page != NULL)
 			goto done;
+
+		DEBUG ("int_linker", 4, set->id, objid,
+		       "Page not found : load it from the file\n");
 
 		/* Ok, the page is not present in the anon kddm set, let's
 		 * load it */
@@ -320,6 +365,11 @@ done:
 exit_error:
 	_kddm_put_object (set, objid);
 
+	DEBUG ("int_linker", 3, set->id, objid, "Done: addr 0x%016lx page %p "
+	       "hash 0x%016lx (count %d;%d) - mapping %p (anon : %d) - ret = 0x%x\n",
+	       address, page, page_hash(page), page_count (page),
+	       page_mapcount(page), page->mapping, PageAnon(page), ret);
+
 	return ret;
 }
 
@@ -348,6 +398,10 @@ struct page *anon_memory_wppage (struct vm_area_struct *vma,
 
 	objid = address / PAGE_SIZE;
 
+	DEBUG ("int_linker", 1, set->id, objid, "wp page activated at %#016lx"
+	       " in vma [%#016lx:%#016lx] (%#016lx) - mm %p\n", address,
+	       vma->vm_start, vma->vm_end, (long) vma, vma->vm_mm);
+
 	/* If the old page is hosted by a KDDM, the KDDM layer will do the
 	 * copy on write. If the page is not hosted by a KDDM, we must copy the
 	 * page here, after the grab.
@@ -366,6 +420,11 @@ struct page *anon_memory_wppage (struct vm_area_struct *vma,
 	map_kddm_page(vma, objid * PAGE_SIZE, page, 1);
 
 	_kddm_put_object (set, objid);
+
+	DEBUG ("int_linker", 3, set->id, objid, "Done: addr 0x%016lx page %p "
+	       "hash 0x%016lx (count %d;%d) - mapping %p (anon : %d)\n",
+	       address, page, page_hash(page), page_count (page),
+	       page_mapcount(page), page->mapping, PageAnon(page));
 
 	return page;
 }

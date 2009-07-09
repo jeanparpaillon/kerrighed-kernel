@@ -19,6 +19,12 @@
 #include "mm_struct.h"
 #include "vma_struct.h"
 
+#include "debug_kermm.h"
+
+unsigned long page_hash(struct page *page);
+
+
+
 /*****************************************************************************/
 /*                                                                           */
 /*                             HELPER FUNCTIONS                              */
@@ -48,6 +54,10 @@ static inline void page_put_kddm_count(struct kddm_set *set,
 
 	BUG_ON(obj_entry == NULL);
 
+	DEBUG ("pg_table", 3, set->id, page->index, "Put page %p (count %d - "
+	       "mapcount %d - kddm count %d)\n", page, page_count(page),
+	       page_mapcount(page), page_kddm_count(page));
+
 	if (!atomic_dec_and_test(&page->_kddm_count))
 		return;
 
@@ -67,6 +77,12 @@ static inline void unmap_page(struct mm_struct *mm,
 			      struct page *page,
 			      pte_t *ptep)
 {
+	DEBUG ("pg_table", 3, mm->anon_vma_kddm_id, addr / PAGE_SIZE,
+	       "Unmap page %p (count %d - mapcount %d - kddm count %d) - pte "
+	       "(mm %p, addr 0x%016lx, val 0x%016lx)\n", page,page_count(page),
+	       page_mapcount(page), page_kddm_count(page), mm, addr,
+	       pte_val (*ptep));
+
 	pte_clear(mm, addr, ptep);
 
 	update_hiwater_rss(mm);
@@ -105,6 +121,9 @@ static inline struct page *replace_zero_page(struct mm_struct *mm,
 	page_add_anon_rmap(new_page, vma, addr);
 	inc_mm_counter(mm, anon_rss);
 
+	DEBUG ("pg_table", 3, mm->anon_vma_kddm_id, addr / PAGE_SIZE,
+	       "ZERO_PAGE %p replaced by page %p\n", page, new_page);
+
 	return new_page;
 }
 
@@ -120,6 +139,9 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 	struct page *page = NULL, *new_page;
 	unsigned long addr = objid * PAGE_SIZE;
 	int obj_entry_used = 0;
+
+	DEBUG ("pg_table", 3, set->id, objid, "Init pte (mm %p, addr "
+	       "0x%016lx, val 0x%016lx)\n", mm, addr, pte_val(*ptep));
 
 	if (!pte_present(*ptep))
 		return obj_entry;
@@ -162,6 +184,12 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 done:
 	unlock_kddm_page(page);
 
+	DEBUG ("pg_table", 3, set->id, objid, "Init page %p: done (count %d - "
+	       "mapcount %d - kddm count %d) - pte (mm %p, addr 0x%016lx, "
+	       "val 0x%016lx) - object %p\n", page, page_count(page),
+	       page_mapcount(page), page_kddm_count(page), mm, addr,
+	       pte_val(*ptep), page->obj_entry);
+
 	if (obj_entry_used)
 		return NULL;
 	else
@@ -177,6 +205,9 @@ static inline struct kddm_obj *get_obj_entry_from_pte(struct mm_struct *mm,
 {
 	struct kddm_obj *obj_entry = NULL;
 	struct page *page;
+
+	DEBUG ("pg_table", 3, mm->anon_vma_kddm_id, addr / PAGE_SIZE,
+	       "Get obj_entry from pte 0x%016lx\n", pte_val(*ptep));
 
         if (pte_present(*ptep)) {
 		page = pfn_to_page(pte_pfn(*ptep));
@@ -208,6 +239,10 @@ static inline struct kddm_obj *get_obj_entry_from_pte(struct mm_struct *mm,
 		if (pte_obj_entry(ptep))
 			obj_entry = get_pte_obj_entry(ptep);
 	}
+
+	DEBUG ("pg_table", 3, mm->anon_vma_kddm_id, addr / PAGE_SIZE,
+	       "Get obj_entry from pte 0x%016lx - got obj %p\n",
+	       pte_val(*ptep), obj_entry);
 
 	return obj_entry;
 }
@@ -256,6 +291,9 @@ static inline void *kddm_pt_lookup (struct mm_struct *mm,
 	spinlock_t *ptl;
 	pte_t *ptep;
 
+	DEBUG ("pg_table", 4, mm->anon_vma_kddm_id, objid, "lookup for "
+	       "object %ld in mm %p\n", objid, mm);
+
 	ptep = kddm_pt_lookup_pte (mm, objid, &ptl);
 	if (!ptep)
 		return NULL;
@@ -263,6 +301,9 @@ static inline void *kddm_pt_lookup (struct mm_struct *mm,
 	obj_entry = get_obj_entry_from_pte(mm, objid * PAGE_SIZE, ptep, NULL);
 
 	pte_unmap_unlock(ptep, ptl);
+
+	DEBUG ("pg_table", 4, mm->anon_vma_kddm_id, objid, "lookup for "
+	       "object %ld in mm %p: done (%p)\n", objid, mm, obj_entry);
 
 	return obj_entry;
 }
@@ -394,9 +435,16 @@ int kddm_pt_invalidate (struct kddm_set *set,
 	spinlock_t *ptl;
 	pte_t *ptep;
 
+	DEBUG ("pg_table", 4, set->id, objid, "EVENT on page %p - mm %p\n",
+	       page, mm);
+
 	ptep = get_locked_pte(mm, addr, &ptl);
 	if (!ptep)
 		return -ENOMEM;
+
+	DEBUG ("pg_table", 3, set->id, objid, "found pte (mm %p, addr "
+	       "0x%016lx, val 0x%016lx) page %p\n", mm, addr,
+	       pte_val(*ptep), pfn_to_page(pte_pfn(*ptep)));
 
 	if (!pte_present(*ptep))
 		goto done;
@@ -413,6 +461,8 @@ int kddm_pt_invalidate (struct kddm_set *set,
 
 done:
 	pte_unmap_unlock(ptep, ptl);
+
+	DEBUG ("pg_table", 4, set->id, objid, "invalidation done\n");
 
 	return 0;
 }
@@ -436,6 +486,9 @@ static inline void check_create_vma(struct mm_struct *mm, unsigned long addr)
 		return;
 
 	addr = addr & PAGE_MASK;
+
+	DEBUG ("pg_table", 4, 0L, 0L, "Alloc fake vma [0x%016lx:0x%016lx] in "
+	       "mm %p", addr, addr + PAGE_SIZE, mm);
 
 	alloc_fake_vma (mm, addr, addr + PAGE_SIZE);
 }
@@ -529,6 +582,10 @@ static void kddm_pt_insert_object(struct kddm_set * set,
 	BUG_ON(!page);
 	BUG_ON(page->obj_entry && page->obj_entry != obj_entry);
 
+	DEBUG ("pg_table", 3, set->id, objid, "EVENT on page %p (count %d - "
+	       "mapcount %d - kddm count %d)\n", page, page_count(page),
+	       page_mapcount(page), page_kddm_count(page));
+
 	/* Insert the object in the page table */
 	ptep = get_locked_pte(mm, addr, &ptl);
 	if (!ptep)
@@ -556,6 +613,11 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 
 	if (!old_page)
 		return obj_entry;
+
+ 	DEBUG ("pg_table", 3, set->id, objid, "EVENT on page %p (count %d - "
+	       "mapcount %d - kddm count %d) - hash 0x%016lx\n", old_page,
+	       page_count(old_page), page_mapcount(old_page),
+	       page_kddm_count(old_page), page_hash (old_page));
 
 	BUG_ON(page_kddm_count(old_page) == 0);
 	BUG_ON(!TEST_OBJECT_LOCKED(obj_entry));
@@ -613,6 +675,22 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 
 	page_cache_release (old_page);
 
+	if (new_page)
+		DEBUG ("pg_table", 3, set->id, objid, "Cow page: done - Page "
+		       "%p (count %d - mapcount %d - kddm count %d) hash "
+		       "0x%16lx copied in page %p (count %d - mapcount %d - "
+		       "kddm count %d) hash 0x%016lx\n", old_page,
+		       page_count(old_page), page_mapcount(old_page),
+		       page_kddm_count(old_page), page_hash (old_page),
+		       new_page, page_count(new_page), page_mapcount(new_page),
+		       page_kddm_count(new_page), page_hash(new_page));
+	else
+		DEBUG ("pg_table", 3, set->id, objid, "Cow page: done - Page "
+		       "%p (count %d - mapcount %d - kddm count %d) hash "
+		       "0x%16lx - COW broken\n",old_page, page_count(old_page),
+		       page_mapcount(old_page), page_kddm_count(old_page),
+		       page_hash (old_page));
+
 	return new_obj;
 }
 
@@ -631,6 +709,9 @@ static void kddm_pt_remove_obj_entry (struct kddm_set *set,
 	ptep = kddm_pt_lookup_pte (mm, objid, &ptl);
 	if (!ptep)
 		return;
+
+	DEBUG ("pg_table", 3, set->id, objid, "remove with pte val 0x%016lx\n",
+	       pte_val (*ptep));
 
 	if (!pte_present(*ptep)) {
 		pte_clear(mm, addr, ptep);
@@ -681,11 +762,15 @@ static void *kddm_pt_import (struct rpc_desc* desc, int *free_data)
 	struct mm_struct *mm = NULL;
 	unique_id_t mm_id;
 
+	DEBUG ("pg_table", 2, 0L, 0L, "Import object\n");
+
 	rpc_unpack_type (desc, mm_id);
 	*free_data = 0;
 
 	if (mm_id)
 		mm = _kddm_find_object_raw (mm_struct_kddm_set, mm_id);
+
+	DEBUG ("pg_table", 2, 0L, 0L, "Import object: done - mm %p\n", mm);
 
 	return mm;
 }
@@ -709,6 +794,8 @@ static void *kddm_pt_alloc (struct kddm_set *set, void *_data)
 {
 	struct mm_struct *mm = _data;
 
+	DEBUG ("pg_table", 2, 0L, 0L, "Alloc kddm page table - mm %p\n", mm);
+
 	if (mm == NULL) {
 		mm = alloc_fake_mm(NULL);
 
@@ -722,6 +809,11 @@ static void *kddm_pt_alloc (struct kddm_set *set, void *_data)
 
 	set_anon_vma_kddm_set(mm, set);
 
+	DEBUG ("pg_table", 2, 0L, 0L, "mm %p allocated (count %d - tasks %d - "
+	       "users %d ltasks %d)\n", mm, atomic_read(&mm->mm_count),
+	       atomic_read(&mm->mm_tasks), atomic_read(&mm->mm_users),
+	       atomic_read(&mm->mm_ltasks));
+
 	return mm;
 }
 
@@ -732,6 +824,11 @@ static void kddm_pt_free (void *tree,
 			  void *priv)
 {
 	struct mm_struct *mm = tree;
+
+	DEBUG ("pg_table", 2, 0L, 0L, "Free mm %p (count %d - tasks %d - "
+	       "users %d ltasks %d)\n", mm, atomic_read(&mm->mm_count),
+	       atomic_read(&mm->mm_tasks), atomic_read(&mm->mm_users),
+	       atomic_read(&mm->mm_ltasks));
 
 	mmput(mm);
 }
@@ -755,8 +852,15 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 	struct kddm_set *set = mm->anon_vma_kddm_set;
 	struct kddm_obj *obj_entry;
 	struct page *page;
+#ifdef CONFIG_KRG_DEBUG
+	unsigned long objid = addr / PAGE_SIZE;
+#endif
 
 	BUG_ON(!set);
+
+	DEBUG ("pg_table", 3, set->id, objid, "EVENT on page %p "
+	       "pte (mm %p, addr 0x%016lx, val 0x%016lx)\n",
+	       pfn_to_page(pte_pfn(*ptep)), mm, addr, pte_val(*ptep));
 
 	obj_entry = get_obj_entry_from_pte(mm, addr, ptep, NULL);
 
@@ -764,6 +868,10 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 		return;
 
 	if (pte_obj_entry(ptep)) {
+
+		DEBUG ("pg_table", 3, set->id, objid, "free obj "
+		       "entry %p in kddm %p at %ld\n", obj_entry, set, objid);
+
 		BUG_ON(TEST_OBJECT_LOCKED(obj_entry));
 		free_kddm_obj_entry(set, obj_entry, addr / PAGE_SIZE);
 		pte_clear(mm, addr, ptep);
@@ -771,6 +879,9 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 	else {
 		page = (struct page *) obj_entry->object;
 		BUG_ON(!page);
+		DEBUG ("pg_table", 3, set->id, objid, "free obj "
+		       "entry %p in kddm %p (kddm count %d) - page %p\n",
+		       obj_entry, set, page_kddm_count(page), page);
 
 		wait_lock_kddm_page(page);
 		page_put_kddm_count(set, page);
