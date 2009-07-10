@@ -1077,7 +1077,7 @@ static struct pci_driver mm_pci_driver = {
 	.remove		= mm_pci_remove,
 };
 
-static int __init mm_init(void)
+static int __init umem_init(void)
 {
 	int retval, i;
 	int err;
@@ -1124,7 +1124,7 @@ out:
 	return -ENOMEM;
 }
 
-static void __exit mm_cleanup(void)
+static void __exit umem_cleanup(void)
 {
 	int i;
 
@@ -1140,8 +1140,8 @@ static void __exit mm_cleanup(void)
 	unregister_blkdev(major_nr, DRIVER_NAME);
 }
 
-module_init(mm_init);
-module_exit(mm_cleanup);
+module_init(umem_init);
+module_exit(umem_cleanup);
 
 MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_DESCRIPTION(DRIVER_DESC);
