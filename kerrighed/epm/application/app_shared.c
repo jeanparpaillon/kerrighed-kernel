@@ -227,22 +227,24 @@ out:
 	return data;
 }
 
-void * get_imported_shared_object(struct rb_root *root,
+void * get_imported_shared_object(struct app_struct *app,
 				  enum shared_obj_type type,
 				  unsigned long key)
 {
 	void *data = NULL;
 	struct shared_object *s;
 
-	s = search_shared_object(root, type, key);
+	spin_lock(&app->shared_objects.lock);
+	s = search_shared_object(&app->shared_objects.root, type, key);
 	if (s)
 		data = s->restart.data;
+	spin_unlock(&app->shared_objects.lock);
 
 	return data;
 }
 
 /* to use only at checkpoint time! */
-int add_to_shared_objects_list(struct rb_root *root,
+int add_to_shared_objects_list(struct app_struct *app,
 			       enum shared_obj_type type,
 			       unsigned long key,
 			       int is_local,
@@ -262,12 +264,14 @@ int add_to_shared_objects_list(struct rb_root *root,
 	s->index.type = type;
 	s->index.key = key;
 
-	r = insert_shared_index(root, &s->index);
+	spin_lock(&app->shared_objects.lock);
+
+	r = insert_shared_index(&app->shared_objects.root, &s->index);
 	if (r) {
 		/* shared object is already in the list */
 		kfree(s);
 #ifdef CONFIG_KRG_DEBUG
-		s = search_shared_object(root, type, key);
+		s = search_shared_object(&app->shared_objects.root, type, key);
 		BUG_ON(!s);
 #endif
 	} else {
@@ -278,6 +282,9 @@ int add_to_shared_objects_list(struct rb_root *root,
 			s->checkpoint.args = *args;
 		s->checkpoint.is_local = is_local;
 	}
+
+	spin_unlock(&app->shared_objects.lock);
+
 	return r;
 }
 
@@ -290,7 +297,7 @@ static void clear_one_shared_object(struct rb_node *node,
 	struct shared_object *this =
 		container_of(idx, struct shared_object, index);
 
-	rb_erase(node, &app->shared_objects);
+	rb_erase(node, &app->shared_objects.root);
 	kfree(this);
 }
 
@@ -298,7 +305,7 @@ void clear_shared_objects(struct app_struct *app)
 {
 	struct rb_node *node;
 
-	while ((node = rb_first(&app->shared_objects)))
+	while ((node = rb_first(&app->shared_objects.root)))
 		clear_one_shared_object(node, app);
 }
 
@@ -320,7 +327,7 @@ static void destroy_one_shared_object(struct rb_node *node,
 	struct shared_object *this =
 		container_of(idx, struct shared_object, index);
 
-	rb_erase(node, &app->shared_objects);
+	rb_erase(node, &app->shared_objects.root);
 
 	fake->pid = this->restart.t_identity.pid;
 	fake->tgid = this->restart.t_identity.tgid;
@@ -337,7 +344,7 @@ void destroy_shared_objects(struct app_struct *app,
 
 	reset_fake_task_struct(fake, app);
 
-	while ((node = rb_first(&app->shared_objects)))
+	while ((node = rb_first(&app->shared_objects.root)))
 		destroy_one_shared_object(node, app, fake);
 }
 
@@ -387,7 +394,7 @@ static int __export_shared_objects(ghost_t *ghost,
 	action.type = EPM_CHECKPOINT;
 	action.checkpoint.shared = CR_SAVE_NOW;
 
-	node = rb_first(&app->shared_objects);
+	node = rb_first(&app->shared_objects.root);
 	while (node) {
 		struct shared_index *idx;
 		struct shared_object *this;
@@ -469,7 +476,7 @@ static int send_dist_objects_list(struct rpc_desc *desc,
 	struct rb_node *node;
 	int r;
 
-	for (node = rb_first(&app->shared_objects);
+	for (node = rb_first(&app->shared_objects.root);
 	     node ; node = rb_next(node) ) {
 		struct shared_index *idx;
 		struct shared_object *this;
@@ -620,7 +627,7 @@ static int rcv_full_dist_objects_list(struct rpc_desc *desc,
 
 		if (s.node != kerrighed_node_id) {
 			struct rb_node *node;
-			node = search_node(&app->shared_objects,
+			node = search_node(&app->shared_objects.root,
 					   s.index.type, s.index.key);
 
 			if (node)
@@ -767,7 +774,8 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 
 	BUG_ON(!s->restart.data);
 
-	r = insert_shared_index(&fake->application->shared_objects, &s->index);
+	r = insert_shared_index(&fake->application->shared_objects.root,
+				&s->index);
 
 err_free:
 	if (r)
@@ -830,7 +838,7 @@ static int __send_restored_objects(struct rpc_desc *desc,
 	struct rb_node *node;
 	int r;
 
-	for (node = rb_first(&app->shared_objects);
+	for (node = rb_first(&app->shared_objects.root);
 	     node ; node = rb_next(node) ) {
 
 		struct shared_object *this;
@@ -1075,7 +1083,7 @@ static int rcv_full_restored_objects(
 		obj->ops = get_shared_ops(obj->index.type);
 
 		/* try to add it */
-		r = insert_shared_index(&app->shared_objects, &obj->index);
+		r = insert_shared_index(&app->shared_objects.root, &obj->index);
 		if (r)
 			kfree(obj);
 
@@ -1098,7 +1106,7 @@ int local_restart_shared_complete(struct app_struct *app,
 
 	reset_fake_task_struct(fake, app);
 
-	while ((node = rb_first(&app->shared_objects))) {
+	while ((node = rb_first(&app->shared_objects.root))) {
 		struct shared_index *idx =
 			container_of(node, struct shared_index, node);
 
@@ -1115,7 +1123,7 @@ int local_restart_shared_complete(struct app_struct *app,
 			this->ops->import_complete(fake, this->restart.data);
 		}
 
-		rb_erase(node, &app->shared_objects);
+		rb_erase(node, &app->shared_objects.root);
 		kfree(this);
 	}
 

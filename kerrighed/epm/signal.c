@@ -762,7 +762,7 @@ static int cr_export_later_signal_struct(struct epm_action *action,
 	if (r)
 		goto err;
 
-	r = add_to_shared_objects_list(&task->application->shared_objects,
+	r = add_to_shared_objects_list(task->application,
 				       SIGNAL_STRUCT, key, 1 /*is_local*/,
 				       task, NULL);
 
@@ -831,7 +831,7 @@ static int cr_link_to_signal_struct(struct epm_action *action,
 	if (r)
 		goto err;
 
-	sig = get_imported_shared_object(&action->restart.app->shared_objects,
+	sig = get_imported_shared_object(action->restart.app,
 					 SIGNAL_STRUCT, key);
 
 	if (!sig) {

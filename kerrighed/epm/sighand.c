@@ -418,7 +418,7 @@ static int cr_export_later_sighand_struct(struct epm_action *action,
 	 * WARNING, currently we do not really support sighand shared by
 	 * several nodes.
 	 */
-	r = add_to_shared_objects_list(&task->application->shared_objects,
+	r = add_to_shared_objects_list(task->application,
 				       SIGHAND_STRUCT, key, 1 /* is_local */,
 				       task, NULL);
 
@@ -465,7 +465,7 @@ static int cr_link_to_sighand_struct(struct epm_action *action,
 	if (r)
 		goto err;
 
-	sig = get_imported_shared_object(&action->restart.app->shared_objects,
+	sig = get_imported_shared_object(action->restart.app,
 					 SIGHAND_STRUCT, key);
 
 	if (!sig) {

@@ -465,7 +465,7 @@ int cr_add_file_to_shared_table(struct task_struct *task,
 	args.file_args.index = index;
 	args.file_args.file = file;
 
-	r = add_to_shared_objects_list(&task->application->shared_objects,
+	r = add_to_shared_objects_list(task->application,
 				       type, key, is_local, task,
 				       &args);
 
@@ -532,7 +532,7 @@ static int cr_export_later_files_struct(ghost_t *ghost,
 	if (r)
 		goto err;
 
-	r = add_to_shared_objects_list(&task->application->shared_objects,
+	r = add_to_shared_objects_list(task->application,
 				       FILES_STRUCT, key, 1 /*is_local*/,
 				       task, NULL);
 	if (r)
@@ -666,7 +666,7 @@ static int cr_export_later_fs_struct(struct epm_action *action,
 	if (r)
 		goto err;
 
-	r = add_to_shared_objects_list(&task->application->shared_objects,
+	r = add_to_shared_objects_list(task->application,
 				       FS_STRUCT, key, 1 /*is_local*/, task,
 				       NULL);
 
@@ -1016,7 +1016,7 @@ static int cr_link_to_files_struct(struct epm_action *action,
 	if (r)
 		goto err;
 
-	files = get_imported_shared_object(&action->restart.app->shared_objects,
+	files = get_imported_shared_object(action->restart.app,
 					   FILES_STRUCT, key);
 
 	if (!files) {
@@ -1290,7 +1290,7 @@ static int cr_link_to_fs_struct(struct epm_action *action,
 	if (r)
 		goto err;
 
-	fs = get_imported_shared_object(&action->restart.app->shared_objects,
+	fs = get_imported_shared_object(action->restart.app,
 					FS_STRUCT, key);
 
 	if (!fs) {

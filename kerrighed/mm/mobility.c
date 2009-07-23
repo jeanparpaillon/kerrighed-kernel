@@ -449,7 +449,7 @@ static int cr_export_later_mm_struct(struct epm_action *action,
 	if (r)
 		goto exit;
 
-	r = add_to_shared_objects_list(&task->application->shared_objects,
+	r = add_to_shared_objects_list(task->application,
 				       MM_STRUCT, key, 1 /*is_local*/, task,
 				       NULL);
 
@@ -1049,7 +1049,7 @@ static int cr_link_to_mm_struct(struct epm_action *action,
 	if (r)
 		goto err;
 
-	mm = get_imported_shared_object(&action->restart.app->shared_objects,
+	mm = get_imported_shared_object(action->restart.app,
 					MM_STRUCT, key);
 
 	if (!mm) {

@@ -188,9 +188,9 @@ static int cr_export_later_sysv_sem(struct epm_action *action,
 		goto err;
 
 	if (task->sysvsem.undo_list_id != UNIQUE_ID_NONE) {
-		r = add_to_shared_objects_list(
-			&task->application->shared_objects,
-			SEMUNDO_LIST, key, 0 /* !is_local */, task, NULL);
+		r = add_to_shared_objects_list(task->application, SEMUNDO_LIST,
+					       key, 0 /* !is_local */, task,
+					       NULL);
 
 		if (r == -ENOKEY) /* the semundo list was already in the list */
 			r = 0;
@@ -256,7 +256,7 @@ static int cr_link_to_sysv_sem(struct epm_action *action,
 		task->sysvsem.undo_list_id = UNIQUE_ID_NONE;
 	} else {
 		undo_list_id = (unique_id_t)get_imported_shared_object(
-			&action->restart.app->shared_objects,
+			action->restart.app,
 			SEMUNDO_LIST, key);
 
 		BUG_ON(undo_list_id == UNIQUE_ID_NONE);

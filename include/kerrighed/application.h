@@ -89,7 +89,10 @@ struct app_struct {
 
 	/* list of structs shared by those processes */
 	/* MUST be empty when no checkpoint is in progress */
-	struct rb_root shared_objects;
+	struct {
+		struct rb_root root;
+		spinlock_t lock;
+	} shared_objects;
 
 	union {
 		struct {

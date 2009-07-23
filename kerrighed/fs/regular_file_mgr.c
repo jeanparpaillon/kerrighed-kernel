@@ -265,9 +265,8 @@ int cr_link_to_local_regular_file(struct epm_action *action, ghost_t *ghost,
 	/* look in the table to find the new allocated data
 	 imported in import_shared_objects */
 
-	file_link = get_imported_shared_object(
-		&action->restart.app->shared_objects,
-		REGULAR_FILE, key);
+	file_link = get_imported_shared_object(action->restart.app,
+					       REGULAR_FILE, key);
 
 	if (!file_link) {
 		BUG();
@@ -350,9 +349,8 @@ int cr_link_to_dvfs_regular_file(struct epm_action *action,
 	/* look in the table to find the new allocated data
 	 imported in import_shared_objects */
 
-	file_link = get_imported_shared_object(
-		&action->restart.app->shared_objects,
-		REGULAR_DVFS_FILE, key);
+	file_link = get_imported_shared_object(action->restart.app,
+					       REGULAR_DVFS_FILE, key);
 
 	if (!file_link) {
 		BUG();

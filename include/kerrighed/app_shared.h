@@ -65,16 +65,16 @@ union export_args {
 	struct file_export_args file_args;
 };
 
-int add_to_shared_objects_list(struct rb_root *root,
+int add_to_shared_objects_list(struct app_struct *app,
 			       enum shared_obj_type type,
 			       unsigned long key,
 			       int is_local,
 			       struct task_struct* exporting_task,
 			       union export_args *args);
 
-void *get_imported_shared_object(struct rb_root *root,
-				  enum shared_obj_type type,
-				  unsigned long key);
+void *get_imported_shared_object(struct app_struct *app,
+				 enum shared_obj_type type,
+				 unsigned long key);
 
 struct shared_object_operations {
 	size_t restart_data_size;

@@ -196,7 +196,7 @@ int cr_link_to_faf_file(struct epm_action *action, ghost_t *ghost,
 	BUG_ON(action->type != EPM_CHECKPOINT);
 
 	faf_link = (struct cr_faf_link *)get_imported_shared_object(
-		&action->restart.app->shared_objects,
+		action->restart.app,
 		FAF_FILE, key);
 
 	if (!faf_link) {

@@ -89,7 +89,8 @@ struct app_struct *new_local_app(long app_id)
 	spin_lock_init(&app->lock);
 	init_completion(&app->tasks_chkpted);
 	INIT_LIST_HEAD(&app->tasks);
-	app->shared_objects = RB_ROOT;
+	app->shared_objects.root = RB_ROOT;
+	spin_lock_init(&app->shared_objects.lock);
 
 	hashtable_add(app_struct_table, app_id, app);
 
