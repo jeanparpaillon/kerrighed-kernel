@@ -21,6 +21,10 @@
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 
+#include <kerrighed/debug.h>
+#include "debug_kddm.h"
+
+
 int delayed_transfer_write_access (kerrighed_node_t dest_node, void *msg);
 
 struct kmem_cache *kddm_da_cachep;
@@ -59,6 +63,7 @@ static inline void send_msg_to_object_server(kerrighed_node_t dest,
 	msg_to_server.ns_id = ns_id;
 	msg_to_server.set_id = set_id;
 	msg_to_server.objid = objid;
+	fill_debug_info(msg_to_server, req_id);
 	msg_to_server.flags = flags;
 	msg_to_server.new_owner = new_owner;
 	msg_to_server.reply_node = kerrighed_node_id;
@@ -196,12 +201,17 @@ void request_copies_invalidation(struct kddm_set * set,
 {
 	msg_server_t msgToServer;
 	krgnodemask_t nodes;
+	long req_id = get_kddm_req_id();
 
 	BUG_ON(sender < 0 || sender > KERRIGHED_MAX_NODES);
+
+        DEBUG("invalidation", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_CP_REQS, obj_entry, 0, 0);
 
 	msgToServer.ns_id = set->ns->id;
 	msgToServer.set_id = set->id;
 	msgToServer.objid = objid;
+	fill_debug_info(msgToServer, req_id);
 	msgToServer.reply_node = sender;
 
 	DUP2_SET(COPYSET(obj_entry), &nodes);
@@ -210,6 +220,8 @@ void request_copies_invalidation(struct kddm_set * set,
 
 	rpc_async_m(REQ_OBJECT_INVALID, &nodes,
 		    &msgToServer, sizeof(msg_server_t));
+
+	SDEBUG("invalidation",2, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 
 	return;
 }
@@ -233,10 +245,14 @@ int request_copies_remove(struct kddm_set * set,
 {
 	int need_wait = 0;
 	msg_server_t msgToServer;
+	long req_id = get_kddm_req_id();
 
 	BUG_ON(sender < 0 || sender > KERRIGHED_MAX_NODES);
 
 	ASSERT_OBJ_PATH_LOCKED(set, objid);
+
+	DEBUG("remove", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_RM_REQS, obj_entry, 0, 0);
 
 	REMOVE_FROM_SET(COPYSET(obj_entry), kerrighed_node_id);
 	REMOVE_FROM_SET(RMSET(obj_entry), kerrighed_node_id);
@@ -248,10 +264,14 @@ int request_copies_remove(struct kddm_set * set,
 	REMOVE_FROM_SET(COPYSET(obj_entry), sender);
 	REMOVE_FROM_SET(RMSET(obj_entry), sender);
 
+	DEBUG("remove", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_RM_REQS, obj_entry, 0, 0);
+
 	if (!SET_IS_EMPTY(RMSET(obj_entry))) {
 		msgToServer.ns_id = set->ns->id;
 		msgToServer.set_id = set->id;
 		msgToServer.objid = objid;
+		fill_debug_info(msgToServer, req_id);
 		msgToServer.reply_node = sender;
 
 		rpc_async_m(REQ_OBJECT_REMOVE, RMSET(obj_entry),
@@ -263,6 +283,8 @@ int request_copies_remove(struct kddm_set * set,
 	change_prob_owner (obj_entry, sender);
 
 exit:
+	SDEBUG("remove", 2, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
+
 	return need_wait;
 }
 
@@ -281,10 +303,15 @@ void request_object_on_write(struct kddm_set * set,
 			     objid_t objid,
 			     int flags)
 {
+	long req_id = get_kddm_req_id();
+
+	DEBUG("getgrab", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_REQ, obj_entry, get_prob_owner(obj_entry), 0);
+
 	send_msg_to_object_server(get_prob_owner(obj_entry), REQ_OBJECT_COPY,
 				  set->ns->id, set->id, objid,
 				  flags | KDDM_OBJ_COPY_ON_WRITE,
-				  kerrighed_node_id, 0);
+				  kerrighed_node_id, req_id);
 }
 
 
@@ -302,9 +329,14 @@ void request_object_on_read(struct kddm_set * set,
 			    objid_t objid,
 			    int flags)
 {
+	long req_id = get_kddm_req_id();
+
+	DEBUG("getgrab", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_REQ, obj_entry, get_prob_owner(obj_entry), 0);
+
 	send_msg_to_object_server(get_prob_owner(obj_entry), REQ_OBJECT_COPY,
 				  set->ns->id, set->id, objid,
-				  flags | KDDM_OBJ_COPY_ON_READ, 0, 0);
+				  flags | KDDM_OBJ_COPY_ON_READ, 0, req_id);
 }
 
 
@@ -320,9 +352,14 @@ void request_objects_remove_to_mgr(struct kddm_set * set,
 				   struct kddm_obj * obj_entry,
 				   objid_t objid)
 {
+	long req_id = get_kddm_req_id();
+
+	DEBUG("remove", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_REQ, obj_entry, get_prob_owner(obj_entry), 0);
+
 	send_msg_to_object_server(get_prob_owner(obj_entry),
 				  REQ_OBJECT_REMOVE_TO_MGR,
-				  set->ns->id, set->id, objid, 0, 0, 0);
+				  set->ns->id, set->id, objid, 0, 0, req_id);
 }
 
 
@@ -342,9 +379,13 @@ void send_copy_on_write(struct kddm_set * set,
 			int flags)
 {
 	kddm_obj_state_t state = WRITE_OWNER;
+	long req_id = get_kddm_req_id();
 
 	ASSERT_OBJ_PATH_LOCKED(set, objid);
 	BUG_ON (!TEST_OBJECT_LOCKED(obj_entry));
+
+	DEBUG("getgrab", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_MSG, obj_entry, dest_node, 0);
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 	BUG_ON(object_frozen_or_pinned(obj_entry, set));
@@ -354,7 +395,9 @@ void send_copy_on_write(struct kddm_set * set,
 	change_prob_owner(obj_entry, dest_node);
 
 	send_msg_to_object_receiver(dest_node, set, objid, obj_entry, state,
-				    flags, 0);
+				    flags, req_id);
+
+	SDEBUG("getgrab", 3, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 }
 
 struct kddm_obj *send_copy_on_write_and_inv(struct kddm_set *set,
@@ -385,14 +428,22 @@ int send_copy_on_read(struct kddm_set * set,
 		      kerrighed_node_t dest_node,
 		      int flags)
 {
+	long req_id = get_kddm_req_id();
+
 	int r ;
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
+	DEBUG("getgrab", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_MSG, obj_entry, dest_node, 0);
+
 	r = send_msg_to_object_receiver(dest_node, set, objid,
-					obj_entry, READ_COPY, flags, 0);
+					obj_entry, READ_COPY, flags, req_id);
 
 	ADD_TO_SET(COPYSET(obj_entry), dest_node);
 	ADD_TO_SET(RMSET(obj_entry), dest_node);
+
+	DEBUG("getgrab", 2, 0, set->ns->id, set->id, objid, KDDM_LOG_EXIT_SETS,
+	      obj_entry, 0, 0);
 
 	return r;
 }
@@ -413,8 +464,13 @@ void send_no_object(struct kddm_set * set,
 		    kerrighed_node_t dest_node,
 		    int send_ownership)
 {
+	long req_id = get_kddm_req_id();
+
 	int r = 0;
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
+
+	DEBUG("getgrab", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_MSG, obj_entry, dest_node, 0);
 
 	if (send_ownership) {
 		r = change_prob_owner (obj_entry, dest_node);
@@ -423,7 +479,9 @@ void send_no_object(struct kddm_set * set,
 
 	send_msg_to_object_server(dest_node, NO_OBJECT_SEND, set->ns->id,
 				  set->id, objid, send_ownership,
-				  kerrighed_node_id, 0);
+				  kerrighed_node_id, req_id);
+
+	SDEBUG("getgrab", 2, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 }
 
 
@@ -442,7 +500,11 @@ void transfer_write_access_and_unlock(struct kddm_set * set,
 				      kerrighed_node_t dest_node,
 				      masterObj_t * master_info)
 {
+	long req_id = get_kddm_req_id();
 	msg_injection_t msg;
+
+	DEBUG ("getgrab", 2, req_id, set->ns->id, set->id, objid,
+	       KDDM_LOG_SEND_MSG, obj_entry, dest_node, 0);
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
@@ -451,13 +513,16 @@ void transfer_write_access_and_unlock(struct kddm_set * set,
 	msg.ns_id = set->ns->id;
 	msg.set_id = set->id;
 	msg.objid = objid;
-	msg.req_id = 0;
+	msg.req_id = req_id;
 	msg.owner_info = *master_info;
 
 	if (object_frozen_or_pinned(obj_entry, set)) {
 		queue_event(delayed_transfer_write_access, dest_node, set,
 			    obj_entry, objid, &msg, sizeof(msg_injection_t));
 		put_kddm_obj_entry(set, obj_entry, objid);
+
+		SDEBUG("getgrab", 2, set->ns->id, set->id, objid,
+		      KDDM_LOG_DELAY);
 
 		return;
 	}
@@ -466,6 +531,8 @@ void transfer_write_access_and_unlock(struct kddm_set * set,
 
 	kddm_invalidate_local_object_and_unlock(obj_entry, set, objid,
 						INV_COPY);
+
+	SDEBUG("getgrab", 2, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 }
 
 
@@ -513,11 +580,16 @@ void send_invalidation_ack(struct kddm_set * set,
 			   objid_t objid,
 			   kerrighed_node_t dest_node)
 {
+	long req_id = get_kddm_req_id();
+
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
 	send_msg_to_object_server(dest_node, INVALIDATION_ACK, set->ns->id,
 				  set->id, objid, 0, kerrighed_node_id,
-				  0);
+				  req_id);
+
+	DEBUG("invalidation", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_ACK, NULL, dest_node, INVALIDATION_ACK);
 }
 
 
@@ -534,10 +606,15 @@ void send_remove_ack(struct kddm_set * set,
 		     kerrighed_node_t dest_node,
 		     int flags)
 {
+	long req_id = get_kddm_req_id();
+
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
 	send_msg_to_object_server(dest_node, REMOVE_ACK, set->ns->id, set->id,
-				  objid, flags, 0, 0);
+				  objid, flags, 0, req_id);
+
+	DEBUG("remove", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_ACK, NULL, dest_node, REMOVE_ACK);
 }
 
 
@@ -553,6 +630,7 @@ void send_remove_ack2(struct kddm_set * set,
 		      objid_t objid,
 		      kerrighed_node_t dest_node)
 {
+	long req_id = get_kddm_req_id();
 	msg_server_t msg_to_server;
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
@@ -560,10 +638,13 @@ void send_remove_ack2(struct kddm_set * set,
 	msg_to_server.ns_id = set->ns->id;
 	msg_to_server.set_id = set->id;
 	msg_to_server.objid = objid;
-	msg_to_server.req_id = 0;
+	msg_to_server.req_id = req_id;
 
 	rpc_async(REMOVE_ACK2, dest_node,
 		  &msg_to_server, sizeof(msg_server_t));
+
+	DEBUG("remove", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_ACK, NULL, dest_node, REMOVE_ACK2);
 }
 
 
@@ -580,6 +661,7 @@ void send_remove_object_done(struct kddm_set * set,
 			     kerrighed_node_t dest_node,
 			     krgnodemask_t *rmset)
 {
+	long req_id = get_kddm_req_id();
 	rm_done_msg_server_t msg;
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
@@ -587,11 +669,15 @@ void send_remove_object_done(struct kddm_set * set,
 	msg.ns_id = set->ns->id;
 	msg.set_id = set->id;
 	msg.objid = objid;
-	msg.req_id = 0;
+	msg.req_id = req_id;
 
 	DUP2_SET(rmset, &msg.rmset);
 
 	rpc_async(REMOVE_DONE, dest_node, &msg, sizeof(rm_done_msg_server_t));
+
+
+	DEBUG("remove", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_ACK, NULL, dest_node, REMOVE_ACK);
 }
 
 
@@ -635,6 +721,8 @@ int object_first_touch_no_wakeup(struct kddm_set * set,
 			CLEAR_SET(COPYSET(obj_entry));
 			ADD_TO_SET(COPYSET(obj_entry), kerrighed_node_id);
 			ADD_TO_SET(RMSET(obj_entry), kerrighed_node_id);
+			DEBUG("getgrab", 2, 0, set->ns->id, set->id, objid,
+			      KDDM_LOG_EXIT_SETS, obj_entry, 0, 0);
 		}
 	}
 
@@ -689,7 +777,11 @@ void send_back_object_first_touch(struct kddm_set * set,
 				  int flags,
 				  int req_type)
 {
+	long req_id = get_kddm_req_id();
 	msg_server_t msgToServer;
+
+	DEBUG("getgrab", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_MSG, obj_entry, dest_node, 0);
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
@@ -698,7 +790,7 @@ void send_back_object_first_touch(struct kddm_set * set,
 	msgToServer.ns_id = set->ns->id;
 	msgToServer.set_id = set->id;
 	msgToServer.objid = objid;
-	msgToServer.req_id = 0;
+	msgToServer.req_id = req_id;
 	msgToServer.reply_node = kerrighed_node_id;
 	msgToServer.flags = flags;
 
@@ -723,11 +815,16 @@ void request_change_prob_owner(struct kddm_set * set,
 			       kerrighed_node_t dest_node,
 			       kerrighed_node_t new_owner)
 {
+	long req_id = get_kddm_req_id();
 	msg_server_t msg_to_server;
+
+	DEBUG("hotplug", 2, req_id, set->ns->id, set->id, objid,
+	      KDDM_LOG_SEND_MSG, 0, dest_node, 0);
 
 	msg_to_server.ns_id = set->ns->id;
 	msg_to_server.set_id = set->id;
 	msg_to_server.objid = objid;
+	msg_to_server.req_id = req_id;
 	msg_to_server.new_owner = new_owner;
 
 	rpc_sync(KDDM_CHANGE_PROB_OWNER, dest_node, &msg_to_server,
@@ -776,6 +873,9 @@ void ack_change_object_owner(struct kddm_set * set,
 			     masterObj_t * master_info)
 {
 	msg_server_t msgToServer;
+
+	DEBUG("getgrab", 2, 0, set->ns->id, set->id, objid, KDDM_LOG_SEND_BACK,
+	      obj_entry, dest_node, 0);
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
@@ -923,7 +1023,16 @@ void queue_event(queue_event_handler_t fn,
 
 	SET_OBJECT_PENDING(obj_entry);
 
+#ifndef CONFIG_KRG_DEBUG
 	queue_delayed_work(kddm_wq, &action->work, delay);
+#else
+	{
+		struct debug_level * dbg;
+		dbg = search_debug_level(debug_get_rbroot(), "kddm");
+		queue_delayed_work(kddm_wq, &action->work,
+				   delay + delay * dbg->level_value);
+	}
+#endif
 }
 
 

@@ -400,19 +400,8 @@ int check_sleep_on_local_exclusive (struct kddm_set *set,
 				    objid_t objid,
 				    int flags);
 
-
-/** Wake up the process waiting for the object.
- *  @author Renaud Lottiaux
- *
- *  @param  obj_entry  The object to wake up waiting process.
- */
-static inline void wake_up_on_wait_object (struct kddm_obj *obj_entry,
-                                           struct kddm_set *set)
-{
-	if (atomic_read (&obj_entry->sleeper_count))
-		SET_OBJECT_PINNED (obj_entry);
-	wake_up (&obj_entry->waiting_tsk);
-}
+void wake_up_on_wait_object (struct kddm_obj *obj_entry,
+			     struct kddm_set *set);
 
 int init_kddm_objects (void);
 

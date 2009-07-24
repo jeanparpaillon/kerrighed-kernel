@@ -10,6 +10,9 @@
 
 #include <kddm/kddm.h>
 #include "protocol_action.h"
+#include <kerrighed/debug.h>
+#include "debug_kddm.h"
+
 
 
 /** Check the presence of a given object in local physical memory.
@@ -32,6 +35,9 @@ void *_kddm_find_object (struct kddm_set *set,
 
 	if (obj_entry == NULL)
 		return NULL;
+
+	DEBUG("find_object", 1, 0, set->ns->id, set->id, objid,
+	      KDDM_LOG_API_ENTER, obj_entry, 0, 0);
 
 	if (object_frozen(obj_entry, set)) {
 		object = obj_entry->object;
@@ -76,6 +82,9 @@ void *_kddm_find_object (struct kddm_set *set,
 
 	if (object)
 		set_object_frozen(obj_entry, set);
+
+	DEBUG("find_object", 1, 0, set->ns->id, set->id, objid,
+	      KDDM_LOG_API_EXIT, obj_entry, 0, 0);
 
 	put_kddm_obj_entry(set, obj_entry, objid);
 

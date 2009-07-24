@@ -16,6 +16,8 @@
 #include <kerrighed/hotplug.h>
 #include <kddm/kddm.h>
 #include "protocol_action.h"
+#include <kerrighed/debug.h>
+#include "debug_kddm.h"
 
 struct cluster_barrier *kddm_barrier;
 
@@ -47,6 +49,9 @@ static int add_browse_objects(unsigned long objid,
 	kerrighed_node_t old_def_owner, new_def_owner;
 	struct browse_add_param *param = _data;
 	struct kddm_set *set = param->set;
+
+	DEBUG("hotplug", 2, 0, 0, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
 
 	old_def_owner = kddm_io_default_owner (set, objid);
 	new_def_owner = __kddm_io_default_owner(set, objid,
@@ -96,6 +101,9 @@ static int add_browse_objects(unsigned long objid,
 	}
 
 done:
+	DEBUG("hotplug", 2, 0, 0, set->id, objid, KDDM_LOG_API_EXIT, obj_entry,
+	      0, 0);
+
 	return 0;
 };
 
@@ -103,6 +111,8 @@ static void add_browse_sets(void *_set, void *_data)
 {
 	struct browse_add_param *param = _data;
 	struct kddm_set *set = _set;
+
+	SDEBUG("hotplug", 2, 0, set->id, -1L, KDDM_LOG_ENTER);
 
 	BUG_ON(set->def_owner < 0);
 	BUG_ON(set->def_owner > KDDM_MAX_DEF_OWNER);
@@ -124,12 +134,15 @@ static void add_browse_sets(void *_set, void *_data)
 		break;
 	};
 
+	SDEBUG("hotplug", 2, 0, set->id, -1L, KDDM_LOG_EXIT);
 };
 
-static void set_add(krgnodemask_t * vector)
+static noinline void set_add(krgnodemask_t * vector)
 {
 	struct browse_add_param param;
         kerrighed_node_t node;
+
+	SDEBUG("hotplug", 2, 0, 0, -1L, KDDM_LOG_ENTER);
 
 	if(__krgnode_isset(kerrighed_node_id, vector))
 		rpc_enable(KDDM_CHANGE_PROB_OWNER);
@@ -159,6 +172,8 @@ static void set_add(krgnodemask_t * vector)
 	krgnodes_copy(krgnode_kddm_map, param.new_nodes_map);
 
 	unfreeze_kddm();
+
+	SDEBUG("hotplug", 2, 0, 0, -1L, KDDM_LOG_EXIT);
 
 	if(!__krgnode_isset(kerrighed_node_id, vector))
 		return;
@@ -241,6 +256,9 @@ static int browse_remove(unsigned long objid, void *_obj_entry,
 			 objid, obj_entry);
 		break;
 	}
+
+	DEBUG("hotplug", 2, 0, 0, kddm_set->id, objid, KDDM_LOG_API_EXIT, obj_entry,
+	      0, 0);
 
 	return 0;
 };
@@ -729,6 +747,8 @@ static int kddm_notification(struct notifier_block *nb, hotplug_event_t event,
 	struct hotplug_context *ctx;
 	struct hotplug_node_set *node_set;
 
+	SDEBUG("hotplug", 2, 0, 0, -1L, KDDM_LOG_ENTER);
+
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:
 		ctx = data;
@@ -745,6 +765,8 @@ static int kddm_notification(struct notifier_block *nb, hotplug_event_t event,
 	default:
 		break;
 	}
+
+	SDEBUG("hotplug", 2, 0, 0, -1L, KDDM_LOG_EXIT);
 
 	return NOTIFY_OK;
 };

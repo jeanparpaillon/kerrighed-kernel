@@ -138,6 +138,7 @@ typedef struct kddm_obj {
 	atomic_t sleeper_count;        /* Nunmber of task waiting on the
 					  object */
 	wait_queue_head_t waiting_tsk; /* Process waiting for the object */
+	long objid;
 } __attribute__((aligned(8))) kddm_obj_t;
 
 

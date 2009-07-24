@@ -17,6 +17,9 @@
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 #include <kddm/io_linker.h>
+#include <kerrighed/debug.h>
+#include "debug_kddm.h"
+
 
 
 struct iolinker_struct *iolinker_list[MAX_IO_LINKER];
@@ -56,6 +59,8 @@ int kddm_io_instantiate (struct kddm_set * set,
 	BUG_ON (iolinker_id < 0 || iolinker_id >= MAX_IO_LINKER);
 	BUG_ON (set->state != KDDM_SET_LOCKED);
 
+	SDEBUG("creation", 3, set->ns->id, set->id, -1L, KDDM_LOG_ENTER);
+
 	while (iolinker_list[iolinker_id] == NULL) {
 		WARNING ("Instantiate a kddm set with a not registered IO "
 			 "linker (%d)... Retry in 1 second\n", iolinker_id);
@@ -80,6 +85,8 @@ int kddm_io_instantiate (struct kddm_set * set,
 	if (set->iolinker->instantiate)
 		err = set->iolinker->instantiate (set, private_data,
 						  master);
+
+	SDEBUG("creation", 3, set->ns->id, set->id, -1L, KDDM_LOG_EXIT);
 
 	return err;
 }
@@ -125,6 +132,8 @@ int kddm_io_alloc_object (struct kddm_obj * obj_entry,
 {
 	int r = 0;
 
+	SDEBUG("io_linker", 3, set->ns->id, set->id, objid, KDDM_LOG_ENTER);
+
 	if (obj_entry->object != NULL)
 		goto done;
 
@@ -141,6 +150,8 @@ int kddm_io_alloc_object (struct kddm_obj * obj_entry,
 		atomic_inc(&set->nr_objects);
 
 done:
+	SDEBUG("io_linker", 4, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
+
 	return r;
 }
 
@@ -160,6 +171,8 @@ int kddm_io_first_touch_object (struct kddm_obj * obj_entry,
 {
 	int res = 0 ;
 
+	SDEBUG("io_linker", 2, set->ns->id, set->id, objid, KDDM_LOG_ENTER);
+
 	BUG_ON (obj_entry->object != NULL);
 	BUG_ON (OBJ_STATE(obj_entry) != INV_FILLING);
 
@@ -171,6 +184,8 @@ int kddm_io_first_touch_object (struct kddm_obj * obj_entry,
 	}
 	else
 		res = kddm_io_alloc_object(obj_entry, set, objid);
+
+	SDEBUG("io_linker", 4, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 
 	return res ;
 }
@@ -190,9 +205,13 @@ int kddm_io_insert_object (struct kddm_obj * obj_entry,
 {
 	int res = 0;
 
+	SDEBUG("io_linker", 3, set->ns->id, set->id, objid, KDDM_LOG_ENTER);
+
 	if (set->iolinker && set->iolinker->insert_object)
 		res = set->iolinker->insert_object (obj_entry, set,
 						    objid);
+
+	SDEBUG("io_linker", 4, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 
 	return res;
 }
@@ -212,11 +231,15 @@ int kddm_io_put_object (struct kddm_obj * obj_entry,
 {
 	int res = 0;
 
+	SDEBUG("io_linker", 3, set->ns->id, set->id, objid, KDDM_LOG_ENTER);
+
 	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	if (set && set->iolinker->put_object)
 		res = set->iolinker->put_object (obj_entry, set,
 						 objid);
+
+	SDEBUG("io_linker", 4, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 
 	return res;
 }
@@ -236,6 +259,8 @@ int kddm_io_invalidate_object (struct kddm_obj * obj_entry,
 {
 	int res = 0;
 
+	SDEBUG("io_linker", 3, set->ns->id, set->id, objid, KDDM_LOG_ENTER);
+
 	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	if (obj_entry->object) {
@@ -250,6 +275,8 @@ int kddm_io_invalidate_object (struct kddm_obj * obj_entry,
 		if (obj_entry->object == NULL)
 			atomic_dec(&set->nr_objects);
 	}
+
+	SDEBUG("io_linker", 4, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 
 	return res;
 }
@@ -289,6 +316,8 @@ int kddm_io_remove_object_and_unlock (struct kddm_obj * obj_entry,
 	int res = 0;
 	void *object;
 
+	SDEBUG("io_linker", 3, set->ns->id, set->id, objid, KDDM_LOG_ENTER);
+
 	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	object = obj_entry->object;
@@ -304,6 +333,8 @@ int kddm_io_remove_object_and_unlock (struct kddm_obj * obj_entry,
 	res = kddm_io_remove_object (object, set, objid);
 
 done:
+	SDEBUG("io_linker", 4, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
+
 	return res;
 }
 
@@ -322,10 +353,14 @@ int kddm_io_sync_object (struct kddm_obj * obj_entry,
 {
 	int res = 0 ;
 
+	SDEBUG("io_linker", 3, set->ns->id, set->id, objid, KDDM_LOG_ENTER);
+
 	if (set->iolinker && set->iolinker->sync_object)
 		res = set->iolinker->sync_object (obj_entry, set, objid);
 	else
 		BUG();
+
+	SDEBUG("io_linker", 4, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 
 	return res ;
 }
@@ -345,8 +380,12 @@ int kddm_io_change_state (struct kddm_obj * obj_entry,
 			  objid_t objid,
 			  kddm_obj_state_t new_state)
 {
+	SDEBUG("io_linker", 3, set->ns->id, set->id, objid, KDDM_LOG_ENTER);
+
 	if (set->iolinker && set->iolinker->change_state)
 		set->iolinker->change_state (obj_entry, set, objid, new_state);
+
+	SDEBUG("io_linker", 4, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 
 	return 0 ;
 }
@@ -368,6 +407,8 @@ int kddm_io_import_object (struct rpc_desc *desc,
 	struct iolinker_struct *io = set->iolinker;
 	int res;
 
+	SDEBUG("io_linker", 4, set->ns->id, set->id, -1L, KDDM_LOG_ENTER);
+
 	BUG_ON (OBJ_STATE(obj_entry) != INV_FILLING);
 
 	might_sleep();
@@ -376,6 +417,8 @@ int kddm_io_import_object (struct rpc_desc *desc,
 		res = io->import_object(desc, set, obj_entry, objid);
 	else
 		res = rpc_unpack(desc, 0, obj_entry->object, set->obj_size);
+
+	SDEBUG("io_linker", 4, set->ns->id, set->id, -1L, KDDM_LOG_EXIT);
 
 	return res;
 }
@@ -397,10 +440,14 @@ int kddm_io_export_object (struct rpc_desc *desc,
 	struct iolinker_struct *io = set->iolinker;
 	int res;
 
+	SDEBUG("io_linker", 4, set->ns->id, set->id, -1L, KDDM_LOG_ENTER);
+
 	if (io && io->export_object)
 		res = io->export_object(desc, set, obj_entry, objid);
 	else
 		res = rpc_pack(desc, 0, obj_entry->object, set->obj_size);
+
+	SDEBUG("io_linker", 4, set->ns->id, set->id, -1L, KDDM_LOG_EXIT);
 
 	return res;
 }

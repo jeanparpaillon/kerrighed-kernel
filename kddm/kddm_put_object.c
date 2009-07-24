@@ -10,6 +10,8 @@
 
 #include <kddm/kddm.h>
 #include "protocol_action.h"
+#include "debug_kddm.h"
+
 
 
 /** Release an object which has been acquired by a get, grab or find.
@@ -32,6 +34,9 @@ void _kddm_put_object(struct kddm_set *set,
 	if (!obj_entry)
 		return;
 
+	DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid,
+	      KDDM_LOG_API_ENTER_SHORT, obj_entry, 0, 0);
+
 	/* The object is not frozen, nothing to do */
 	if (atomic_read(&obj_entry->frozen_count) == 0)
 		goto exit;
@@ -44,6 +49,9 @@ void _kddm_put_object(struct kddm_set *set,
 	}
 
 exit:
+	DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid,
+	      KDDM_LOG_API_EXIT_SHORT, obj_entry, 0, 0);
+
 	put_kddm_obj_entry(set, obj_entry, objid);
 	if (pending)
 		flush_kddm_event(set, objid);
