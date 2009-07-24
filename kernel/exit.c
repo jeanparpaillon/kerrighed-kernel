@@ -897,7 +897,7 @@ static void forget_original_parent(struct task_struct *father)
 {
 	struct task_struct *p, *n, *reaper;
 #ifdef CONFIG_KRG_EPM
-	struct children_kddm_object *children_obj;
+	struct children_kddm_object *children_obj = NULL;
 #endif
 	LIST_HEAD(dead_children);
 
