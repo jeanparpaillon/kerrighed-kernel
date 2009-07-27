@@ -658,7 +658,7 @@ void sem_handler_init (void)
 						      IPCMAP_LINKER,
 						      KDDM_RR_DEF_OWNER,
 						      sizeof(ipcmap_object_t),
-						      0);
+						      KDDM_LOCAL_EXCLUSIVE);
 
 	BUG_ON (IS_ERR (semmap_struct_kddm_set));
 

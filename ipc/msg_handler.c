@@ -431,7 +431,7 @@ void msg_handler_init(void)
 						     IPCMAP_LINKER,
 						     KDDM_RR_DEF_OWNER,
 						     sizeof(ipcmap_object_t),
-						     0);
+						     KDDM_LOCAL_EXCLUSIVE);
 
 	BUG_ON(IS_ERR(msgmap_struct_kddm_set));
 
@@ -448,7 +448,8 @@ void msg_handler_init(void)
 						      MSGKEY_KDDM_ID,
 						      MSGKEY_LINKER,
 						      KDDM_RR_DEF_OWNER,
-						      sizeof(long), 0);
+						      sizeof(long),
+						      KDDM_LOCAL_EXCLUSIVE);
 
 	BUG_ON (IS_ERR (msqkey_struct_kddm_set));
 

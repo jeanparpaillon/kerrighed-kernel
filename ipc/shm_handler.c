@@ -224,7 +224,7 @@ void shm_handler_init(void)
 						    SHMID_LINKER,
 						    KDDM_RR_DEF_OWNER,
 						    sizeof(shmid_object_t),
-						    0);
+						    KDDM_LOCAL_EXCLUSIVE);
 
 	BUG_ON(IS_ERR (shmid_struct_kddm_set));
 
@@ -232,7 +232,8 @@ void shm_handler_init(void)
 						     SHMKEY_KDDM_ID,
 						     SHMKEY_LINKER,
 						     KDDM_RR_DEF_OWNER,
-						     sizeof(long), 0);
+						     sizeof(long),
+						     KDDM_LOCAL_EXCLUSIVE);
 
 	BUG_ON(IS_ERR (shmkey_struct_kddm_set));
 
@@ -241,7 +242,7 @@ void shm_handler_init(void)
 						     IPCMAP_LINKER,
 						     KDDM_RR_DEF_OWNER,
 						     sizeof(ipcmap_object_t),
-						     0);
+						     KDDM_LOCAL_EXCLUSIVE);
 
 	BUG_ON(IS_ERR (shmmap_struct_kddm_set));
 
