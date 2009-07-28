@@ -188,6 +188,8 @@ void krg_ipc_shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
 
 	_kddm_remove_frozen_object(shmid_struct_kddm_set, index);
 	_destroy_kddm_set(mm_set);
+
+	kh_ipc_rmid(&shm_ids(ns), index);
 }
 
 /*****************************************************************************/

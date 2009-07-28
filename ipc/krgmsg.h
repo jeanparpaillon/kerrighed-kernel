@@ -17,6 +17,16 @@ extern long (*kh_ipc_msgrcv)(int msqid, long *pmtype, void __user *mtext,
 			     size_t msgsz, long msgtyp, int msgflg,
 			     struct ipc_namespace *ns, pid_t tgid);
 
+static inline struct msg_queue *local_msg_lock(struct ipc_namespace *ns, int id)
+{
+	struct kern_ipc_perm *ipcp = local_ipc_lock(&msg_ids(ns), id);
+
+	if (IS_ERR(ipcp))
+		return (struct msg_queue *)ipcp;
+
+	return container_of(ipcp, struct msg_queue, q_perm);
+}
+
 static inline void local_msg_unlock(struct msg_queue *msq)
 {
 	local_ipc_unlock(&(msq)->q_perm);

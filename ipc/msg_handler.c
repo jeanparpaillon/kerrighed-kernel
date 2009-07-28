@@ -182,6 +182,8 @@ void kcb_ipc_msg_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 	local_msg_unlock(msq);
 
 	_kddm_remove_frozen_object(msq_struct_kddm_set, index);
+
+	kh_ipc_rmid(&msg_ids(ns), index);
 }
 
 /*****************************************************************************/

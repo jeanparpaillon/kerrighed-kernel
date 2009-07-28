@@ -336,9 +336,10 @@ static void freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 	ss_wakeup(&msq->q_senders, 1);
 	msg_rmid(ns, msq);
 #ifdef CONFIG_KRG_IPC
-	if (!is_krg_ipc(&msg_ids(ns)))
-#endif
+	local_msg_unlock(msq);
+#else
 	msg_unlock(msq);
+#endif
 
 	tmp = msq->q_messages.next;
 	while (tmp != &msq->q_messages) {

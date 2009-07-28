@@ -80,6 +80,8 @@ static int kcb_ipc_rmid(struct ipc_ids* ids, int index)
 
 	ipc_map = kddm_grab_object(kddm_def_ns, ids->krgops->map_kddm, i);
 
+	BUG_ON(!test_bit(offset, &ipc_map->alloc_map));
+
 	clear_bit(offset, &ipc_map->alloc_map);
 
 	kddm_put_object(kddm_def_ns, ids->krgops->map_kddm, i);

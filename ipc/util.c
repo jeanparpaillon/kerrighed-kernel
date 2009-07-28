@@ -529,17 +529,6 @@ retry:
 	return err;
 }
 
-#ifdef CONFIG_KRG_IPC
-void local_ipc_rmid(struct ipc_ids* ids, int ipc_id)
-{
-	int lid = ipcid_to_idx(ipc_id);
-
-	idr_remove(&ids->ipcs_idr, lid);
-
-	ids->in_use--;
-}
-#endif
-
 /**
  *	ipc_rmid	-	remove an IPC identifier
  *	@ids: IPC identifier set
@@ -553,11 +542,9 @@ void ipc_rmid(struct ipc_ids *ids, struct kern_ipc_perm *ipcp)
 {
 	int lid = ipcid_to_idx(ipcp->id);
 
-#ifdef CONFIG_KRG_IPC
-	if (is_krg_ipc(ids))
-		kh_ipc_rmid(ids, lid);
-#endif
-	local_ipc_rmid(ids, ipcp->id);
+	idr_remove(&ids->ipcs_idr, lid);
+
+	ids->in_use--;
 
 	ipcp->deleted = 1;
 

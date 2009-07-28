@@ -74,7 +74,9 @@ static void delete_local_msq(struct ipc_namespace *ns, struct msg_queue *local_m
 
 	security_msg_queue_free(msq);
 
-	local_ipc_rmid(&msg_ids(ns), msq->q_perm.id);
+	ipc_rmid(&msg_ids(ns), &msq->q_perm);
+
+	local_msg_unlock(msq);
 
 	ipc_rcu_putref(msq);
 }
@@ -218,6 +220,7 @@ int msq_remove_object (void *object,
 	msq_object = object;
 	if (msq_object) {
 		msq = msq_object->local_msq;
+		local_msg_lock(ns, msq->q_perm.id);
 		if (msq->is_master)
 			local_master_freeque(ns, &msq->q_perm);
 		else

@@ -216,8 +216,6 @@ extern struct krgipc_ops krg_sysvipc_shm_ops;
 int local_ipc_reserveid(struct ipc_ids* ids, struct kern_ipc_perm* new,
                         int size);
 
-void local_ipc_rmid(struct ipc_ids* ids, int ipc_id);
-
 int is_krg_ipc(struct ipc_ids *ids);
 
 #endif
