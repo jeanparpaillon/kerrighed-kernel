@@ -1463,8 +1463,9 @@ static int kill_something_info(int sig, struct siginfo *info, pid_t pid)
 				pid ? find_vpid(-pid) : task_pgrp(current));
 #ifdef CONFIG_KRG_PROC
 		read_unlock(&tasklist_lock);
-		if (pid)
-			ret = krg_kill_pg_info(sig, info, -pid) ? ret : 0;
+		if (!pid)
+			pid = -task_pgrp_vnr(current);
+		ret = krg_kill_pg_info(sig, info, -pid) ? ret : 0;
 		return ret;
 #endif /* CONFIG_KRG_PROC */
 	} else {
