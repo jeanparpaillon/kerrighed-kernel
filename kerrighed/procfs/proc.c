@@ -650,7 +650,7 @@ static int stat_open(struct inode *inode, struct file *file)
 {
 	unsigned size;
 
-	size = 4096 * (1 + NR_CPUS * kerrighed_nb_nodes / 32);
+	size = 256 + NR_IRQS * 8 + NR_CPUS * kerrighed_nb_nodes * 80;
 
 	return krg_proc_stat_open(inode, file, show_stat, size);
 }
