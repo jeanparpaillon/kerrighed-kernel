@@ -467,10 +467,6 @@ static inline void add_page_anon_rmap (struct mm_struct *mm,
 		BUG();
 
 	page_add_new_anon_rmap(page, vma, addr);
-	if (page_evictable(page, vma))
-		lru_cache_add_lru(page, LRU_ACTIVE_ANON);
-	else
-		add_page_to_unevictable_list(page);
 }
 
 
