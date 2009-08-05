@@ -113,7 +113,6 @@ int shm_memory_invalidate_page (struct kddm_obj * objEntry,
 
 		ClearPageToInvalidate(page);
 		remove_from_page_cache (page);
-		page_cache_release (page);
 
 		if (PageDirty(page)) {
 			printk ("Check why the page is dirty...\n");
