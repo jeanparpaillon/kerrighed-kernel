@@ -710,7 +710,10 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 	else {
 		page = (struct page *) obj_entry->object;
 		BUG_ON(!page);
+
+		wait_lock_page(page);
 		page_put_kddm_count(set, page);
+		unlock_page(page);
 	}
 }
 
