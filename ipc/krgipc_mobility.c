@@ -93,7 +93,6 @@ struct file *reopen_shm_file_entry_from_krg_desc(struct task_struct *task,
 
 	path.dentry = dget(shp->shm_file->f_path.dentry);
 	path.mnt    = shp->shm_file->f_path.mnt;
-	shp->shm_nattch++;
 	shm_unlock(shp);
 	up_read(&shm_ids(ns).rw_mutex);
 

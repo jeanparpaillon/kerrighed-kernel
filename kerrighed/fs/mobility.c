@@ -1162,10 +1162,13 @@ exit_free_files:
 static int cr_link_to_vma_phys_file(struct epm_action *action,
 				    ghost_t *ghost,
 				    struct task_struct *tsk,
-				    struct vm_area_struct *vma)
+				    struct vm_area_struct *vma,
+				    struct file **file)
 {
 	int r;
-	r = cr_link_to_file(action, ghost, tsk, &vma->vm_file);
+	r = cr_link_to_file(action, ghost, tsk, file);
+	if (r)
+		goto exit;
 
 	if (vma->vm_flags & VM_EXEC) {
 
@@ -1178,7 +1181,7 @@ static int cr_link_to_vma_phys_file(struct epm_action *action,
 		if (r)
 			goto exit;
 
-		r = get_file_size(vma->vm_file, &current_file_size);
+		r = get_file_size(*file, &current_file_size);
 		if (r)
 			goto exit;
 
@@ -1199,13 +1202,21 @@ int import_vma_phys_file(struct epm_action *action,
 			 struct task_struct *tsk,
 			 struct vm_area_struct *vma)
 {
+	struct file *file;
 	int r;
 
 	if (action->type == EPM_CHECKPOINT)
-		r = cr_link_to_vma_phys_file(action, ghost, tsk, vma);
+		r = cr_link_to_vma_phys_file(action, ghost, tsk, vma, &file);
 	else
-		r = import_one_open_file(action, ghost, tsk, -1, &vma->vm_file);
+		r = import_one_open_file(action, ghost, tsk, -1, &file);
+	if (r)
+		goto err;
 
+	vma->vm_file = file;
+	if (file->f_op && file->f_op->mmap)
+		r = file->f_op->mmap(file, vma);
+
+err:
 	return r;
 }
 
