@@ -274,8 +274,10 @@ struct page *shmem_memory_wppage (struct vm_area_struct *vma,
 
 	map_kddm_page (vma, address, page, 1);
 
-	if (page != old_page)
+	if (page != old_page) {
 		page_add_file_rmap(page);
+		page_cache_get(page);
+	}
 
 	kddm_put_object (kddm_def_ns, ctnr->id, objid);
 
