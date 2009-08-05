@@ -26,6 +26,14 @@
 
 
 
+static void wait_lock_page (struct page *page)
+{
+	while (TestSetPageLocked(page))
+		cpu_relax();
+}
+
+
+
 static inline void page_put_kddm_count(struct kddm_set *set,
 				       struct page *page)
 {
@@ -108,8 +116,7 @@ static inline void init_pte(struct mm_struct *mm,
 		return;
 	page = pfn_to_page(pte_pfn(*ptep));
 
-	while (TestSetPageLocked(page))
-		wait_on_page_locked(page);
+	wait_lock_page(page);
 
 	if (!PageAnon(page)) {
 		if (!(page == ZERO_PAGE(NULL)))
@@ -525,8 +532,7 @@ struct kddm_obj *kddm_pt_cow_object(struct kddm_set *set,
 	new_obj->object = new_page;
 	SET_OBJECT_LOCKED(new_obj);
 
-	while (TestSetPageLocked(old_page))
-		wait_on_page_locked(old_page);
+	wait_lock_page(old_page);
 
 	ptep = get_locked_pte(mm, objid * PAGE_SIZE, &ptl);
 	BUG_ON (!ptep);
