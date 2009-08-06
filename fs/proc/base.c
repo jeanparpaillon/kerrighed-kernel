@@ -2876,6 +2876,10 @@ struct dentry *proc_pid_lookup(struct inode *dir, struct dentry * dentry, struct
 #endif
 
 	result = proc_pid_instantiate(dir, dentry, task, NULL);
+#if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_EPM)
+	if (IS_ERR(result) && task->exit_state == EXIT_MIGRATION)
+		result = kh_proc_pid_lookup(dir, dentry, tgid);
+#endif
 	put_task_struct(task);
 out:
 	return result;
