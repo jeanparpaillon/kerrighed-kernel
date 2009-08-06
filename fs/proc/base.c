@@ -1634,7 +1634,11 @@ static int pid_revalidate(struct dentry *dentry, struct nameidata *nd)
 	struct task_struct *task = get_proc_task(inode);
 	const struct cred *cred;
 
+#if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_EPM)
+	if (task && task->exit_state != EXIT_MIGRATION) {
+#else
 	if (task) {
+#endif
 		if ((inode->i_mode == (S_IFDIR|S_IRUGO|S_IXUGO)) ||
 		    task_dumpable(task)) {
 			rcu_read_lock();
