@@ -39,8 +39,7 @@
 #endif
 
 #define VM_FILE_NONE 0
-#define VM_FILE_CTNR 1
-#define VM_FILE_PHYS 2
+#define VM_FILE_PHYS 1
 
 #define MAX_DVFS_MOBILITY_OPS 16
 struct dvfs_mobility_operations *dvfs_mobility_ops[MAX_DVFS_MOBILITY_OPS];
