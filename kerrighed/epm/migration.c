@@ -177,8 +177,6 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	leave_all_relatives(tsk);
 	krg_task_unlock(tsk->pid);
 
-	krg_task_unlink(tsk->task_obj, 1);
-
 	/*
 	 * Prevent the migrated task from removing the sighand_struct and
 	 * signal_struct copies before migration cleanup ends

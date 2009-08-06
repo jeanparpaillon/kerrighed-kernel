@@ -377,7 +377,23 @@ static int export_delays(struct epm_action *action,
 static int export_krg_structs(struct epm_action *action,
 			      ghost_t *ghost, struct task_struct *task)
 {
-	return 0;
+	int retval = 0;
+
+	if (action->type == EPM_MIGRATE) {
+		/*
+		 * The task kddm object must be linked to at most one task in
+		 * the cluster, and after import_krg_structs() it will be
+		 * linked to the migrated task.
+		 * Unlink and let import_krg_structs() proceed.
+		 *
+		 * Now that pids are globalized, remote procfs can see that task
+		 * even without a link to its task kddm object.
+		 */
+		krg_task_unlink(task->task_obj, 1);
+		retval = ghost_write(ghost, &retval, sizeof(retval));
+	}
+
+	return retval;
 }
 
 /**
@@ -1110,6 +1126,14 @@ static int import_krg_structs(struct epm_action *action,
 	pid_t parent_pid = 0, real_parent_pid = 0, real_parent_tgid = 0;
 	pid_t group_leader_pid = 0;
 	struct task_kddm_object *obj;
+	int retval = 0, dummy;
+
+	if (action->type == EPM_MIGRATE) {
+		/* Synchronize with export_krg_structs() */
+		retval = ghost_read(ghost, &dummy, sizeof(dummy));
+		if (retval)
+			goto out;
+	}
 
 	/* Initialization of the shared part of the task_struct */
 
@@ -1174,7 +1198,8 @@ static int import_krg_structs(struct epm_action *action,
 
 	krg_task_unlock(tsk->pid);
 
-	return 0;
+out:
+	return retval;
 }
 
 /**
