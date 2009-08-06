@@ -61,12 +61,12 @@ static int proc_migrate_thread(void __user *arg)
  */
 static int proc_app_freeze(void __user *arg)
 {
-	checkpoint_infos_t ckpt_infos;
+	struct checkpoint_info ckpt_info;
 
-	if (copy_from_user(&ckpt_infos, arg, sizeof(ckpt_infos)))
+	if (copy_from_user(&ckpt_info, arg, sizeof(ckpt_info)))
 		return -EFAULT;
 
-	return sys_app_freeze(&ckpt_infos);
+	return sys_app_freeze(&ckpt_info);
 }
 
 /**
@@ -75,12 +75,12 @@ static int proc_app_freeze(void __user *arg)
  */
 static int proc_app_unfreeze(void __user *arg)
 {
-	checkpoint_infos_t ckpt_infos;
+	struct checkpoint_info ckpt_info;
 
-	if (copy_from_user(&ckpt_infos, arg, sizeof(ckpt_infos)))
+	if (copy_from_user(&ckpt_info, arg, sizeof(ckpt_info)))
 		return -EFAULT;
 
-	return sys_app_unfreeze(&ckpt_infos);
+	return sys_app_unfreeze(&ckpt_info);
 }
 
 /**
@@ -92,14 +92,14 @@ static int proc_app_unfreeze(void __user *arg)
 static int proc_app_chkpt(void __user *arg)
 {
 	int res;
-	checkpoint_infos_t ckpt_infos;
+	struct checkpoint_info ckpt_info;
 
-	if (copy_from_user(&ckpt_infos, arg, sizeof(ckpt_infos)))
+	if (copy_from_user(&ckpt_info, arg, sizeof(ckpt_info)))
 		return -EFAULT;
 
-	res = sys_app_chkpt(&ckpt_infos);
+	res = sys_app_chkpt(&ckpt_info);
 
-	if (copy_to_user(arg, &ckpt_infos, sizeof(ckpt_infos)))
+	if (copy_to_user(arg, &ckpt_info, sizeof(ckpt_info)))
 		return -EFAULT;
 
 	return res;
@@ -115,7 +115,7 @@ static int proc_app_chkpt(void __user *arg)
 static int proc_app_restart(void __user *arg)
 {
 	int res;
-	restart_request_t restart_req;
+	struct restart_request restart_req;
 	pid_t root_pid;
 
 	if (copy_from_user(&restart_req, arg, sizeof(restart_req)))
@@ -153,7 +153,7 @@ static int proc_app_set_userdata(void __user *arg)
 static int proc_app_get_userdata(void __user *arg)
 {
 	int res;
-	app_userdata_request_t data_req;
+	struct app_userdata_request data_req;
 
 	if (copy_from_user(&data_req, arg, sizeof(data_req)))
 		return -EFAULT;

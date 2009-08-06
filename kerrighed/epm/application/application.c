@@ -871,7 +871,7 @@ exit:
 	return r;
 }
 
-int app_get_userdata(long _appid,  type_ckpt_t type_id, __u64 *user_data)
+int app_get_userdata(long _appid, type_ckpt_t type_id, __u64 *user_data)
 {
 	int r = 0;
 	long app_id = _appid;

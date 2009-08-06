@@ -13,7 +13,7 @@ typedef enum {
 	FROM_PID
 } type_ckpt_t;
 
-typedef struct checkpoint_info
+struct checkpoint_info
 {
 	long app_id;
 
@@ -23,22 +23,22 @@ typedef struct checkpoint_info
 	int result;
 
 	int signal;
-} checkpoint_infos_t ;
+};
 
 #define GET_RESTART_CMD_PTS 1
 
-typedef struct restart_request
+struct restart_request
 {
 	long app_id;
 	int chkpt_sn;
 	int flags;
-} restart_request_t;
+};
 
-typedef struct app_userdata_request
+struct app_userdata_request
 {
 	long app_id;
 	type_ckpt_t type;
 	__u64 user_data;
-} app_userdata_request_t;
+};
 
 #endif

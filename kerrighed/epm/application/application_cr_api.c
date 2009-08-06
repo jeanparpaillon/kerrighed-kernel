@@ -21,7 +21,7 @@
  *  System call function to freeze an application.
  *  @author Matthieu Fertré
  */
-int sys_app_freeze(checkpoint_infos_t *infos)
+int sys_app_freeze(struct checkpoint_info *infos)
 {
 	return app_freeze(infos);
 }
@@ -30,7 +30,7 @@ int sys_app_freeze(checkpoint_infos_t *infos)
  *  System call function to unfreeze an application.
  *  @author Matthieu Fertré
  */
-int sys_app_unfreeze(checkpoint_infos_t *infos)
+int sys_app_unfreeze(struct checkpoint_info *infos)
 {
 	return app_unfreeze(infos);
 }
@@ -39,7 +39,7 @@ int sys_app_unfreeze(checkpoint_infos_t *infos)
  *  System call function to checkpoint an application.
  *  @author Matthieu Fertré
  */
-int sys_app_chkpt(checkpoint_infos_t *infos)
+int sys_app_chkpt(struct checkpoint_info *infos)
 {
 	return app_chkpt(infos);
 }
@@ -48,7 +48,7 @@ int sys_app_chkpt(checkpoint_infos_t *infos)
  *  System call function to restart an application
  *  @author Matthieu Fertré
  */
-int sys_app_restart(restart_request_t *req, pid_t *root_pid)
+int sys_app_restart(struct restart_request *req, pid_t *root_pid)
 {
 	task_identity_t requester;
 
@@ -71,7 +71,7 @@ int sys_app_set_userdata(__u64 data)
  *  System call function to get a user data per application
  *  @author Matthieu Fertré
  */
-int sys_app_get_userdata(app_userdata_request_t *data_req)
+int sys_app_get_userdata(struct app_userdata_request *data_req)
 {
 	return app_get_userdata(data_req->app_id, data_req->type,
 				&data_req->user_data);

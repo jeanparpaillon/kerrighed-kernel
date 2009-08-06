@@ -5,7 +5,7 @@
 #ifndef __APPLICATION_RESTART_H__
 #define __APPLICATION_RESTART_H__
 
-int app_restart(restart_request_t *req,
+int app_restart(struct restart_request *req,
 		const task_identity_t *requester, pid_t *root_pid);
 
 void application_restart_rpc_init(void);

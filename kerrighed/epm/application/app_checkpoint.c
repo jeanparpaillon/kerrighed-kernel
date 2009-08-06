@@ -505,7 +505,7 @@ exit_kddmput:
 	return r;
 }
 
-static int _checkpoint_frozen_app(checkpoint_infos_t *info)
+static int _checkpoint_frozen_app(struct checkpoint_info *info)
 {
 	int r;
 	int prev_chkpt_sn;
@@ -549,7 +549,7 @@ static inline int create_app_folder(long app_id, int chkpt_sn)
 	return r;
 }
 
-long get_appid(const checkpoint_infos_t *info)
+long get_appid(const struct checkpoint_info *info)
 {
 	long r;
 
@@ -578,7 +578,7 @@ exit:
 	return r;
 }
 
-int app_freeze(checkpoint_infos_t *info)
+int app_freeze(struct checkpoint_info *info)
 {
 	int r = -EPERM;
 	long app_id = get_appid(info);
@@ -602,7 +602,7 @@ exit:
 	return r;
 }
 
-int app_unfreeze(checkpoint_infos_t *info)
+int app_unfreeze(struct checkpoint_info *info)
 {
 	int r = -EPERM;
 	long app_id = get_appid(info);
@@ -620,7 +620,7 @@ exit:
 	return r;
 }
 
-int app_chkpt(checkpoint_infos_t *info)
+int app_chkpt(struct checkpoint_info *info)
 {
        int r = -EPERM;
        long app_id = get_appid(info);

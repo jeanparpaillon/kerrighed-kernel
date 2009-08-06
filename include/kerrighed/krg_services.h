@@ -122,22 +122,22 @@
                                             migration_infos_t)
 #define KSYS_APP_FREEZE                _IOW(KERRIGHED_PROC_MAGIC, \
                                             EPM_PROC_BASE + 2, \
-                                            checkpoint_infos_t)
+                                            struct checkpoint_info)
 #define KSYS_APP_UNFREEZE              _IOW(KERRIGHED_PROC_MAGIC, \
                                             EPM_PROC_BASE + 3, \
-                                            checkpoint_infos_t)
+                                            struct checkpoint_info)
 #define KSYS_APP_CHKPT                 _IOW(KERRIGHED_PROC_MAGIC, \
                                             EPM_PROC_BASE + 4, \
-                                            checkpoint_infos_t)
+                                            struct checkpoint_info)
 #define KSYS_APP_RESTART               _IOW(KERRIGHED_PROC_MAGIC, \
                                             EPM_PROC_BASE + 5, \
-                                            restart_request_t)
+                                            struct restart_request)
 #define KSYS_APP_SET_USERDATA          _IOW(KERRIGHED_PROC_MAGIC, \
                                             EPM_PROC_BASE + 6, \
                                             __u64)
 #define KSYS_APP_GET_USERDATA          _IOW(KERRIGHED_PROC_MAGIC, \
                                             EPM_PROC_BASE + 7, \
-                                            app_userdata_request_t)
+                                            struct app_userdata_request)
 
 /*
  * HotPlug

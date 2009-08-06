@@ -8,11 +8,11 @@
 
 #include <kerrighed/sys/checkpoint.h>
 
-int app_freeze(checkpoint_infos_t *infos);
+int app_freeze(struct checkpoint_info *info);
 
-int app_unfreeze(checkpoint_infos_t *infos);
+int app_unfreeze(struct checkpoint_info *info);
 
-int app_chkpt(checkpoint_infos_t *infos);
+int app_chkpt(struct checkpoint_info *info);
 
 void application_checkpoint_rpc_init(void);
 

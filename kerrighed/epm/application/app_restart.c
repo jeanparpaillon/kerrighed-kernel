@@ -1183,7 +1183,7 @@ err_no_pids:
  *  Main application restarting interface.
  *  @author Matthieu Fertré
  */
-int app_restart(restart_request_t *req,
+int app_restart(struct restart_request *req,
 		const task_identity_t *requester, pid_t *root_pid)
 {
 	struct app_kddm_object *obj;
