@@ -217,10 +217,6 @@ void check_activate_faf (struct task_struct *tsk,
 	if (index < 0)
 		goto done;
 
-	/* Check if the file is already a FAF file */
-	if (file->f_flags & (O_FAF_CLT | O_FAF_SRV))
-		goto done;
-
 	/* No need to activate FAF for a checkpoint */
 	if (action->type == EPM_CHECKPOINT)
 		goto done;
