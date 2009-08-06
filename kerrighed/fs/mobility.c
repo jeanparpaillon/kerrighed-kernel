@@ -42,6 +42,7 @@
 #define VM_FILE_CTNR 1
 #define VM_FILE_PHYS 2
 
+#define MAX_DVFS_MOBILITY_OPS 16
 struct dvfs_mobility_operations *dvfs_mobility_ops[MAX_DVFS_MOBILITY_OPS];
 
 void free_ghost_files (struct task_struct *ghost)
@@ -96,6 +97,36 @@ static inline int populate_fs_struct (ghost_t * ghost,
 
 error:
 	return r;
+}
+
+static inline int dvfs_mobility_index (unsigned short mode)
+{
+	return (mode & S_IFMT) >> 12;
+}
+
+
+static inline void register_dvfs_mobility_ops (unsigned short mode,
+					       struct dvfs_mobility_operations *ops)
+{
+	int index = dvfs_mobility_index (mode);
+
+	if (index < 0 || index >= MAX_DVFS_MOBILITY_OPS) {
+		printk ("Invalid index : %d\n", index);
+		BUG();
+	}
+	else
+		dvfs_mobility_ops[index] = ops;
+}
+
+static inline struct dvfs_mobility_operations *get_dvfs_mobility_ops (
+	unsigned short mode)
+{
+	int index = dvfs_mobility_index (mode);
+
+	if (index < 0 || index >= MAX_DVFS_MOBILITY_OPS)
+		return NULL;
+	else
+		return dvfs_mobility_ops[index];
 }
 
 /*****************************************************************************/
