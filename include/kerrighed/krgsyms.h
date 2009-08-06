@@ -40,6 +40,10 @@ typedef enum krgsyms_val {
 	KRGSYMS_KDDM_TREE_OPS,
 	KRGSYMS_KDDM_PT_OPS,
 
+	/* DVFS mobility operations */
+	KRGSYMS_DVFS_MOBILITY_FAF_OPS,
+	KRGSYMS_DVFS_MOBILITY_REGULAR_OPS,
+
 	KRGSYMS_TABLE_SIZE // Must be the last one
 } krgsyms_val_t;
 

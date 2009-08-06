@@ -41,9 +41,6 @@
 #define VM_FILE_NONE 0
 #define VM_FILE_PHYS 1
 
-#define MAX_DVFS_MOBILITY_OPS 16
-struct dvfs_mobility_operations *dvfs_mobility_ops[MAX_DVFS_MOBILITY_OPS];
-
 void free_ghost_files (struct task_struct *ghost)
 {
 	struct fdtable *fdt;
@@ -98,34 +95,15 @@ error:
 	return r;
 }
 
-static inline int dvfs_mobility_index (unsigned short mode)
+
+static struct dvfs_mobility_operations *get_dvfs_mobility_ops(struct file *file)
 {
-	return (mode & S_IFMT) >> 12;
-}
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & (O_FAF_SRV | O_FAF_CLT))
+		return &dvfs_mobility_faf_ops;
+#endif
 
-
-static inline void register_dvfs_mobility_ops (unsigned short mode,
-					       struct dvfs_mobility_operations *ops)
-{
-	int index = dvfs_mobility_index (mode);
-
-	if (index < 0 || index >= MAX_DVFS_MOBILITY_OPS) {
-		printk ("Invalid index : %d\n", index);
-		BUG();
-	}
-	else
-		dvfs_mobility_ops[index] = ops;
-}
-
-static inline struct dvfs_mobility_operations *get_dvfs_mobility_ops (
-	unsigned short mode)
-{
-	int index = dvfs_mobility_index (mode);
-
-	if (index < 0 || index >= MAX_DVFS_MOBILITY_OPS)
-		return NULL;
-	else
-		return dvfs_mobility_ops[index];
+	return &dvfs_mobility_regular_ops;
 }
 
 /*****************************************************************************/
@@ -152,7 +130,7 @@ int export_one_open_file (struct epm_action *action,
                           struct file *file)
 {
 	struct dvfs_mobility_operations *ops;
-	unsigned short i_mode;
+	krgsyms_val_t dvfs_ops_type;
 	int r;
 
 	if (action->type != EPM_CHECKPOINT
@@ -161,25 +139,21 @@ int export_one_open_file (struct epm_action *action,
 
 #ifdef CONFIG_KRG_FAF
 	check_activate_faf (tsk, index, file, action);
-
-	if (file->f_flags & (O_FAF_SRV | O_FAF_CLT))
-		i_mode = S_IFAF;
-	else
 #endif
-		i_mode = file->f_dentry->d_inode->i_mode & S_IFMT;
-
 	check_file_struct_sharing (index, file, action);
 
-	r = ghost_write(ghost, &i_mode, sizeof (unsigned short));
+	ops = get_dvfs_mobility_ops(file);
+
+	dvfs_ops_type = krgsyms_export(ops);
+
+	r = ghost_write(ghost, &dvfs_ops_type, sizeof(krgsyms_val_t));
 	if (r)
 		goto err_write;
+
 	r = ghost_write(ghost, &file->f_objid,
 			sizeof (unsigned long));
 	if (r)
 		goto err_write;
-
-	ops = get_dvfs_mobility_ops (i_mode);
-	BUG_ON(ops == NULL);
 
 	r = ops->file_export (action, ghost, tsk, index, file);
 
@@ -843,19 +817,19 @@ int import_one_open_file (struct epm_action *action,
 	struct dvfs_file_struct *dvfs_file = NULL;
 	struct dvfs_mobility_operations *ops;
 	struct file *file = NULL;
-	unsigned short i_mode;
+	krgsyms_val_t dvfs_ops_type;
 	unsigned long objid;
 	int first_import = 0;
 	int r = 0;
 
-	r = ghost_read(ghost, &i_mode, sizeof (unsigned short));
+	r = ghost_read(ghost, &dvfs_ops_type, sizeof (dvfs_ops_type));
 	if (r)
 		goto err_read;
 	r = ghost_read(ghost, &objid, sizeof (unsigned long));
 	if (r)
 		goto err_read;
 
-	ops = get_dvfs_mobility_ops (i_mode);
+	ops = krgsyms_import(dvfs_ops_type);
 
 	/* We need to import the file, to avoid leaving unused data in
 	 * the ghost... We can probably do better...
@@ -1493,26 +1467,22 @@ void unimport_fs_struct(struct task_struct *tsk)
 
 int dvfs_mobility_init(void)
 {
-	int i;
-
-	for (i = 0; i < MAX_DVFS_MOBILITY_OPS; i++)
-		dvfs_mobility_ops[i] = NULL;
-
 #ifdef CONFIG_KRG_FAF
-	register_dvfs_mobility_ops (S_IFAF, &dvfs_mobility_faf_ops);
-	register_dvfs_mobility_ops (S_IFIFO, &dvfs_mobility_faf_ops);
-	register_dvfs_mobility_ops (S_IFSOCK, &dvfs_mobility_faf_ops);
-	register_dvfs_mobility_ops (S_IFBLK, &dvfs_mobility_faf_ops);
+	krgsyms_register(KRGSYMS_DVFS_MOBILITY_FAF_OPS,
+			 &dvfs_mobility_faf_ops);
 #endif
-	register_dvfs_mobility_ops (S_IFREG, &dvfs_mobility_regular_ops);
-	register_dvfs_mobility_ops (S_IFDIR, &dvfs_mobility_regular_ops);
-	register_dvfs_mobility_ops (S_IFCHR, &dvfs_mobility_regular_ops);
+	krgsyms_register(KRGSYMS_DVFS_MOBILITY_REGULAR_OPS,
+			 &dvfs_mobility_regular_ops);
 
 	return 0;
 }
 
 void dvfs_mobility_finalize (void)
 {
+	krgsyms_unregister(KRGSYMS_DVFS_MOBILITY_REGULAR_OPS);
+#ifdef CONFIG_KRG_FAF
+	krgsyms_unregister(KRGSYMS_DVFS_MOBILITY_FAF_OPS);
+#endif
 }
 
 static int cr_export_now_files_struct(struct epm_action *action, ghost_t *ghost,
