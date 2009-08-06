@@ -153,9 +153,8 @@ static struct shared_index *search_shared_index(struct rb_root *root,
 	return NULL;
 }
 
-
-static int insert_shared_index(struct rb_root *root,
-			       struct shared_index *idx)
+static struct shared_index *__insert_shared_index(struct rb_root *root,
+						  struct shared_index *idx)
 {
 	struct rb_node **new = &(root->rb_node), *parent = NULL;
 
@@ -178,7 +177,7 @@ static int insert_shared_index(struct rb_root *root,
 			else if (result > 0)
 				new = &((*new)->rb_right);
 			else
-				return -ENOKEY;
+				return this;
 		}
 	}
 
@@ -186,7 +185,17 @@ static int insert_shared_index(struct rb_root *root,
 	rb_link_node(&idx->node, parent, new);
 	rb_insert_color(&idx->node, root);
 
-	return 0;
+	return idx;
+}
+
+static int insert_shared_index(struct rb_root *root, struct shared_index *idx)
+{
+	struct shared_index *idx2;
+	idx2 = __insert_shared_index(root, idx);
+	if (idx2 == idx)
+		return 0;
+
+	return -ENOKEY;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -505,7 +514,8 @@ err_pack:
 
 struct dist_shared_index {
 	struct shared_index index;
-	kerrighed_node_t node;
+	kerrighed_node_t master_node;
+	krgnodemask_t nodes;
 };
 
 static void clear_one_dist_shared_index(struct rb_node *node,
@@ -542,6 +552,7 @@ static int rcv_dist_objects_list_from(struct rpc_desc *desc,
 
 	while (type != NO_OBJ) {
 		struct dist_shared_index *s;
+		struct shared_index *idx;
 		unsigned long key;
 
 		r = rpc_unpack_type_from(desc, node, key);
@@ -556,13 +567,16 @@ static int rcv_dist_objects_list_from(struct rpc_desc *desc,
 
 		s->index.type = type;
 		s->index.key = key;
-		s->node = node;
+		s->master_node = node;
+		krgnodes_clear(s->nodes);
 
-		r = insert_shared_index(dist_shared_indexes, &s->index);
-		if (r) {
+		idx = __insert_shared_index(dist_shared_indexes, &s->index);
+		if (idx != &s->index) {
 			kfree(s);
-			s = NULL;
+			s = container_of(idx, struct dist_shared_index, index);
 		}
+
+		krgnode_set(node, s->nodes);
 
 		/* next ! */
 		r = rpc_unpack_type_from(desc, node, type);
@@ -597,7 +611,11 @@ static int send_full_dist_objects_list(struct rpc_desc *desc,
 		if (r)
 			goto err_pack;
 
-		r = rpc_pack_type(desc, this->node);
+		r = rpc_pack_type(desc, this->master_node);
+		if (r)
+			goto err_pack;
+
+		r = rpc_pack_type(desc, this->nodes);
 		if (r)
 			goto err_pack;
 	}
@@ -613,6 +631,7 @@ static int rcv_full_dist_objects_list(struct rpc_desc *desc,
 
 {
 	int r;
+	struct rb_node *node;
 	struct dist_shared_index s;
 
 	r = rpc_unpack_type(desc, s.index.type);
@@ -625,18 +644,31 @@ static int rcv_full_dist_objects_list(struct rpc_desc *desc,
 		if (r)
 			goto error;
 
-		r = rpc_unpack_type(desc, s.node);
+		r = rpc_unpack_type(desc, s.master_node);
 		if (r)
 			goto error;
 
-		if (s.node != kerrighed_node_id) {
-			struct rb_node *node;
-			node = search_node(&app->shared_objects.root,
-					   s.index.type, s.index.key);
+		r = rpc_unpack_type(desc, s.nodes);
+		if (r)
+			goto error;
 
-			if (node)
-				clear_one_shared_object(node, app);
-		}
+		node = search_node(&app->shared_objects.root,
+				   s.index.type, s.index.key);
+
+		if (s.master_node == kerrighed_node_id) {
+			struct shared_index *idx;
+			struct shared_object *obj;
+
+			idx = container_of(node, struct shared_index, node);
+			obj = container_of(idx, struct shared_object, index);
+
+			if (krgnode_is_unique(kerrighed_node_id, s.nodes))
+				obj->checkpoint.is_local = 1;
+			else
+				obj->checkpoint.is_local = 0;
+
+		} else if (node)
+			clear_one_shared_object(node, app);
 
 		/* next ! */
 		r = rpc_unpack_type(desc, s.index.type);
