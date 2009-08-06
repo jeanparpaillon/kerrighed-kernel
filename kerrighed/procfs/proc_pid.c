@@ -576,10 +576,16 @@ static int krg_proc_pid_fill_cache(struct file *filp,
 	struct task_kddm_object *obj;
 	int retval = 0;
 
-	if (iter.task)
-		return proc_pid_fill_cache(filp, dirent, filldir, iter);
-
 	obj = krg_task_readlock(iter.tgid);
+	if (iter.task
+	    && ((!obj && iter.task->exit_state != EXIT_MIGRATION)
+		|| obj->task == iter.task)) {
+		/* Task is local and not a remaining part of a migrated task. */
+		retval = proc_pid_fill_cache(filp, dirent, filldir, iter);
+		krg_task_unlock(iter.tgid);
+		return retval;
+	}
+
 	if (obj) {
 		proc_task.task_obj = obj;
 		proc_task.pid = iter.tgid;
