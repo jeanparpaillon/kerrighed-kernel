@@ -205,15 +205,9 @@ int faf_file_export (struct epm_action *action,
 	int desc_size;
 	int r = 0;
 
-	if (!(file->f_flags & (O_FAF_CLT | O_FAF_SRV)))
-		setup_faf_file(file);
+	BUG_ON(action->type == EPM_CHECKPOINT);
 
-	if (action->type == EPM_CHECKPOINT) {
-		BUG_ON(action->checkpoint.shared == CR_SAVE_LATER);
-		r = get_regular_file_krg_desc(file, &desc, &desc_size);
-	} else
-		r = get_faf_file_krg_desc(file, &desc, &desc_size);
-
+	r = get_faf_file_krg_desc(file, &desc, &desc_size);
 	if (r)
 		goto error;
 
@@ -267,31 +261,6 @@ struct dvfs_mobility_operations dvfs_mobility_faf_ops = {
 	.file_export = faf_file_export,
 	.file_import = faf_file_import,
 };
-
-static int cr_export_now_faf_file(struct epm_action *action,
-				  ghost_t *ghost,
-				  struct task_struct *task,
-				  union export_args *args)
-{
-	int r, tty;
-
-	tty = is_tty(args->file_args.file);
-	if (tty < 0) {
-		r = tty;
-		goto error;
-	}
-
-	r = ghost_write(ghost, &tty, sizeof(int));
-	if (r)
-		goto error;
-
-	r = faf_file_export(action, ghost, task,
-			    args->file_args.index,
-			    args->file_args.file);
-
-error:
-	return r;
-}
 
 static int cr_import_now_faf_file(struct epm_action *action,
 				  ghost_t *ghost,
@@ -383,7 +352,7 @@ int cr_delete_faf_file(struct task_struct *fake, void *_faf_link)
 
 struct shared_object_operations cr_shared_faf_file_ops = {
         .restart_data_size = sizeof(struct cr_faf_link),
-        .export_now        = cr_export_now_faf_file,
+        .export_now        = cr_export_now_regular_file,
 	.import_now        = cr_import_now_faf_file,
 	.import_complete   = cr_import_complete_faf_file,
 	.delete            = cr_delete_faf_file,

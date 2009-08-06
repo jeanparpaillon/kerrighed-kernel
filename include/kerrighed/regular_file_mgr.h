@@ -36,6 +36,7 @@ typedef struct regular_file_krg_desc {
 
 struct epm_action;
 struct dvfs_file_struct;
+union export_args;
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -55,7 +56,9 @@ int ghost_read_file_krg_desc(ghost_t *ghost, void **desc);
 int ghost_write_file_krg_desc(ghost_t *ghost, void *desc, int desc_size);
 int ghost_write_regular_file_krg_desc(ghost_t *ghost, struct file *file);
 
-int get_regular_file_krg_desc(struct file *file, void **desc, int *desc_size);
+int cr_export_now_regular_file(struct epm_action *action, ghost_t *ghost,
+			       struct task_struct *task,
+			       union export_args *args);
 
 struct file *begin_import_dvfs_file(unsigned long dvfs_objid,
 				    struct dvfs_file_struct **dvfs_file);

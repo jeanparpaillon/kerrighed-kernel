@@ -151,7 +151,8 @@ static char *get_filename(struct file* file, char *buffer, int buffer_size)
  *  @return   0 if everything ok.
  *            Negative value otherwise.
  */
-int get_regular_file_krg_desc(struct file *file, void **desc, int *desc_size)
+static int get_regular_file_krg_desc(struct file *file, void **desc,
+				     int *desc_size)
 {
 	char *tmp = (char *) __get_free_page (GFP_KERNEL);
 	char *file_name;
@@ -510,10 +511,9 @@ struct dvfs_mobility_operations dvfs_mobility_regular_ops = {
 	.file_import = regular_file_import,
 };
 
-static int cr_export_now_regular_file(struct epm_action *action,
-				      ghost_t *ghost,
-				      struct task_struct *task,
-				      union export_args *args)
+int cr_export_now_regular_file(struct epm_action *action, ghost_t *ghost,
+			       struct task_struct *task,
+			       union export_args *args)
 {
 	int r, tty;
 
