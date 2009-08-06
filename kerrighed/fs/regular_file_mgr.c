@@ -509,6 +509,7 @@ error:
 static int cr_import_now_regular_file(struct epm_action *action,
 				      ghost_t *ghost,
 				      struct task_struct *fake,
+				      int local_only,
 				      void **returned_data)
 {
 	int r, tty;
@@ -589,6 +590,7 @@ static int cr_delete_regular_file(struct task_struct *fake,
 static int cr_import_now_dvfs_file(struct epm_action *action,
 				   ghost_t *ghost,
 				   struct task_struct *fake,
+				   int local_only,
 				   void **returned_data)
 {
 	int r, tty;

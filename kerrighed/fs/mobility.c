@@ -1495,7 +1495,7 @@ static int cr_export_now_files_struct(struct epm_action *action, ghost_t *ghost,
 }
 
 static int cr_import_now_files_struct(struct epm_action *action, ghost_t *ghost,
-				      struct task_struct *fake,
+				      struct task_struct *fake, int local_only,
 				      void ** returned_data)
 {
 	int r;
@@ -1549,7 +1549,7 @@ static int cr_export_now_fs_struct(struct epm_action *action, ghost_t *ghost,
 }
 
 static int cr_import_now_fs_struct(struct epm_action *action, ghost_t *ghost,
-				   struct task_struct *fake,
+				   struct task_struct *fake, int local_only,
 				   void ** returned_data)
 {
 	int r;
@@ -1593,15 +1593,15 @@ struct shared_object_operations cr_shared_fs_struct_ops = {
 };
 
 static int cr_export_now_unsupported_file(struct epm_action *action, ghost_t *ghost,
-				   struct task_struct *task,
-				   union export_args *args)
+					  struct task_struct *task,
+					  union export_args *args)
 {
 	return 0;
 }
 
 static int cr_import_now_unsupported_file(struct epm_action *action, ghost_t *ghost,
-				   struct task_struct *fake,
-				   void ** returned_data)
+					  struct task_struct *fake, int local_only,
+					  void ** returned_data)
 {
 	*returned_data = NULL;
 

@@ -349,6 +349,7 @@ error:
 static int cr_import_now_faf_file(struct epm_action *action,
 				  ghost_t *ghost,
 				  struct task_struct *fake,
+				  int local_only,
 				  void **returned_data)
 {
 	int r, tty;

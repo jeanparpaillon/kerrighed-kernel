@@ -788,7 +788,8 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 	r = ghost_read(ghost, &s->index.key, sizeof(long));
 	if (r)
 		goto err_free;
-	r = ghost_read(ghost, &s->restart.t_identity, sizeof(struct task_identity));
+	r = ghost_read(ghost, &s->restart.t_identity,
+		       sizeof(struct task_identity));
 	if (r)
 		goto err_free;
 
@@ -804,7 +805,7 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 	else
 		s->restart.locality = SHARED_MASTER;
 
-	r = s->ops->import_now(action, ghost, fake, &s->restart.data);
+	r = s->ops->import_now(action, ghost, fake, is_local, &s->restart.data);
 	if (r)
 		goto err_free;
 

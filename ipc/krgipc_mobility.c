@@ -314,7 +314,7 @@ static int cr_export_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 
 
 static int cr_import_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
-				  struct task_struct *fake,
+				  struct task_struct *fake, int local_only,
 				  void ** returned_data)
 {
 	int r;

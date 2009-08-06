@@ -83,7 +83,7 @@ struct shared_object_operations {
 	int (*export_now) (struct epm_action *, ghost_t *, struct task_struct *,
 			   union export_args *);
 	int (*import_now) (struct epm_action *, ghost_t *, struct task_struct *,
-			   void  **);
+			   int, void  **);
 	int (*import_complete) (struct task_struct *, void *);
 	int (*delete) (struct task_struct *, void *);
 };
