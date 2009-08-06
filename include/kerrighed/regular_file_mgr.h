@@ -55,6 +55,8 @@ int ghost_read_file_krg_desc(ghost_t *ghost, void **desc);
 int ghost_write_file_krg_desc(ghost_t *ghost, void *desc, int desc_size);
 int ghost_write_regular_file_krg_desc(ghost_t *ghost, struct file *file);
 
+int get_regular_file_krg_desc(struct file *file, void **desc, int *desc_size);
+
 struct file *begin_import_dvfs_file(unsigned long dvfs_objid,
 				    struct dvfs_file_struct **dvfs_file);
 

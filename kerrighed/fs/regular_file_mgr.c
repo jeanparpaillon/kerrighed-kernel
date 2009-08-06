@@ -17,6 +17,9 @@
 #include <kerrighed/action.h>
 #include <kerrighed/app_shared.h>
 #include <kerrighed/app_terminal.h>
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
 #include <kerrighed/file.h>
 #include <kerrighed/ghost_helpers.h>
 #include <kerrighed/regular_file_mgr.h>
@@ -124,8 +127,22 @@ int check_flush_file (struct epm_action *action,
 	return err;
 }
 
+static char *get_filename(struct file* file, char *buffer, int buffer_size)
+{
+	char *filename;
+
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT)
+		filename = krg_faf_d_path(file, buffer, buffer_size);
+	else
+#endif
+		filename = physical_d_path(&file->f_path, buffer);
+
+	return filename;
+}
+
 /** Return a kerrighed descriptor corresponding to the given file.
- *  @author Renaud Lottiaux
+ *  @author Renaud Lottiaux, Matthieu Fertré
  *
  *  @param file       The file to get a Kerrighed descriptor for.
  *  @param desc       The returned descriptor.
@@ -134,11 +151,10 @@ int check_flush_file (struct epm_action *action,
  *  @return   0 if everything ok.
  *            Negative value otherwise.
  */
-int get_regular_file_krg_desc (struct file *file,
-                               void **desc,
-                               int *desc_size)
+int get_regular_file_krg_desc(struct file *file, void **desc, int *desc_size)
 {
-	char *tmp = (char *) __get_free_page (GFP_KERNEL), *file_name;
+	char *tmp = (char *) __get_free_page (GFP_KERNEL);
+	char *file_name;
 	regular_file_krg_desc_t *data;
 	int size = 0, name_len;
 	int r = -ENOENT;
@@ -152,7 +168,7 @@ int get_regular_file_krg_desc (struct file *file,
 	}
 #endif
 
-	file_name = physical_d_path(&file->f_path, tmp);
+	file_name = get_filename(file, tmp, PAGE_SIZE);
 
 	if (!file_name)
 		goto exit;
@@ -171,24 +187,31 @@ int get_regular_file_krg_desc (struct file *file,
 
 	strncpy(data->file.filename, file_name, name_len);
 
-	data->file.flags = file->f_flags;
-	data->file.mode = file->f_dentry->d_inode->i_mode & S_IRWXUGO;
+	data->file.flags = file->f_flags
+#ifdef CONFIG_KRG_FAF
+		& (~(O_FAF_SRV | O_FAF_CLT));
+#endif
+	data->file.mode = file->f_mode;
 	data->file.pos = file->f_pos;
 	data->file.uid = file->f_cred->uid;
 	data->file.gid = file->f_cred->gid;
-	if (file->f_dentry->d_inode->i_mapping->kddm_set)
-		data->file.ctnrid = file->f_dentry->d_inode->i_mapping->kddm_set->id;
+
+	if (
+#ifdef CONFIG_KRG_FAF
+	    !(file->f_flags & (O_FAF_CLT | O_FAF_SRV)) &&
+#endif
+	    file->f_dentry->d_inode->i_mapping->kddm_set
+		)
+		data->file.ctnrid =
+			file->f_dentry->d_inode->i_mapping->kddm_set->id;
 	else
 		data->file.ctnrid = KDDM_SET_UNUSED;
 
 	*desc = data;
 	*desc_size = size;
-
 	r = 0;
-
 exit:
 	free_page ((unsigned long) tmp);
-
 	return r;
 }
 

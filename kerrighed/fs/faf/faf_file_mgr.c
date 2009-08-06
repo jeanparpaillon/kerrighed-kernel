@@ -63,59 +63,6 @@ exit:
 	return file;
 }
 
-
-
-/** Return a kerrighed descriptor corresponding to the given file.
- *  @author Renaud Lottiaux
- *
- *  @param file       The file to get a Kerrighed descriptor for.
- *  @param desc       The returned descriptor.
- *  @param desc_size  Size of the returned descriptor.
- *
- *  @return   0 if everything ok.
- *            Negative value otherwise.
- */
-int get_ckp_faf_file_krg_desc (int index,
-			       struct file *file,
-			       void **desc,
-			       int *desc_size)
-{
-	char * tmp = (char*)__get_free_page(GFP_KERNEL), *file_name;
-	regular_file_krg_desc_t *data;
-	int name_len, size, r = -ENOENT;
-
-	file_name = faf_d_path(file, tmp, PAGE_SIZE);
-	if (!file_name)
-		goto exit;
-
-	name_len = strlen (file_name) + 1;
-	size = sizeof (regular_file_krg_desc_t) + name_len;
-
-	data = kmalloc (size, GFP_KERNEL);
-	if (!data) {
-		r = -ENOMEM;
-		goto exit;
-	}
-
-	data->sysv = 0;
-	data->file.filename = (char *) &data[1];
-
-	strncpy(data->file.filename, file_name, name_len);
-
-	data->file.flags = file->f_flags & (~(O_FAF_SRV | O_FAF_CLT));
-	data->file.mode = file->f_mode;
-	data->file.pos = file->f_pos;
-	data->file.ctnrid = KDDM_SET_UNUSED;
-
-	*desc = data;
-	*desc_size = size;
-
-	r = 0;
-exit:
-	free_page((unsigned long)tmp);
-	return r ;
-}
-
 static void __fill_faf_file_krg_desc(faf_client_data_t *data,
 				     struct file *file)
 {
@@ -263,7 +210,7 @@ int faf_file_export (struct epm_action *action,
 
 	if (action->type == EPM_CHECKPOINT) {
 		BUG_ON(action->checkpoint.shared == CR_SAVE_LATER);
-		r = get_ckp_faf_file_krg_desc(index, file, &desc, &desc_size);
+		r = get_regular_file_krg_desc(file, &desc, &desc_size);
 	} else
 		r = get_faf_file_krg_desc(file, &desc, &desc_size);
 
