@@ -201,12 +201,17 @@ static int is_file_type_supported(const struct file *file)
 static int _cr_get_file_type_and_key(const struct file *file,
 				     enum shared_obj_type *type,
 				     long *key,
-				     int *is_local)
+				     int *is_local,
+				     int allow_unsupported)
 {
-	if (!is_file_type_supported(file))
-		return -ENOSYS;
+	if (!is_file_type_supported(file)) {
+		if (allow_unsupported) {
+			*type = UNSUPPORTED_FILE;
+			*key = (long)file;
+		} else
+			return -ENOSYS;
 
-	if (file->f_flags & (O_FAF_CLT | O_FAF_SRV)) {
+	} else if (file->f_flags & (O_FAF_CLT | O_FAF_SRV)) {
 		*type = FAF_FILE;
 		*key = file->f_objid;
 		if (is_local)
@@ -228,22 +233,23 @@ static int _cr_get_file_type_and_key(const struct file *file,
 
 void cr_get_file_type_and_key(const struct file *file,
 			      enum shared_obj_type *type,
-			      long *key)
+			      long *key,
+			      int allow_unsupported)
 {
 	int r;
-	r = _cr_get_file_type_and_key(file, type, key, NULL);
+	r = _cr_get_file_type_and_key(file, type, key, NULL, allow_unsupported);
 
 	/* normally, the error have been catched before */
 	BUG_ON(r);
 }
 
-int cr_ghost_write_file_id(ghost_t *ghost, struct file *file)
+int cr_ghost_write_file_id(ghost_t *ghost, struct file *file, int allow_unsupported)
 {
 	int r, tty;
 	long key;
 	enum shared_obj_type type;
 
-	cr_get_file_type_and_key(file, &type, &key);
+	cr_get_file_type_and_key(file, &type, &key, allow_unsupported);
 
 	r = ghost_write(ghost, &type, sizeof(enum shared_obj_type));
 	if (r)
@@ -275,7 +281,7 @@ static int cr_write_vma_phys_file_id(ghost_t *ghost, struct task_struct *tsk,
 {
 	int r;
 
-	r = cr_ghost_write_file_id(ghost, vma->vm_file);
+	r = cr_ghost_write_file_id(ghost, vma->vm_file, 0);
 
 	if (vma->vm_flags & VM_EXEC) {
 
@@ -366,7 +372,7 @@ int export_mm_exe_file(struct epm_action *action, ghost_t *ghost,
 
 		if (action->type == EPM_CHECKPOINT) {
 			BUG_ON(action->checkpoint.shared != CR_SAVE_NOW);
-			r = cr_ghost_write_file_id(ghost, tsk->mm->exe_file);
+			r = cr_ghost_write_file_id(ghost, tsk->mm->exe_file, 0);
 		} else
 			r = export_one_open_file(action, ghost, tsk, -1,
 						 tsk->mm->exe_file);
@@ -425,9 +431,14 @@ static int cr_write_open_files_id(ghost_t *ghost,
 				  int last_open_fd)
 {
 	struct file *file;
-	int i, r = 0;
+	int i, allow_unsupported, r = 0;
 
 	BUG_ON (!tsk);
+
+	if (tsk->application->checkpoint.flags & CKPT_W_UNSUPPORTED_FILE)
+		allow_unsupported = 1;
+	else
+		allow_unsupported = 0;
 
 	/* Write id of files opened by the process */
 	for (i = 0; i < last_open_fd; i++) {
@@ -435,7 +446,8 @@ static int cr_write_open_files_id(ghost_t *ghost,
 			BUG_ON (!fdt->fd[i]);
 			file = fdt->fd[i];
 
-			r = cr_ghost_write_file_id(ghost, file);
+			r = cr_ghost_write_file_id(ghost, file,
+						   allow_unsupported);
 
 			if (r != 0)
 				goto exit;
@@ -451,14 +463,16 @@ exit:
 }
 
 int cr_add_file_to_shared_table(struct task_struct *task,
-				int index, struct file *file)
+				int index, struct file *file,
+				int allow_unsupported)
 {
 	int r, is_local, tty;
 	long key;
 	enum shared_obj_type type;
 	union export_args args;
 
-	r = _cr_get_file_type_and_key(file, &type, &key, &is_local);
+	r = _cr_get_file_type_and_key(file, &type, &key, &is_local,
+				      allow_unsupported);
 	if (r)
 		goto error;
 
@@ -493,9 +507,14 @@ static int cr_add_files_to_shared_table(struct task_struct *tsk,
 					int last_open_fd)
 {
 	struct file *file;
-	int i, r = 0;
+	int i, allow_unsupported, r = 0;
 
 	BUG_ON (!tsk);
+
+	if (tsk->application->checkpoint.flags & CKPT_W_UNSUPPORTED_FILE)
+		allow_unsupported = 1;
+	else
+		allow_unsupported = 0;
 
 	/* Write id of files opened by the process */
 	for (i = 0; i < last_open_fd; i++) {
@@ -503,7 +522,8 @@ static int cr_add_files_to_shared_table(struct task_struct *tsk,
 			BUG_ON (!fdt->fd[i]);
 			file = fdt->fd[i];
 
-			r = cr_add_file_to_shared_table(tsk, i, file);
+			r = cr_add_file_to_shared_table(tsk, i, file,
+							allow_unsupported);
 
 			if (r != 0)
 				goto exit;
@@ -913,7 +933,8 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 
 	if (type != REGULAR_FILE
 	    && type != REGULAR_DVFS_FILE
-	    && type != FAF_FILE)
+	    && type != FAF_FILE
+	    && type != UNSUPPORTED_FILE)
 		goto err_bad_data;
 
 	r = ghost_read(ghost, &key, sizeof(long));
@@ -937,6 +958,8 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 	}
 
 	if (tty) {
+		BUG_ON(type == UNSUPPORTED_FILE);
+
 		r = cr_link_to_terminal(action, returned_file);
 
 		if (r || *returned_file)
@@ -958,6 +981,10 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 					returned_file, key);
 		break;
 #endif
+	case UNSUPPORTED_FILE:
+		*returned_file = NULL;
+		r = 0;
+		break;
 	default:
 		BUG();
 		break;
@@ -994,7 +1021,13 @@ static int cr_link_to_open_files(struct epm_action *action,
 					    (void *) &fdt->fd[i]);
 			if (r != 0)
 				goto exit;
-			BUG_ON (!fdt->fd[i]);
+
+			/* in case of unsupported files and related option
+			 * cr_link_to_file may return r==0 with
+			 * fdt->fd[i] == NULL
+			 */
+			if (!fdt->fd[i])
+				FD_CLR(i, fdt->open_fds);
 		}
 		else
 			fdt->fd[i] = NULL;
@@ -1555,4 +1588,38 @@ struct shared_object_operations cr_shared_fs_struct_ops = {
 	.import_now        = cr_import_now_fs_struct,
 	.import_complete   = cr_import_complete_fs_struct,
 	.delete            = cr_delete_fs_struct,
+};
+
+static int cr_export_now_unsupported_file(struct epm_action *action, ghost_t *ghost,
+				   struct task_struct *task,
+				   union export_args *args)
+{
+	return 0;
+}
+
+static int cr_import_now_unsupported_file(struct epm_action *action, ghost_t *ghost,
+				   struct task_struct *fake,
+				   void ** returned_data)
+{
+	*returned_data = NULL;
+
+	return 0;
+}
+
+static int cr_import_complete_unsupported_file(struct task_struct *fake, void *_fs)
+{
+	return 0;
+}
+
+static int cr_delete_unsupported_file(struct task_struct *fake, void *_fs)
+{
+	return 0;
+}
+
+struct shared_object_operations cr_shared_unsupported_file_ops = {
+        .restart_data_size = 0,
+        .export_now        = cr_export_now_unsupported_file,
+	.import_now        = cr_import_now_unsupported_file,
+	.import_complete   = cr_import_complete_unsupported_file,
+	.delete            = cr_delete_unsupported_file,
 };

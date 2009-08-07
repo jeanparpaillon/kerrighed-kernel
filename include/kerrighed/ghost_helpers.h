@@ -131,10 +131,12 @@ void free_ghost_files (struct task_struct *ghost);
 
 void cr_get_file_type_and_key(const struct file *file,
 			      enum shared_obj_type *type,
-			      long *key);
+			      long *key,
+			      int allow_unsupported);
 
 int cr_add_file_to_shared_table(struct task_struct *task,
-				int index, struct file *file);
+				int index, struct file *file,
+				int allow_unsupported);
 
 int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 		    struct task_struct *task, struct file **returned_file);

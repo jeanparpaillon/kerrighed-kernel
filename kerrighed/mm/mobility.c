@@ -406,7 +406,8 @@ static int cr_add_vmas_files_to_shared_table(struct task_struct *task)
 	while (vma != NULL) {
 
 		if (vma->vm_file) {
-			r = cr_add_file_to_shared_table(task, -1, vma->vm_file);
+			r = cr_add_file_to_shared_table(task, -1,
+							vma->vm_file, 0);
 			if (r == -ENOKEY) /* the file was already in the list */
 				r = 0;
 
@@ -425,7 +426,7 @@ static int cr_add_exe_file_to_shared_table(struct task_struct *task)
 	int r = 0;
 
 #ifdef CONFIG_PROC_FS
-	r = cr_add_file_to_shared_table(task, -1, task->mm->exe_file);
+	r = cr_add_file_to_shared_table(task, -1, task->mm->exe_file, 0);
 	if (r == -ENOKEY) /* the file was already in the list */
 		r = 0;
 #endif

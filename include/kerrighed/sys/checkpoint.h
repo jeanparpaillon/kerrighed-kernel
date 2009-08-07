@@ -8,7 +8,8 @@
 #define E_CR_TASKDEAD    1002
 #define E_CR_BADDATA     1003
 
-#define APP_FROM_PID 1
+#define APP_FROM_PID			1
+#define CKPT_W_UNSUPPORTED_FILE		2
 
 struct checkpoint_info
 {

@@ -29,6 +29,7 @@
 extern struct shared_object_operations cr_shared_regular_file_ops;
 extern struct shared_object_operations cr_shared_dvfs_regular_file_ops;
 extern struct shared_object_operations cr_shared_faf_file_ops;
+extern struct shared_object_operations cr_shared_unsupported_file_ops;
 extern struct shared_object_operations cr_shared_files_struct_ops;
 extern struct shared_object_operations cr_shared_fs_struct_ops;
 #ifdef CONFIG_KRG_MM
@@ -52,6 +53,9 @@ static struct shared_object_operations * get_shared_ops(
 		break;
 	case FAF_FILE:
 		s_ops = &cr_shared_faf_file_ops;
+		break;
+	case UNSUPPORTED_FILE:
+		s_ops = &cr_shared_unsupported_file_ops;
 		break;
 	case FILES_STRUCT:
 		s_ops = &cr_shared_files_struct_ops;
@@ -772,7 +776,7 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 	if (r)
 		goto err_free;
 
-	BUG_ON(!s->restart.data);
+	BUG_ON(!s->restart.data && type != UNSUPPORTED_FILE);
 
 	r = insert_shared_index(&fake->application->shared_objects.root,
 				&s->index);

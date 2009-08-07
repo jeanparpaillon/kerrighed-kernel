@@ -323,6 +323,7 @@ struct checkpoint_request_msg {
 	kerrighed_node_t requester;
 	long app_id;
 	int chkpt_sn;
+	int flags;
 };
 
 static void handle_do_chkpt(struct rpc_desc *desc, void *_msg, size_t size)
@@ -348,6 +349,8 @@ static void handle_do_chkpt(struct rpc_desc *desc, void *_msg, size_t size)
 	}
 	old_cred = override_creds(cred);
 	app->cred = cred;
+
+	app->checkpoint.flags = msg->flags;
 
 	r = __local_do_chkpt(app, msg->chkpt_sn);
 
@@ -375,7 +378,7 @@ error:
 	}
 }
 
-static int global_do_chkpt(struct app_kddm_object *obj)
+static int global_do_chkpt(struct app_kddm_object *obj, int flags)
 {
 	struct rpc_desc *desc;
 	struct checkpoint_request_msg msg;
@@ -388,6 +391,7 @@ static int global_do_chkpt(struct app_kddm_object *obj)
 	msg.requester = kerrighed_node_id;
 	msg.app_id = obj->app_id;
 	msg.chkpt_sn = obj->chkpt_sn;
+	msg.flags = flags;
 
 	desc = rpc_begin_m(APP_DO_CHKPT, &obj->nodes);
 	err_rpc = rpc_pack_type(desc, msg);
@@ -524,7 +528,7 @@ static int _checkpoint_frozen_app(struct checkpoint_info *info)
 
 	prev_chkpt_sn = obj->chkpt_sn;
 
-	r = global_do_chkpt(obj);
+	r = global_do_chkpt(obj, info->flags);
 
 	info->chkpt_sn = obj->chkpt_sn;
 	if (r)

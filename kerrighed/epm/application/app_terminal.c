@@ -203,7 +203,7 @@ int send_terminal_id(struct rpc_desc *desc, struct app_struct *app)
 	if (!one_terminal)
 		goto exit;
 
-	cr_get_file_type_and_key(app->checkpoint.terminal, &type, &key);
+	cr_get_file_type_and_key(app->checkpoint.terminal, &type, &key, 0);
 
 	r = rpc_pack_type(desc, type);
 	if (r)

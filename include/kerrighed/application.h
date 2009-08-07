@@ -97,6 +97,7 @@ struct app_struct {
 	union {
 		struct {
 			struct file *terminal;
+			int flags;
 		} checkpoint;
 
 		struct {

@@ -45,6 +45,7 @@ enum shared_obj_type {
 	REGULAR_FILE,
 	REGULAR_DVFS_FILE,
 	FAF_FILE,
+	UNSUPPORTED_FILE,
 
 	/* other objects */
 	FILES_STRUCT,
