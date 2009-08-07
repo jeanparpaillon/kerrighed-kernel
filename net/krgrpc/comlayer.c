@@ -97,25 +97,30 @@ static DEFINE_SPINLOCK(consumed_bytes_lock);
 
 static inline void consumed_bytes_add(long load)
 {
-	spin_lock(&consumed_bytes_lock);
+	unsigned long flags;
+
+	spin_lock_irqsave(&consumed_bytes_lock, flags);
 	consumed_bytes += load;
-	spin_unlock(&consumed_bytes_lock);
+	spin_unlock_irqrestore(&consumed_bytes_lock, flags);
 }
 
 static inline void consumed_bytes_sub(long load)
 {
-	spin_lock(&consumed_bytes_lock);
+	unsigned long flags;
+
+	spin_lock_irqsave(&consumed_bytes_lock, flags);
 	consumed_bytes -= load;
-	spin_unlock(&consumed_bytes_lock);
+	spin_unlock_irqrestore(&consumed_bytes_lock, flags);
 }
 
 s64 rpc_consumed_bytes(void)
 {
+	unsigned long flags;
 	s64 ret;
 
-	spin_lock(&consumed_bytes_lock);
+	spin_lock_irqsave(&consumed_bytes_lock, flags);
 	ret = consumed_bytes;
-	spin_unlock(&consumed_bytes_lock);
+	spin_unlock_irqrestore(&consumed_bytes_lock, flags);
 
 	return ret;
 }
