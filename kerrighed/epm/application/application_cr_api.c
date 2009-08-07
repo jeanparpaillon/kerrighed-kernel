@@ -73,6 +73,6 @@ int sys_app_set_userdata(__u64 data)
  */
 int sys_app_get_userdata(struct app_userdata_request *data_req)
 {
-	return app_get_userdata(data_req->app_id, data_req->type,
+	return app_get_userdata(data_req->app_id, data_req->flags,
 				&data_req->user_data);
 }

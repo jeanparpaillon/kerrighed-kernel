@@ -171,7 +171,7 @@ int global_kill(struct app_kddm_object *obj, int signal);
 
 int app_set_userdata(__u64 user_data);
 
-int app_get_userdata(long _appid,  type_ckpt_t type_id, __u64 *user_data);
+int app_get_userdata(long _appid, int flags, __u64 *user_data);
 
 /*--------------------------------------------------------------------------*/
 

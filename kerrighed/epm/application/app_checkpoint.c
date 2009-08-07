@@ -560,19 +560,10 @@ long get_appid(const struct checkpoint_info *info)
 		goto exit;
 	}
 
-	switch (info->type) {
-
-	case FROM_PID:
+	if (info->flags & APP_FROM_PID)
 		r = get_appid_from_pid(info->app_id);
-		break;
-
-	case FROM_APPID:
+	else
 		r = info->app_id;
-		break;
-
-	default:
-		BUG();
-	}
 
 exit:
 	return r;

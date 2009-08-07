@@ -871,7 +871,7 @@ exit:
 	return r;
 }
 
-int app_get_userdata(long _appid, type_ckpt_t type_id, __u64 *user_data)
+int app_get_userdata(long _appid, int flags, __u64 *user_data)
 {
 	int r = 0;
 	long app_id = _appid;
@@ -882,7 +882,7 @@ int app_get_userdata(long _appid, type_ckpt_t type_id, __u64 *user_data)
 		goto exit;
 	}
 
-	if (type_id == FROM_PID) {
+	if (flags & APP_FROM_PID) {
 		app_id = get_appid_from_pid(_appid);
 		if (app_id < 0) {
 			r = app_id;

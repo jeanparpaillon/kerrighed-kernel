@@ -8,16 +8,13 @@
 #define E_CR_TASKDEAD    1002
 #define E_CR_BADDATA     1003
 
-typedef enum {
-	FROM_APPID,
-	FROM_PID
-} type_ckpt_t;
+#define APP_FROM_PID 1
 
 struct checkpoint_info
 {
 	long app_id;
 
-	type_ckpt_t type;
+	int flags;
 
 	int chkpt_sn;
 	int result;
@@ -37,7 +34,7 @@ struct restart_request
 struct app_userdata_request
 {
 	long app_id;
-	type_ckpt_t type;
+	int flags;
 	__u64 user_data;
 };
 
