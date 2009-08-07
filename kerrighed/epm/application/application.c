@@ -882,8 +882,13 @@ int app_get_userdata(long _appid,  type_ckpt_t type_id, __u64 *user_data)
 		goto exit;
 	}
 
-	if (type_id == FROM_PID)
+	if (type_id == FROM_PID) {
 		app_id = get_appid_from_pid(_appid);
+		if (app_id < 0) {
+			r = app_id;
+			goto exit;
+		}
+	}
 
 	obj = kddm_get_object_no_ft(kddm_def_ns, APP_KDDM_ID, app_id);
 	if (!obj) {
