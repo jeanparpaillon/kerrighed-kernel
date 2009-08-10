@@ -17,6 +17,7 @@
 #include <kerrighed/app_terminal.h>
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/physical_fs.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
@@ -526,10 +527,13 @@ static inline int was_checkpointed(struct app_struct *app, pid_t pid)
 
 	int error;
 	struct nameidata nd;
+	struct path prev_root;
 
 	char *filename = get_chkpt_filebase(app->app_id, app->chkpt_sn,
 					    pid, "task");
+	chroot_to_physical_root(&prev_root);
 	error = path_lookup(filename, 0, &nd);
+	chroot_to_prev_root(&prev_root);
 	if (!error)
 		path_put(&nd.path);
 	kfree(filename);
