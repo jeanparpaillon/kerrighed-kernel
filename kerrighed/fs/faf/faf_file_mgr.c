@@ -125,8 +125,7 @@ done:
 }
 
 struct cr_faf_link {
-	int replaced_by_tty;
-	unsigned long dvfs_objid;
+	struct cr_file_link intern;
 	faf_client_data_t desc;
 };
 
@@ -152,22 +151,23 @@ int cr_link_to_faf_file(struct epm_action *action, ghost_t *ghost,
 		goto exit;
 	}
 
-	if (faf_link->replaced_by_tty) {
+	if (faf_link->intern.replaced_by_tty) {
 		BUG();
 		r = -E_CR_BADDATA;
 		goto exit;
 	}
 
 	/* Check if the file struct is already present */
-	file = begin_import_dvfs_file(faf_link->dvfs_objid, &dvfs_file);
+	file = begin_import_dvfs_file(faf_link->intern.dvfs_objid, &dvfs_file);
 
 	/* reopen the file if needed */
 	if (!file) {
-		file = create_faf_file_from_krg_desc(task, &faf_link->desc);
+		file = create_faf_file_from_krg_desc(task,
+						     &faf_link->intern.desc);
 		first_import = 1;
 	}
 
-	r = end_import_dvfs_file(faf_link->dvfs_objid, dvfs_file, file,
+	r = end_import_dvfs_file(faf_link->intern.dvfs_objid, dvfs_file, file,
 				 first_import);
 
 	if (r)
@@ -283,6 +283,8 @@ static int cr_import_now_faf_file(struct epm_action *action,
 		goto error;
 	}
 
+	memset(faf_link, 0, sizeof(struct cr_faf_link));
+
 	/* We need to read the file description from the ghost
 	 * even if we may not use it
 	 */
@@ -290,13 +292,11 @@ static int cr_import_now_faf_file(struct epm_action *action,
 	if (r)
 		goto error;
 
-	memset(faf_link, 0, sizeof(struct cr_faf_link));
-
 	/* the file will be replaced by the current terminal,
 	 * no need to import
 	 */
 	if (tty && action->restart.app->restart.terminal) {
-		faf_link->replaced_by_tty = 1;
+		faf_link->intern.replaced_by_tty = 1;
 		goto err_free_desc;
 	}
 
@@ -315,7 +315,8 @@ static int cr_import_now_faf_file(struct epm_action *action,
 	if (r)
 		goto err_free_desc;
 
-	faf_link->dvfs_objid = file->f_objid;
+	faf_link->intern.dvfs_objid = file->f_objid;
+	faf_link->intern.desc = &faf_link->desc;
 	__fill_faf_file_krg_desc(&(faf_link->desc), file);
 
 err_free_desc:
@@ -324,30 +325,19 @@ error:
 	return r;
 }
 
-int cr_import_complete_faf_file(struct task_struct *fake,
-				void *_faf_link)
+static int cr_import_complete_faf_file(struct task_struct *fake,
+				       void *_faf_link)
 {
-	struct cr_faf_link *faf_link = _faf_link;
-	struct dvfs_file_struct *dvfs_file = NULL;
-	struct file *file = NULL;
-
-	if (faf_link->replaced_by_tty)
-		/* the file has not been imported */
-		return 0;
-
-	dvfs_file = grab_dvfs_file_struct(faf_link->dvfs_objid);
-	file = dvfs_file->file;
-	if (file)
-		fput(file);
-
-	put_dvfs_file_struct(faf_link->dvfs_objid);
-
-	return 0;
+	return cr_import_complete_regular_file(
+		fake,
+		&((struct cr_faf_link *)_faf_link)->intern);
 }
 
-int cr_delete_faf_file(struct task_struct *fake, void *_faf_link)
+static int cr_delete_faf_file(struct task_struct *fake, void *_faf_link)
 {
-	return cr_import_complete_faf_file(fake, _faf_link);
+	return cr_delete_regular_file(
+		fake,
+		&((struct cr_faf_link *)_faf_link)->intern);
 }
 
 struct shared_object_operations cr_shared_faf_file_ops = {

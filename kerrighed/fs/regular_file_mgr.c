@@ -273,13 +273,6 @@ error:
 
 /*****************************************************************************/
 
-struct cr_regular_file_link {
-	int replaced_by_tty;
-	struct file *file;
-	unsigned long dvfs_objid;
-	void *desc;
-};
-
 struct file *begin_import_dvfs_file(unsigned long dvfs_objid,
 				    struct dvfs_file_struct **dvfs_file)
 {
@@ -323,7 +316,7 @@ error:
 int __cr_link_to_regular_file(struct epm_action *action,
 			      ghost_t *ghost,
 			      struct task_struct *task,
-			      struct cr_regular_file_link *file_link,
+			      struct cr_file_link *file_link,
 			      struct file **returned_file)
 {
 	int r = 0;
@@ -371,8 +364,6 @@ int __cr_link_to_regular_file(struct epm_action *action,
 
 		*returned_file = file;
 	}
-
-	check_flush_file(action, task->files, *returned_file);
 exit:
 	return r;
 }
@@ -383,7 +374,7 @@ int cr_link_to_local_regular_file(struct epm_action *action, ghost_t *ghost,
 				  long key)
 {
 	int r = 0;
-	struct cr_regular_file_link *file_link;
+	struct cr_file_link *file_link;
 
 	/* look in the table to find the new allocated data
 	 imported in import_shared_objects */
@@ -404,7 +395,7 @@ int cr_link_to_dvfs_regular_file(struct epm_action *action,
 				 long key)
 {
 	int r = 0;
-	struct cr_regular_file_link *file_link;
+	struct cr_file_link *file_link;
 
 	/* look in the table to find the new allocated data
 	 imported in import_shared_objects */
@@ -543,7 +534,7 @@ static int cr_import_now_regular_file(struct epm_action *action,
 {
 	int r, tty;
 	struct file *f;
-	struct cr_regular_file_link *file_link = *returned_data;
+	struct cr_file_link *file_link = *returned_data;
 	void *desc;
 
 	r = ghost_read(ghost, &tty, sizeof(int));
@@ -556,7 +547,7 @@ static int cr_import_now_regular_file(struct epm_action *action,
 		goto error;
 	}
 
-	memset(file_link, 0, sizeof(struct cr_regular_file_link));
+	memset(file_link, 0, sizeof(struct cr_file_link));
 
 	/* We need to read the file description from the ghost
 	 * even if we may not use it
@@ -594,10 +585,10 @@ error:
 	return r;
 }
 
-static int cr_import_complete_regular_file(struct task_struct *fake,
-					   void *_file_link)
+int cr_import_complete_regular_file(struct task_struct *fake,
+				    void *_file_link)
 {
-	struct cr_regular_file_link *file_link = _file_link;
+	struct cr_file_link *file_link = _file_link;
 	struct file *file;
 
 	if (file_link->replaced_by_tty)
@@ -622,11 +613,11 @@ static int cr_import_complete_regular_file(struct task_struct *fake,
 	return 0;
 }
 
-static int cr_delete_regular_file(struct task_struct *fake,
-				  void *_file_link)
+int cr_delete_regular_file(struct task_struct *fake,
+			   void *_file_link)
 {
 	int r = 0;
-	struct cr_regular_file_link *file_link = _file_link;
+	struct cr_file_link *file_link = _file_link;
 	struct file *file;
 
 	if (file_link->replaced_by_tty)
@@ -656,7 +647,7 @@ error:
 }
 
 struct shared_object_operations cr_shared_regular_file_ops = {
-        .restart_data_size = sizeof(struct cr_regular_file_link),
+        .restart_data_size = sizeof(struct cr_file_link),
 	.export_now        = cr_export_now_regular_file,
 	.import_now        = cr_import_now_regular_file,
 	.import_complete   = cr_import_complete_regular_file,

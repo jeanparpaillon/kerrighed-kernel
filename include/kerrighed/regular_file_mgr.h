@@ -34,6 +34,13 @@ typedef struct regular_file_krg_desc {
 	};
 } regular_file_krg_desc_t;
 
+struct cr_file_link {
+	int replaced_by_tty;
+	struct file *file;
+	unsigned long dvfs_objid;
+	void *desc;
+};
+
 struct epm_action;
 struct dvfs_file_struct;
 union export_args;
@@ -59,6 +66,9 @@ int ghost_write_regular_file_krg_desc(ghost_t *ghost, struct file *file);
 int cr_export_now_regular_file(struct epm_action *action, ghost_t *ghost,
 			       struct task_struct *task,
 			       union export_args *args);
+
+int cr_import_complete_regular_file(struct task_struct *fake, void *_file_link);
+int cr_delete_regular_file(struct task_struct *fake, void *_file_link);
 
 struct file *begin_import_dvfs_file(unsigned long dvfs_objid,
 				    struct dvfs_file_struct **dvfs_file);
