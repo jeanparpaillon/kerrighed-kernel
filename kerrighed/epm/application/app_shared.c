@@ -27,7 +27,6 @@
 /*--------------------------------------------------------------------------*/
 
 extern struct shared_object_operations cr_shared_regular_file_ops;
-extern struct shared_object_operations cr_shared_dvfs_regular_file_ops;
 extern struct shared_object_operations cr_shared_faf_file_ops;
 extern struct shared_object_operations cr_shared_unsupported_file_ops;
 extern struct shared_object_operations cr_shared_files_struct_ops;
@@ -46,10 +45,8 @@ static struct shared_object_operations * get_shared_ops(
 
 	switch (type) {
 	case REGULAR_FILE:
-		s_ops = &cr_shared_regular_file_ops;
-		break;
 	case REGULAR_DVFS_FILE:
-		s_ops = &cr_shared_dvfs_regular_file_ops;
+		s_ops = &cr_shared_regular_file_ops;
 		break;
 	case FAF_FILE:
 		s_ops = &cr_shared_faf_file_ops;

@@ -252,41 +252,9 @@ error:
 struct cr_regular_file_link {
 	int replaced_by_tty;
 	struct file *file;
+	unsigned long dvfs_objid;
+	void *desc;
 };
-
-int cr_link_to_local_regular_file(struct epm_action *action, ghost_t *ghost,
-				  struct task_struct *task,
-				  struct file **returned_file,
-				  long key)
-{
-	int r = 0;
-	struct cr_regular_file_link *file_link;
-
-	/* look in the table to find the new allocated data
-	 imported in import_shared_objects */
-
-	file_link = get_imported_shared_object(action->restart.app,
-					       REGULAR_FILE, key);
-
-	if (!file_link) {
-		BUG();
-		r = -E_CR_BADDATA;
-		goto exit;
-	}
-
-	if (file_link->replaced_by_tty) {
-		BUG();
-		r = -E_CR_BADDATA;
-		goto exit;
-	}
-
-	*returned_file = file_link->file;
-
-	get_file(*returned_file);
-
-exit:
-	return r;
-}
 
 struct file *begin_import_dvfs_file(unsigned long dvfs_objid,
 				    struct dvfs_file_struct **dvfs_file)
@@ -328,30 +296,16 @@ error:
        return r;
 }
 
-struct cr_dvfs_file_link {
-	int replaced_by_tty;
-	unsigned long dvfs_objid;
-};
-
-int cr_link_to_dvfs_regular_file(struct epm_action *action,
-				 ghost_t *ghost,
-				 struct task_struct *task,
-				 void *desc,
-				 struct file **returned_file,
-				 long key)
+int __cr_link_to_regular_file(struct epm_action *action,
+			      ghost_t *ghost,
+			      struct task_struct *task,
+			      struct cr_regular_file_link *file_link,
+			      struct file **returned_file)
 {
 	int r = 0;
-	struct cr_dvfs_file_link *file_link;
-	struct dvfs_file_struct *dvfs_file = NULL;
-	struct file *file = NULL;
-	int first_import = 0;
 
 	/* look in the table to find the new allocated data
 	 imported in import_shared_objects */
-
-	file_link = get_imported_shared_object(action->restart.app,
-					       REGULAR_DVFS_FILE, key);
-
 	if (!file_link) {
 		BUG();
 		r = -E_CR_BADDATA;
@@ -364,27 +318,80 @@ int cr_link_to_dvfs_regular_file(struct epm_action *action,
 		goto exit;
 	}
 
-	/* Check if the file struct is already present */
-	file = begin_import_dvfs_file(file_link->dvfs_objid, &dvfs_file);
+	if (file_link->file) {
+		*returned_file = file_link->file;
+		get_file(*returned_file);
+	} else {
+		struct file *file;
+		struct dvfs_file_struct *dvfs_file;
+		int first_import = 0;
 
-	/* reopen the file if needed */
-	if (!file) {
-		file = import_regular_file_from_krg_desc(task, desc);
-		first_import = 1;
+		/* Check if the file struct is already present */
+		file = begin_import_dvfs_file(file_link->dvfs_objid,
+					      &dvfs_file);
+
+		/* the file is not yet opened on this node */
+		if (!file) {
+			file = import_regular_file_from_krg_desc(
+				                       task, file_link->desc);
+			first_import = 1;
+		}
+
+		r = end_import_dvfs_file(file_link->dvfs_objid, dvfs_file, file,
+					 first_import);
+
+		if (r)
+			goto exit;
+
+		BUG_ON(file->f_objid != file_link->dvfs_objid);
+
+		*returned_file = file;
 	}
 
-	r = end_import_dvfs_file(file_link->dvfs_objid, dvfs_file, file,
-				 first_import);
-
-	if (r)
-		goto exit;
-
-	check_flush_file(action, task->files, file);
-	*returned_file = file;
-
-	BUG_ON(file->f_objid != file_link->dvfs_objid);
-
+	check_flush_file(action, task->files, *returned_file);
 exit:
+	return r;
+}
+
+int cr_link_to_local_regular_file(struct epm_action *action, ghost_t *ghost,
+				  struct task_struct *task,
+				  struct file **returned_file,
+				  long key)
+{
+	int r = 0;
+	struct cr_regular_file_link *file_link;
+
+	/* look in the table to find the new allocated data
+	 imported in import_shared_objects */
+
+	file_link = get_imported_shared_object(action->restart.app,
+					       REGULAR_FILE, key);
+
+	r = __cr_link_to_regular_file(action, ghost, task, file_link,
+				      returned_file);
+	return r;
+}
+
+int cr_link_to_dvfs_regular_file(struct epm_action *action,
+				 ghost_t *ghost,
+				 struct task_struct *task,
+				 void *desc,
+				 struct file **returned_file,
+				 long key)
+{
+	int r = 0;
+	struct cr_regular_file_link *file_link;
+
+	/* look in the table to find the new allocated data
+	 imported in import_shared_objects */
+
+	file_link = get_imported_shared_object(action->restart.app,
+					       REGULAR_DVFS_FILE, key);
+
+	file_link->desc = desc;
+
+	r = __cr_link_to_regular_file(action, ghost, task, file_link,
+				      returned_file);
 	return r;
 }
 
@@ -505,7 +512,6 @@ error:
 	return r;
 }
 
-
 static int cr_import_now_regular_file(struct epm_action *action,
 				      ghost_t *ghost,
 				      struct task_struct *fake,
@@ -513,9 +519,9 @@ static int cr_import_now_regular_file(struct epm_action *action,
 				      void **returned_data)
 {
 	int r, tty;
-	void *desc;
 	struct file *f;
 	struct cr_regular_file_link *file_link = *returned_data;
+	void *desc;
 
 	r = ghost_read(ghost, &tty, sizeof(int));
 	if (r)
@@ -527,14 +533,14 @@ static int cr_import_now_regular_file(struct epm_action *action,
 		goto error;
 	}
 
+	memset(file_link, 0, sizeof(struct cr_regular_file_link));
+
 	/* We need to read the file description from the ghost
 	 * even if we may not use it
 	 */
 	r = ghost_read_file_krg_desc(ghost, &desc);
 	if (r)
 		goto error;
-
-	memset(file_link, 0, sizeof(struct cr_regular_file_link));
 
 	/* the file will be replaced by the current terminal,
 	 * no need to import
@@ -548,11 +554,19 @@ static int cr_import_now_regular_file(struct epm_action *action,
 	if (r)
 		goto err_free_desc;
 
-	file_link->file = f;
+	if (!local_only) {
+		/* get a new dvfs objid
+		 */
+		r = create_kddm_file_object(f);
+		if (r)
+			goto err_free_desc;
+
+		file_link->dvfs_objid = f->f_objid;
+	} else
+		file_link->file = f;
 
 err_free_desc:
 	kfree(desc);
-
 error:
 	return r;
 }
@@ -561,13 +575,26 @@ static int cr_import_complete_regular_file(struct task_struct *fake,
 					   void *_file_link)
 {
 	struct cr_regular_file_link *file_link = _file_link;
+	struct file *file;
 
 	if (file_link->replaced_by_tty)
 		/* the file has not been imported */
 		return 0;
 
-	BUG_ON(atomic_read(&(file_link->file->f_count)) <= 1);
-	fput(file_link->file);
+	if (file_link->file)
+		file = file_link->file;
+	else {
+		struct dvfs_file_struct *dvfs_file;
+		dvfs_file = grab_dvfs_file_struct(file_link->dvfs_objid);
+		file = dvfs_file->file;
+	}
+
+	BUG_ON(atomic_read(&file->f_count) <= 1);
+
+	fput(file);
+
+	if (!file_link->file)
+		put_dvfs_file_struct(file_link->dvfs_objid);
 
 	return 0;
 }
@@ -575,121 +602,33 @@ static int cr_import_complete_regular_file(struct task_struct *fake,
 static int cr_delete_regular_file(struct task_struct *fake,
 				  void *_file_link)
 {
+	int r = 0;
 	struct cr_regular_file_link *file_link = _file_link;
+	struct file *file;
 
 	if (file_link->replaced_by_tty)
 		/* the file has not been imported */
 		return 0;
 
 	if (file_link->file)
-		fput(file_link->file);
+		file = file_link->file;
+	else {
+		struct dvfs_file_struct *dvfs_file;
+		dvfs_file = grab_dvfs_file_struct(file_link->dvfs_objid);
+		if (!dvfs_file) {
+			r = -ENOENT;
+			goto error;
+		}
 
-	return 0;
-}
-
-static int cr_import_now_dvfs_file(struct epm_action *action,
-				   ghost_t *ghost,
-				   struct task_struct *fake,
-				   int local_only,
-				   void **returned_data)
-{
-	int r, tty;
-	struct file *f;
-	struct cr_dvfs_file_link *file_link = *returned_data;
-	void *desc;
-
-	r = ghost_read(ghost, &tty, sizeof(int));
-	if (r)
-		goto error;
-
-	if (tty != 0 && tty != 1) {
-		BUG();
-		r = -E_CR_BADDATA;
-		goto error;
+		file = dvfs_file->file;
 	}
 
-	memset(file_link, 0, sizeof(struct cr_regular_file_link));
-
-	/* We need to read the file description from the ghost
-	 * even if we may not use it
-	 */
-	r = ghost_read_file_krg_desc(ghost, &desc);
-	if (r)
-		goto error;
-
-	/* the file will be replaced by the current terminal,
-	 * no need to import
-	 */
-	if (tty && action->restart.app->restart.terminal) {
-		file_link->replaced_by_tty = 1;
-		goto error;
-	}
-
-	r = __regular_file_import_from_desc(action, desc, fake, &f);
-	if (r)
-		goto error;
-
-	/* get a new dvfs objid
-	 */
-	r = create_kddm_file_object(f);
-	if (r)
-		goto error;
-
-	file_link->dvfs_objid = f->f_objid;
-
-error:
-	return r;
-}
-
-static int cr_import_complete_dvfs_file(struct task_struct *fake,
-					void *_file_link)
-{
-	struct cr_dvfs_file_link *file_link = _file_link;
-	struct dvfs_file_struct *dvfs_file = NULL;
-	struct file *file = NULL;
-
-	if (file_link->replaced_by_tty)
-		/* the file has not been imported */
-		return 0;
-
-	dvfs_file = grab_dvfs_file_struct(file_link->dvfs_objid);
-	BUG_ON(!dvfs_file);
-
-	file = dvfs_file->file;
-	BUG_ON(!file);
-	BUG_ON(atomic_read(&file->f_count) <= 1);
-
-	fput(file);
-
-	put_dvfs_file_struct(file_link->dvfs_objid);
-
-	return 0;
-}
-
-static int cr_delete_dvfs_file(struct task_struct *fake,
-				  void *_file_link)
-{
-	int r = 0;
-	struct cr_dvfs_file_link *file_link = _file_link;
-	struct dvfs_file_struct *dvfs_file = NULL;
-	struct file *file = NULL;
-
-	if (file_link->replaced_by_tty)
-		/* the file has not been imported */
-		return 0;
-
-	dvfs_file = grab_dvfs_file_struct(file_link->dvfs_objid);
-	if (!dvfs_file) {
-		r = -ENOENT;
-		goto error;
-	}
-
-	file = dvfs_file->file;
 	if (file)
 		fput(file);
 
 error:
-	put_dvfs_file_struct(file_link->dvfs_objid);
+	if (!file_link->file)
+		put_dvfs_file_struct(file_link->dvfs_objid);
 	return 0;
 }
 
@@ -699,12 +638,4 @@ struct shared_object_operations cr_shared_regular_file_ops = {
 	.import_now        = cr_import_now_regular_file,
 	.import_complete   = cr_import_complete_regular_file,
 	.delete            = cr_delete_regular_file,
-};
-
-struct shared_object_operations cr_shared_dvfs_regular_file_ops = {
-        .restart_data_size = sizeof(struct cr_dvfs_file_link),
-        .export_now        = cr_export_now_regular_file,
-	.import_now        = cr_import_now_dvfs_file,
-	.import_complete   = cr_import_complete_dvfs_file,
-	.delete            = cr_delete_dvfs_file,
 };
