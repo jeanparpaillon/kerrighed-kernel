@@ -19,6 +19,7 @@ enum {
        CAP_SEE_LOCAL_PROC_STAT,
        CAP_DEBUG,
        CAP_SYSCALL_EXIT_HOOK,
+       CAP_GLOBAL_NAMESPACES,
        CAP_SIZE /* keep as last capability */
 };
 
