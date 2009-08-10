@@ -113,6 +113,7 @@ static struct dvfs_mobility_operations *get_dvfs_mobility_ops(struct file *file)
 /*****************************************************************************/
 
 /** Generic function to export an open file into a ghost.
+ *  Not used by Checkpoint.
  *  @author Renaud Lottiaux
  *
  *  @param ghost    Ghost where data should be stored.
@@ -133,8 +134,9 @@ int export_one_open_file (struct epm_action *action,
 	krgsyms_val_t dvfs_ops_type;
 	int r;
 
-	if (action->type != EPM_CHECKPOINT
-	    && !file->f_objid)
+	BUG_ON(action->type == EPM_CHECKPOINT);
+
+	if (!file->f_objid)
 		create_kddm_file_object(file);
 
 #ifdef CONFIG_KRG_FAF
@@ -391,6 +393,7 @@ exit:
 }
 
 /** Export the open files array of a process
+ *  Not used by Checkpoint
  *  @author  Geoffroy Vallee, Renaud Lottiaux
  *
  *  @param ghost  Ghost where file data should be stored.
@@ -409,6 +412,7 @@ int export_open_files (struct epm_action *action,
 	int i, r = 0;
 
 	BUG_ON (!tsk);
+	BUG_ON(action->type == EPM_CHECKPOINT);
 
 	/* Export files opened by the process */
 	for (i = 0; i < last_open_fd; i++) {
@@ -799,6 +803,7 @@ int export_mnt_namespace(struct epm_action *action,
 /*****************************************************************************/
 
 /** Generic function to import an open file from a ghost.
+ *  Not used by Restart.
  *  @author Renaud Lottiaux
  *
  *  @param ghost   Ghost where data should be read from.
@@ -822,6 +827,8 @@ int import_one_open_file (struct epm_action *action,
 	int first_import = 0;
 	int r = 0;
 
+	BUG_ON(action->type == EPM_CHECKPOINT);
+
 	r = ghost_read(ghost, &dvfs_ops_type, sizeof (dvfs_ops_type));
 	if (r)
 		goto err_read;
@@ -835,7 +842,7 @@ int import_one_open_file (struct epm_action *action,
 	 * the ghost... We can probably do better...
 	 */
 	r = ops->file_import (action, ghost, task, returned_file);
-	if (r || action->type == EPM_CHECKPOINT)
+	if (r)
 		goto exit;
 
 	/* Check if the file struct is already present */
@@ -864,6 +871,7 @@ err_read:
 }
 
 /** Imports the open files of the process
+ *  Not used by Restart.
  *  @author  Geoffroy Vallee, Renaud Lottiaux
  *
  *  @param ghost  Ghost where open files data are stored.
