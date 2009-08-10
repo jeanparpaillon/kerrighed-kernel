@@ -191,8 +191,10 @@ static inline int read_task_parent_links(struct app_struct *app,
 					       real_parent_tgid,
 					       pgrp, session);
 
-	if (IS_ERR(task_desc))
+	if (IS_ERR(task_desc)) {
+		r = PTR_ERR(task_desc);
 		goto err_alloc;
+	}
 
 	spin_lock(&app->lock);
 	list_add_tail(&task_desc->next_task, &app->tasks);
