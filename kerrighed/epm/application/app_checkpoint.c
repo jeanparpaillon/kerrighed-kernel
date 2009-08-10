@@ -146,15 +146,17 @@ static inline int write_task_parent_links(task_state_t *t,
 	if (r)
 		goto error;
 
-	pgrp = task_pgrp_nr_ns(t->task, &init_pid_ns);
-	r = ghost_write(ghost, &pgrp, sizeof(pid_t));
-	if (r)
-		goto error;
+	if (has_group_leader_pid(t->task)) {
+		pgrp = task_pgrp_nr_ns(t->task, &init_pid_ns);
+		r = ghost_write(ghost, &pgrp, sizeof(pid_t));
+		if (r)
+			goto error;
 
-	session = task_session_nr_ns(t->task, &init_pid_ns);
-	r = ghost_write(ghost, &session, sizeof(pid_t));
-	if (r)
-		goto error;
+		session = task_session_nr_ns(t->task, &init_pid_ns);
+		r = ghost_write(ghost, &session, sizeof(pid_t));
+		if (r)
+			goto error;
+	}
 
 error:
 	return r;

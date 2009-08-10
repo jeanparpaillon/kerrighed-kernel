@@ -172,12 +172,18 @@ static inline int read_task_parent_links(struct app_struct *app,
 	r = ghost_read(ghost, &real_parent_tgid, sizeof(pid_t));
 	if (r)
 		goto err_read;
-	r = ghost_read(ghost, &pgrp, sizeof(pid_t));
-	if (r)
-		goto err_read;
-	r = ghost_read(ghost, &session, sizeof(pid_t));
-	if (r)
-		goto err_read;
+
+	if (pid == tgid) {
+		r = ghost_read(ghost, &pgrp, sizeof(pid_t));
+		if (r)
+			goto err_read;
+		r = ghost_read(ghost, &session, sizeof(pid_t));
+		if (r)
+			goto err_read;
+	} else {
+		pgrp = 0;
+		session = 0;
+	}
 
 	task_desc = alloc_task_state_from_pids(pid, tgid,
 					       parent,
@@ -612,13 +618,13 @@ static inline int return_orphan_sessions_and_prgps(struct app_struct *app,
 
 	/* first, build a list of orphan pids of session(s) and pgrp(s) */
 	list_for_each_entry(t, &app->tasks, next_task) {
-		if (!was_checkpointed(app, t->restart.session)) {
+		if (t->restart.session && !was_checkpointed(app, t->restart.session)) {
 			r = add_unique_pid(&orphan_pids, t->restart.session);
 			if (r)
 				goto err;
 		}
 
-		if (!was_checkpointed(app, t->restart.pgrp)) {
+		if (t->restart.pgrp && !was_checkpointed(app, t->restart.pgrp)) {
 			r = add_unique_pid(&orphan_pids, t->restart.pgrp);
 			if (r)
 				goto err;
