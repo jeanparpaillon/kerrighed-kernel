@@ -282,6 +282,8 @@ static int cr_write_vma_phys_file_id(ghost_t *ghost, struct task_struct *tsk,
 	int r;
 
 	r = cr_ghost_write_file_id(ghost, vma->vm_file, 0);
+	if (r)
+		goto exit;
 
 	if (vma->vm_flags & VM_EXEC) {
 
