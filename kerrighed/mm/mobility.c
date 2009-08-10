@@ -1224,7 +1224,7 @@ static int cr_export_now_mm_struct(struct epm_action *action, ghost_t *ghost,
 
 static int cr_import_now_mm_struct(struct epm_action *action, ghost_t *ghost,
 				   struct task_struct *fake, int local_only,
-				   void **returned_data)
+				   void **returned_data, size_t *data_size)
 {
 	int r;
 	BUG_ON(*returned_data != NULL);
@@ -1255,7 +1255,6 @@ static int cr_delete_mm_struct(struct task_struct *fake, void *_mm)
 }
 
 struct shared_object_operations cr_shared_mm_struct_ops = {
-        .restart_data_size  = 0,
         .export_now         = cr_export_now_mm_struct,
 	.import_now         = cr_import_now_mm_struct,
 	.import_complete    = cr_import_complete_mm_struct,

@@ -315,7 +315,7 @@ static int cr_export_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 
 static int cr_import_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 				  struct task_struct *fake, int local_only,
-				  void ** returned_data)
+				  void ** returned_data, size_t *data_size)
 {
 	int r;
 	BUG_ON(*returned_data != NULL);
@@ -358,7 +358,6 @@ static int cr_delete_sysv_sem(struct task_struct * fake, void * _undo_list_id)
 
 
 struct shared_object_operations cr_shared_semundo_ops = {
-        .restart_data_size = 0,
         .export_now        = cr_export_now_sysv_sem,
 	.import_now        = cr_import_now_sysv_sem,
 	.import_complete   = cr_import_complete_sysv_sem,

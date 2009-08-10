@@ -216,13 +216,7 @@ static int _cr_get_file_type_and_key(const struct file *file,
 			*key = (long)file;
 		} else
 			return -ENOSYS;
-
-	} else if (file->f_flags & (O_FAF_CLT | O_FAF_SRV)) {
-		*type = FAF_FILE;
-		*key = file->f_objid;
-		if (is_local)
-			*is_local = 0;
-	} else if (file->f_flags & O_KRG_SHARED) {
+	} else if (file->f_objid) {
 		*type = REGULAR_DVFS_FILE;
 		*key = file->f_objid;
 		if (is_local)
@@ -274,10 +268,6 @@ int cr_ghost_write_file_id(ghost_t *ghost, struct file *file, int allow_unsuppor
 	r = ghost_write(ghost, &tty, sizeof(int));
 	if (r)
 		goto error;
-
-	if (type == REGULAR_DVFS_FILE)
-		r = ghost_write_regular_file_krg_desc(ghost, file);
-
 error:
 	return r;
 }
@@ -934,7 +924,6 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 	int r, tty;
 	long key;
 	enum shared_obj_type type;
-	void *desc = NULL;
 
 	BUG_ON(action->type != EPM_CHECKPOINT);
 
@@ -947,7 +936,6 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 
 	if (type != REGULAR_FILE
 	    && type != REGULAR_DVFS_FILE
-	    && type != FAF_FILE
 	    && type != UNSUPPORTED_FILE)
 		goto err_bad_data;
 
@@ -962,22 +950,13 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 	if (tty != 1 && tty != 0)
 		goto err_bad_data;
 
-	if (type == REGULAR_DVFS_FILE) {
-		/* even if we may not use it, we need to read the file
-		 * descriptor from the ghost
-		 */
-		r = ghost_read_file_krg_desc(ghost, &desc);
-		if (r)
-			goto error;
-	}
-
 	if (tty) {
 		BUG_ON(type == UNSUPPORTED_FILE);
 
 		r = cr_link_to_terminal(action, returned_file);
 
 		if (r || *returned_file)
-			goto err_free_desc;
+			goto error;
 	}
 
 	switch (type) {
@@ -986,15 +965,9 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 						  returned_file, key);
 		break;
 	case REGULAR_DVFS_FILE:
-		r = cr_link_to_dvfs_regular_file(action, ghost, task, desc,
+		r = cr_link_to_dvfs_regular_file(action, ghost, task,
 						 returned_file, key);
 		break;
-#ifdef CONFIG_KRG_FAF
-	case FAF_FILE:
-		r = cr_link_to_faf_file(action, ghost, task,
-					returned_file, key);
-		break;
-#endif
 	case UNSUPPORTED_FILE:
 		*returned_file = NULL;
 		r = 0;
@@ -1003,10 +976,6 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 		BUG();
 		break;
 	}
-
-err_free_desc:
-	if (desc)
-		kfree(desc);
 
 error:
 	return r;
@@ -1504,7 +1473,7 @@ static int cr_export_now_files_struct(struct epm_action *action, ghost_t *ghost,
 
 static int cr_import_now_files_struct(struct epm_action *action, ghost_t *ghost,
 				      struct task_struct *fake, int local_only,
-				      void ** returned_data)
+				      void ** returned_data, size_t *data_size)
 {
 	int r;
 	BUG_ON(*returned_data != NULL);
@@ -1540,7 +1509,6 @@ static int cr_delete_files_struct(struct task_struct *fake, void *_files)
 }
 
 struct shared_object_operations cr_shared_files_struct_ops = {
-        .restart_data_size = 0,
         .export_now        = cr_export_now_files_struct,
 	.import_now        = cr_import_now_files_struct,
 	.import_complete   = cr_import_complete_files_struct,
@@ -1558,7 +1526,7 @@ static int cr_export_now_fs_struct(struct epm_action *action, ghost_t *ghost,
 
 static int cr_import_now_fs_struct(struct epm_action *action, ghost_t *ghost,
 				   struct task_struct *fake, int local_only,
-				   void ** returned_data)
+				   void ** returned_data, size_t *data_size)
 {
 	int r;
 	BUG_ON(*returned_data != NULL);
@@ -1593,7 +1561,6 @@ static int cr_delete_fs_struct(struct task_struct *fake, void *_fs)
 }
 
 struct shared_object_operations cr_shared_fs_struct_ops = {
-        .restart_data_size = 0,
         .export_now        = cr_export_now_fs_struct,
 	.import_now        = cr_import_now_fs_struct,
 	.import_complete   = cr_import_complete_fs_struct,
@@ -1609,9 +1576,11 @@ static int cr_export_now_unsupported_file(struct epm_action *action, ghost_t *gh
 
 static int cr_import_now_unsupported_file(struct epm_action *action, ghost_t *ghost,
 					  struct task_struct *fake, int local_only,
-					  void ** returned_data)
+					  void ** returned_data,
+					  size_t *returned_data_size)
 {
 	*returned_data = NULL;
+	*returned_data_size = 0;
 
 	return 0;
 }

@@ -556,7 +556,8 @@ static int cr_import_now_sighand_struct(struct epm_action *action,
 					ghost_t *ghost,
 					struct task_struct *fake,
 					int local_only,
-					void **returned_data)
+					void **returned_data,
+					size_t *data_size)
 {
 	int r;
 	BUG_ON(*returned_data != NULL);
@@ -600,7 +601,6 @@ static int cr_delete_sighand_struct(struct task_struct *fake, void *_sig)
 }
 
 struct shared_object_operations cr_shared_sighand_struct_ops = {
-	.restart_data_size = 0,
 	.export_now        = cr_export_now_sighand_struct,
 	.import_now        = cr_import_now_sighand_struct,
 	.import_complete   = cr_import_complete_sighand_struct,

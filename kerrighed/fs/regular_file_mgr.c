@@ -19,6 +19,8 @@
 #include <kerrighed/app_terminal.h>
 #ifdef CONFIG_KRG_FAF
 #include <kerrighed/faf.h>
+#include "faf/faf_internal.h"
+#include <kerrighed/faf_file_mgr.h>
 #endif
 #include <kerrighed/file.h>
 #include <kerrighed/ghost_helpers.h>
@@ -218,22 +220,20 @@ exit:
 
 /*****************************************************************************/
 
-int ghost_read_file_krg_desc(ghost_t *ghost, void **desc)
+int ghost_read_file_krg_desc(ghost_t *ghost, void **desc, int *desc_size)
 {
        int r;
-       int desc_size;
-
-       r = ghost_read(ghost, &desc_size, sizeof (int));
+       r = ghost_read(ghost, desc_size, sizeof (int));
        if (r)
                goto error;
 
-       *desc = kmalloc(desc_size, GFP_KERNEL);
+       *desc = kmalloc(*desc_size, GFP_KERNEL);
        if (!(*desc)) {
                  r = -ENOMEM;
                 goto error;
        }
 
-       r = ghost_read(ghost, *desc, desc_size);
+       r = ghost_read(ghost, *desc, *desc_size);
        if (r) {
                kfree(*desc);
                *desc = NULL;
@@ -255,7 +255,7 @@ error:
 	return r;
 }
 
-int ghost_write_regular_file_krg_desc(ghost_t *ghost, struct file *file)
+static int ghost_write_regular_file_krg_desc(ghost_t *ghost, struct file *file)
 {
 	int r;
 	void *desc;
@@ -313,6 +313,21 @@ error:
        return r;
 }
 
+/*****************************************************************************/
+
+enum cr_file_desc_type {
+	CR_FILE_REPLACED_BY_TTY,
+	CR_FILE_POINTER,
+	CR_FILE_REGULAR_DESC,
+	CR_FILE_FAF_DESC
+};
+
+struct cr_file_link {
+	enum cr_file_desc_type desc_type;
+	unsigned long dvfs_objid;
+	void *desc;
+};
+
 int __cr_link_to_regular_file(struct epm_action *action,
 			      ghost_t *ghost,
 			      struct task_struct *task,
@@ -329,19 +344,25 @@ int __cr_link_to_regular_file(struct epm_action *action,
 		goto exit;
 	}
 
-	if (file_link->replaced_by_tty) {
+	BUG_ON(file_link->desc_type == CR_FILE_REPLACED_BY_TTY);
+
+	if (file_link->desc_type != CR_FILE_POINTER
+	    && file_link->desc_type != CR_FILE_REGULAR_DESC
+	    && file_link->desc_type != CR_FILE_FAF_DESC) {
 		BUG();
 		r = -E_CR_BADDATA;
 		goto exit;
 	}
 
-	if (file_link->file) {
-		*returned_file = file_link->file;
+	if (file_link->desc_type == CR_FILE_POINTER) {
+		*returned_file = file_link->desc;
 		get_file(*returned_file);
 	} else {
 		struct file *file;
 		struct dvfs_file_struct *dvfs_file;
 		int first_import = 0;
+
+		file_link->desc = &file_link[1];
 
 		/* Check if the file struct is already present */
 		file = begin_import_dvfs_file(file_link->dvfs_objid,
@@ -349,8 +370,14 @@ int __cr_link_to_regular_file(struct epm_action *action,
 
 		/* the file is not yet opened on this node */
 		if (!file) {
-			file = import_regular_file_from_krg_desc(
-				                       task, file_link->desc);
+#ifdef CONFIG_KRG_FAF
+			if (file_link->desc_type == CR_FILE_FAF_DESC)
+				file = create_faf_file_from_krg_desc(
+							task, file_link->desc);
+			else
+#endif
+				file = import_regular_file_from_krg_desc(
+							task, file_link->desc);
 			first_import = 1;
 		}
 
@@ -390,7 +417,6 @@ int cr_link_to_local_regular_file(struct epm_action *action, ghost_t *ghost,
 int cr_link_to_dvfs_regular_file(struct epm_action *action,
 				 ghost_t *ghost,
 				 struct task_struct *task,
-				 void *desc,
 				 struct file **returned_file,
 				 long key)
 {
@@ -402,8 +428,6 @@ int cr_link_to_dvfs_regular_file(struct epm_action *action,
 
 	file_link = get_imported_shared_object(action->restart.app,
 					       REGULAR_DVFS_FILE, key);
-
-	file_link->desc = desc;
 
 	r = __cr_link_to_regular_file(action, ghost, task, file_link,
 				      returned_file);
@@ -480,11 +504,11 @@ int regular_file_import (struct epm_action *action,
                          struct file **returned_file)
 {
 	void *desc;
-	int r = 0;
+	int desc_size, r = 0;
 
 	BUG_ON(action->type == EPM_CHECKPOINT);
 
-	r = ghost_read_file_krg_desc(ghost, &desc);
+	r = ghost_read_file_krg_desc(ghost, &desc, &desc_size);
 	if (r)
 		goto exit;
 
@@ -526,15 +550,99 @@ error:
 	return r;
 }
 
+static int prepare_restart_data_replaced_by_tty(void **returned_data,
+						size_t *data_size)
+{
+	struct cr_file_link *file_link;
+
+	*data_size = sizeof(struct cr_file_link);
+	file_link = kzalloc(*data_size, GFP_KERNEL);
+	if (!file_link)
+		return -ENOMEM;
+
+	file_link->desc_type = CR_FILE_REPLACED_BY_TTY;
+
+	*returned_data = file_link;
+
+	return 0;
+}
+
+static int prepare_restart_data_local_file(struct file *f,
+					   void **returned_data,
+					   size_t *data_size)
+{
+	struct cr_file_link *file_link;
+
+	*data_size = sizeof(struct cr_file_link);
+	file_link = kzalloc(*data_size, GFP_KERNEL);
+	if (!file_link)
+		return -ENOMEM;
+
+	file_link->desc_type = CR_FILE_POINTER;
+	file_link->desc = f;
+
+	*returned_data = file_link;
+
+	return 0;
+}
+
+static int prepare_restart_data_dvfs_file(struct file *f,
+					  void *desc,
+					  int desc_size,
+					  void **returned_data,
+					  size_t *data_size)
+{
+	struct cr_file_link *file_link;
+
+	*data_size = sizeof(struct cr_file_link) + desc_size;
+	file_link = kzalloc(*data_size, GFP_KERNEL);
+	if (!file_link)
+		return -ENOMEM;
+
+	file_link->desc = &file_link[1];
+	file_link->desc_type = CR_FILE_REGULAR_DESC;
+	file_link->dvfs_objid = f->f_objid;
+	memcpy(file_link->desc, desc, desc_size);
+
+	*returned_data = file_link;
+
+	return 0;
+}
+
+#ifdef CONFIG_KRG_FAF
+void fill_faf_file_krg_desc(faf_client_data_t *data, struct file *file);
+
+static int prepare_restart_data_faf_file(struct file *f,
+					 void **returned_data,
+					 size_t *data_size)
+{
+	struct cr_file_link *file_link;
+
+	*data_size = sizeof(struct cr_file_link) + sizeof(faf_client_data_t);
+	file_link = kmalloc(*data_size, GFP_KERNEL);
+	if (!file_link)
+		return -ENOMEM;
+
+	file_link->desc = &file_link[1];
+	file_link->desc_type = CR_FILE_FAF_DESC;
+	file_link->dvfs_objid = f->f_objid;
+	fill_faf_file_krg_desc(file_link->desc, f);
+
+	*returned_data = file_link;
+
+	return 0;
+}
+#endif
+
 static int cr_import_now_regular_file(struct epm_action *action,
 				      ghost_t *ghost,
 				      struct task_struct *fake,
 				      int local_only,
-				      void **returned_data)
+				      void **returned_data,
+				      size_t *data_size)
 {
-	int r, tty;
+	int r, tty, desc_size;
 	struct file *f;
-	struct cr_file_link *file_link = *returned_data;
 	void *desc;
 
 	r = ghost_read(ghost, &tty, sizeof(int));
@@ -547,12 +655,10 @@ static int cr_import_now_regular_file(struct epm_action *action,
 		goto error;
 	}
 
-	memset(file_link, 0, sizeof(struct cr_file_link));
-
 	/* We need to read the file description from the ghost
 	 * even if we may not use it
 	 */
-	r = ghost_read_file_krg_desc(ghost, &desc);
+	r = ghost_read_file_krg_desc(ghost, &desc, &desc_size);
 	if (r)
 		goto error;
 
@@ -560,7 +666,8 @@ static int cr_import_now_regular_file(struct epm_action *action,
 	 * no need to import
 	 */
 	if (tty && action->restart.app->restart.terminal) {
-		file_link->replaced_by_tty = 1;
+		r = prepare_restart_data_replaced_by_tty(returned_data,
+							 data_size);
 		goto err_free_desc;
 	}
 
@@ -575,9 +682,22 @@ static int cr_import_now_regular_file(struct epm_action *action,
 		if (r)
 			goto err_free_desc;
 
-		file_link->dvfs_objid = f->f_objid;
+#ifdef CONFIG_KRG_FAF
+		r = setup_faf_file_if_needed(f);
+		if (r)
+			goto err_free_desc;
+
+		if (f->f_flags & (O_FAF_CLT | O_FAF_SRV))
+			r = prepare_restart_data_faf_file(f, returned_data,
+							  data_size);
+		else
+#endif
+			r = prepare_restart_data_dvfs_file(f, desc, desc_size,
+							   returned_data,
+							   data_size);
 	} else
-		file_link->file = f;
+		r = prepare_restart_data_local_file(f, returned_data,
+						    data_size);
 
 err_free_desc:
 	kfree(desc);
@@ -591,14 +711,18 @@ int cr_import_complete_regular_file(struct task_struct *fake,
 	struct cr_file_link *file_link = _file_link;
 	struct file *file;
 
-	if (file_link->replaced_by_tty)
+	if (file_link->desc_type == CR_FILE_REPLACED_BY_TTY)
 		/* the file has not been imported */
 		return 0;
 
-	if (file_link->file)
-		file = file_link->file;
+	if (file_link->desc_type == CR_FILE_POINTER)
+		file = file_link->desc;
 	else {
 		struct dvfs_file_struct *dvfs_file;
+
+		BUG_ON(file_link->desc_type != CR_FILE_REGULAR_DESC
+		       && file_link->desc_type != CR_FILE_FAF_DESC);
+
 		dvfs_file = grab_dvfs_file_struct(file_link->dvfs_objid);
 		file = dvfs_file->file;
 	}
@@ -607,7 +731,7 @@ int cr_import_complete_regular_file(struct task_struct *fake,
 
 	fput(file);
 
-	if (!file_link->file)
+	if (file_link->desc_type != CR_FILE_POINTER)
 		put_dvfs_file_struct(file_link->dvfs_objid);
 
 	return 0;
@@ -620,14 +744,18 @@ int cr_delete_regular_file(struct task_struct *fake,
 	struct cr_file_link *file_link = _file_link;
 	struct file *file;
 
-	if (file_link->replaced_by_tty)
+	if (file_link->desc_type == CR_FILE_REPLACED_BY_TTY)
 		/* the file has not been imported */
 		return 0;
 
-	if (file_link->file)
-		file = file_link->file;
+	if (file_link->desc_type == CR_FILE_POINTER)
+		file = file_link->desc;
 	else {
 		struct dvfs_file_struct *dvfs_file;
+
+		BUG_ON(file_link->desc_type != CR_FILE_REGULAR_DESC
+		       && file_link->desc_type != CR_FILE_FAF_DESC);
+
 		dvfs_file = grab_dvfs_file_struct(file_link->dvfs_objid);
 		if (!dvfs_file) {
 			r = -ENOENT;
@@ -641,13 +769,12 @@ int cr_delete_regular_file(struct task_struct *fake,
 		fput(file);
 
 error:
-	if (!file_link->file)
+	if (file_link->desc_type != CR_FILE_POINTER)
 		put_dvfs_file_struct(file_link->dvfs_objid);
 	return 0;
 }
 
 struct shared_object_operations cr_shared_regular_file_ops = {
-        .restart_data_size = sizeof(struct cr_file_link),
 	.export_now        = cr_export_now_regular_file,
 	.import_now        = cr_import_now_regular_file,
 	.import_complete   = cr_import_complete_regular_file,

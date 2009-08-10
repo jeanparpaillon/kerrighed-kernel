@@ -27,7 +27,6 @@
 /*--------------------------------------------------------------------------*/
 
 extern struct shared_object_operations cr_shared_regular_file_ops;
-extern struct shared_object_operations cr_shared_faf_file_ops;
 extern struct shared_object_operations cr_shared_unsupported_file_ops;
 extern struct shared_object_operations cr_shared_files_struct_ops;
 extern struct shared_object_operations cr_shared_fs_struct_ops;
@@ -47,9 +46,6 @@ static struct shared_object_operations * get_shared_ops(
 	case REGULAR_FILE:
 	case REGULAR_DVFS_FILE:
 		s_ops = &cr_shared_regular_file_ops;
-		break;
-	case FAF_FILE:
-		s_ops = &cr_shared_faf_file_ops;
 		break;
 	case UNSUPPORTED_FILE:
 		s_ops = &cr_shared_unsupported_file_ops;
@@ -215,8 +211,9 @@ struct shared_object {
 		} checkpoint;
 		struct {
 			struct task_identity t_identity;
-			void *data;
 			enum locality locality;
+			void *data;
+			size_t data_size;
 		} restart;
 	};
 };
@@ -759,59 +756,61 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 {
 	int r;
 	struct shared_object_operations *s_ops;
-	struct shared_object *s;
+	struct shared_object stmp, *s;
 	int is_local;
 
 	s_ops = get_shared_ops(type);
 
-	s = kmalloc(sizeof(struct shared_object) + s_ops->restart_data_size,
-		    GFP_KERNEL);
+	BUG_ON(type == NO_OBJ);
 
+	stmp.index.type = type;
+	stmp.ops = s_ops;
+	stmp.restart.data = NULL;
+	stmp.restart.data_size = 0;
+
+	r = ghost_read(ghost, &stmp.index.key, sizeof(long));
+	if (r)
+		goto err;
+	r = ghost_read(ghost, &stmp.restart.t_identity,
+		       sizeof(struct task_identity));
+	if (r)
+		goto err;
+
+	fake->pid = stmp.restart.t_identity.pid;
+	fake->tgid = stmp.restart.t_identity.tgid;
+
+	r = ghost_read(ghost, &is_local, sizeof(int));
+	if (r)
+		goto err;
+
+	if (is_local)
+		stmp.restart.locality = LOCAL_ONLY;
+	else
+		stmp.restart.locality = SHARED_MASTER;
+
+	r = s_ops->import_now(action, ghost, fake, is_local,
+			      &stmp.restart.data,
+			      &stmp.restart.data_size);
+	if (r)
+		goto err;
+
+	BUG_ON(!stmp.restart.data && type != UNSUPPORTED_FILE);
+
+	s = kmalloc(sizeof(struct shared_object) + stmp.restart.data_size,
+		    GFP_KERNEL);
 	if (!s) {
 		r = -ENOMEM;
 		goto err;
 	}
 
-	BUG_ON(type == NO_OBJ);
-
-	s->index.type = type;
-	s->ops = s_ops;
-
-	if (s->ops->restart_data_size)
+	*s = stmp;
+	if (stmp.restart.data_size) {
 		s->restart.data = &s[1];
-	else
-		s->restart.data = NULL;
-
-	r = ghost_read(ghost, &s->index.key, sizeof(long));
-	if (r)
-		goto err_free;
-	r = ghost_read(ghost, &s->restart.t_identity,
-		       sizeof(struct task_identity));
-	if (r)
-		goto err_free;
-
-	fake->pid = s->restart.t_identity.pid;
-	fake->tgid = s->restart.t_identity.tgid;
-
-	r = ghost_read(ghost, &is_local, sizeof(int));
-	if (r)
-		goto err_free;
-
-	if (is_local)
-		s->restart.locality = LOCAL_ONLY;
-	else
-		s->restart.locality = SHARED_MASTER;
-
-	r = s->ops->import_now(action, ghost, fake, is_local, &s->restart.data);
-	if (r)
-		goto err_free;
-
-	BUG_ON(!s->restart.data && type != UNSUPPORTED_FILE);
+		memcpy(s->restart.data, stmp.restart.data,s->restart.data_size);
+	}
 
 	r = insert_shared_index(&fake->application->shared_objects.root,
 				&s->index);
-
-err_free:
 	if (r)
 		kfree(s);
 err:
@@ -882,12 +881,9 @@ static int __send_restored_objects(struct rpc_desc *desc,
 		this = container_of(idx, struct shared_object, index);
 
 		if (this->restart.locality == SHARED_MASTER &&
-		    (
-			    file_only ||
-			    (idx->type != REGULAR_FILE &&
-			     idx->type != REGULAR_DVFS_FILE &&
-			     idx->type != FAF_FILE)
-			    )) {
+		    (file_only ||
+		     (idx->type != REGULAR_FILE &&
+		      idx->type != REGULAR_DVFS_FILE))) {
 			r = rpc_pack_type(desc, idx->type);
 			if (r)
 				goto err_pack;
@@ -896,13 +892,13 @@ static int __send_restored_objects(struct rpc_desc *desc,
 			if (r)
 				goto err_pack;
 
-			r = rpc_pack_type(desc, this->ops->restart_data_size);
+			r = rpc_pack_type(desc, this->restart.data_size);
 			if (r)
 				goto err_pack;
 
-			if (this->ops->restart_data_size)
+			if (this->restart.data_size)
 				r = rpc_pack(desc, 0, this->restart.data,
-					     this->ops->restart_data_size);
+					     this->restart.data_size);
 			else
 				r = rpc_pack_type(desc, this->restart.data);
 			if (r)

@@ -63,8 +63,7 @@ exit:
 	return file;
 }
 
-static void __fill_faf_file_krg_desc(faf_client_data_t *data,
-				     struct file *file)
+void fill_faf_file_krg_desc(faf_client_data_t *data, struct file *file)
 {
 	unsigned int flags = file->f_flags & (~O_FAF_SRV);
 
@@ -115,67 +114,13 @@ int get_faf_file_krg_desc (struct file *file,
 
 	BUG_ON (!(file->f_flags & O_FAF_SRV));
 
-	__fill_faf_file_krg_desc(data, file);
+	fill_faf_file_krg_desc(data, file);
 
 done:
 	*desc = data;
 	*desc_size = sizeof (faf_client_data_t);
 
 	return 0;
-}
-
-struct cr_faf_link {
-	struct cr_file_link intern;
-	faf_client_data_t desc;
-};
-
-int cr_link_to_faf_file(struct epm_action *action, ghost_t *ghost,
-			struct task_struct *task, struct file **returned_file,
-			long key)
-{
-	int r = 0;
-	struct cr_faf_link *faf_link;
-	struct dvfs_file_struct *dvfs_file = NULL;
-	struct file *file = NULL;
-	int first_import = 0;
-
-	BUG_ON(action->type != EPM_CHECKPOINT);
-
-	faf_link = (struct cr_faf_link *)get_imported_shared_object(
-		action->restart.app,
-		FAF_FILE, key);
-
-	if (!faf_link) {
-		BUG();
-		r = -E_CR_BADDATA;
-		goto exit;
-	}
-
-	if (faf_link->intern.replaced_by_tty) {
-		BUG();
-		r = -E_CR_BADDATA;
-		goto exit;
-	}
-
-	/* Check if the file struct is already present */
-	file = begin_import_dvfs_file(faf_link->intern.dvfs_objid, &dvfs_file);
-
-	/* reopen the file if needed */
-	if (!file) {
-		file = create_faf_file_from_krg_desc(task,
-						     &faf_link->intern.desc);
-		first_import = 1;
-	}
-
-	r = end_import_dvfs_file(faf_link->intern.dvfs_objid, dvfs_file, file,
-				 first_import);
-
-	if (r)
-		goto exit;
-
-	*returned_file = file;
-exit:
-	return r;
 }
 
 /*****************************************************************************/
@@ -235,11 +180,11 @@ int faf_file_import (struct epm_action *action,
 {
 	void *desc;
 	struct file *file;
-	int r;
+	int r, desc_size;
 
 	BUG_ON(action->type == EPM_CHECKPOINT);
 
-	r = ghost_read_file_krg_desc(ghost, &desc);
+	r = ghost_read_file_krg_desc(ghost, &desc, &desc_size);
 	if (r)
 		goto exit;
 
@@ -260,90 +205,4 @@ exit:
 struct dvfs_mobility_operations dvfs_mobility_faf_ops = {
 	.file_export = faf_file_export,
 	.file_import = faf_file_import,
-};
-
-static int cr_import_now_faf_file(struct epm_action *action,
-				  ghost_t *ghost,
-				  struct task_struct *fake,
-				  int local_only,
-				  void **returned_data)
-{
-	int r, tty;
-	void *desc;
-	struct file *file;
-	struct cr_faf_link *faf_link = *returned_data;
-
-	r = ghost_read(ghost, &tty, sizeof(int));
-	if (r)
-		goto error;
-
-	if (tty != 0 && tty != 1) {
-		BUG();
-		r = -E_CR_BADDATA;
-		goto error;
-	}
-
-	memset(faf_link, 0, sizeof(struct cr_faf_link));
-
-	/* We need to read the file description from the ghost
-	 * even if we may not use it
-	 */
-	r = ghost_read_file_krg_desc(ghost, &desc);
-	if (r)
-		goto error;
-
-	/* the file will be replaced by the current terminal,
-	 * no need to import
-	 */
-	if (tty && action->restart.app->restart.terminal) {
-		faf_link->intern.replaced_by_tty = 1;
-		goto err_free_desc;
-	}
-
-	file = import_regular_file_from_krg_desc(fake, desc);
-
-	if (IS_ERR(file)) {
-		r = PTR_ERR(file);
-		goto err_free_desc;
-	}
-
-	r = create_kddm_file_object(file);
-	if (r)
-		goto err_free_desc;
-
-	r = setup_faf_file(file);
-	if (r)
-		goto err_free_desc;
-
-	faf_link->intern.dvfs_objid = file->f_objid;
-	faf_link->intern.desc = &faf_link->desc;
-	__fill_faf_file_krg_desc(&(faf_link->desc), file);
-
-err_free_desc:
-	kfree(desc);
-error:
-	return r;
-}
-
-static int cr_import_complete_faf_file(struct task_struct *fake,
-				       void *_faf_link)
-{
-	return cr_import_complete_regular_file(
-		fake,
-		&((struct cr_faf_link *)_faf_link)->intern);
-}
-
-static int cr_delete_faf_file(struct task_struct *fake, void *_faf_link)
-{
-	return cr_delete_regular_file(
-		fake,
-		&((struct cr_faf_link *)_faf_link)->intern);
-}
-
-struct shared_object_operations cr_shared_faf_file_ops = {
-        .restart_data_size = sizeof(struct cr_faf_link),
-        .export_now        = cr_export_now_regular_file,
-	.import_now        = cr_import_now_faf_file,
-	.import_complete   = cr_import_complete_faf_file,
-	.delete            = cr_delete_faf_file,
 };

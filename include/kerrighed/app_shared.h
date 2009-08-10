@@ -44,7 +44,6 @@ enum shared_obj_type {
 	/* file descriptors */
 	REGULAR_FILE,
 	REGULAR_DVFS_FILE,
-	FAF_FILE,
 	UNSUPPORTED_FILE,
 
 	/* other objects */
@@ -79,11 +78,10 @@ void *get_imported_shared_object(struct app_struct *app,
 
 struct shared_object_operations {
 	size_t restart_data_size;
-
 	int (*export_now) (struct epm_action *, ghost_t *, struct task_struct *,
 			   union export_args *);
 	int (*import_now) (struct epm_action *, ghost_t *, struct task_struct *,
-			   int, void  **);
+			   int, void  **, size_t *);
 	int (*import_complete) (struct task_struct *, void *);
 	int (*delete) (struct task_struct *, void *);
 };
