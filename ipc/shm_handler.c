@@ -117,7 +117,7 @@ int krg_ipc_shm_newseg (struct ipc_namespace *ns, struct shmid_kernel *shp)
 	long *key_index;
 	int index, err;
 
-	BUG_ON(ns != &init_ipc_ns);
+	BUG_ON(shm_ids(ns).krgops != &krg_sysvipc_shm_ops);
 
 	index = ipcid_to_idx(shp->shm_perm.id);
 
@@ -158,7 +158,7 @@ int krg_ipc_shm_newseg (struct ipc_namespace *ns, struct shmid_kernel *shp)
 		_kddm_put_object (shmkey_struct_kddm_set, shp->shm_perm.key);
 	}
 
-	shp->shm_perm.krgops = &krg_sysvipc_shm_ops;
+	shp->shm_perm.krgops = shm_ids(ns).krgops;
 
 err_put:
 	_kddm_put_object(shmid_struct_kddm_set, index);

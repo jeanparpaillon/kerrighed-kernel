@@ -122,7 +122,7 @@ int kcb_ipc_sem_newary(struct ipc_namespace *ns, struct sem_array *sma)
 	long *key_index;
 	int index ;
 
-	BUG_ON (ns != &init_ipc_ns); /* TODO: manage IPC namespace */
+	BUG_ON(sem_ids(ns).krgops != &krg_sysvipc_sem_ops);
 
 	index = ipcid_to_idx(sma->sem_perm.id);
 
@@ -159,7 +159,7 @@ int kcb_ipc_sem_newary(struct ipc_namespace *ns, struct sem_array *sma)
 
 	_kddm_put_object(semarray_struct_kddm_set, index);
 
-	sma->sem_perm.krgops = &krg_sysvipc_sem_ops;
+	sma->sem_perm.krgops = sem_ids(ns).krgops;
 
 	return 0;
 }

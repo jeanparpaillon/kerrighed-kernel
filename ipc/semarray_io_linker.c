@@ -26,9 +26,9 @@ struct kmem_cache *semarray_object_cachep;
  *
  *  @author Matthieu Fertré
  */
-struct sem_array *create_local_sem(struct sem_array *received_sma)
+struct sem_array *create_local_sem(struct ipc_namespace *ns,
+				   struct sem_array *received_sma)
 {
-	struct ipc_namespace *ns = &init_ipc_ns; /* TODO: manage namespace */
 	struct sem_array *sma;
 	int size_sems;
 	int retval;
@@ -58,7 +58,7 @@ struct sem_array *create_local_sem(struct sem_array *received_sma)
 	INIT_LIST_HEAD(&sma->list_id);
 	INIT_LIST_HEAD(&sma->remote_sem_pending);
 
-	sma->sem_perm.krgops = &krg_sysvipc_sem_ops;
+	sma->sem_perm.krgops = sem_ids(ns).krgops;
 	local_sem_unlock(sma);
 
 	return sma;
@@ -207,7 +207,7 @@ int semarray_insert_object (struct kddm_obj * obj_entry,
 		/* This is the first time the object is inserted locally.
 		 * We need to allocate kernel sem_array structure.
 		 */
-		sem = create_local_sem(&sem_object->imported_sem);
+		sem = create_local_sem(&init_ipc_ns, &sem_object->imported_sem);
 		sem_object->local_sem = sem;
 	}
 
