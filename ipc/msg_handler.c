@@ -121,7 +121,7 @@ int kcb_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 	long *key_index;
 	int index, err = 0;
 
-	BUG_ON (ns != &init_ipc_ns);
+	BUG_ON(msg_ids(ns).krgops != &krg_sysvipc_msg_ops);
 
 	index = ipcid_to_idx(msq->q_perm.id);
 
@@ -152,7 +152,7 @@ int kcb_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 	master_node = _kddm_grab_object(msq_master_kddm_set, index);
 	*master_node = kerrighed_node_id;
 
-	msq->q_perm.krgops = &krg_sysvipc_msg_ops;
+	msq->q_perm.krgops = msg_ids(ns).krgops;
 
 	_kddm_put_object(msq_master_kddm_set, index);
 

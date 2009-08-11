@@ -25,10 +25,10 @@ struct kmem_cache *shmid_object_cachep;
  *
  *  @author Renaud Lottiaux
  */
-struct shmid_kernel *create_local_shp (struct shmid_kernel *received_shp,
+struct shmid_kernel *create_local_shp (struct ipc_namespace *ns,
+				       struct shmid_kernel *received_shp,
 				       kddm_set_id_t set_id)
 {
-	struct ipc_namespace *ns = &init_ipc_ns;
 	struct shmid_kernel *shp;
 	struct kddm_set *set;
 	char name[13];
@@ -72,7 +72,7 @@ struct shmid_kernel *create_local_shp (struct shmid_kernel *received_shp,
 
 	ns->shm_tot += (shp->shm_segsz + PAGE_SIZE -1) >> PAGE_SHIFT;
 
-	shp->shm_perm.krgops = &krg_sysvipc_shm_ops;
+	shp->shm_perm.krgops = shm_ids(ns).krgops;
 
 	local_shm_unlock(shp);
 
@@ -158,7 +158,8 @@ int shmid_insert_object (struct kddm_obj * obj_entry,
 	/* This is the first time the object is inserted locally. We need
 	 * to allocate kernel shm structures.
 	 */
-	shp = create_local_shp(&shp_object->mobile_shp, shp_object->set_id);
+	shp = create_local_shp(&init_ipc_ns, &shp_object->mobile_shp,
+			       shp_object->set_id);
 	shp_object->local_shp = shp;
 
 done:

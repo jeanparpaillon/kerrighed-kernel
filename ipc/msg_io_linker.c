@@ -23,9 +23,9 @@ struct kmem_cache *msq_object_cachep;
  *
  *  @author Matthieu Fertré
  */
-static struct msg_queue *create_local_msq(struct msg_queue *received_msq)
+static struct msg_queue *create_local_msq(struct ipc_namespace *ns,
+					  struct msg_queue *received_msq)
 {
-	struct ipc_namespace *ns = &init_ipc_ns; /* TODO: manage namespace */
 	struct msg_queue *msq;
 	int retval;
 
@@ -50,7 +50,7 @@ static struct msg_queue *create_local_msq(struct msg_queue *received_msq)
 	INIT_LIST_HEAD(&msq->q_receivers);
 	INIT_LIST_HEAD(&msq->q_senders);
 
-	msq->q_perm.krgops = &krg_sysvipc_msg_ops;
+	msq->q_perm.krgops = msg_ids(ns).krgops;
 	local_msg_unlock(msq);
 
 	return msq;
@@ -176,7 +176,7 @@ int msq_insert_object (struct kddm_obj * obj_entry,
 		/* This is the first time the object is inserted locally. We need
 		 * to allocate kernel msq structures.
 		 */
-		msq = create_local_msq(&msq_object->mobile_msq);
+		msq = create_local_msq(&init_ipc_ns, &msq_object->mobile_msq);
 		msq_object->local_msq = msq;
 		BUG_ON(IS_ERR(msq));
 	}
