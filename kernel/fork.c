@@ -66,6 +66,9 @@
 #ifdef CONFIG_KRG_KDDM
 #include <kddm/kddm_info.h>
 #endif
+#ifdef CONFIG_KRG_HOTPLUG
+#include <kerrighed/namespace.h>
+#endif
 #ifdef CONFIG_KRG_PROC
 #include <kerrighed/task.h>
 #include <kerrighed/krginit.h>
@@ -1126,6 +1129,9 @@ struct task_struct *copy_process(unsigned long clone_flags,
 					struct pid *pid,
 					int trace)
 {
+#ifdef CONFIG_KRG_HOTPLUG
+	int saved_create_krg_ns;
+#endif
 	int retval;
 	struct task_struct *p;
 	int cgroup_callbacks_done = 0;
@@ -1148,6 +1154,11 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	if ((clone_flags & CLONE_SIGHAND) && !(clone_flags & CLONE_VM))
 		return ERR_PTR(-EINVAL);
 
+#ifdef CONFIG_KRG_HOTPLUG
+	saved_create_krg_ns = current->create_krg_ns;
+	current->create_krg_ns = can_create_krg_ns(clone_flags);
+#endif
+
 	retval = security_task_create(clone_flags);
 	if (retval)
 		goto fork_out;
@@ -1156,6 +1167,10 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	p = dup_task_struct(current);
 	if (!p)
 		goto fork_out;
+
+#ifdef CONFIG_KRG_HOTPLUG
+	p->create_krg_ns = 0;
+#endif
 
 	rt_mutex_init_task(p);
 
@@ -1572,6 +1587,9 @@ struct task_struct *copy_process(unsigned long clone_flags,
 #endif
 	proc_fork_connector(p);
 	cgroup_post_fork(p);
+#ifdef CONFIG_KRG_HOTPLUG
+	current->create_krg_ns = saved_create_krg_ns;
+#endif
 	return p;
 
 #ifdef CONFIG_KRG_SCHED
@@ -1655,6 +1673,9 @@ bad_fork_cleanup_count:
 bad_fork_free:
 	free_task(p);
 fork_out:
+#ifdef CONFIG_KRG_HOTPLUG
+	current->create_krg_ns = saved_create_krg_ns;
+#endif
 	return ERR_PTR(retval);
 }
 
@@ -1973,9 +1994,16 @@ SYSCALL_DEFINE1(unshare, unsigned long, unshare_flags)
 	struct files_struct *fd, *new_fd = NULL;
 	struct nsproxy *new_nsproxy = NULL;
 	int do_sysvsem = 0;
+#ifdef CONFIG_KRG_HOTPLUG
+	int saved_create_krg_ns;
+#endif
 
 	check_unshare_flags(&unshare_flags);
 
+#ifdef CONFIG_KRG_HOTPLUG
+	saved_create_krg_ns = current->create_krg_ns;
+	current->create_krg_ns = 0;
+#endif
 	/* Return -EINVAL for all unsupported flags */
 	err = -EINVAL;
 	if (unshare_flags & ~(CLONE_THREAD|CLONE_FS|CLONE_NEWNS|CLONE_SIGHAND|
@@ -2070,6 +2098,9 @@ bad_unshare_cleanup_fs:
 
 bad_unshare_cleanup_thread:
 bad_unshare_out:
+#ifdef CONFIG_KRG_HOTPLUG
+	current->create_krg_ns = saved_create_krg_ns;
+#endif
 	return err;
 }
 

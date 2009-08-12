@@ -100,6 +100,8 @@
 				    struct __hotplug_node_set)
 #define KSYS_HOTPLUG_WAIT_FOR_START	_IO(KERRIGHED_PROC_MAGIC, \
 					    COMM_PROC_BASE + 13)
+#define KSYS_HOTPLUG_SET_CREATOR	_IO(KERRIGHED_PROC_MAGIC, \
+					    COMM_PROC_BASE + 14)
 
 
 /*

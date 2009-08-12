@@ -1199,6 +1199,9 @@ struct task_struct {
 	unsigned did_exec:1;
 	unsigned in_execve:1;	/* Tell the LSMs that the process is doing an
 				 * execve */
+#ifdef CONFIG_KRG_HOTPLUG
+	unsigned create_krg_ns:1;
+#endif
 #ifdef CONFIG_KRG_EPM
 	unsigned remote_vfork_done:1;
 #endif

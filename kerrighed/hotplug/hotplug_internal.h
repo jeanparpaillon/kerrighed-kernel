@@ -15,12 +15,15 @@ void update_heartbeat(void);
 
 int krgnodemask_copy_from_user(krgnodemask_t *dst, __krgnodemask_t *from);
 
+int krg_set_cluster_creator(void __user *arg);
+
 int heartbeat_init(void);
 int hotplug_add_init(void);
 int hotplug_remove_init(void);
 int hotplug_failure_init(void);
 int hotplug_hooks_init(void);
 int hotplug_cluster_init(void);
+int hotplug_namespace_init(void);
 
 int hotplug_membership_init(void);
 void hotplug_membership_cleanup(void);

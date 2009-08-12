@@ -25,6 +25,7 @@ int init_hotplug(void)
 #endif
 	hotplug_failure_init();
 	hotplug_cluster_init();
+	hotplug_namespace_init();
 	hotplug_membership_init();
 
 	return 0;

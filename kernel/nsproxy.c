@@ -21,6 +21,9 @@
 #include <linux/pid_namespace.h>
 #include <net/net_namespace.h>
 #include <linux/ipc_namespace.h>
+#ifdef CONFIG_KRG_HOTPLUG
+#include <kerrighed/namespace.h>
+#endif
 
 #ifndef CONFIG_KRG_EPM
 static
@@ -89,8 +92,19 @@ static struct nsproxy *create_new_namespaces(unsigned long flags,
 		goto out_net;
 	}
 
+#ifdef CONFIG_KRG_HOTPLUG
+	err = copy_krg_ns(tsk, new_nsp);
+	if (err)
+		goto out_krg;
+#endif
+
 	return new_nsp;
 
+#ifdef CONFIG_KRG_HOTPLUG
+out_krg:
+	if (new_nsp->net_ns)
+		put_net(new_nsp->net_ns);
+#endif
 out_net:
 	if (new_nsp->pid_ns)
 		put_pid_ns(new_nsp->pid_ns);
@@ -159,6 +173,10 @@ out:
 
 void free_nsproxy(struct nsproxy *ns)
 {
+#ifdef CONFIG_KRG_HOTPLUG
+	if (ns->krg_ns)
+		put_krg_ns(ns->krg_ns);
+#endif
 	if (ns->mnt_ns)
 		put_mnt_ns(ns->mnt_ns);
 	if (ns->uts_ns)
