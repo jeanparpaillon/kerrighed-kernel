@@ -798,8 +798,6 @@ void sem_handler_init (void)
 	register_io_linker(SEMKEY_LINKER, &semkey_linker);
 	register_io_linker(SEMUNDO_LINKER, &semundo_linker);
 
-	krg_sem_init_ns(&init_ipc_ns);
-
 	hook_register(&kh_ipc_sem_newary, kcb_ipc_sem_newary);
 	hook_register(&kh_ipc_sem_freeary, kcb_ipc_sem_freeary);
 	hook_register(&kh_ipc_sem_wakeup_process, kcb_ipc_sem_wakeup_process);

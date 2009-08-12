@@ -276,8 +276,6 @@ void shm_handler_init(void)
 
 	krgsyms_register(KRGSYMS_VM_OPS_SHM, &shm_vm_ops);
 
-	krg_shm_init_ns(&init_ipc_ns);
-
 	printk("Shm Server configured\n");
 }
 
