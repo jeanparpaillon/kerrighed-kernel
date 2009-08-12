@@ -21,13 +21,12 @@
 #include "util.h"
 #include "krgsem.h"
 
-
-/* unique_id generator for sem_undo_list identifier */
-unique_id_root_t undo_list_unique_id_root;
-
 struct semkrgops {
 	struct krgipc_ops krgops;
 	struct kddm_set *undo_list_kddm_set;
+
+	/* unique_id generator for sem_undo_list identifier */
+	unique_id_root_t undo_list_unique_id_root;
 };
 
 static struct kddm_set *krgipc_ops_undolist_set(struct krgipc_ops *ipcops)
@@ -308,9 +307,17 @@ static inline semundo_list_object_t * __create_semundo_proc_list(
 {
 	unique_id_t undo_list_id;
 	semundo_list_object_t *undo_list;
+	struct ipc_namespace *ns;
+	struct semkrgops *semops;
+
+	ns = task_nsproxy(task)->ipc_ns;
+	if (!sem_ids(ns).krgops)
+		return ERR_PTR(-EINVAL);
+
+	semops = container_of(sem_ids(ns).krgops, struct semkrgops, krgops);
 
 	/* get a random id */
-	undo_list_id = get_unique_id(&undo_list_unique_id_root);
+	undo_list_id = get_unique_id(&semops->undo_list_unique_id_root);
 
 	undo_list = _kddm_grab_object_manual_ft(undo_list_set, undo_list_id);
 
@@ -733,6 +740,8 @@ int krg_sem_init_ns(struct ipc_namespace *ns)
 		goto err_undolist;
 	}
 
+	init_unique_id_root(&sem_ops->undo_list_unique_id_root);
+
 	sem_ops->krgops.ipc_lock = kcb_ipc_sem_lock;
 	sem_ops->krgops.ipc_unlock = kcb_ipc_sem_unlock;
 	sem_ops->krgops.ipc_findkey = kcb_ipc_sem_findkey;
@@ -772,8 +781,6 @@ void krg_sem_exit_ns(struct ipc_namespace *ns)
 
 void sem_handler_init (void)
 {
-	init_unique_id_root(&undo_list_unique_id_root);
-
 	semarray_object_cachep = kmem_cache_create("semarray_object",
 						   sizeof(semarray_object_t),
 						   0, SLAB_PANIC, NULL);
