@@ -50,7 +50,7 @@ static struct kern_ipc_perm *kcb_ipc_sem_lock(struct ipc_ids *ids, int id)
 
 	index = ipcid_to_idx(id);
 
-	sem_object = _kddm_grab_object_no_ft(semarray_struct_kddm_set, index);
+	sem_object = _kddm_grab_object_no_ft(ids->krgops->data_kddm_set, index);
 
 	if (!sem_object)
 		goto error;
@@ -69,7 +69,7 @@ static struct kern_ipc_perm *kcb_ipc_sem_lock(struct ipc_ids *ids, int id)
 	return &(sma->sem_perm);
 
 error:
-	_kddm_put_object(semarray_struct_kddm_set, index);
+	_kddm_put_object(ids->krgops->data_kddm_set, index);
 	rcu_read_unlock();
 
 	return ERR_PTR(-EINVAL);
@@ -84,7 +84,7 @@ void kcb_ipc_sem_unlock(struct kern_ipc_perm *ipcp)
 	if (ipcp->deleted)
 		deleted = 1;
 
-	_kddm_put_object(semarray_struct_kddm_set, index);
+	_kddm_put_object(ipcp->krgops->data_kddm_set, index);
 
 	if (!deleted)
 		mutex_unlock(&ipcp->mutex);
@@ -97,12 +97,12 @@ struct kern_ipc_perm *kcb_ipc_sem_findkey(struct ipc_ids *ids, key_t key)
 	long *key_index;
 	int id = -1;
 
-	key_index = _kddm_get_object_no_ft(semkey_struct_kddm_set, key);
+	key_index = _kddm_get_object_no_ft(ids->krgops->key_kddm_set, key);
 
 	if (key_index)
 		id = *key_index;
 
-	_kddm_put_object(semkey_struct_kddm_set, key);
+	_kddm_put_object(ids->krgops->key_kddm_set, key);
 
 	if (id != -1)
 		return kcb_ipc_sem_lock(ids, id);
@@ -124,8 +124,8 @@ int kcb_ipc_sem_newary(struct ipc_namespace *ns, struct sem_array *sma)
 
 	index = ipcid_to_idx(sma->sem_perm.id);
 
-	sem_object = _kddm_grab_object_manual_ft(semarray_struct_kddm_set,
-						 index);
+	sem_object = _kddm_grab_object_manual_ft(
+		sem_ids(ns).krgops->data_kddm_set, index);
 
 	BUG_ON(sem_object);
 
@@ -145,17 +145,18 @@ int kcb_ipc_sem_newary(struct ipc_namespace *ns, struct sem_array *sma)
 	INIT_LIST_HEAD(&sem_object->imported_sem.sem_pending);
 	INIT_LIST_HEAD(&sem_object->imported_sem.remote_sem_pending);
 
-	_kddm_set_object(semarray_struct_kddm_set, index, sem_object);
+	_kddm_set_object(sem_ids(ns).krgops->data_kddm_set, index, sem_object);
 
 	if (sma->sem_perm.key != IPC_PRIVATE)
 	{
-		key_index = _kddm_grab_object(semkey_struct_kddm_set,
+		key_index = _kddm_grab_object(sem_ids(ns).krgops->key_kddm_set,
 					      sma->sem_perm.key);
 		*key_index = index;
-		_kddm_put_object (semkey_struct_kddm_set, sma->sem_perm.key);
+		_kddm_put_object(sem_ids(ns).krgops->key_kddm_set,
+				 sma->sem_perm.key);
 	}
 
-	_kddm_put_object(semarray_struct_kddm_set, index);
+	_kddm_put_object(sem_ids(ns).krgops->data_kddm_set, index);
 
 	sma->sem_perm.krgops = sem_ids(ns).krgops;
 
@@ -197,11 +198,9 @@ exit:
 void kcb_ipc_sem_freeary(struct ipc_namespace *ns, struct sem_array *sma, int id)
 {
 	int index;
-	key_t key;
 	struct sem_undo* un, *tu;
 
 	index = ipcid_to_idx(sma->sem_perm.id);
-	key = sma->sem_perm.key;
 
 	/* removing the related semundo from the list per process */
 	list_for_each_entry_safe(un, tu, &sma->list_id, list_id) {
@@ -210,15 +209,15 @@ void kcb_ipc_sem_freeary(struct ipc_namespace *ns, struct sem_array *sma, int id
 		kfree(un);
 	}
 
-	if (key != IPC_PRIVATE) {
-		_kddm_grab_object(semkey_struct_kddm_set,
+	if (sma->sem_perm.key != IPC_PRIVATE) {
+		_kddm_grab_object(sem_ids(ns).krgops->key_kddm_set,
 				  sma->sem_perm.key);
-		_kddm_remove_frozen_object (semkey_struct_kddm_set, key);
-		/* _kddm_remove_object (semkey_struct_kddm_set, key); */
+		_kddm_remove_frozen_object(sem_ids(ns).krgops->key_kddm_set,
+					   sma->sem_perm.key);
 	}
 
 	local_sem_unlock(sma);
-	_kddm_remove_frozen_object (semarray_struct_kddm_set, index);
+	_kddm_remove_frozen_object(sem_ids(ns).krgops->data_kddm_set, index);
 
 	kh_ipc_rmid(&sem_ids(ns), index);
 }
@@ -614,9 +613,9 @@ void krg_sem_init_ns(struct ipc_namespace *ns)
 	struct krgipc_ops *sem_ops = kmalloc(sizeof(struct krgipc_ops),
 					     GFP_KERNEL);
 
-	sem_ops->map_kddm = SEMMAP_KDDM_ID;
-	sem_ops->key_kddm = SEMKEY_KDDM_ID;
-	sem_ops->data_kddm = SEMARRAY_KDDM_ID;
+	sem_ops->map_kddm_set = semmap_struct_kddm_set;
+	sem_ops->key_kddm_set = semkey_struct_kddm_set;
+	sem_ops->data_kddm_set = semarray_struct_kddm_set;
 
 	sem_ops->ipc_lock = kcb_ipc_sem_lock;
 	sem_ops->ipc_unlock = kcb_ipc_sem_unlock;

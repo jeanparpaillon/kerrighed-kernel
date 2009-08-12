@@ -13,6 +13,7 @@
 #include <linux/err.h>
 #ifdef CONFIG_KRG_IPC
 #include <kerrighed/types.h>
+#include <kddm/kddm_types.h>
 #endif
 
 #define SEQ_MULTIPLIER	(IPCMNI)
@@ -200,9 +201,9 @@ int ipcget(struct ipc_namespace *ns, struct ipc_ids *ids,
 #ifdef CONFIG_KRG_IPC
 
 struct krgipc_ops {
-	unique_id_t map_kddm;
-	unique_id_t key_kddm;
-	unique_id_t data_kddm;
+	struct kddm_set *map_kddm_set;
+	struct kddm_set *key_kddm_set;
+	struct kddm_set *data_kddm_set;
 
 	struct kern_ipc_perm *(*ipc_lock)(struct ipc_ids *, int);
 	void (*ipc_unlock)(struct kern_ipc_perm *);

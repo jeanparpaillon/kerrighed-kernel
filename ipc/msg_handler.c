@@ -48,7 +48,7 @@ struct kern_ipc_perm *kcb_ipc_msg_lock(struct ipc_ids *ids, int id)
 
 	index = ipcid_to_idx(id);
 
-	msq_object = _kddm_grab_object_no_ft(msq_struct_kddm_set, index);
+	msq_object = _kddm_grab_object_no_ft(ids->krgops->data_kddm_set, index);
 
 	if (!msq_object)
 		goto error;
@@ -67,7 +67,7 @@ struct kern_ipc_perm *kcb_ipc_msg_lock(struct ipc_ids *ids, int id)
 	return &(msq->q_perm);
 
 error:
-	_kddm_put_object(msq_struct_kddm_set, index);
+	_kddm_put_object(ids->krgops->data_kddm_set, index);
 	rcu_read_unlock();
 
 	return ERR_PTR(-EINVAL);
@@ -82,7 +82,7 @@ void kcb_ipc_msg_unlock(struct kern_ipc_perm *ipcp)
 	if (ipcp->deleted)
 		deleted = 1;
 
-	_kddm_put_object(msq_struct_kddm_set, index);
+	_kddm_put_object(ipcp->krgops->data_kddm_set, index);
 
 	if (!deleted)
 		mutex_unlock(&ipcp->mutex);
@@ -95,12 +95,12 @@ struct kern_ipc_perm *kcb_ipc_msg_findkey(struct ipc_ids *ids, key_t key)
 	long *key_index;
 	int id = -1;
 
-	key_index = _kddm_get_object_no_ft(msqkey_struct_kddm_set, key);
+	key_index = _kddm_get_object_no_ft(ids->krgops->key_kddm_set, key);
 
 	if (key_index)
 		id = *key_index;
 
-	_kddm_put_object(msqkey_struct_kddm_set, key);
+	_kddm_put_object(ids->krgops->key_kddm_set, key);
 
 	if (id != -1)
 		return kcb_ipc_msg_lock(ids, id);
@@ -123,7 +123,8 @@ int kcb_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 
 	index = ipcid_to_idx(msq->q_perm.id);
 
-	msq_object = _kddm_grab_object_manual_ft(msq_struct_kddm_set, index);
+	msq_object = _kddm_grab_object_manual_ft(
+		msg_ids(ns).krgops->data_kddm_set, index);
 
 	BUG_ON(msq_object);
 
@@ -137,14 +138,15 @@ int kcb_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 	msq_object->local_msq->is_master = 1;
 	msq_object->mobile_msq.q_perm.id = -1;
 
-	_kddm_set_object(msq_struct_kddm_set, index, msq_object);
+	_kddm_set_object(msg_ids(ns).krgops->data_kddm_set, index, msq_object);
 
 	if (msq->q_perm.key != IPC_PRIVATE)
 	{
-		key_index = _kddm_grab_object(msqkey_struct_kddm_set,
+		key_index = _kddm_grab_object(msg_ids(ns).krgops->key_kddm_set,
 					      msq->q_perm.key);
 		*key_index = index;
-		_kddm_put_object (msqkey_struct_kddm_set, msq->q_perm.key);
+		_kddm_put_object(msg_ids(ns).krgops->key_kddm_set,
+				 msq->q_perm.key);
 	}
 
 	master_node = _kddm_grab_object(msq_master_kddm_set, index);
@@ -155,7 +157,7 @@ int kcb_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 	_kddm_put_object(msq_master_kddm_set, index);
 
 err_put:
-	_kddm_put_object(msq_struct_kddm_set, index);
+	_kddm_put_object(msg_ids(ns).krgops->data_kddm_set, index);
 
 	return err;
 }
@@ -170,8 +172,8 @@ void kcb_ipc_msg_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 	key = msq->q_perm.key;
 
 	if (key != IPC_PRIVATE) {
-		_kddm_grab_object_no_ft(msqkey_struct_kddm_set, key);
-		_kddm_remove_frozen_object(msqkey_struct_kddm_set, key);
+		_kddm_grab_object_no_ft(ipcp->krgops->key_kddm_set, key);
+		_kddm_remove_frozen_object(ipcp->krgops->key_kddm_set, key);
 	}
 
 	_kddm_grab_object_no_ft(msq_master_kddm_set, index);
@@ -179,7 +181,7 @@ void kcb_ipc_msg_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 
 	local_msg_unlock(msq);
 
-	_kddm_remove_frozen_object(msq_struct_kddm_set, index);
+	_kddm_remove_frozen_object(ipcp->krgops->data_kddm_set, index);
 
 	kh_ipc_rmid(&msg_ids(ns), index);
 }
@@ -408,9 +410,9 @@ void krg_msg_init_ns(struct ipc_namespace *ns)
 	struct krgipc_ops *msg_ops = kmalloc(sizeof(struct krgipc_ops),
 					     GFP_KERNEL);
 
-	msg_ops->map_kddm = MSGMAP_KDDM_ID;
-	msg_ops->key_kddm = MSGKEY_KDDM_ID;
-	msg_ops->data_kddm = MSG_KDDM_ID;
+	msg_ops->map_kddm_set = msgmap_struct_kddm_set;
+	msg_ops->key_kddm_set = msqkey_struct_kddm_set;
+	msg_ops->data_kddm_set = msq_struct_kddm_set;
 
 	msg_ops->ipc_lock = kcb_ipc_msg_lock;
 	msg_ops->ipc_unlock = kcb_ipc_msg_unlock;
