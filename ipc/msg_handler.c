@@ -528,8 +528,6 @@ void msg_handler_init(void)
 	register_io_linker(MSGKEY_LINKER, &msqkey_linker);
 	register_io_linker(MSGMASTER_LINKER, &msqmaster_linker);
 
-	krg_msg_init_ns(&init_ipc_ns);
-
 	hook_register(&kh_ipc_msg_newque, kcb_ipc_msg_newque);
 	hook_register(&kh_ipc_msg_freeque, kcb_ipc_msg_freeque);
 	hook_register(&kh_ipc_msgsnd, kcb_ipc_msgsnd);

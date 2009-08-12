@@ -160,7 +160,9 @@ int copy_namespaces(unsigned long flags, struct task_struct *tsk)
 
 #ifdef CONFIG_KRG_HOTPLUG
 	if (can_use_krg_cap(current, CAP_GLOBAL_NAMESPACES)
-	    && !(flags & CLONE_NEWIPC) && old_ns->ipc_ns == init_task.nsproxy->ipc_ns
+#ifdef CONFIG_KRG_IPC
+	    && (flags & CLONE_NEWIPC)
+#endif
 	    && !(flags & CLONE_NEWPID) && old_ns->pid_ns == init_task.nsproxy->pid_ns)
 		current->in_global_copy_namespaces = 1;
 #endif
