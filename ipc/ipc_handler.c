@@ -28,9 +28,9 @@ static int kcb_ipc_get_maxid(struct ipc_ids* ids)
 	ipcmap_object_t *ipc_map;
 	int max_id;
 
-	ipc_map = kddm_get_object(kddm_def_ns, ids->krgops->map_kddm, 0);
+	ipc_map = _kddm_get_object(ids->krgops->map_kddm_set, 0);
 	max_id = ipc_map->alloc_map - 1;
-	kddm_put_object(kddm_def_ns, ids->krgops->map_kddm, 0);
+	_kddm_put_object(ids->krgops->map_kddm_set, 0);
 
 	return max_id;
 }
@@ -40,11 +40,10 @@ static int kcb_ipc_get_new_id(struct ipc_ids* ids)
 	ipcmap_object_t *ipc_map, *max_id;
 	int i = 1, id = -1, offset;
 
-	max_id = kddm_grab_object(kddm_def_ns, ids->krgops->map_kddm, 0);
+	max_id = _kddm_grab_object(ids->krgops->map_kddm_set, 0);
 
 	while (id == -1) {
-		ipc_map = kddm_grab_object(kddm_def_ns,
-					   ids->krgops->map_kddm, i);
+		ipc_map = _kddm_grab_object(ids->krgops->map_kddm_set, i);
 
 		if (ipc_map->alloc_map != ULONG_MAX) {
 			offset = find_first_zero_bit(&ipc_map->alloc_map,
@@ -59,11 +58,11 @@ static int kcb_ipc_get_new_id(struct ipc_ids* ids)
 			}
 		}
 
-		kddm_put_object(kddm_def_ns, ids->krgops->map_kddm, i);
+		_kddm_put_object(ids->krgops->map_kddm_set, i);
 		i++;
 	}
 
-	kddm_put_object(kddm_def_ns, ids->krgops->map_kddm, 0);
+	_kddm_put_object(ids->krgops->map_kddm_set, 0);
 
 	return id;
 }
@@ -78,44 +77,42 @@ static int kcb_ipc_rmid(struct ipc_ids* ids, int index)
 	i = 1 + index / BITS_PER_LONG;
 	offset = index % BITS_PER_LONG;
 
-	ipc_map = kddm_grab_object(kddm_def_ns, ids->krgops->map_kddm, i);
+	ipc_map = _kddm_grab_object(ids->krgops->map_kddm_set, i);
 
 	BUG_ON(!test_bit(offset, &ipc_map->alloc_map));
 
 	clear_bit(offset, &ipc_map->alloc_map);
 
-	kddm_put_object(kddm_def_ns, ids->krgops->map_kddm, i);
+	_kddm_put_object(ids->krgops->map_kddm_set, i);
 
 	/* Check if max_id must be adjusted */
 
-	max_id = kddm_grab_object(kddm_def_ns, ids->krgops->map_kddm, 0);
+	max_id = _kddm_grab_object(ids->krgops->map_kddm_set, 0);
 
 	if (max_id->alloc_map != index + 1)
 		goto done;
 
 	for (; i > 0; i--) {
 
-		ipc_map = kddm_grab_object(kddm_def_ns,
-					   ids->krgops->map_kddm, i);
+		ipc_map = _kddm_grab_object(ids->krgops->map_kddm_set, i);
 		if (ipc_map->alloc_map != 0) {
 			for (; offset >= 0; offset--) {
 				if (test_bit (offset, &ipc_map->alloc_map)) {
 					max_id->alloc_map = 1 + offset +
 						(i - 1) * BITS_PER_LONG;
-					kddm_put_object(kddm_def_ns,
-							ids->krgops->map_kddm,
-							i);
+					_kddm_put_object(
+						ids->krgops->map_kddm_set, i);
 					goto done;
 				}
 			}
 		}
 		offset = 31;
-		kddm_put_object(kddm_def_ns, ids->krgops->map_kddm, i);
+		_kddm_put_object(ids->krgops->map_kddm_set, i);
 	}
 
 	max_id->alloc_map = 0;
 done:
-	kddm_put_object(kddm_def_ns, ids->krgops->map_kddm, 0);
+	_kddm_put_object(ids->krgops->map_kddm_set, 0);
 
 	return 0;
 }
