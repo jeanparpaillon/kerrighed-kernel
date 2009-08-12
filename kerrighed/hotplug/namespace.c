@@ -62,6 +62,20 @@ int copy_krg_ns(struct task_struct *task, struct nsproxy *new)
 					ns->root_nsproxy.pid_ns;
 
 				rcu_assign_pointer(krg_ns, ns);
+				printk("%d (%s): "
+				       "krg_ns=0x%p "
+				       "uts_ns=0x%p ipc_ns=0x%p mnt_ns=0x%p "
+				       "pid_ns=0x%p net_ns=0x%p user_ns=0x%p "
+				       "root_task=0x%p\n",
+				       current->pid, current->comm,
+				       ns,
+				       ns->root_nsproxy.uts_ns,
+				       ns->root_nsproxy.ipc_ns,
+				       ns->root_nsproxy.mnt_ns,
+				       ns->root_nsproxy.pid_ns,
+				       ns->root_nsproxy.net_ns,
+				       ns->root_user_ns,
+				       ns->root_task);
 			} else {
 				retval = -ENOMEM;
 			}
@@ -109,6 +123,8 @@ void free_krg_ns(struct krg_namespace *ns)
 	spin_lock_irqsave(&krg_ns_lock, flags);
 	BUG_ON(ns != krg_ns);
 	rcu_assign_pointer(krg_ns, NULL);
+	printk("%d (%s): ns=0x%p krg_ns -> NULL\n",
+	       current->pid, current->comm, ns);
 	spin_unlock_irqrestore(&krg_ns_lock, flags);
 
 	call_rcu(&ns->rcu, delayed_free_krg_ns);
