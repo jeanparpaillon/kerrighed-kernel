@@ -254,8 +254,14 @@ err:
 
 void krg_shm_exit_ns(struct ipc_namespace *ns)
 {
-	if (shm_ids(ns).krgops)
+	if (shm_ids(ns).krgops) {
+
+		_destroy_kddm_set(shm_ids(ns).krgops->data_kddm_set);
+		_destroy_kddm_set(shm_ids(ns).krgops->key_kddm_set);
+		_destroy_kddm_set(shm_ids(ns).krgops->map_kddm_set);
+
 		kfree(shm_ids(ns).krgops);
+	}
 }
 
 void shm_handler_init(void)

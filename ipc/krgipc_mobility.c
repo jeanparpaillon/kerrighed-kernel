@@ -333,9 +333,7 @@ err:
 static int cr_import_complete_sysv_sem(struct task_struct * fake,
 				       void * _undo_list_id)
 {
-	unique_id_t undo_list_id = (unique_id_t)_undo_list_id;
-	if (undo_list_id != UNIQUE_ID_NONE)
-		leave_semundo_proc_list(undo_list_id);
+	exit_sem(fake);
 
 	return 0;
 }
@@ -343,16 +341,8 @@ static int cr_import_complete_sysv_sem(struct task_struct * fake,
 static int cr_delete_sysv_sem(struct task_struct * fake, void * _undo_list_id)
 {
 	unique_id_t undo_list_id = (unique_id_t)_undo_list_id;
-	semundo_list_object_t * undo_list;
 
-	undo_list = _kddm_grab_object_no_ft(sem_undo_list_kddm_set,
-					    undo_list_id);
-	if (undo_list)
-		_kddm_remove_frozen_object(sem_undo_list_kddm_set,
-					   undo_list_id);
-	else
-		_kddm_put_object(sem_undo_list_kddm_set,
-				 undo_list_id);
+	destroy_semundo_proc_list(fake, undo_list_id);
 
 	return 0;
 }

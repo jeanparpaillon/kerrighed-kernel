@@ -11,7 +11,8 @@
 int share_existing_semundo_proc_list(struct task_struct *tsk,
 				     unique_id_t undo_list_id);
 int create_semundo_proc_list(struct task_struct *tsk);
-void leave_semundo_proc_list(unique_id_t undo_list_id);
+void destroy_semundo_proc_list(struct task_struct *task,
+			       unique_id_t undo_list_id);
 
 void sem_handler_init(void);
 void sem_handler_finalize(void);
