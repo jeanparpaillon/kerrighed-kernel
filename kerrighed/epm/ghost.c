@@ -241,7 +241,7 @@ static int export_uts_namespace(struct epm_action *action,
 {
 	int err = 0;
 
-	if (task->nsproxy->uts_ns != &init_uts_ns)
+	if (task->nsproxy->uts_ns != task->nsproxy->krg_ns->root_uts_ns)
 		/* UTS namespace sharing is not implemented yet */
 		err = -EPERM;
 
@@ -1021,8 +1021,10 @@ static int import_cpu_timers(struct epm_action *action,
 static int import_uts_namespace(struct epm_action *action,
 				ghost_t *ghost, struct task_struct *task)
 {
-	get_uts_ns(&init_uts_ns);
-	task->nsproxy->uts_ns = &init_uts_ns;
+	struct uts_namespace *ns = task->nsproxy->krg_ns->root_uts_ns;
+
+	get_uts_ns(ns);
+	task->nsproxy->uts_ns = ns;
 
 	return 0;
 }
