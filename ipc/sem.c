@@ -625,7 +625,7 @@ static void free_un(struct rcu_head *head)
 #ifdef CONFIG_KRG_IPC
 static void freeary(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 {
-	if (kh_ipc_sem_freeary)
+	if (is_krg_ipc(&sem_ids(ns)))
 		kh_ipc_sem_freeary(ns, ipcp);
 	else
 		local_freeary(ns, ipcp);
@@ -1355,7 +1355,7 @@ SYSCALL_DEFINE4(semtimedop, int, semid, struct sembuf __user *, tsops,
 	}
 
 #ifdef CONFIG_KRG_IPC
-	if (kh_ipc_sem_find_undo)
+	if (is_krg_ipc(&sem_ids(ns)))
 		un = NULL;
 	else
 #endif
@@ -1532,8 +1532,11 @@ int __copy_semundo(unsigned long clone_flags, struct task_struct *tsk);
 
 int copy_semundo(unsigned long clone_flags, struct task_struct *tsk)
 {
-	if (kh_ipc_sem_copy_semundo
-	    && current->mm && (tsk->pid & GLOBAL_PID_MASK))
+	struct ipc_namespace *ns;
+
+	ns = task_nsproxy(tsk)->ipc_ns;
+
+	if (is_krg_ipc(&sem_ids(ns)))
 		return kh_ipc_sem_copy_semundo(clone_flags, tsk);
 
 	return __copy_semundo(clone_flags, tsk);
@@ -1699,7 +1702,10 @@ void exit_sem(struct task_struct *tsk)
 #ifdef CONFIG_KRG_IPC
 void exit_sem(struct task_struct *tsk)
 {
-	if (kh_ipc_sem_exit_sem)
+	struct ipc_namespace *ns;
+
+	ns = task_nsproxy(tsk)->ipc_ns;
+	if (is_krg_ipc(&sem_ids(ns)))
 		kh_ipc_sem_exit_sem(tsk);
 
 	/* let call __exit_sem in case process has been created
