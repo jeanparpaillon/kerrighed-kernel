@@ -11,6 +11,7 @@
 #include <linux/ipc.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
+#include "ipc_handler.h"
 #include "krgshm.h"
 #include "util.h"
 #include "shmid_io_linker.h"
@@ -147,6 +148,7 @@ int shmid_insert_object (struct kddm_obj * obj_entry,
 {
 	shmid_object_t *shp_object;
 	struct shmid_kernel *shp;
+	struct ipc_namespace *ns;
 
 	shp_object = obj_entry->object;
 	BUG_ON(!shp_object);
@@ -158,10 +160,13 @@ int shmid_insert_object (struct kddm_obj * obj_entry,
 	/* This is the first time the object is inserted locally. We need
 	 * to allocate kernel shm structures.
 	 */
-	shp = create_local_shp(&init_ipc_ns, &shp_object->mobile_shp,
-			       shp_object->set_id);
+	ns = find_get_krg_ipcns();
+	BUG_ON(!ns);
+
+	shp = create_local_shp(ns, &shp_object->mobile_shp, shp_object->set_id);
 	shp_object->local_shp = shp;
 
+	put_ipc_ns(ns);
 done:
 	return 0;
 }
@@ -201,10 +206,17 @@ int shmid_remove_object (void *object,
 	shp_object = object;
 
 	if (shp_object) {
+		struct ipc_namespace *ns;
+
+		ns = find_get_krg_ipcns();
+		BUG_ON(!ns);
+
 		shp = shp_object->local_shp;
-		local_shm_lock(&init_ipc_ns, shp->shm_perm.id);
-		local_shm_destroy(&init_ipc_ns, shp);
+		local_shm_lock(ns, shp->shm_perm.id);
+		local_shm_destroy(ns, shp);
 		kmem_cache_free(shmid_object_cachep, shp_object);
+
+		put_ipc_ns(ns);
 	}
 
 	return 0;

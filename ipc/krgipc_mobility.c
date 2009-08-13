@@ -23,6 +23,7 @@
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
 #include <kerrighed/regular_file_mgr.h>
+#include "ipc_handler.h"
 #include "krgshm.h"
 #include "sem_handler.h"
 #include "semundolst_io_linker.h"
@@ -80,12 +81,13 @@ struct file *reopen_shm_file_entry_from_krg_desc(struct task_struct *task,
 	BUG_ON (!task);
 	BUG_ON (!desc);
 
-	ns = &init_ipc_ns;
+	ns = find_get_krg_ipcns();
+	BUG_ON(!ns);
 
 	shmid = desc->shm.shmid;
 
 	down_read(&shm_ids(ns).rw_mutex);
-	shp = shm_lock_check(&init_ipc_ns, shmid);
+	shp = shm_lock_check(ns, shmid);
 	if (IS_ERR(shp)) {
 		err = PTR_ERR(shp);
 		up_read(&shm_ids(ns).rw_mutex);
@@ -120,6 +122,8 @@ struct file *reopen_shm_file_entry_from_krg_desc(struct task_struct *task,
 	sfd->file->private_data = sfd;
 	sfd->vm_ops = &krg_shmem_vm_ops;
 out:
+	put_ipc_ns(ns);
+
 	if (err)
 		file = ERR_PTR(err);
 
@@ -156,7 +160,8 @@ int export_ipc_namespace(struct epm_action *action,
 int import_ipc_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *task)
 {
-	task->nsproxy->ipc_ns = get_ipc_ns(&init_ipc_ns);
+	task->nsproxy->ipc_ns = find_get_krg_ipcns();
+	BUG_ON(!task->nsproxy->ipc_ns);
 
 	return 0;
 }

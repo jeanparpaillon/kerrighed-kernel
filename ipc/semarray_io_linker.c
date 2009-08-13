@@ -14,6 +14,7 @@
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 
+#include "ipc_handler.h"
 #include "semarray_io_linker.h"
 #include "util.h"
 #include "krgsem.h"
@@ -204,11 +205,18 @@ int semarray_insert_object (struct kddm_obj * obj_entry,
 	BUG_ON(!sem_object);
 
 	if (!sem_object->local_sem) {
+		struct ipc_namespace *ns;
+
+		ns = find_get_krg_ipcns();
+		BUG_ON(!ns);
+
 		/* This is the first time the object is inserted locally.
 		 * We need to allocate kernel sem_array structure.
 		 */
-		sem = create_local_sem(&init_ipc_ns, &sem_object->imported_sem);
+		sem = create_local_sem(ns, &sem_object->imported_sem);
 		sem_object->local_sem = sem;
+
+		put_ipc_ns(ns);
 	}
 
 	update_local_sem(sem_object->local_sem,
@@ -264,12 +272,16 @@ int semarray_invalidate_object (struct kddm_obj * obj_entry,
 int semarray_remove_object(void *object, struct kddm_set * set,
 			   objid_t objid)
 {
-	struct ipc_namespace *ns = &init_ipc_ns; /* TODO: manage namespace */
 	semarray_object_t *sem_object;
 	struct sem_array *sma;
 
 	sem_object = object;
 	if (sem_object) {
+		struct ipc_namespace *ns;
+
+		ns = find_get_krg_ipcns();
+		BUG_ON(!ns);
+
 		sma = sem_object->local_sem;
 
 		local_sem_lock(ns, sma->sem_perm.id);
@@ -278,6 +290,8 @@ int semarray_remove_object(void *object, struct kddm_set * set,
 		kfree(sem_object->mobile_sem_base);
 		sem_object->mobile_sem_base = NULL;
 		kmem_cache_free(semarray_object_cachep, sem_object);
+
+		put_ipc_ns(ns);
 	}
 
 	return 0;
