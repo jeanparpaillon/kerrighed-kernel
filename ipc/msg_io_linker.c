@@ -13,6 +13,7 @@
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 
+#include "ipc_handler.h"
 #include "msg_io_linker.h"
 #include "util.h"
 #include "krgmsg.h"
@@ -173,12 +174,19 @@ int msq_insert_object (struct kddm_obj * obj_entry,
 					 &msq_object->mobile_msq);
 
 	} else {
+		struct ipc_namespace *ns;
+
+		ns = find_get_krg_ipcns();
+		BUG_ON(!ns);
+
 		/* This is the first time the object is inserted locally. We need
 		 * to allocate kernel msq structures.
 		 */
-		msq = create_local_msq(&init_ipc_ns, &msq_object->mobile_msq);
+		msq = create_local_msq(ns, &msq_object->mobile_msq);
 		msq_object->local_msq = msq;
 		BUG_ON(IS_ERR(msq));
+
+		put_ipc_ns(ns);
 	}
 
 	return 0;
@@ -209,13 +217,14 @@ int msq_invalidate_object (struct kddm_obj * obj_entry,
  *  @param  set       Kddm set descriptor.
  *  @param  padeid    Id of the object to remove.
  */
-int msq_remove_object (void *object,
-		       struct kddm_set * set,
-		       objid_t objid)
+int msq_remove_object(void *object, struct kddm_set *set, objid_t objid)
 {
 	msq_object_t *msq_object;
 	struct msg_queue *msq;
-	struct ipc_namespace *ns = &init_ipc_ns; /* TODO: manage namespace */
+	struct ipc_namespace *ns;
+
+	ns = find_get_krg_ipcns();
+	BUG_ON(!ns);
 
 	msq_object = object;
 	if (msq_object) {
@@ -228,6 +237,8 @@ int msq_remove_object (void *object,
 
 		kmem_cache_free (msq_object_cachep, msq_object);
 	}
+
+	put_ipc_ns(ns);
 
 	return 0;
 }

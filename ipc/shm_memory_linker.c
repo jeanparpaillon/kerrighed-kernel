@@ -20,6 +20,7 @@
 #include <linux/swap.h>
 #include <kddm/kddm.h>
 #include "krgshm.h"
+#include "ipc_handler.h"
 
 extern int memory_first_touch (struct kddm_obj * obj_entry,
 			       struct kddm_set * set, objid_t objid,int flags);
@@ -55,21 +56,26 @@ extern void map_kddm_page (struct vm_area_struct *vma, unsigned long address,
  *  @param  ctnr      Container descriptor
  *  @param  padeid    Id of the page to insert.
  */
-int shm_memory_insert_page (struct kddm_obj * objEntry,
-			    struct kddm_set * ctnr,
-			    objid_t objid)
+int shm_memory_insert_page(struct kddm_obj *objEntry, struct kddm_set *ctnr,
+			   objid_t objid)
 {
 	struct page *page;
 	struct shmid_kernel *shp;
 	struct address_space *mapping = NULL;
 	int ret, shm_id;
+	struct ipc_namespace *ns;
+
+	ns = find_get_krg_ipcns();
+	BUG_ON(!ns);
 
 	shm_id = *(int *) ctnr->private_data;
 
-	shp = local_shm_lock(&init_ipc_ns, shm_id);
+	shp = local_shm_lock(ns, shm_id);
 
-	if (!shp)
-		return -EINVAL;
+	if (!shp) {
+		ret = -EINVAL;
+		goto error;
+	}
 
 	mapping = shp->shm_file->f_dentry->d_inode->i_mapping;
 
@@ -85,7 +91,13 @@ int shm_memory_insert_page (struct kddm_obj * objEntry,
 	}
 	unlock_page(page);
 
+	put_ipc_ns(ns);
+
 	return 0;
+
+error:
+	put_ipc_ns(ns);
+	return ret;
 }
 
 
@@ -302,8 +314,18 @@ static int krg_shmem_mmap(struct file *file, struct vm_area_struct *vma)
 	BUG_ON(!file->private_data); /*shm_file_data(file) */
 
 	sfd = shm_file_data(file);
-	BUG_ON(sfd->ns != &init_ipc_ns);
+#ifdef CONFIG_KRG_DEBUG
+	{
+		struct ipc_namespace *ns;
 
+		ns = find_get_krg_ipcns();
+		BUG_ON(!ns);
+
+		BUG_ON(sfd->ns != ns);
+
+		put_ipc_ns(ns);
+	}
+#endif
         file_accessed(file);
 	vma->vm_ops = &krg_shmem_vm_ops;
 	vma->vm_flags |= VM_KDDM;

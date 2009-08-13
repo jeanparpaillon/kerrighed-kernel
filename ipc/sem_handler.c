@@ -254,7 +254,10 @@ void handle_ipcsem_wakeup_process(struct rpc_desc *desc, void *_msg,
 	struct ipcsem_wakeup_msg *msg = _msg;
 	struct sem_array *sma;
 	struct sem_queue *q, *tq;
-	struct ipc_namespace *ns = &init_ipc_ns; /* TODO: manage IPC namespace */
+	struct ipc_namespace *ns;
+
+	ns = find_get_krg_ipcns();
+	BUG_ON(!ns);
 
 	/* take only a local lock because the requester node has the kddm lock
 	   on the semarray */
@@ -284,6 +287,8 @@ found:
 	local_sem_unlock(sma);
 
 	rpc_pack_type(desc, msg->error);
+
+	put_ipc_ns(ns);
 }
 
 void kcb_ipc_sem_wakeup_process(struct sem_queue *q, int error)
@@ -647,6 +652,7 @@ void kcb_ipc_sem_exit_sem(struct task_struct * task)
 	unique_id_t undo_list_id;
 	semundo_list_object_t * undo_list;
 	struct semundo_id * undo_id, *next;
+	struct ipc_namespace *ns;
 
 	if (task->sysvsem.undo_list_id == UNIQUE_ID_NONE)
 		return;
@@ -656,6 +662,9 @@ void kcb_ipc_sem_exit_sem(struct task_struct * task)
 		BUG();
 		return;
 	}
+
+	ns = task_nsproxy(task)->ipc_ns;
+	BUG_ON(!ns);
 
 	undo_list_id = task->sysvsem.undo_list_id;
 
@@ -669,7 +678,7 @@ void kcb_ipc_sem_exit_sem(struct task_struct * task)
 
 	for (undo_id = undo_list->list; undo_id; undo_id = next) {
 		next = undo_id->next;
-		__remove_semundo_from_sem_list(&init_ipc_ns, undo_id->semid,
+		__remove_semundo_from_sem_list(ns, undo_id->semid,
 					       undo_list_id);
 		kfree(undo_id);
 	}

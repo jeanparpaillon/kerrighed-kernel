@@ -11,9 +11,11 @@
 #include <linux/ipc.h>
 #include <linux/ipc_namespace.h>
 
-extern int (*kh_ipc_get_maxid)(struct ipc_ids* ids);
-extern int (*kh_ipc_get_new_id)(struct ipc_ids* ids);
-extern void (*kh_ipc_rmid)(struct ipc_ids* ids, int index);
+extern int (*kh_ipc_get_maxid)(struct ipc_ids *ids);
+extern int (*kh_ipc_get_new_id)(struct ipc_ids *ids);
+extern void (*kh_ipc_rmid)(struct ipc_ids *ids, int index);
+
+struct ipc_namespace *find_get_krg_ipcns(void);
 
 void ipc_handler_finalize (void);
 void ipc_handler_init (void);

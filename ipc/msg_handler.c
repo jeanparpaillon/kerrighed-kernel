@@ -280,6 +280,10 @@ static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 	long r;
 	sigset_t sigset, oldsigset;
 	struct msgsnd_msg *msg = _msg;
+	struct ipc_namespace *ns;
+
+	ns = find_get_krg_ipcns();
+	BUG_ON(!ns);
 
 	rpc_unpack_type(desc, msgsz);
 
@@ -291,8 +295,7 @@ static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 	sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
 
 	r = __do_msgsnd(msg->msqid, msg->mtype, mtext, msgsz, msg->msgflg,
-			&init_ipc_ns, /* TODO: replace by correct namespace */
-			msg->tgid);
+			ns, msg->tgid);
 
 	sigprocmask(SIG_SETMASK, &oldsigset, NULL);
 	flush_signals(current);
@@ -300,6 +303,8 @@ static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 	rpc_pack_type(desc, r);
 
 	kfree(mtext);
+
+	put_ipc_ns(ns);
 }
 
 struct msgrcv_msg
@@ -389,6 +394,10 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 	long pmtype;
 	struct msgrcv_msg *msg = _msg;
 	sigset_t sigset, oldsigset;
+	struct ipc_namespace *ns;
+
+	ns = find_get_krg_ipcns();
+	BUG_ON(!ns);
 
 	rpc_unpack_type(desc, msgsz);
 
@@ -398,9 +407,7 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 	sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
 
 	r = __do_msgrcv(msg->msqid, &pmtype, mtext, msgsz,
-			msg->msgtyp, msg->msgflg,
-			&init_ipc_ns, /* TODO: support namespace */
-			msg->tgid);
+			msg->msgtyp, msg->msgflg, ns, msg->tgid);
 
 	sigprocmask(SIG_SETMASK, &oldsigset, NULL);
 	flush_signals(current);
@@ -412,6 +419,8 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 	}
 
 	kfree(mtext);
+
+	put_ipc_ns(ns);
 }
 
 
