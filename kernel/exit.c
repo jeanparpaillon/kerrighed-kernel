@@ -1061,6 +1061,8 @@ static inline void check_stack_usage(void) {}
 static void exit_migration(struct task_struct *tsk)
 {
 	/* Not a real exit... just a migration. */
+	exit_task_namespaces(tsk);
+
 	write_lock_irq(&tasklist_lock);
 	BUG_ON(!list_empty(&tsk->children));
 	BUG_ON(!list_empty(&tsk->ptraced));
