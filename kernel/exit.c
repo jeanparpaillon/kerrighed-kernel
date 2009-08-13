@@ -52,6 +52,9 @@
 #ifdef CONFIG_KRG_KDDM
 #include <kddm/kddm_info.h>
 #endif
+#ifdef CONFIG_KRG_HOTPLUG
+#include <kerrighed/namespace.h>
+#endif
 #ifdef CONFIG_KRG_PROC
 #include <kerrighed/task.h>
 #include <kerrighed/krginit.h>
@@ -1122,6 +1125,15 @@ NORET_TYPE void do_exit(long code)
 	}
 
 	exit_irq_thread();
+
+#ifdef CONFIG_KRG_HOTPLUG
+	if (tsk->nsproxy->krg_ns && tsk == tsk->nsproxy->krg_ns->root_task) {
+		printk(KERN_WARNING
+		       "kerrighed: Root task exiting! Leaking zombies.\n");
+		set_current_state(TASK_UNINTERRUPTIBLE);
+		schedule();
+	}
+#endif
 
 #ifdef CONFIG_KRG_PROC
 	down_read_non_owner(&kerrighed_init_sem);
