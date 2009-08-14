@@ -429,6 +429,8 @@ EXPORT_SYMBOL(migrate_linux_threads);
  */
 int sys_migrate_process(pid_t tgid, kerrighed_node_t dest_node)
 {
+	if (dest_node < 0 || dest_node >= KERRIGHED_MAX_NODES)
+		return -EINVAL;
 	return migrate_linux_threads(tgid, MIGR_GLOBAL_PROCESS, dest_node);
 }
 
@@ -441,6 +443,8 @@ int sys_migrate_process(pid_t tgid, kerrighed_node_t dest_node)
  */
 int sys_migrate_thread(pid_t pid, kerrighed_node_t dest_node)
 {
+	if (dest_node < 0 || dest_node >= KERRIGHED_MAX_NODES)
+		return -EINVAL;
 	return migrate_linux_threads(pid, MIGR_THREAD, dest_node);
 }
 
