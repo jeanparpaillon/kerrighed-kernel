@@ -9,6 +9,9 @@
 #include <linux/mutex.h>
 #include <linux/completion.h>
 #include <linux/string.h>
+#include <linux/limits.h>
+#include <linux/sysfs.h>
+#include <linux/kobject.h>
 #include <asm/uaccess.h>
 #include <asm/ioctl.h>
 #include <kerrighed/sys/types.h>
@@ -58,6 +61,43 @@ static struct krg_namespace *cluster_start_krg_ns;
 static DEFINE_SPINLOCK(cluster_start_lock);
 static DEFINE_MUTEX(cluster_start_mutex);
 static DECLARE_COMPLETION(cluster_started);
+static char cluster_init_helper_path[PATH_MAX];
+
+static ssize_t cluster_init_helper_show(struct kobject *obj,
+					struct kobj_attribute *attr,
+					char *page)
+{
+	return sprintf(page, "%s\n", cluster_init_helper_path);
+}
+
+static ssize_t cluster_init_helper_store(struct kobject *obj,
+					 struct kobj_attribute *attr,
+					 const char *page, size_t count)
+{
+	if (count > sizeof(cluster_init_helper_path)
+	    || (count == sizeof(cluster_init_helper_path)
+		&& page[count - 1] != '\0'))
+		return -ENAMETOOLONG;
+
+	mutex_lock(&cluster_start_mutex);
+	strcpy(cluster_init_helper_path, page);
+	mutex_unlock(&cluster_start_mutex);
+
+	return count;
+}
+
+static struct kobj_attribute cluster_init_helper_attr =
+	__ATTR(cluster_init_helper, 0644,
+	       cluster_init_helper_show, cluster_init_helper_store);
+
+static struct attribute *attrs[] = {
+	&cluster_init_helper_attr.attr,
+	NULL,
+};
+
+static struct attribute_group attr_group = {
+	.attrs = attrs,
+};
 
 static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 {
@@ -362,7 +402,10 @@ int krgnodemask_copy_from_user(krgnodemask_t *dstp, __krgnodemask_t *srcp)
 int hotplug_cluster_init(void)
 {
 	int bcl;
-	
+
+	if (sysfs_create_group(krghotplugsys, &attr_group))
+		panic("Couldn't initialize /sys/kerrighed/hotplug!\n");
+
 	for (bcl = 0; bcl < KERRIGHED_MAX_CLUSTERS; bcl++) {
 		clusters_status[bcl] = CLUSTER_UNDEF;
 	}

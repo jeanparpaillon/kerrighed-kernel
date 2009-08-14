@@ -1,6 +1,8 @@
 #ifndef __HOTPLUG_INTERNAL__
 #define __HOTPLUG_INTERNAL__
 
+extern struct kobject *krghotplugsys;
+
 extern struct workqueue_struct *krg_ha_wq;
 
 extern struct work_struct fail_work;
