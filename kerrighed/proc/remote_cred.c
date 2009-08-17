@@ -5,6 +5,7 @@
  */
 #include <linux/cred.h>
 #include <net/krgrpc/rpc.h>
+#include <kerrighed/namespace.h>
 #ifdef CONFIG_KRG_EPM
 #include <linux/user_namespace.h>
 #include <linux/security.h>
@@ -71,7 +72,7 @@ int export_cred(struct epm_action *action,
 	if (cred->security)
 		return -EBUSY;
 #endif
-	if (cred->user->user_ns != &init_user_ns)
+	if (cred->user->user_ns != task->nsproxy->krg_ns->root_user_ns)
 		return -EPERM;
 
 	err = ghost_write(ghost, cred, sizeof(*cred));
@@ -144,7 +145,7 @@ int import_cred(struct epm_action *action,
 	cred->security = NULL;
 #endif
 
-	user = alloc_uid(&init_user_ns, cred->uid);
+	user = alloc_uid(task->nsproxy->krg_ns->root_user_ns, cred->uid);
 	if (!user) {
 		err = -ENOMEM;
 		goto out_err;

@@ -126,9 +126,7 @@ bool can_create_krg_ns(unsigned long flags)
 	struct nsproxy *init_nsp = init_task.nsproxy;
 	return current->create_krg_ns
 		&& !(flags & CLONE_NEWIPC) && nsp->ipc_ns == init_nsp->ipc_ns
-		&& !(flags & CLONE_NEWPID) && nsp->pid_ns == init_nsp->pid_ns
-		&& !(flags & CLONE_NEWUSER)
-		&& current_cred()->user->user_ns == __task_cred(&init_task)->user->user_nsr;
+		&& !(flags & CLONE_NEWPID) && nsp->pid_ns == init_nsp->pid_ns;
 }
 
 int krg_set_cluster_creator(void __user *arg)
