@@ -92,6 +92,33 @@ static int kcb_ipc_get_new_id(struct ipc_ids* ids)
 	return id;
 }
 
+int krg_ipc_get_this_id(struct ipc_ids *ids, int id)
+{
+	ipcmap_object_t *ipc_map, *max_id;
+	int i, offset, ret = 0;
+
+	max_id = _kddm_grab_object(ids->krgops->map_kddm_set, 0);
+
+	offset = id % BITS_PER_LONG;
+	i = (id - offset)/BITS_PER_LONG +1;
+
+	ipc_map = _kddm_grab_object(ids->krgops->map_kddm_set, i);
+
+	if (test_and_set_bit(offset, &ipc_map->alloc_map)) {
+		ret = -EBUSY;
+		goto out_id_unavailable;
+	}
+
+	if (id >= max_id->alloc_map)
+		max_id->alloc_map = id + 1;
+
+out_id_unavailable:
+	_kddm_put_object(ids->krgops->map_kddm_set, i);
+	_kddm_put_object(ids->krgops->map_kddm_set, 0);
+
+	return ret;
+}
+
 static int kcb_ipc_rmid(struct ipc_ids* ids, int index)
 {
 	ipcmap_object_t *ipc_map, *max_id;

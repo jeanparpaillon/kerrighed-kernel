@@ -298,6 +298,69 @@ static int krg_idr_get_new(struct ipc_ids *ids, struct kern_ipc_perm *new, int *
 error:
 	return err;
 }
+
+static int ipc_reserveid(struct ipc_ids *ids, struct kern_ipc_perm *new,
+			 int requested_id)
+{
+	uid_t euid;
+	gid_t egid;
+	int lid, id, err;
+
+	mutex_init(&new->mutex);
+	new->deleted = 0;
+	rcu_read_lock();
+
+	mutex_lock(&new->mutex);
+
+	lid = ipcid_to_idx(requested_id);
+
+	err = krg_ipc_get_this_id(ids, lid);
+	if (err)
+		goto out;
+
+	err = idr_pre_get(&ids->ipcs_idr, GFP_KERNEL);
+	if (!err) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	err = idr_get_new_above(&ids->ipcs_idr, new, lid, &id);
+	if (err)
+		goto out_free_krg_id;
+
+	if (lid != id) {
+		err = -EINVAL;
+		goto out_free_idr_id;
+	}
+
+	ids->in_use++;
+
+	current_euid_egid(&euid, &egid);
+	new->cuid = new->uid = euid;
+	new->gid = new->cgid = egid;
+
+	new->seq = (requested_id - lid) / SEQ_MULTIPLIER;
+
+	if (ids->seq <= new->seq)
+		ids->seq = new->seq+1;
+
+	if (ids->seq > ids->seq_max)
+		ids->seq = 0;
+
+	new->id = requested_id;
+
+	return requested_id;
+
+out_free_idr_id:
+	idr_remove(&ids->ipcs_idr, id);
+out_free_krg_id:
+	kh_ipc_rmid(ids, lid);
+out:
+	mutex_unlock(&new->mutex);
+	rcu_read_unlock();
+
+	return err;
+}
 #endif
 
 /**
@@ -314,7 +377,12 @@ error:
  *	Called with ipc_ids.rw_mutex held as a writer.
  */
  
+#ifdef CONFIG_KRG_IPC
+int ipc_addid(struct ipc_ids* ids, struct kern_ipc_perm* new, int size,
+	      int requested_id)
+#else
 int ipc_addid(struct ipc_ids* ids, struct kern_ipc_perm* new, int size)
+#endif
 {
 	uid_t euid;
 	gid_t egid;
@@ -325,6 +393,11 @@ int ipc_addid(struct ipc_ids* ids, struct kern_ipc_perm* new, int size)
 
 	if (ids->in_use >= size)
 		return -ENOSPC;
+
+#ifdef CONFIG_KRG_IPC
+	if (requested_id != -1)
+		return ipc_reserveid(ids, new, requested_id);
+#endif
 
 #ifdef CONFIG_KRG_IPC
 	mutex_init(&new->mutex);
@@ -917,6 +990,9 @@ void ipc_unlock(struct kern_ipc_perm *perm)
 int ipcget(struct ipc_namespace *ns, struct ipc_ids *ids,
 			struct ipc_ops *ops, struct ipc_params *params)
 {
+#ifdef CONFIG_KRG_IPC
+	params->requested_id = -1;
+#endif
 	if (params->key == IPC_PRIVATE)
 		return ipcget_new(ns, ids, ops, params);
 	else

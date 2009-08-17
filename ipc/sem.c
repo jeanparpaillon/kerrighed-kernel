@@ -296,7 +296,12 @@ static int newary(struct ipc_namespace *ns, struct ipc_params *params)
 		return retval;
 	}
 
+#ifdef CONFIG_KRG_IPC
+	id = ipc_addid(&sem_ids(ns), &sma->sem_perm, ns->sc_semmni,
+		       params->requested_id);
+#else
 	id = ipc_addid(&sem_ids(ns), &sma->sem_perm, ns->sc_semmni);
+#endif
 	if (id < 0) {
 		security_sem_free(sma);
 		ipc_rcu_putref(sma);

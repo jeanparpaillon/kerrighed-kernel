@@ -67,6 +67,9 @@ struct ipc_params {
 		size_t size;	/* for shared memories */
 		int nsems;	/* for semaphores */
 	} u;			/* holds the getnew() specific param */
+#ifdef CONFIG_KRG_IPC
+	int requested_id;
+#endif
 };
 
 /*
@@ -103,7 +106,11 @@ void __init ipc_init_proc_interface(const char *path, const char *header,
 #define ipcid_to_idx(id) ((id) % SEQ_MULTIPLIER)
 
 /* must be called with ids->rw_mutex acquired for writing */
+#ifdef CONFIG_KRG_IPC
+int ipc_addid(struct ipc_ids *, struct kern_ipc_perm *, int, int);
+#else
 int ipc_addid(struct ipc_ids *, struct kern_ipc_perm *, int);
+#endif
 
 /* must be called with ids->rw_mutex acquired for reading */
 int ipc_get_maxid(struct ipc_ids *);

@@ -462,7 +462,12 @@ static int newseg(struct ipc_namespace *ns, struct ipc_params *params)
 		goto no_file;
 	ima_shm_check(file);
 
+#ifdef CONFIG_KRG_IPC
+	id = ipc_addid(&shm_ids(ns), &shp->shm_perm, ns->shm_ctlmni,
+		       params->requested_id);
+#else
 	id = ipc_addid(&shm_ids(ns), &shp->shm_perm, ns->shm_ctlmni);
+#endif
 	if (id < 0) {
 		error = id;
 		goto no_id;
