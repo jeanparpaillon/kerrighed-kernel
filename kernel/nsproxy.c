@@ -162,7 +162,6 @@ int copy_namespaces(unsigned long flags, struct task_struct *tsk)
 	if (can_use_krg_cap(current, CAP_GLOBAL_NAMESPACES)
 	    && !(flags & CLONE_NEWIPC) && old_ns->ipc_ns == init_task.nsproxy->ipc_ns
 	    && !(flags & CLONE_NEWPID) && old_ns->pid_ns == init_task.nsproxy->pid_ns
-	    && !(flags & CLONE_NEWNET) && old_ns->net_ns == init_task.nsproxy->net_ns
 	    && __task_cred(tsk)->user->user_ns == __task_cred(&init_task)->user->user_ns)
 		current->in_global_copy_namespaces = 1;
 #endif
