@@ -253,7 +253,7 @@ static int export_net_namespace(struct epm_action *action,
 {
 	int err = 0;
 
-	if (task->nsproxy->net_ns != &init_net)
+	if (task->nsproxy->net_ns != task->nsproxy->krg_ns->root_net_ns)
 		/* Net namespace sharing is not implemented yet */
 		err = -EPERM;
 
@@ -1032,8 +1032,10 @@ static int import_uts_namespace(struct epm_action *action,
 static int import_net_namespace(struct epm_action *action,
 				ghost_t *ghost, struct task_struct *task)
 {
-	get_net(&init_net);
-	task->nsproxy->net_ns = &init_net;
+	struct net *ns = task->nsproxy->krg_ns->root_net_ns;
+
+	get_net(ns);
+	task->nsproxy->net_ns = ns;
 
 	return 0;
 }
