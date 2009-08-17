@@ -22,6 +22,7 @@
 #include <linux/rwsem.h>
 #include <kerrighed/signal.h>
 #include <kerrighed/pid.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/hotplug.h>
 #include <kerrighed/libproc.h>
 #include <kerrighed/application.h>
@@ -555,11 +556,13 @@ void krg_signal_setup(struct task_struct *task)
 
 /* individual struct sigpending */
 
-static int export_sigqueue(ghost_t *ghost, struct sigqueue *sig)
+static int export_sigqueue(ghost_t *ghost,
+			   struct task_struct *task,
+			   struct sigqueue *sig)
 {
 	int err = -EBUSY;
 
-	if (sig->user->user_ns != &init_user_ns)
+	if (sig->user->user_ns != task->nsproxy->krg_ns->root_user_ns)
 		goto out;
 
 	err = ghost_write(ghost, &sig->info, sizeof(sig->info));
@@ -571,7 +574,9 @@ out:
 	return err;
 }
 
-static int import_sigqueue(ghost_t *ghost, struct sigqueue *sig)
+static int import_sigqueue(ghost_t *ghost,
+			   struct task_struct *task,
+			   struct sigqueue *sig)
 {
 	struct user_struct *user;
 	uid_t uid;
@@ -584,7 +589,7 @@ static int import_sigqueue(ghost_t *ghost, struct sigqueue *sig)
 	err = ghost_read(ghost, &uid, sizeof(uid));
 	if (err)
 		goto out;
-	user = alloc_uid(&init_user_ns, uid);
+	user = alloc_uid(task->nsproxy->krg_ns->root_user_ns, uid);
 	if (!user) {
 		err = -ENOMEM;
 		goto out;
@@ -635,7 +640,7 @@ static int export_sigpending(ghost_t *ghost,
 		goto out_splice;
 
 	list_for_each_entry(q, &tmp_queue.list, list) {
-		err = export_sigqueue(ghost, q);
+		err = export_sigqueue(ghost, task, q);
 		if (err)
 			goto out_splice;
 	}
@@ -676,7 +681,7 @@ static int import_sigpending(ghost_t *ghost,
 			err = -ENOMEM;
 			goto free_queue;
 		}
-		err = import_sigqueue(ghost, q);
+		err = import_sigqueue(ghost, task, q);
 		if (err) {
 			__sigqueue_free(q);
 			goto free_queue;
