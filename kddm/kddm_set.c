@@ -204,7 +204,7 @@ struct kddm_set *_generic_local_get_kddm_set(struct kddm_ns *ns,
 	kddm_set = __hashtable_find (ns->kddm_set_table, set_id);
 
 	if ( (kddm_set != NULL) && (flags & KDDM_CHECK_UNIQUE)) {
-		kddm_set = ERR_PTR(EEXIST);
+		kddm_set = ERR_PTR(-EEXIST);
 		goto found;
 	}
 
@@ -244,7 +244,7 @@ struct kddm_set *generic_local_get_kddm_set(int ns_id,
 
 	ns = kddm_ns_get (ns_id);
 	if (ns == NULL)
-		return ERR_PTR(EINVAL);
+		return ERR_PTR(-EINVAL);
 	kddm_set = _generic_local_get_kddm_set(ns , set_id, init_state, flags);
 	kddm_ns_put (ns);
 
