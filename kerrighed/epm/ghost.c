@@ -474,6 +474,10 @@ static int export_task(struct epm_action *action,
 	if (r)
 		GOTO_ERROR;
 
+	r = export_nsproxy(action, ghost, task);
+	if (r)
+		GOTO_ERROR;
+
 #ifdef CONFIG_KRG_SCHED
 	r = export_krg_sched_info(action, ghost, task);
 	if (r)
@@ -524,9 +528,6 @@ static int export_task(struct epm_action *action,
 		GOTO_ERROR;
 #endif
 
-	r = export_nsproxy(action, ghost, task);
-	if (r)
-		GOTO_ERROR;
 	r = export_cgroups(action, ghost, task);
 	if (r)
 		GOTO_ERROR;
@@ -789,7 +790,6 @@ static void unimport_task(struct epm_action *action,
 	unimport_children(action, ghost_task);
 	unimport_sched(ghost_task);
 	unimport_cgroups(ghost_task);
-	unimport_nsproxy(ghost_task);
 #ifdef CONFIG_KRG_DVFS
 	unimport_files_struct(ghost_task);
 	unimport_fs_struct(ghost_task);
@@ -806,6 +806,7 @@ static void unimport_task(struct epm_action *action,
 #ifdef CONFIG_KRG_SCHED
 	unimport_krg_sched_info(ghost_task);
 #endif
+	unimport_nsproxy(ghost_task);
 	unimport_thread_info(ghost_task);
 	free_task_struct(ghost_task);
 
@@ -1400,6 +1401,10 @@ static struct task_struct *import_task(struct epm_action *action,
 	if (retval)
 		goto err_thread_info;
 
+	retval = import_nsproxy(action, ghost, task);
+	if (retval)
+		goto err_nsproxy;
+
 #ifdef CONFIG_KRG_SCHED
 	retval = import_krg_sched_info(action, ghost, task);
 	if (retval)
@@ -1449,9 +1454,6 @@ static struct task_struct *import_task(struct epm_action *action,
 		goto err_files_struct;
 #endif
 
-	retval = import_nsproxy(action, ghost, task);
-	if (retval)
-		goto err_nsproxy;
 	retval = import_cgroups(action, ghost, task);
 	if (retval)
 		goto err_cgroups;
@@ -1520,8 +1522,6 @@ err_children:
 err_sched:
 	unimport_cgroups(task);
 err_cgroups:
-	unimport_nsproxy(task);
-err_nsproxy:
 #ifdef CONFIG_KRG_DVFS
 	unimport_files_struct(task);
 err_files_struct:
@@ -1550,6 +1550,8 @@ err_sched_info:
 	unimport_krg_sched_info(task);
 err_krg_sched_info:
 #endif
+	unimport_nsproxy(task);
+err_nsproxy:
 	unimport_thread_info(task);
 err_thread_info:
 /*	unimport_regs(task); */
