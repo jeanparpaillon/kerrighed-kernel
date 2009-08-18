@@ -10,6 +10,8 @@
 #include <linux/completion.h>
 #include <linux/string.h>
 #include <linux/limits.h>
+#include <linux/kthread.h>
+#include <linux/syscalls.h>
 #include <linux/sysfs.h>
 #include <linux/kobject.h>
 #include <asm/uaccess.h>
@@ -55,7 +57,10 @@ enum {
 
 static char clusters_status[KERRIGHED_MAX_CLUSTERS];
 
-struct hotplug_node_set cluster_start_node_set;
+struct cluster_start_msg {
+	struct hotplug_node_set node_set;
+	unsigned long seq_id;
+} cluster_start_msg;
 static int cluster_start_in_progress;
 static struct krg_namespace *cluster_start_krg_ns;
 static DEFINE_SPINLOCK(cluster_start_lock);
@@ -77,6 +82,21 @@ static unsigned long cluster_init_opt_clone_flags =
 static DEFINE_SPINLOCK(cluster_init_opt_clone_flags_lock);
 
 static char cluster_init_helper_path[PATH_MAX];
+static char *cluster_init_helper_argv[] = {
+	cluster_init_helper_path,
+	NULL
+};
+static char *cluster_init_helper_envp[] = {
+	"HOME=/",
+	"PATH=/sbin:/bin:/usr/sbin:/usr/bin",
+	NULL
+};
+static struct cred *cluster_init_helper_cred;
+static struct krg_namespace *cluster_init_helper_ns;
+static struct completion cluster_init_helper_ready;
+
+static struct completion krg_container_continue;
+static struct completion krg_container_done;
 
 static ssize_t isolate_uts_show(struct kobject *obj,
 				struct kobj_attribute *attr,
@@ -292,25 +312,223 @@ static struct attribute_group attr_group = {
 	.attrs = attrs,
 };
 
+static void krg_container_abort(int err)
+{
+	put_krg_ns(cluster_init_helper_ns);
+	cluster_init_helper_ns = ERR_PTR(err);
+	complete(&cluster_init_helper_ready);
+}
+
+void krg_ns_root_exit(struct task_struct *task)
+{
+	if (cluster_init_helper_ns
+	    && task->nsproxy->krg_ns == cluster_init_helper_ns)
+		krg_container_abort(-EAGAIN);
+}
+
+/* ns->root_task must be blocked and alive to get a reliable result */
+static bool krg_container_may_conflict(struct krg_namespace *ns)
+{
+	struct task_struct *root_task = ns->root_task;
+	struct task_struct *g, *t;
+#ifndef CONFIG_KRG_PROC
+	struct nsproxy *nsp;
+#endif
+	bool conflict = false;
+
+	/*
+	 * Check that userspace did not leak tasks in the Kerrighed container
+	 * With !KRG_PROC this does not check zombies, but they won't use any
+	 * conflicting resource.
+	 */
+	rcu_read_lock();
+	read_lock(&tasklist_lock);
+	do_each_thread(g, t) {
+		if (t == root_task)
+			continue;
+
+#ifdef CONFIG_KRG_PROC
+		if (task_active_pid_ns(t)->krg_ns_root == ns->root_pid_ns)
+#else
+		nsp = task_nsproxy(t);
+		if (nsp && nsp->krg_ns == ns)
+#endif
+		{
+			conflict = true;
+			break;
+		}
+	} while_each_thread(g, t);
+	read_unlock(&tasklist_lock);
+	rcu_read_unlock();
+	if (conflict)
+		return conflict;
+
+#ifdef CONFIG_KRG_IPC
+	/*
+	 * Check that userspace did not leak IPCs in the Kerrighed
+	 * container
+	 */
+	if (root_task->nsproxy->ipc_ns != ns->root_ipc_ns
+	    || ipc_used(ns->root_ipc_ns))
+		conflict = true;
+#endif
+
+	return conflict;
+}
+
+static void krg_container_run(void)
+{
+	complete(&cluster_init_helper_ready);
+
+	wait_for_completion(&krg_container_continue);
+	complete(&krg_container_done);
+}
+
+static int krg_container_init(void *arg)
+{
+	struct krg_namespace *ns;
+	int err;
+
+	/* Unblock all signals */
+	spin_lock_irq(&current->sighand->siglock);
+	flush_signal_handlers(current, 1);
+	sigemptyset(&current->blocked);
+	recalc_sigpending();
+	spin_unlock_irq(&current->sighand->siglock);
+
+	/* Install the credentials */
+	commit_creds(cluster_init_helper_cred);
+	cluster_init_helper_cred = NULL;
+
+	/* We can run anywhere, unlike our parent (a krgrpc) */
+	set_cpus_allowed_ptr(current, cpu_all_mask);
+
+	/*
+	 * Our parent is a krgrpc, which runs with elevated scheduling priority.
+	 * Avoid propagating that into the userspace child.
+	 */
+	set_user_nice(current, 0);
+
+	BUG_ON(cluster_init_helper_ns);
+	ns = current->nsproxy->krg_ns;
+	if (!ns) {
+		cluster_init_helper_ns = ERR_PTR(-EPERM);
+		complete(&cluster_init_helper_ready);
+		return 0;
+	}
+	get_krg_ns(ns);
+	cluster_init_helper_ns = ns;
+
+	err = kernel_execve(cluster_init_helper_path,
+			    cluster_init_helper_argv,
+			    cluster_init_helper_envp);
+	BUG_ON(!err);
+	printk(KERN_ERR
+	       "kerrighed: Kerrighed container userspace init failed: err=%d\n",
+	       err);
+
+	krg_container_abort(err);
+
+	return 0;
+}
+
+static int __create_krg_container(void *arg)
+{
+	unsigned long clone_flags;
+	int ret;
+
+	ret = krg_set_cluster_creator((void *)1);
+	if (ret)
+		goto err;
+	clone_flags = cluster_init_opt_clone_flags|SIGCHLD;
+	ret = kernel_thread(krg_container_init, NULL, clone_flags);
+	krg_set_cluster_creator(NULL);
+	if (ret < 0)
+		goto err;
+
+	return 0;
+
+err:
+	put_cred(cluster_init_helper_cred);
+	cluster_init_helper_cred = NULL;
+	cluster_init_helper_ns = ERR_PTR(ret);
+	complete(&cluster_init_helper_ready);
+	return ret;
+}
+
+static
+struct krg_namespace *create_krg_container(struct krg_namespace *ns)
+{
+	struct task_struct *t;
+
+	if (ns) {
+		put_krg_ns(ns);
+		return NULL;
+	}
+
+	BUG_ON(cluster_init_helper_ns);
+	init_completion(&cluster_init_helper_ready);
+
+	BUG_ON(cluster_init_helper_cred);
+	cluster_init_helper_cred = prepare_usermodehelper_creds();
+	if (!cluster_init_helper_cred)
+		return NULL;
+
+	t = kthread_run(__create_krg_container, NULL, "krg_init_helper");
+	if (IS_ERR(t)) {
+		put_cred(cluster_init_helper_cred);
+		cluster_init_helper_cred = NULL;
+		return NULL;
+	}
+
+	wait_for_completion(&cluster_init_helper_ready);
+	if (IS_ERR(cluster_init_helper_ns)) {
+		ns = NULL;
+	} else {
+		ns = cluster_init_helper_ns;
+		BUG_ON(!ns);
+	}
+	cluster_init_helper_ns = NULL;
+
+	return ns;
+}
+
 static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 {
-	struct hotplug_node_set start_msg;
+	struct cluster_start_msg *msg = data;
 	struct krg_namespace *ns = find_get_krg_ns();
+	int master = rpc_desc_get_client(desc) == kerrighed_node_id;
 	char *page;
 	int ret = 0;
 	int err;
 
 	mutex_lock(&cluster_start_mutex);
 
-	if (!ns)
-		goto cancel;
+	if (master) {
+		err = -EPIPE;
+		spin_lock(&cluster_start_lock);
+		if (cluster_start_in_progress
+		    && msg->seq_id == cluster_start_msg.seq_id
+		    && ns == cluster_start_krg_ns)
+			err = 0;
+		spin_unlock(&cluster_start_lock);
+		if (err)
+			goto cancel;
+	}
 
-	memcpy(&start_msg, data, sizeof(start_msg));
 	if (kerrighed_subsession_id != -1){
 		printk("WARNING: Rq to add me in a cluster (%d) when I'm already in one (%d)\n",
-		       start_msg.subclusterid, kerrighed_subsession_id);
+		       msg->node_set.subclusterid, kerrighed_subsession_id);
 		goto cancel;
 	}
+
+	if (!master) {
+		init_completion(&krg_container_continue);
+		ns = create_krg_container(ns);
+		if (!ns)
+			goto cancel;
+	}
+
 	err = rpc_pack_type(desc, ret);
 	if (err)
 		goto cancel;
@@ -319,7 +537,7 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 		goto cancel;
 
 	down_write(&kerrighed_init_sem);
-	__nodes_add(&start_msg);
+	__nodes_add(&msg->node_set);
 	hooks_start();
 	up_write(&kerrighed_init_sem);
 
@@ -331,15 +549,21 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 
 	page = (char *)__get_free_page(GFP_KERNEL);
 	if (page) {
-		ret = krgnodelist_scnprintf(page, PAGE_SIZE, start_msg.v);
+		ret = krgnodelist_scnprintf(page, PAGE_SIZE, msg->node_set.v);
 		BUG_ON(ret >= PAGE_SIZE);
 		printk("Kerrighed is running on %d nodes: %s\n",
-		       krgnodes_weight(start_msg.v), page);
+		       krgnodes_weight(msg->node_set.v), page);
 		free_page((unsigned long)page);
 	} else {
 		printk("Kerrighed is running on %d nodes\n", num_online_krgnodes());
 	}
 	complete_all(&cluster_started);
+
+	if (!master) {
+		init_completion(&krg_container_done);
+		complete(&krg_container_continue);
+		wait_for_completion(&krg_container_done);
+	}
 
 out:
 	mutex_unlock(&cluster_start_mutex);
@@ -364,20 +588,20 @@ static void cluster_start_worker(struct work_struct *work)
 	if (!page)
 		goto out;
 
-	ret = krgnodelist_scnprintf(page, PAGE_SIZE, cluster_start_node_set.v);
+	ret = krgnodelist_scnprintf(page, PAGE_SIZE, cluster_start_msg.node_set.v);
 	BUG_ON(ret >= PAGE_SIZE);
 	printk("kerrighed: Cluster start with nodes %s ...\n",
 	       page);
 
 	free_page((unsigned long)page);
 
-	desc = rpc_begin_m(CLUSTER_START, &cluster_start_node_set.v);
+	desc = rpc_begin_m(CLUSTER_START, &cluster_start_msg.node_set.v);
 	if (!desc)
 		goto out;
-	err = rpc_pack_type(desc, cluster_start_node_set);
+	err = rpc_pack_type(desc, cluster_start_msg);
 	if (err)
 		goto end;
-	for_each_krgnode_mask(node, cluster_start_node_set.v) {
+	for_each_krgnode_mask(node, cluster_start_msg.node_set.v) {
 		err = rpc_unpack_type_from(desc, node, ret);
 		if (err)
 			goto cancel;
@@ -422,17 +646,23 @@ static int do_cluster_start(const struct hotplug_node_set *node_set,
 	if (!cluster_start_in_progress) {
 		r = -EPERM;
 		if (ns) {
-			r = 0;
-			get_krg_ns(ns);
-			cluster_start_krg_ns = ns;
-			cluster_start_in_progress = 1;
+			if (cluster_start_msg.seq_id == ULONG_MAX) {
+				printk(KERN_WARNING "kerrighed: "
+				       "Max number of cluster start attempts "
+				       "reached! You should reboot host.\n");
+			} else {
+				r = 0;
+				get_krg_ns(ns);
+				cluster_start_krg_ns = ns;
+				cluster_start_msg.seq_id++;
+				cluster_start_msg.node_set = *node_set;
+				cluster_start_in_progress = 1;
+				queue_work(krg_wq, &cluster_start_work);
+			}
 		}
 	}
 	spin_unlock(&cluster_start_lock);
-	if (!r) {
-		cluster_start_node_set = *node_set;
-		queue_work(krg_wq, &cluster_start_work);
-	}
+
 	return r;
 }
 
@@ -506,6 +736,20 @@ void krg_cluster_autostart(void)
 static int cluster_wait_for_start(void __user *arg)
 {
 	do_cluster_wait_for_start();
+	return 0;
+}
+
+static int node_ready(void __user *arg)
+{
+	struct krg_namespace *ns = current->nsproxy->krg_ns;
+
+	if (!ns || ns != cluster_init_helper_ns)
+		return -EPERM;
+
+	if (krg_container_may_conflict(ns))
+		return -EBUSY;
+
+	krg_container_run();
 	return 0;
 }
 
@@ -606,6 +850,7 @@ int hotplug_cluster_init(void)
 	rpc_register_void(CLUSTER_START, handle_cluster_start, 0);
 	
 	register_proc_service(KSYS_HOTPLUG_START, cluster_start);
+	register_proc_service(KSYS_HOTPLUG_READY, node_ready);
 	register_proc_service(KSYS_HOTPLUG_WAIT_FOR_START,
 			      cluster_wait_for_start);
 	register_proc_service(KSYS_HOTPLUG_SHUTDOWN, cluster_stop);

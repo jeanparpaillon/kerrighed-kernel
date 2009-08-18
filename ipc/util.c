@@ -256,6 +256,23 @@ int ipc_get_maxid(struct ipc_ids *ids)
 }
 
 #ifdef CONFIG_KRG_IPC
+bool ipc_used(struct ipc_namespace *ns)
+{
+	bool used = false;
+	int i;
+	struct ipc_ids *ids;
+
+	for (i = 0; i < ARRAY_SIZE(ns->ids); i++) {
+		ids = &ns->ids[i];
+
+		down_read(&ids->rw_mutex);
+		used |= ipc_get_maxid(ids) != -1;
+		up_read(&ids->rw_mutex);
+	}
+
+	return used;
+}
+
 static int krg_idr_get_new(struct ipc_ids *ids, struct kern_ipc_perm *new, int *id)
 {
 	int err;

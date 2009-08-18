@@ -1126,6 +1126,7 @@ NORET_TYPE void do_exit(long code)
 
 #ifdef CONFIG_KRG_HOTPLUG
 	if (tsk->nsproxy->krg_ns && tsk == tsk->nsproxy->krg_ns->root_task) {
+		krg_ns_root_exit(tsk);
 		printk(KERN_WARNING
 		       "kerrighed: Root task exiting! Leaking zombies.\n");
 		set_current_state(TASK_UNINTERRUPTIBLE);

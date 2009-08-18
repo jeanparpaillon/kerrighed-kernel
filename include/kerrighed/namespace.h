@@ -37,4 +37,6 @@ static inline void put_krg_ns(struct krg_namespace *ns)
 
 bool can_create_krg_ns(unsigned long flags);
 
+void krg_ns_root_exit(struct task_struct *task);
+
 #endif /* __KRG_NAMESPACE_H__ */

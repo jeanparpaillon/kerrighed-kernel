@@ -112,6 +112,12 @@ struct kern_ipc_perm
 #endif
 };
 
+#ifdef CONFIG_KRG_IPC
+struct ipc_namespace;
+
+bool ipc_used(struct ipc_namespace *ns);
+#endif
+
 #endif /* __KERNEL__ */
 
 #endif /* _LINUX_IPC_H */
