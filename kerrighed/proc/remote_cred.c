@@ -57,9 +57,9 @@ out:
 #ifdef CONFIG_KRG_EPM
 
 int export_cred(struct epm_action *action,
-		ghost_t *ghost, struct task_struct *tsk)
+		ghost_t *ghost, struct task_struct *task)
 {
-	const struct cred *cred = __task_cred(current);
+	const struct cred *cred = __task_cred(task);
 	const struct group_info *groups = cred->group_info;
 	int i, err;
 
