@@ -22,6 +22,7 @@
 #include <net/net_namespace.h>
 #include <kddm/kddm_info.h>
 #include <kerrighed/krginit.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/krgsyms.h>
 #include <kerrighed/children.h>
 #include <kerrighed/task.h>
@@ -263,6 +264,8 @@ static int export_nsproxy(struct epm_action *action,
 			  ghost_t *ghost, struct task_struct *task)
 {
 	int retval;
+
+	BUG_ON(!task->nsproxy->krg_ns);
 
 	retval = export_uts_namespace(action, ghost, task);
 	if (retval)
@@ -1045,6 +1048,8 @@ static int import_nsproxy(struct epm_action *action,
 		goto out;
 
 	atomic_set(&ns->count, 1);
+
+	ns->krg_ns = find_get_krg_ns();
 
 	retval = import_uts_namespace(action, ghost, task);
 	if (retval)
