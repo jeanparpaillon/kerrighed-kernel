@@ -138,7 +138,7 @@ int import_cred(struct epm_action *action,
 #endif
 
 #ifdef CONFIG_SECURITY
-	BUG();
+	BUG_ON(tmp_cred.security);
 	security_cred_free(cred);
 	cred->security = NULL;
 #endif
