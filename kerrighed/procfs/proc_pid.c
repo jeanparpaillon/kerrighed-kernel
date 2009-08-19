@@ -888,13 +888,13 @@ static int kcb_proc_pid_readdir(struct file *filp,
 	/* Second global PIDs */
 	tgid = filp->f_pos - offset;
 	if (!(tgid & GLOBAL_PID_MASK)) {
-		tgid = MAKE_KERRIGHED_PID_FOR_NODE(0, 0);
+		tgid = __MAKE_KERRIGHED_PID_FOR_NODE(0, 0);
 		filp->f_pos = tgid + offset;
 	}
 	node = ORIG_NODE(tgid);
 	for (; node < KERRIGHED_MAX_NODES;
 	     node++,
-	     filp->f_pos = MAKE_KERRIGHED_PID_FOR_NODE(0, node) + offset) {
+	     filp->f_pos = __MAKE_KERRIGHED_PID_FOR_NODE(0, node) + offset) {
 		if (!krgnode_possible(node))
 			continue;
 #if defined(CONFIG_KRG_CAP) && !defined(CONFIG_KRG_EPM)
