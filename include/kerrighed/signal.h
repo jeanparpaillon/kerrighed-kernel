@@ -27,9 +27,6 @@ struct signal_struct *cr_signal_alloc(pid_t tgid);
 void cr_signal_free(pid_t id);
 pid_t __krg_signal_exit(pid_t id);
 
-/* Used by hotplug */
-void krg_signal_setup(struct task_struct *task);
-
 /* sighand_struct sharing */
 
 struct sighand_struct;
@@ -49,9 +46,6 @@ void krg_sighand_unpin(struct sighand_struct *sig);
 /* Used by restart */
 struct sighand_struct *cr_sighand_alloc(void);
 void cr_sighand_free(objid_t id);
-
-/* Used by hotplug */
-void krg_sighand_setup(struct task_struct *task);
 
 #endif /* CONFIG_KRG_EPM */
 

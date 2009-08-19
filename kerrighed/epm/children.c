@@ -20,7 +20,6 @@
 #include <kerrighed/pid.h>
 #include <kerrighed/krginit.h>
 #include <net/krgrpc/rpc.h>
-#include <kerrighed/hotplug.h>
 #include <kddm/kddm.h>
 #include <kerrighed/krg_exit.h>	/* For remote zombies handling */
 #include <kerrighed/libproc.h>
@@ -1028,57 +1027,6 @@ pid_t krg_get_real_parent_pid(struct task_struct *task)
 }
 EXPORT_SYMBOL(krg_get_real_parent_pid);
 
-/*
- * @author Louis Rilling
- *
- * Called from init_prekerrighed_process, assumes read lock on tasklist
- */
-int krg_children_setup(struct task_struct *task)
-{
-	pid_t tgid = task->tgid;
-	struct children_kddm_object *obj;
-	struct task_struct *child;
-	int retval = 0;
-
-	/* Exclude kernel treads and local pids from using children kddm set */
-	if (!(tgid & GLOBAL_PID_MASK ) || (task->flags & PF_KTHREAD))
-		return 0;
-
-	BUG_ON(task->children_obj);
-	if (!task->exit_state)
-		obj = children_create_writelock(tgid);
-	else
-		/*
-		 * Task is already dead and doesn't need a children kddm object.
-		 */
-		return 0;
-
-	rcu_assign_pointer(task->children_obj, obj);
-	BUG_ON(!obj);
-	obj->nr_threads++;
-	obj->self_exec_id = task->self_exec_id;
-
-	/* Need more work to support ptrace */
-	list_for_each_entry(child, &task->children, sibling) {
-		if ((retval = krg_new_child(obj, task->pid,
-					    child->pid,
-					    child->tgid,
-					    task_pgrp(child),
-					    task_session(child),
-					    child->exit_signal)))
-			break;
-		krg_children_get(obj);
-		rcu_assign_pointer(child->parent_children_obj, obj);
-		if (child->exit_state)
-			krg_set_child_exit_state(obj, child->pid,
-						 child->exit_state);
-	}
-
-	krg_children_unlock(obj);
-
-	return retval;
-}
-
 /************************************************************************
  * Local children list of a task					*
  ************************************************************************/
@@ -1344,8 +1292,6 @@ void leave_all_relatives(struct task_struct *tsk)
 
 /* fork() */
 
-static void *kh_children_prepare_fork;
-
 int krg_children_prepare_fork(struct task_struct *task,
 			      struct pid *pid,
 			      unsigned long clone_flags)
@@ -1355,9 +1301,6 @@ int krg_children_prepare_fork(struct task_struct *task,
 
 	rcu_assign_pointer(task->children_obj, NULL);
 	rcu_assign_pointer(task->parent_children_obj, NULL);
-
-	if (!kh_children_prepare_fork)
-		goto out;
 
 	if (task->nsproxy->pid_ns != &init_pid_ns)
 		goto out;
@@ -1632,11 +1575,6 @@ void krg_children_cleanup(struct task_struct *task)
 		rcu_assign_pointer(task->parent_children_obj, NULL);
 		krg_children_put(obj);
 	}
-}
-
-void register_children_hooks(void)
-{
-	hook_register(&kh_children_prepare_fork, (void *)true);
 }
 
 /**

@@ -74,9 +74,6 @@ krg_children_prepare_de_thread(struct task_struct *task);
 void krg_children_finish_de_thread(struct children_kddm_object *obj,
 				   struct task_struct *task);
 
-/* Used by hotplug */
-int krg_children_setup(struct task_struct *tsk);
-
 /* Used by krg_prepare_exit_notify() and krg_delayed_notify_parent() */
 void
 krg_update_parents(struct task_struct *task, pid_t parent, pid_t real_parent);

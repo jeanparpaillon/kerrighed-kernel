@@ -20,9 +20,6 @@ int init_proc(void)
 	proc_krg_exit_start();
 
 	proc_remote_syscalls_start();
-
-	register_task_hooks();
-	register_krg_exit_hooks();
 	register_remote_syscalls_hooks();
 
 	printk("Proc initialisation: done\n");

@@ -17,7 +17,6 @@
 #include <kerrighed/app_shared.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/action.h>
-#include <kerrighed/hotplug.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 
@@ -295,14 +294,9 @@ static void __krg_sighand_alloc(struct task_struct *task,
 	krg_sighand_unlock(sig->krg_objid);
 }
 
-static void *cluster_started;
-
 void krg_sighand_alloc(struct task_struct *task, unsigned long clone_flags)
 {
 	struct sighand_struct *sig = task->sighand;
-
-	if (!cluster_started)
-		return;
 
 	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid)
 		/*
@@ -321,12 +315,6 @@ void krg_sighand_alloc(struct task_struct *task, unsigned long clone_flags)
 void krg_sighand_alloc_unshared(struct task_struct *task,
 				struct sighand_struct *sig)
 {
-	if (!cluster_started) {
-		sig->krg_objid = 0;
-		sig->kddm_obj = NULL;
-		return;
-	}
-
 	__krg_sighand_alloc(task, sig);
 }
 
@@ -392,19 +380,6 @@ void krg_sighand_cleanup(struct sighand_struct *sig)
 	__cleanup_sighand(sig);
 	if (locked_id)
 		krg_sighand_unlock(locked_id);
-}
-
-void krg_sighand_setup(struct task_struct *task)
-{
-	struct sighand_struct *sig = task->sighand;
-
-	if (!sig->kddm_obj) {
-		__krg_sighand_alloc(task, sig);
-	} else {
-		krg_sighand_writelock(sig->krg_objid);
-		krg_sighand_share(task);
-		krg_sighand_unlock(sig->krg_objid);
-	}
 }
 
 /* EPM actions */
@@ -617,11 +592,6 @@ struct shared_object_operations cr_shared_sighand_struct_ops = {
 	.import_complete   = cr_import_complete_sighand_struct,
 	.delete            = cr_delete_sighand_struct,
 };
-
-void register_sighand_hooks(void)
-{
-	hook_register(&cluster_started, (void *)true);
-}
 
 int epm_sighand_start(void)
 {

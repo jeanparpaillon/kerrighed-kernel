@@ -31,7 +31,6 @@
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/workqueue.h>
 #endif
-#include <kerrighed/hotplug.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/task.h>
@@ -599,13 +598,8 @@ void krg_finish_exit_notify(struct task_struct *task, int signal, void *cookie)
 		krg_task_unlock(task->pid);
 }
 
-static void *kh_release_task;
-
 void krg_release_task(struct task_struct *p)
 {
-	if (!kh_release_task)
-		return;
-
 #ifdef CONFIG_KRG_EPM
 	krg_exit_application(p);
 	krg_unhash_process(p);
@@ -720,11 +714,6 @@ void notify_remote_child_reaper(pid_t zombie_pid,
 }
 
 #endif /* CONFIG_KRG_EPM */
-
-void register_krg_exit_hooks(void)
-{
-	hook_register(&kh_release_task, (void *)true);
-}
 
 /**
  * @author Pascal Gallard, Louis Rilling

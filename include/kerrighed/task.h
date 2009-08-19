@@ -89,9 +89,6 @@ void krg_release_task(struct task_struct *task);
 void __krg_task_unlink(struct task_kddm_object *obj, int need_update);
 void krg_task_unlink(struct task_kddm_object *obj, int need_update);
 
-/* Used by hotplug */
-int krg_task_setup(struct task_struct *task);
-
 #endif /* CONFIG_KRG_PROC */
 
 #endif /* __KERRIGHED_TASK_H__ */
