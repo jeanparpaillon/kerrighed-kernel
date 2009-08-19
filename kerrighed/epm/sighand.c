@@ -294,15 +294,23 @@ static void __krg_sighand_alloc(struct task_struct *task,
 
 static void *cluster_started;
 
-void krg_sighand_alloc(struct task_struct *task)
+void krg_sighand_alloc(struct task_struct *task, unsigned long clone_flags)
 {
 	struct sighand_struct *sig = task->sighand;
 
-	if (!cluster_started) {
-		sig->krg_objid = 0;
-		sig->kddm_obj = NULL;
+	if (!cluster_started)
 		return;
-	}
+
+	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid)
+		/*
+		 * This is a process migration or restart: sighand_struct is
+		 * already setup.
+		 */
+		return;
+
+	if (!krg_current && (clone_flags & CLONE_SIGHAND))
+		/* New thread: already done in copy_sighand() */
+		return;
 
 	__krg_sighand_alloc(task, sig);
 }

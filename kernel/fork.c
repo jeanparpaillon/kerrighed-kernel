@@ -886,7 +886,12 @@ static int copy_sighand(unsigned long clone_flags, struct task_struct *tsk)
 	atomic_set(&sig->count, 1);
 	memcpy(sig->action, current->sighand->action, sizeof(sig->action));
 #ifdef CONFIG_KRG_EPM
-	krg_sighand_alloc(tsk);
+	/*
+	 * Too early to allocate the KDDM object, will do it once we know the
+	 * pid.
+	 */
+	sig->krg_objid = 0;
+	sig->kddm_obj = NULL;
 #endif
 	return 0;
 }
@@ -1411,6 +1416,7 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	cgroup_callbacks_done = 1;
 
 #ifdef CONFIG_KRG_EPM
+	krg_sighand_alloc(p, clone_flags);
 	krg_signal_alloc(p, pid, clone_flags);
 
 	if (!krg_current) {

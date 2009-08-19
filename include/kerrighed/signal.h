@@ -34,7 +34,7 @@ void krg_signal_setup(struct task_struct *task);
 
 struct sighand_struct;
 
-void krg_sighand_alloc(struct task_struct *task);
+void krg_sighand_alloc(struct task_struct *task, unsigned long clone_flags);
 void krg_sighand_alloc_unshared(struct task_struct *task,
 				struct sighand_struct *newsig);
 void krg_sighand_share(struct task_struct *task);
