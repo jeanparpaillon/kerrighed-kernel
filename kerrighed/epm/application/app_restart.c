@@ -974,9 +974,10 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 		goto error;
 
 	/* restore the shared objects */
-	fake = alloc_task_struct();
-	if (!fake) {
-		r = -ENOMEM;
+	fake = alloc_shared_fake_task_struct(app);
+	if (IS_ERR(fake)) {
+		r = PTR_ERR(fake);
+		fake = NULL;
 		goto error;
 	}
 
@@ -1056,7 +1057,7 @@ error:
 	}
 
 	if (fake)
-		free_task_struct(fake);
+		free_shared_fake_task_struct(fake);
 }
 
 static int global_do_restart(struct app_kddm_object *obj,
