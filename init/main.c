@@ -104,7 +104,6 @@ EXPORT_SYMBOL(system_state);
 
 #ifdef CONFIG_KRGRPC
 extern void kerrighed_init(void);
-extern void global_pid_init(int, int, int, int);
 #endif
 
 /*
@@ -919,6 +918,3 @@ static int __init kernel_init(void * unused)
 	init_post();
 	return 0;
 }
-
-#ifdef CONFIG_KRGRPC
-#endif
