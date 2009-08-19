@@ -332,6 +332,10 @@ void global_pid_init(void)
 	printk("Kerrighed nb nodes   : %d\n", kerrighed_nb_nodes);
 	printk("Kerrighed min nodes  : %d\n", kerrighed_nb_nodes_min);
 
+	if (!ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_NODEID) ||
+	    !ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_SESSIONID))
+		panic("kerrighed: incomplete session ID / node ID settings!\n");
+
 	return;
 }
 
