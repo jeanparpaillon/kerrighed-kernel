@@ -14,7 +14,6 @@
 #include <linux/string.h>
 #include <linux/errno.h>
 #include <linux/err.h>
-#include <kerrighed/hotplug.h>
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/ghost.h>
 #endif
@@ -310,8 +309,6 @@ static void complete_and_commit_sched_info(struct krg_sched_info *info,
 	rcu_assign_pointer(info->task->krg_sched, info);
 }
 
-static void *cluster_started;
-
 int krg_sched_info_copy(struct task_struct *task)
 {
 	struct krg_sched_info *info;
@@ -322,9 +319,6 @@ int krg_sched_info_copy(struct task_struct *task)
 	u64 start_version;
 
 	rcu_assign_pointer(task->krg_sched, NULL);
-
-	if (!cluster_started)
-		return 0;
 
 	if (!task->nsproxy->krg_ns)
 		return 0;
@@ -599,35 +593,9 @@ void unimport_krg_sched_info(struct task_struct *task)
 
 #endif /* CONFIG_KRG_EPM */
 
-/*
- * No scheduler module should be loaded yet. Just prepare the task for
- * getting infos later.
- */
-int krg_sched_info_setup(struct task_struct *task)
-{
-	struct krg_sched_info *info;
-
-	BUG_ON(task->krg_sched);
-
-	info = alloc_sched_info(task, GFP_ATOMIC);
-	if (!info)
-		return -ENOMEM;
-
-	/* Caller holds tasklist_lock, so we cannot sleep... */
-	while (!mutex_trylock(&sched_info_list_mutex))
-		cpu_relax();
-	list_add(&info->list, &sched_info_head);
-	mutex_unlock(&sched_info_list_mutex);
-
-	rcu_assign_pointer(task->krg_sched, info);
-	return 0;
-}
-
 int krg_sched_info_start(void)
 {
 	sched_info_cachep = KMEM_CACHE(krg_sched_info, SLAB_PANIC);
-
-	hook_register(&cluster_started, (void *)true);
 
 	return 0;
 }
