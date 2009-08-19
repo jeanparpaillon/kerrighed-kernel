@@ -16,6 +16,7 @@
 #include <linux/shm.h>
 #include <linux/unique_id.h>
 #include <kddm/kddm.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/ghost_helpers.h>
 #include <kerrighed/action.h>
@@ -146,8 +147,8 @@ out_put_dentry:
 int export_ipc_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *task)
 {
-	/* IPC namespace sharing is not implemented yet */
-	BUG_ON (task->nsproxy->ipc_ns != &init_ipc_ns);
+	if (task->nsproxy->ipc_ns != task->nsproxy->krg_ns->root_ipc_ns)
+		return -EPERM;
 
 	return 0;
 }
