@@ -18,6 +18,7 @@
 #define KERMM_PROC_BASE 96
 #define KERPROC_PROC_BASE 128
 #define EPM_PROC_BASE 192
+#define IPC_PROC_BASE 224
 
 /*
  * Tools related Kerrighed syscalls
@@ -142,6 +143,17 @@
 #define KSYS_APP_GET_USERDATA          _IOW(KERRIGHED_PROC_MAGIC, \
                                             EPM_PROC_BASE + 7, \
                                             struct app_userdata_request)
+
+/*
+ * IPC related kerrighed syscalls
+ */
+#define KSYS_IPC_MSGQ_CHKPT            _IOW(KERRIGHED_PROC_MAGIC,       \
+					    IPC_PROC_BASE + 0,		\
+					    int[2])
+#define KSYS_IPC_MSGQ_RESTART          _IOW(KERRIGHED_PROC_MAGIC, \
+					    IPC_PROC_BASE + 1,	  \
+					    int)
+
 
 /*
  * HotPlug

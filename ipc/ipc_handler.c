@@ -7,16 +7,22 @@
 
 #ifndef NO_IPC
 
+#include <linux/proc_fs.h>
+#include <asm/uaccess.h>
 #include <linux/ipc.h>
 #include <linux/ipc_namespace.h>
 #include <linux/msg.h>
 #include <kddm/kddm.h>
 #include <kerrighed/namespace.h>
-
+#include <kerrighed/krg_syscalls.h>
+#include <kerrighed/krg_services.h>
+#include <kerrighed/procfs.h>
+#include "ipc_checkpoint.h"
 #include "ipcmap_io_linker.h"
 #include "ipc_handler.h"
 #include "util.h"
 #include "krgmsg.h"
+
 
 struct ipc_namespace *find_get_krg_ipcns(void)
 {
@@ -170,6 +176,44 @@ done:
 }
 
 /*****************************************************************************/
+
+int proc_msgq_chkpt(void *arg)
+{
+	int r;
+	int args[2];
+	int msgqid, fd;
+
+	if (copy_from_user((void *) args, arg, 2*sizeof(int))) {
+		PANIC("cannot set the arg of proc_msgq_checkpoint system call\n");
+		return -EINVAL;
+	}
+
+	msgqid = args[0];
+	fd = args[1];
+
+	r = sys_msgq_checkpoint(msgqid, fd);
+
+	return r;
+}
+
+int proc_msgq_restart(void *arg)
+{
+	int r;
+	int fd;
+
+	if (copy_from_user(&fd, arg, sizeof(int))) {
+		PANIC("cannot set the arg of proc_msgq_restart system call\n");
+		return -EINVAL;
+	}
+
+	r = sys_msgq_restart(fd);
+
+	return r;
+}
+
+
+
+/*****************************************************************************/
 /*                                                                           */
 /*                              INITIALIZATION                               */
 /*                                                                           */
@@ -181,15 +225,45 @@ extern int (*kh_ipc_get_maxid)(struct ipc_ids* ids);
 extern int (*kh_ipc_get_new_id)(struct ipc_ids* ids);
 extern void (*kh_ipc_rmid)(struct ipc_ids* ids, int index);
 
+static int ipc_procfs_start(void)
+{
+	int r;
+	int err = -EINVAL;
+
+	r = register_proc_service(KSYS_IPC_MSGQ_CHKPT, proc_msgq_chkpt);
+	if (r != 0)
+		goto err;
+
+	r = register_proc_service(KSYS_IPC_MSGQ_RESTART, proc_msgq_restart);
+	if (r != 0)
+		goto unreg_msgq_chkpt;
+
+	return 0;
+
+unreg_msgq_chkpt:
+	unregister_proc_service(KSYS_IPC_MSGQ_CHKPT);
+err:
+	return err;
+}
+
+void ipc_procfs_exit(void)
+{
+	unregister_proc_service(KSYS_IPC_MSGQ_CHKPT);
+	unregister_proc_service(KSYS_IPC_MSGQ_RESTART);
+}
+
 void ipc_handler_init(void)
 {
 	hook_register(&kh_ipc_get_maxid, kcb_ipc_get_maxid);
 	hook_register(&kh_ipc_get_new_id, kcb_ipc_get_new_id);
 	hook_register(&kh_ipc_rmid, kcb_ipc_rmid);
+
+	ipc_procfs_start();
 }
 
 void ipc_handler_finalize(void)
 {
+	ipc_procfs_exit();
 }
 
 #endif

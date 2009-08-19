@@ -25,6 +25,7 @@
 #include <kerrighed/app_shared.h>
 #include <kerrighed/regular_file_mgr.h>
 #include "ipc_handler.h"
+#include "krgipc_mobility.h"
 #include "krgshm.h"
 #include "krgmsg.h"
 #include "sem_handler.h"
@@ -430,7 +431,7 @@ out:
 	return r;
 }
 
-static int export_full_sysv_msgq(ghost_t *ghost, int msgid)
+int export_full_sysv_msgq(ghost_t *ghost, int msgid)
 {
 	int r = 0;
 	struct msg_queue *msq;
