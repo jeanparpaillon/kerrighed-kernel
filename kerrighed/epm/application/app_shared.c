@@ -16,12 +16,19 @@
 #include <linux/sched.h>
 #include <linux/stat.h>
 #include <linux/unique_id.h>
-
+#include <linux/nsproxy.h>
+#include <linux/utsname.h>
+#include <linux/ipc_namespace.h>
+#include <linux/mnt_namespace.h>
+#include <linux/pid_namespace.h>
+#include <net/net_namespace.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/task.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
+#include "../epm_internal.h"
 #include "app_utils.h"
 
 /*--------------------------------------------------------------------------*/
@@ -316,10 +323,69 @@ void clear_shared_objects(struct app_struct *app)
 		clear_one_shared_object(node, app);
 }
 
-static inline void reset_fake_task_struct(struct task_struct *fake,
-					  struct app_struct *app)
+struct task_struct *alloc_shared_fake_task_struct(struct app_struct *app)
 {
+	struct task_struct *fake;
+	struct krg_namespace *krg_ns;
+
+	fake = alloc_task_struct();
+	if (!fake) {
+		fake = ERR_PTR(-ENOMEM);
+		goto exit;
+	}
+
+	fake->nsproxy = kmem_cache_alloc(nsproxy_cachep, GFP_KERNEL);
+	if (!fake->nsproxy) {
+		fake = ERR_PTR(-ENOMEM);
+		goto exit;
+	}
+
+	krg_ns = find_get_krg_ns();
+	if (!krg_ns) {
+		fake = ERR_PTR(-EPERM);
+		goto err_ns;
+	}
+
+	get_uts_ns(krg_ns->root_uts_ns);
+	fake->nsproxy->uts_ns = krg_ns->root_uts_ns;
+	get_ipc_ns(krg_ns->root_ipc_ns);
+	fake->nsproxy->ipc_ns = krg_ns->root_ipc_ns;
+	get_mnt_ns(krg_ns->root_mnt_ns);
+	fake->nsproxy->mnt_ns = krg_ns->root_mnt_ns;
+	get_pid_ns(krg_ns->root_pid_ns);
+	fake->nsproxy->pid_ns = krg_ns->root_pid_ns;
+	get_net(krg_ns->root_net_ns);
+	fake->nsproxy->net_ns = krg_ns->root_net_ns;
+
+	fake->nsproxy->krg_ns = krg_ns;
+
+	fake->application = app;
+
+exit:
+	return fake;
+err_ns:
+	kmem_cache_free(nsproxy_cachep, fake->nsproxy);
+	goto exit;
+}
+
+void free_shared_fake_task_struct(struct task_struct *fake)
+{
+	free_nsproxy(fake->nsproxy);
+
+	free_task_struct(fake);
+}
+
+static inline void reset_fake_task_struct(struct task_struct *fake)
+{
+	struct nsproxy *ns;
+	struct app_struct *app;
+
+	ns = fake->nsproxy;
+	app = fake->application;
+
 	memset(fake, 0, sizeof(struct task_struct));
+
+	fake->nsproxy = ns;
 	fake->application = app;
 	spin_lock_init(&fake->alloc_lock);
 }
@@ -349,7 +415,7 @@ void destroy_shared_objects(struct app_struct *app,
 {
 	struct rb_node *node;
 
-	reset_fake_task_struct(fake, app);
+	reset_fake_task_struct(fake);
 
 	while ((node = rb_first(&app->shared_objects.root)))
 		destroy_one_shared_object(node, app, fake);
@@ -832,7 +898,7 @@ static int __import_shared_objects(ghost_t *ghost, struct app_struct *app,
 	if (r)
 		goto error;
 
-	reset_fake_task_struct(fake, app);
+	reset_fake_task_struct(fake);
 
 	while (type != NO_OBJ) {
 
@@ -1134,7 +1200,7 @@ int local_restart_shared_complete(struct app_struct *app,
 {
 	struct rb_node *node;
 
-	reset_fake_task_struct(fake, app);
+	reset_fake_task_struct(fake);
 
 	while ((node = rb_first(&app->shared_objects.root))) {
 		struct shared_index *idx =

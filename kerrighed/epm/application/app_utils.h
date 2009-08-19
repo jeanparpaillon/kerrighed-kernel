@@ -66,4 +66,8 @@ err_rpc:
 	goto exit;
 }
 
+struct task_struct *alloc_shared_fake_task_struct(struct app_struct *app);
+
+void free_shared_fake_task_struct(struct task_struct *fake);
+
 #endif /* __APP_UTILS_H__ */
