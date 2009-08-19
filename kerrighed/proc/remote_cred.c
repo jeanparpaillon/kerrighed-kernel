@@ -7,6 +7,7 @@
 #include <net/krgrpc/rpc.h>
 #ifdef CONFIG_KRG_EPM
 #include <linux/user_namespace.h>
+#include <linux/security.h>
 #include <kerrighed/ghost.h>
 
 struct epm_action;
