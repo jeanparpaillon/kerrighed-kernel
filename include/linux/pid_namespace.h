@@ -30,6 +30,9 @@ struct pid_namespace {
 #ifdef CONFIG_BSD_PROCESS_ACCT
 	struct bsd_acct_struct *bacct;
 #endif
+#ifdef CONFIG_KRG_PROC
+	unsigned global:1;
+#endif
 };
 
 extern struct pid_namespace init_pid_ns;

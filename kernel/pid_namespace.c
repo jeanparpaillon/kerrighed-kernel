@@ -127,7 +127,15 @@ struct pid_namespace *copy_pid_ns(unsigned long flags, struct pid_namespace *old
 
 	new_ns = create_pid_namespace(old_ns->level + 1);
 	if (!IS_ERR(new_ns))
+#ifdef CONFIG_KRG_PROC
+	{
+		new_ns->global = old_ns->global;
+		new_ns->global |= current->in_global_copy_namespaces;
 		new_ns->parent = get_pid_ns(old_ns);
+	}
+#else
+		new_ns->parent = get_pid_ns(old_ns);
+#endif
 
 out_put:
 	put_pid_ns(old_ns);
