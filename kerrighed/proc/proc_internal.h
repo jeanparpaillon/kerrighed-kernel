@@ -5,11 +5,9 @@
 
 void proc_task_start(void);
 void proc_task_exit(void);
-void register_task_hooks(void);
 
 void proc_krg_exit_start(void);
 void proc_krg_exit_exit(void);
-void register_krg_exit_hooks(void);
 
 void proc_remote_syscalls_start(void);
 void register_remote_syscalls_hooks(void);

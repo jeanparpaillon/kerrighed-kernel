@@ -27,7 +27,6 @@
 #include <kerrighed/pid.h>
 
 #include <net/krgrpc/rpc.h>
-#include <kerrighed/hotplug.h>
 #include <kerrighed/libproc.h>
 #include <kddm/kddm.h>
 
@@ -252,16 +251,12 @@ static struct iolinker_struct task_io_linker = {
 	.default_owner = global_pid_default_owner,
 };
 
-static void *kh_task_alloc;
-
 int krg_task_alloc(struct task_struct *task, struct pid *pid)
 {
 	struct task_kddm_object *obj;
 	int nr = pid_nr(pid);
 
 	task->task_obj = NULL;
-	if (!kh_task_alloc)
-		return 0;
 	if (!task->nsproxy->krg_ns)
 		return 0;
 #ifdef CONFIG_KRG_EPM
@@ -514,23 +509,6 @@ void krg_task_unlock(pid_t pid)
 	_kddm_put_object(task_kddm_set, pid);
 }
 
-int krg_task_setup(struct task_struct *task)
-{
-	struct task_kddm_object *obj;
-
-	obj = krg_task_create_writelock(task->pid);
-	if (obj) {
-		task->task_obj = obj;
-		obj->task = task;
-
-		__krg_task_fill(task, obj);
-
-		krg_task_unlock(task->pid);
-	}
-
-	return 0;
-}
-
 #ifdef CONFIG_KRG_EPM
 /**
  * @author Pascal Gallard
@@ -611,11 +589,6 @@ out:
 void krg_unlock_pid_location(pid_t pid)
 {
 	krg_task_unlock(pid);
-}
-
-void register_task_hooks(void)
-{
-	hook_register(&kh_task_alloc, (void *)true);
 }
 
 /**

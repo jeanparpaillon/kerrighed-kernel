@@ -94,13 +94,8 @@ int init_epm(void)
 	init_baby_sitter();
 
 	epm_signal_start();
-	register_signal_hooks();
-
 	epm_sighand_start();
-	register_sighand_hooks();
-
 	epm_children_start();
-	register_children_hooks();
 
 	epm_pid_start();
 

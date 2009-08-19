@@ -49,15 +49,12 @@ static inline void free_thread_info(struct thread_info *ti)
 int epm_hotplug_init(void);
 void epm_hotplug_cleanup(void);
 
-void register_signal_hooks(void);
 int epm_signal_start(void);
 void epm_signal_exit(void);
 
-void register_sighand_hooks(void);
 int epm_sighand_start(void);
 void epm_sighand_exit(void);
 
-void register_children_hooks(void);
 void epm_children_start(void);
 void epm_children_exit(void);
 

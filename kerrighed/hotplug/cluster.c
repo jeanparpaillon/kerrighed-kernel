@@ -75,24 +75,12 @@ static void init_prekerrighed_process(struct krg_namespace *ns)
 		BUG_ON(t->group_leader->pid != g->pid);
 
 		if (!(t->pid & GLOBAL_PID_MASK) || !t->mm) {
-			BUG_ON(t->task_obj);
-#ifdef CONFIG_KRG_EPM
-			BUG_ON(t->signal->krg_objid);
-			BUG_ON(t->sighand->krg_objid);
-			BUG_ON(t->children_obj);
-#endif
 #ifdef CONFIG_KRG_SCHED
 			BUG_ON(t->krg_sched);
 #endif
 			continue;
 		}
 
-		krg_task_setup(t);
-#ifdef CONFIG_KRG_EPM
-		krg_signal_setup(t);
-		krg_sighand_setup(t);
-		krg_children_setup(t);
-#endif
 #ifdef CONFIG_KRG_SCHED
 		krg_sched_info_setup(t);
 #endif

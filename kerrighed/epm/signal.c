@@ -23,7 +23,6 @@
 #include <kerrighed/signal.h>
 #include <kerrighed/pid.h>
 #include <kerrighed/namespace.h>
-#include <kerrighed/hotplug.h>
 #include <kerrighed/libproc.h>
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
@@ -405,8 +404,6 @@ static void __krg_signal_alloc(struct task_struct *task, struct pid *pid)
 	krg_signal_unlock(tgid);
 }
 
-static void *cluster_started;
-
 /*
  * Alloc a dedicated signal_struct to task_struct task.
  * @author Pascal Gallard
@@ -414,9 +411,6 @@ static void *cluster_started;
 void krg_signal_alloc(struct task_struct *task, struct pid *pid,
 		      unsigned long clone_flags)
 {
-	if (!cluster_started)
-		return;
-
 	if (!task->nsproxy->krg_ns)
 		return;
 
@@ -537,19 +531,6 @@ pid_t krg_signal_exit(struct task_struct *task)
 		ret = __krg_signal_exit(sig->krg_objid);
 
 	return ret;
-}
-
-void krg_signal_setup(struct task_struct *task)
-{
-	struct signal_struct *sig = task->signal;
-
-	if (thread_group_leader(task)) {
-		__krg_signal_alloc(task, task_pid(task));
-	} else if (sig->kddm_obj) {
-		krg_signal_writelock(task->tgid);
-		krg_signal_share(task);
-		krg_signal_unlock(task->tgid);
-	}
 }
 
 /* EPM actions */
@@ -1162,11 +1143,6 @@ int import_private_signals(struct epm_action *action,
 void unimport_private_signals(struct task_struct *task)
 {
 	unimport_sigpending(task, &task->pending);
-}
-
-void register_signal_hooks(void)
-{
-	hook_register(&cluster_started, (void *)true);
 }
 
 int epm_signal_start(void)
