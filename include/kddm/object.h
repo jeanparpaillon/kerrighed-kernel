@@ -20,7 +20,35 @@
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
+/** Object states used for the coherence protocol */
 
+typedef enum {
+	INV_COPY = 0,
+	READ_COPY =         1 << STATE_INDEX_SHIFT | KDDM_READ_OBJ,
+
+	INV_OWNER =         2 << STATE_INDEX_SHIFT | KDDM_OWNER_OBJ,
+	READ_OWNER =        3 << STATE_INDEX_SHIFT | KDDM_OWNER_OBJ | KDDM_READ_OBJ,
+	WRITE_OWNER =       4 << STATE_INDEX_SHIFT | KDDM_OWNER_OBJ | KDDM_READ_OBJ | KDDM_WRITE_OBJ,
+	WRITE_GHOST =       5 << STATE_INDEX_SHIFT | KDDM_OWNER_OBJ | KDDM_READ_OBJ | KDDM_WRITE_OBJ,
+
+	WAIT_ACK_INV =      6 << STATE_INDEX_SHIFT | KDDM_READ_OBJ,
+	WAIT_ACK_WRITE =    7 << STATE_INDEX_SHIFT | KDDM_OWNER_OBJ | KDDM_READ_OBJ,
+	WAIT_CHG_OWN_ACK =  8 << STATE_INDEX_SHIFT | KDDM_READ_OBJ,
+	WAIT_RECEIVED_ACK =    9 << STATE_INDEX_SHIFT,
+
+	WAIT_OBJ_READ =    10 << STATE_INDEX_SHIFT,
+	WAIT_OBJ_WRITE =   11 << STATE_INDEX_SHIFT,
+
+	INV_NO_COPY =      12 << STATE_INDEX_SHIFT,
+
+	WAIT_OBJ_RM_DONE = 13 << STATE_INDEX_SHIFT,
+	WAIT_OBJ_RM_ACK =  14 << STATE_INDEX_SHIFT,
+	WAIT_OBJ_RM_ACK2 = 15 << STATE_INDEX_SHIFT,
+
+	INV_FILLING =      16 << STATE_INDEX_SHIFT,
+
+	NB_OBJ_STATE =     17 /* MUST always be the last one */
+} kddm_obj_state_t;
 
 /************************** Copyset management **************************/
 

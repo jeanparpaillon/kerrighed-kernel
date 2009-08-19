@@ -13,6 +13,7 @@
 #include <kerrighed/sys/types.h>
 
 #include <kddm/kddm_types.h>
+#include <kddm/object.h>
 
 
 
