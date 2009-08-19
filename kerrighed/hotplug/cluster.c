@@ -59,37 +59,6 @@ static DEFINE_SPINLOCK(cluster_start_lock);
 static DEFINE_MUTEX(cluster_start_mutex);
 static DECLARE_COMPLETION(cluster_started);
 
-static void init_prekerrighed_process(struct krg_namespace *ns)
-{
-#ifdef CONFIG_KRG_PROC
-	struct task_struct *g, *t;
-#endif
-
-	read_lock(&tasklist_lock);
-
-#ifdef CONFIG_KRG_PROC
-	/* Initialize location structure for running processes */
-	do_each_thread(g, t) {
-		/* Just make sure that our assumptions remain true */
-		BUG_ON(t->tgid != g->pid);
-		BUG_ON(t->group_leader->pid != g->pid);
-
-		if (!(t->pid & GLOBAL_PID_MASK) || !t->mm) {
-#ifdef CONFIG_KRG_SCHED
-			BUG_ON(t->krg_sched);
-#endif
-			continue;
-		}
-
-#ifdef CONFIG_KRG_SCHED
-		krg_sched_info_setup(t);
-#endif
-	} while_each_thread(g, t);
-#endif /* CONFIG_KRG_PROC */
-
-	read_unlock(&tasklist_lock);
-};
-
 static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 {
 	struct hotplug_node_set start_msg;
@@ -117,7 +86,6 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 		goto cancel;
 
 	down_write(&kerrighed_init_sem);
-	init_prekerrighed_process(ns);
 	__nodes_add(&start_msg);
 	hooks_start();
 	up_write(&kerrighed_init_sem);

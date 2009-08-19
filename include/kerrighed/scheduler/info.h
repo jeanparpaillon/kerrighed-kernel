@@ -52,9 +52,6 @@ krg_sched_module_info_get(struct task_struct *task,
 extern int krg_sched_info_copy(struct task_struct *tsk);
 extern void krg_sched_info_free(struct task_struct *tsk);
 
-/* cluster start */
-extern int krg_sched_info_setup(struct task_struct *task);
-
 #endif /* CONFIG_KRG_SCHED */
 
 #endif /* __KRG_SCHEDULER_INFO_H__ */
