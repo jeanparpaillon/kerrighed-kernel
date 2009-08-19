@@ -413,6 +413,9 @@ int export_pid(struct epm_action *action,
 	int nr = pid_nr(pid);
 	int retval;
 
+	if (!(nr & GLOBAL_PID_MASK))
+		return -EPERM;
+
 	if (ORIG_NODE(nr) == kerrighed_node_id && !pid->kddm_obj
 	    && action->type != EPM_CHECKPOINT) {
 		retval = create_pid_kddm_object(pid, 0);
