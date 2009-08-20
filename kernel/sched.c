@@ -6018,24 +6018,25 @@ static
 int handle_sched_setscheduler(struct rpc_desc *desc, void *_msg, size_t size)
 {
 	struct setscheduler_msg msg;
-	pid_t pid;
+	struct pid *pid;
 	const struct cred *old_cred;
 	struct task_struct *p;
 	int retval;
 
-	retval = krg_handle_remote_syscall_begin(desc, _msg, size,
-						 &msg, &old_cred);
-	if (retval < 0)
+	pid = krg_handle_remote_syscall_begin(desc, _msg, size,
+					      &msg, &old_cred);
+	if (IS_ERR(pid)) {
+		retval = PTR_ERR(pid);
 		goto out;
-	pid = retval;
+	}
 
 	rcu_read_lock();
-	p = find_task_by_pid_ns(pid, &init_pid_ns);
+	p = pid_task(pid, PIDTYPE_PID);
 	BUG_ON(!p);
 	retval = sched_setscheduler(p, msg.policy, &msg.param);
 	rcu_read_unlock();
 
-	krg_handle_remote_syscall_end(old_cred);
+	krg_handle_remote_syscall_end(pid, old_cred);
 
 out:
 	return retval;
@@ -6109,19 +6110,20 @@ SYSCALL_DEFINE2(sched_setparam, pid_t, pid, struct sched_param __user *, param)
 static
 int handle_sched_getscheduler(struct rpc_desc *desc, void *msg, size_t size)
 {
-	pid_t pid;
+	struct pid *pid;
 	const struct cred *old_cred;
 	int retval;
 
-	retval = krg_handle_remote_syscall_begin(desc, msg, size,
-						 NULL, &old_cred);
-	if (retval < 0)
+	pid = krg_handle_remote_syscall_begin(desc, msg, size,
+					      NULL, &old_cred);
+	if (IS_ERR(pid)) {
+		retval = PTR_ERR(pid);
 		goto out;
-	pid = retval;
+	}
 
-	retval = sys_sched_getscheduler(pid);
+	retval = sys_sched_getscheduler(pid_vnr(pid));
 
-	krg_handle_remote_syscall_end(old_cred);
+	krg_handle_remote_syscall_end(pid, old_cred);
 
 out:
 	return retval;
@@ -6166,18 +6168,19 @@ SYSCALL_DEFINE1(sched_getscheduler, pid_t, pid)
 static
 int handle_sched_getparam(struct rpc_desc *desc, void *msg, size_t size)
 {
-	pid_t pid;
+	struct pid *pid;
 	struct sched_param param;
 	const struct cred *old_cred;
 	int retval, err;
 
-	retval = krg_handle_remote_syscall_begin(desc, msg, size,
-						 NULL, &old_cred);
-	if (retval < 0)
+	pid = krg_handle_remote_syscall_begin(desc, msg, size,
+					      NULL, &old_cred);
+	if (IS_ERR(pid)) {
+		retval = PTR_ERR(pid);
 		goto out;
-	pid = retval;
+	}
 
-	retval = sys_sched_getparam(pid, &param);
+	retval = sys_sched_getparam(pid_vnr(pid), &param);
 	if (retval)
 		goto out_end;
 
@@ -6188,7 +6191,7 @@ int handle_sched_getparam(struct rpc_desc *desc, void *msg, size_t size)
 	}
 
 out_end:
-	krg_handle_remote_syscall_end(old_cred);
+	krg_handle_remote_syscall_end(pid, old_cred);
 
 out:
 	return retval;

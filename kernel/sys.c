@@ -1175,19 +1175,20 @@ out_unlock:
 #ifdef CONFIG_KRG_PROC
 static int handle_getpgid(struct rpc_desc *desc, void *msg, size_t size)
 {
-	pid_t pid;
+	struct pid *pid;
 	const struct cred *old_cred;
 	int retval;
 
-	retval = krg_handle_remote_syscall_begin(desc, msg, size,
-						 NULL, &old_cred);
-	if (retval < 0)
+	pid = krg_handle_remote_syscall_begin(desc, msg, size,
+					      NULL, &old_cred);
+	if (IS_ERR(pid)) {
+		retval = PTR_ERR(pid);
 		goto out;
-	pid = retval;
+	}
 
-	retval = sys_getpgid(pid);
+	retval = sys_getpgid(pid_nr_ns(pid, &init_pid_ns));
 
-	krg_handle_remote_syscall_end(old_cred);
+	krg_handle_remote_syscall_end(pid, old_cred);
 
 out:
 	return retval;
@@ -1246,19 +1247,20 @@ SYSCALL_DEFINE0(getpgrp)
 #ifdef CONFIG_KRG_PROC
 static int handle_getsid(struct rpc_desc *desc, void *msg, size_t size)
 {
-	pid_t pid;
+	struct pid *pid;
 	const struct cred *old_cred;
 	int retval;
 
-	retval = krg_handle_remote_syscall_begin(desc, msg, size,
-						 NULL, &old_cred);
-	if (retval < 0)
+	pid = krg_handle_remote_syscall_begin(desc, msg, size,
+					      NULL, &old_cred);
+	if (IS_ERR(pid)) {
+		retval = PTR_ERR(pid);
 		goto out;
-	pid = retval;
+	}
 
-	retval = sys_getsid(pid);
+	retval = sys_getsid(pid_nr_ns(pid, &init_pid_ns));
 
-	krg_handle_remote_syscall_end(old_cred);
+	krg_handle_remote_syscall_end(pid, old_cred);
 
 out:
 	return retval;

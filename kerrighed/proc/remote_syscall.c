@@ -8,6 +8,7 @@
 #include <kerrighed/remote_cred.h>
 #include <linux/nsproxy.h>
 #include <linux/pid_namespace.h>
+#include <linux/pid.h>
 #include <kerrighed/pid.h>
 #include <kerrighed/hotplug.h>
 #include <linux/errno.h>
@@ -102,53 +103,57 @@ out:
 	return ret;
 }
 
-int krg_handle_remote_syscall_begin(struct rpc_desc *desc,
-				    const void *_msg, size_t size,
-				    void *msg,
-				    const struct cred **old_cred)
+struct pid *krg_handle_remote_syscall_begin(struct rpc_desc *desc,
+					    const void *_msg, size_t size,
+					    void *msg,
+					    const struct cred **old_cred)
 {
 	const struct remote_syscall_header *hdr = _msg;
-	pid_t pid = hdr->pid;
+	struct pid *pid;
 	struct cred *cred;
-	int ret;
+	int err;
 
 	BUG_ON(task_active_pid_ns(current) != &init_pid_ns);
 
 	if (hdr->payload) {
-		ret = rpc_unpack(desc, 0, msg, hdr->payload);
-		if (ret)
+		err = rpc_unpack(desc, 0, msg, hdr->payload);
+		if (err)
 			goto err_cancel;
 	}
 
-	ret = -ENOMEM;
+	err = -ENOMEM;
 	cred = prepare_creds();
 	if (!cred)
 		goto err_cancel;
-	ret = unpack_creds(desc, cred);
-	if (ret) {
+	err = unpack_creds(desc, cred);
+	if (err) {
 		put_cred(cred);
 		goto err_cancel;
 	}
 	*old_cred = override_creds(cred);
 
-	ret = pid;
+	rcu_read_lock();
+	pid = get_pid(find_pid(hdr->pid, &init_pid_ns));
+	rcu_read_unlock();
+	BUG_ON(!pid);
 
-out:
-	return ret;
+	return pid;
 
 err_cancel:
-	if (ret > 0)
-		ret = -EPIPE;
+	if (err > 0)
+		err = -EPIPE;
 	rpc_cancel(desc);
-	goto out;
+	return ERR_PTR(err);
 }
 
-void krg_handle_remote_syscall_end(const struct cred *old_cred)
+void krg_handle_remote_syscall_end(struct pid *pid, const struct cred *old_cred)
 {
 	const struct cred *cred = current_cred();
 
 	revert_creds(old_cred);
 	put_cred(cred);
+
+	put_pid(pid);
 }
 
 void register_remote_syscalls_hooks(void)

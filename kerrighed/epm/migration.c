@@ -362,17 +362,20 @@ static int handle_migrate_remote_process(struct rpc_desc *desc,
 					 void *_msg, size_t size)
 {
 	struct migration_request_msg msg;
+	struct pid *pid;
 	const struct cred *old_cred;
 	int retval;
 
-	retval = krg_handle_remote_syscall_begin(desc, _msg, size,
-						 &msg, &old_cred);
-	if (retval < 0)
+	pid = krg_handle_remote_syscall_begin(desc, _msg, size,
+					      &msg, &old_cred);
+	if (IS_ERR(pid)) {
+		retval = PTR_ERR(pid);
 		goto out;
+	}
 	BUG_ON(current->nsproxy->pid_ns != &init_pid_ns);
-	retval = migrate_linux_threads(msg.pid, msg.scope,
+	retval = migrate_linux_threads(pid_vnr(pid), msg.scope,
 				       msg.destination_node_id);
-	krg_handle_remote_syscall_end(old_cred);
+	krg_handle_remote_syscall_end(pid, old_cred);
 out:
 	return retval;
 }
