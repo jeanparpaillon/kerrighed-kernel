@@ -226,20 +226,21 @@ static int krg_set_pid_cap(pid_t pid, const kernel_krg_cap_t *requested_cap)
 #ifdef CONFIG_KRG_PROC
 static int handle_set_pid_cap(struct rpc_desc* desc, void *_msg, size_t size)
 {
-	pid_t pid;
+	struct pid *pid;
 	kernel_krg_cap_t cap;
 	const struct cred *old_cred;
 	int ret;
 
-	ret = krg_handle_remote_syscall_begin(desc, _msg, size,
+	pid = krg_handle_remote_syscall_begin(desc, _msg, size,
 					      &cap, &old_cred);
-	if (ret < 0)
+	if (IS_ERR(pid)) {
+		ret = PTR_ERR(pid);
 		goto out;
-	pid = ret;
+	}
 
-	ret = krg_set_pid_cap(pid, &cap);
+	ret = krg_set_pid_cap(pid_vnr(pid), &cap);
 
-	krg_handle_remote_syscall_end(old_cred);
+	krg_handle_remote_syscall_end(pid, old_cred);
 
 out:
 	return ret;
@@ -332,18 +333,19 @@ static int krg_get_pid_cap(pid_t pid, kernel_krg_cap_t *resulting_cap)
 #ifdef CONFIG_KRG_PROC
 static int handle_get_pid_cap(struct rpc_desc *desc, void *_msg, size_t size)
 {
-	pid_t pid;
+	struct pid *pid;
 	kernel_krg_cap_t cap;
 	const struct cred *old_cred;
 	int ret;
 
-	ret = krg_handle_remote_syscall_begin(desc, _msg, size,
+	pid = krg_handle_remote_syscall_begin(desc, _msg, size,
 					      NULL, &old_cred);
-	if (ret < 0)
+	if (IS_ERR(pid)) {
+		ret = PTR_ERR(pid);
 		goto out;
-	pid = ret;
+	}
 
-	ret = krg_get_pid_cap(pid, &cap);
+	ret = krg_get_pid_cap(pid_vnr(pid), &cap);
 	if (ret)
 		goto out_end;
 
@@ -352,7 +354,7 @@ static int handle_get_pid_cap(struct rpc_desc *desc, void *_msg, size_t size)
 		goto err_cancel;
 
 out_end:
-	krg_handle_remote_syscall_end(old_cred);
+	krg_handle_remote_syscall_end(pid, old_cred);
 
 out:
 	return ret;

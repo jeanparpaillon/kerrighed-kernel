@@ -1155,15 +1155,18 @@ struct kill_info_msg {
 static int handle_kill_proc_info(struct rpc_desc *desc, void *_msg, size_t size)
 {
 	struct kill_info_msg msg;
+	struct pid *pid;
 	struct task_struct *p;
 	struct cred *tmp_cred;
 	const struct cred *old_cred, *cred, *tcred;
 	int retval;
 
-	retval = krg_handle_remote_syscall_begin(desc, _msg, size,
-						 &msg, &old_cred);
-	if (retval < 0)
+	pid = krg_handle_remote_syscall_begin(desc, _msg, size,
+					      &msg, &old_cred);
+	if (IS_ERR(pid)) {
+		retval = PTR_ERR(pid);
 		goto out;
+	}
 	retval = -ENOMEM;
 	tmp_cred = prepare_creds();
 	if (!tmp_cred)
@@ -1171,7 +1174,7 @@ static int handle_kill_proc_info(struct rpc_desc *desc, void *_msg, size_t size)
 
 	rcu_read_lock();
 
-	p = find_task_by_pid_ns(msg.pid, &init_pid_ns);
+	p = pid_task(pid, PIDTYPE_PID);
 	BUG_ON(!p);
 
 	/*
@@ -1193,7 +1196,7 @@ static int handle_kill_proc_info(struct rpc_desc *desc, void *_msg, size_t size)
 	} else {
 		cap_raise(tmp_cred->cap_effective, CAP_KILL);
 		cred = override_creds(tmp_cred);
-		retval = kill_pid_info(msg.sig, &msg.info, task_pid(p));
+		retval = kill_pid_info(msg.sig, &msg.info, pid);
 		revert_creds(cred);
 	}
 
@@ -1201,7 +1204,7 @@ static int handle_kill_proc_info(struct rpc_desc *desc, void *_msg, size_t size)
 
 	put_cred(tmp_cred);
 out_end:
-	krg_handle_remote_syscall_end(old_cred);
+	krg_handle_remote_syscall_end(pid, old_cred);
 
 out:
 	return retval;
