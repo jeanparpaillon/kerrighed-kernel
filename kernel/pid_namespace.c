@@ -107,6 +107,10 @@ static void destroy_pid_namespace(struct pid_namespace *ns)
 {
 	int i;
 
+#ifdef CONFIG_KRG_PROC
+	if (ns->krg_ns_root && ns->krg_ns_root != ns)
+		put_pid_ns(ns->krg_ns_root);
+#endif
 	for (i = 0; i < PIDMAP_ENTRIES; i++)
 		kfree(ns->pidmap[i].page);
 	kmem_cache_free(pid_ns_cachep, ns);
@@ -131,6 +135,9 @@ struct pid_namespace *copy_pid_ns(unsigned long flags, struct pid_namespace *old
 	{
 		new_ns->global = old_ns->global;
 		new_ns->global |= current->create_krg_ns;
+		if (old_ns->krg_ns_root)
+			get_pid_ns(old_ns->krg_ns_root);
+		new_ns->krg_ns_root = old_ns->krg_ns_root;
 		new_ns->parent = get_pid_ns(old_ns);
 	}
 #else
