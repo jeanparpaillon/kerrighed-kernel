@@ -1,6 +1,8 @@
 #ifndef __KKRG_SEM__
 #define __KKRG_SEM__
 
+#define sc_semmni       sem_ctls[3]
+
 extern int (*kh_ipc_sem_newary)(struct ipc_namespace *ns, struct sem_array *sma);
 
 extern void (*kh_ipc_sem_freeary)(struct ipc_namespace *ns,
@@ -14,6 +16,8 @@ extern int (*kh_ipc_sem_copy_semundo)(unsigned long clone_flags,
 extern struct sem_undo *(*kh_ipc_sem_find_undo)(struct sem_array* sma);
 
 extern void (*kh_ipc_sem_exit_sem)(struct task_struct * tsk);
+
+int newary(struct ipc_namespace *ns, struct ipc_params *params);
 
 struct sem_array *sem_lock(struct ipc_namespace *ns, int id);
 

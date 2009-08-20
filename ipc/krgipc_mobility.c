@@ -28,6 +28,7 @@
 #include "krgipc_mobility.h"
 #include "krgshm.h"
 #include "krgmsg.h"
+#include "krgsem.h"
 #include "sem_handler.h"
 #include "semundolst_io_linker.h"
 
@@ -615,5 +616,94 @@ out:
 
 out_freeque:
 	kh_ipc_msg_freeque(ns, &msq->q_perm);
+	goto out_put_ns;
+}
+
+/******************************************************************************/
+
+int export_full_sysv_sem(ghost_t *ghost, int semid)
+{
+	int r;
+	struct ipc_namespace *ns;
+	struct sem_array *sma;
+
+	ns = find_get_krg_ipcns();
+	if (!ns)
+		return -ENOSYS;
+
+	sma = sem_lock(ns, semid);
+	if (IS_ERR(sma)) {
+		r = PTR_ERR(sma);
+		goto out;
+	}
+
+	r = ghost_write(ghost, sma, sizeof(struct sem_array));
+	if (r)
+		goto out;
+
+	r = ghost_write(ghost, sma->sem_base, sma->sem_nsems * sizeof(struct sem));
+	if (r)
+		goto out;
+
+	sem_unlock(sma);
+
+out:
+	put_ipc_ns(ns);
+	return r;
+}
+
+int import_full_sysv_sem(ghost_t *ghost)
+{
+	int r;
+	struct ipc_namespace *ns;
+	struct sem_array copy_sma, *sma;
+	struct ipc_params params;
+
+	r = ghost_read(ghost, &copy_sma, sizeof(struct sem_array));
+	if (r)
+		goto out;
+
+	ns = find_get_krg_ipcns();
+	if (!ns)
+		return -ENOSYS;
+
+	down_write(&sem_ids(ns).rw_mutex);
+
+	params.requested_id = copy_sma.sem_perm.id;
+	params.key = copy_sma.sem_perm.key;
+	params.flg = copy_sma.sem_perm.mode;
+	params.u.nsems = copy_sma.sem_nsems;
+
+	r = newary(ns, &params);
+	if (r < 0)
+		goto out_put_ns;
+
+	BUG_ON(r != params.requested_id);
+
+	/* the semaphore array cannot disappear since we hold the ns mutex */
+	sma = sem_lock(ns, params.requested_id);
+	if (IS_ERR(sma)) {
+		r = PTR_ERR(sma);
+		goto out_put_ns;
+	}
+
+	r = ghost_read(ghost, sma->sem_base, sma->sem_nsems * sizeof(struct sem));
+	if (r)
+		goto out_freeary;
+
+	sma->sem_otime = copy_sma.sem_otime;
+	sma->sem_ctime = copy_sma.sem_ctime;
+
+	sem_unlock(sma);
+
+out_put_ns:
+	up_write(&sem_ids(ns).rw_mutex);
+
+	put_ipc_ns(ns);
+out:
+	return r;
+
+out_freeary:
+	kh_ipc_sem_freeary(ns, &sma->sem_perm);
 	goto out_put_ns;
 }

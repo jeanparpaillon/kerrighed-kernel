@@ -22,8 +22,6 @@
 
 struct kmem_cache *semarray_object_cachep;
 
-#define sc_semmni       sem_ctls[3]
-
 /** Create a local instance of an remotly existing Semaphore.
  *
  *  @author Matthieu Fertré

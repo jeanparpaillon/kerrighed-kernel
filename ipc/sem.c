@@ -103,7 +103,9 @@
 #endif
 #define sem_checkid(sma, semid)	ipc_checkid(&sma->sem_perm, semid)
 
+#ifndef CONFIG_KRG_IPC
 static int newary(struct ipc_namespace *, struct ipc_params *);
+#endif
 static void freeary(struct ipc_namespace *, struct kern_ipc_perm *);
 #ifdef CONFIG_PROC_FS
 static int sysvipc_sem_proc_show(struct seq_file *s, void *it);
@@ -263,8 +265,10 @@ static inline void sem_rmid(struct ipc_namespace *ns, struct sem_array *s)
  *
  * Called with sem_ids.rw_mutex held (as a writer)
  */
-
-static int newary(struct ipc_namespace *ns, struct ipc_params *params)
+#ifndef CONFIG_KRG_IPC
+static
+#endif
+int newary(struct ipc_namespace *ns, struct ipc_params *params)
 {
 	int id;
 	int retval;
