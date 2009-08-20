@@ -337,7 +337,7 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 #ifdef CONFIG_KRG_PROC
 		if (tmp->global && nr != 1
 		    && ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_NODEID))
-			nr = __MAKE_KERRIGHED_PID_FOR_NODE(nr, kerrighed_node_id);
+			nr = GLOBAL_PID(nr);
 #endif
 #ifdef CONFIG_KRG_EPM
 		}
@@ -595,7 +595,7 @@ struct pid *find_ge_pid(int nr, struct pid_namespace *ns)
 	do {
 #ifdef CONFIG_KRG_PROC
 		if (global && !(nr & GLOBAL_PID_MASK))
-			nr = __MAKE_KERRIGHED_PID_FOR_NODE(nr, kerrighed_node_id);
+			nr = GLOBAL_PID(nr);
 #endif
 		pid = find_pid_ns(nr, ns);
 		if (pid)
@@ -613,7 +613,7 @@ struct pid *find_ge_pid(int nr, struct pid_namespace *ns)
 	if (nr <= 0
 	    && ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_NODEID) && !global
 	    && ns->global)
-		return find_ge_pid(__MAKE_KERRIGHED_PID_FOR_NODE(0, kerrighed_node_id), ns);
+		return find_ge_pid(GLOBAL_PID(0), ns);
 #endif
 
 	return pid;

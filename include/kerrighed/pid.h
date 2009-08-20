@@ -18,16 +18,16 @@
 #define PID_NODE_SHIFT (NR_BITS_PID_MAX_LIMIT + 1)
 #define INTERNAL_PID_MASK (PID_MAX_LIMIT - 1)
 
-#define __MAKE_KERRIGHED_PID_FOR_NODE(pid, node) \
+#define GLOBAL_PID_NODE(pid, node) \
 	(((node) << PID_NODE_SHIFT)|GLOBAL_PID_MASK|((pid) & INTERNAL_PID_MASK))
+#define GLOBAL_PID(pid) GLOBAL_PID_NODE(pid, kerrighed_node_id)
 
 /** extract the original linux kernel pid of a Kerrighed PID */
 #define SHORT_PID(pid) ((pid) & INTERNAL_PID_MASK)
 /** extract the original node id of a Kerrighed PID */
 #define ORIG_NODE(pid) ((pid) >> PID_NODE_SHIFT)
 
-#define KERRIGHED_PID_MAX_LIMIT \
-	__MAKE_KERRIGHED_PID_FOR_NODE(0, KERRIGHED_MAX_NODES)
+#define KERRIGHED_PID_MAX_LIMIT GLOBAL_PID_NODE(0, KERRIGHED_MAX_NODES)
 
 /* PID location */
 #ifdef CONFIG_KRG_EPM
