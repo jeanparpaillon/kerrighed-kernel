@@ -46,12 +46,6 @@ int kerrighed_init_flags = 0;
 DECLARE_RWSEM(kerrighed_init_sem);
 EXPORT_SYMBOL(kerrighed_init_sem);
 
-#ifdef CONFIG_KRG_PROC
-/* Mask between local pid mode and global pid mode */
-pid_t current_pid_mask = 0;
-EXPORT_SYMBOL(current_pid_mask);
-#endif
-
 int kerrighed_cluster_flags;
 EXPORT_SYMBOL(kerrighed_cluster_flags);
 
@@ -184,7 +178,7 @@ static char *read_from_file(char *_filename, int size)
 		if (f->f_op && f->f_op->flush) {
 			error = f->f_op->flush(f, NULL);
 			if (error)
-				printk("global_pid_init: Error while closing file %d\n", error);
+				printk("init_ids: Error while closing file %d\n", error);
 		}
 	}
 	return b;
@@ -269,7 +263,7 @@ static void read_kerrighed_nodes(char *_h, char *k)
 	}
 }
 
-void global_pid_init(void)
+static void __init init_ids(void)
 {
 	char *hostname, *kerrighed_nodes;
 
@@ -301,9 +295,6 @@ void global_pid_init(void)
 #ifdef CONFIG_KRG_HOTPLUG
 		universe[kerrighed_node_id].state = 1;
 		set_krgnode_present(kerrighed_node_id);
-#endif
-#ifdef CONFIG_KRG_PROC
-		current_pid_mask = GLOBAL_PID_MASK;
 #endif
 	}
 
@@ -571,7 +562,7 @@ static int init_sysfs(void){
 
 void __init kerrighed_init(void){
 	printk("Kerrighed: stage 0\n");
-	global_pid_init();
+	init_ids();
 
 	printk("Kerrighed: stage 1\n");
 
