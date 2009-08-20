@@ -61,6 +61,8 @@ static inline bool is_krg_pid_ns_root(struct pid_namespace *ns)
 {
 	return ns == ns->krg_ns_root;
 }
+
+struct pid_namespace *find_get_krg_pid_ns(void);
 #endif
 
 #else /* !CONFIG_PID_NS */
@@ -93,6 +95,11 @@ static inline void zap_pid_ns_processes(struct pid_namespace *ns)
 static inline bool is_krg_pid_ns_root(struct pid_namespace *ns)
 {
 	return true;
+}
+
+static inline struct pid_namespace *find_get_krg_pid_ns(void)
+{
+	return &init_pid_ns;
 }
 #endif
 #endif /* CONFIG_PID_NS */

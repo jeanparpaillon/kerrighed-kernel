@@ -13,6 +13,10 @@
 #include <linux/syscalls.h>
 #include <linux/err.h>
 #include <linux/acct.h>
+#ifdef CONFIG_KRG_PROC
+#include <linux/module.h>
+#include <kerrighed/namespace.h>
+#endif
 
 #define BITS_PER_PAGE		(PAGE_SIZE*8)
 
@@ -160,6 +164,9 @@ void free_pid_ns(struct kref *kref)
 	if (parent != NULL)
 		put_pid_ns(parent);
 }
+#ifdef CONFIG_KRG_PROC
+EXPORT_SYMBOL(free_pid_ns);
+#endif
 
 void zap_pid_ns_processes(struct pid_namespace *pid_ns)
 {
@@ -209,6 +216,16 @@ void zap_pid_ns_processes(struct pid_namespace *pid_ns)
 	return;
 }
 
+#ifdef CONFIG_KRG_PROC
+struct pid_namespace *find_get_krg_pid_ns(void)
+{
+	struct krg_namespace *krg_ns = find_get_krg_ns();
+	struct pid_namespace *ns = get_pid_ns(krg_ns->root_pid_ns);
+	put_krg_ns(krg_ns);
+	return ns;
+}
+EXPORT_SYMBOL(find_get_krg_pid_ns);
+#endif
 static __init int pid_namespaces_init(void)
 {
 	pid_ns_cachep = KMEM_CACHE(pid_namespace, SLAB_PANIC);
