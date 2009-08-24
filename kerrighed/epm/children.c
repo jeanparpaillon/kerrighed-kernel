@@ -1518,7 +1518,10 @@ void krg_reparent_to_local_child_reaper(struct task_struct *task)
 void krg_unhash_process(struct task_struct *tsk)
 {
 	pid_t real_parent_tgid;
-	struct children_kddm_object *obj = NULL;
+	struct children_kddm_object *obj;
+
+	if (!task_active_pid_ns(tsk)->krg_ns_root)
+		return;
 
 	if (tsk->exit_state == EXIT_MIGRATION)
 		return;
