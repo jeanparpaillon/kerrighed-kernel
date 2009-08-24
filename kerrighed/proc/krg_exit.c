@@ -468,11 +468,14 @@ krg_prepare_exit_ptrace_task(struct task_struct *tracer,
 	 * Note: real parent should be locked, not parent. However the children
 	 * object only records real parent, so it's ok.
 	 */
-	obj = parent_children_writelock_pid_location_lock(task,
-							  &real_parent_tgid,
-							  &real_parent_pid,
-							  &parent_pid,
-							  &parent_node);
+	obj = rcu_dereference(task->parent_children_obj);
+	if (obj)
+		obj = parent_children_writelock_pid_location_lock(
+			task,
+			&real_parent_tgid,
+			&real_parent_pid,
+			&parent_pid,
+			&parent_node);
 	if (obj)
 		__krg_task_writelock_nested(task);
 	else
