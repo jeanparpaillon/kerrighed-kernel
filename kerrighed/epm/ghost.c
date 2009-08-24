@@ -487,6 +487,13 @@ static int export_task(struct epm_action *action,
 	if (r)
 		GOTO_ERROR;
 
+	r = export_pids(action, ghost, task);
+	if (r)
+		GOTO_ERROR;
+
+#undef ERROR_LABEL
+#define ERROR_LABEL error_pids
+
 	r = export_group_leader(action, ghost, task);
 	if (r)
 		GOTO_ERROR;
@@ -513,12 +520,6 @@ static int export_task(struct epm_action *action,
 	r = export_vfork_done(action, ghost, task);
 	if (r)
 		GOTO_ERROR;
-	r = export_pids(action, ghost, task);
-	if (r)
-		GOTO_ERROR;
-
-#undef ERROR_LABEL
-#define ERROR_LABEL error_pids
 
 	r = export_cred(action, ghost, task);
 	if (r)
@@ -816,7 +817,6 @@ static void unimport_task(struct epm_action *action,
 	unimport_thread_struct(ghost_task);
 	unimport_audit_context(ghost_task);
 	unimport_cred(ghost_task);
-	unimport_pids(ghost_task);
 	unimport_binfmt(ghost_task);
 #ifdef CONFIG_KRG_MM
 	unimport_mm_struct(ghost_task);
@@ -826,6 +826,7 @@ static void unimport_task(struct epm_action *action,
 	unimport_krg_sched_info(ghost_task);
 #endif
 	unimport_group_leader(ghost_task);
+	unimport_pids(ghost_task);
 	unimport_nsproxy(ghost_task);
 	unimport_thread_info(ghost_task);
 	free_task_struct(ghost_task);
@@ -989,7 +990,7 @@ static int import_pids(struct epm_action *action,
 
 	if ((action->type == EPM_REMOTE_CLONE
 	     && (action->remote_clone.clone_flags & CLONE_THREAD))
-	    || (action->type != EPM_REMOTE_CLONE && !thread_group_leader(task)))
+	    || (action->type != EPM_REMOTE_CLONE && task->pid != task->tgid))
 		max_type = PIDTYPE_PID + 1;
 	else
 		max_type = PIDTYPE_MAX;
@@ -1440,6 +1441,9 @@ static struct task_struct *import_task(struct epm_action *action,
 	if (retval)
 		goto err_nsproxy;
 
+	retval = import_pids(action, ghost, task);
+	if (retval)
+		goto err_pids;
 	retval = import_group_leader(action, ghost, task);
 	if (retval)
 		goto err_group_leader;
@@ -1467,10 +1471,6 @@ static struct task_struct *import_task(struct epm_action *action,
 	retval = import_vfork_done(action, ghost, task);
 	if (retval)
 		goto err_vfork_done;
-
-	retval = import_pids(action, ghost, task);
-	if (retval)
-		goto err_pids;
 
 	retval = import_cred(action, ghost, task);
 	if (retval)
@@ -1573,8 +1573,6 @@ err_thread_struct:
 err_audit_context:
 	unimport_cred(task);
 err_cred:
-	unimport_pids(task);
-err_pids:
 	unimport_vfork_done(task);
 err_vfork_done:
 	unimport_binfmt(task);
@@ -1591,6 +1589,8 @@ err_krg_sched_info:
 #endif
 	unimport_group_leader(task);
 err_group_leader:
+	unimport_pids(task);
+err_pids:
 	unimport_nsproxy(task);
 err_nsproxy:
 	unimport_thread_info(task);
