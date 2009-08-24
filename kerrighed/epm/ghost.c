@@ -119,6 +119,12 @@ static int export_children(struct epm_action *action,
 	return 0;
 }
 
+static int export_group_leader(struct epm_action *action,
+			       ghost_t *ghost, struct task_struct *task)
+{
+	return 0;
+}
+
 static int export_ptraced(struct epm_action *action,
 			  ghost_t *ghost, struct task_struct *task)
 {
@@ -481,6 +487,10 @@ static int export_task(struct epm_action *action,
 	if (r)
 		GOTO_ERROR;
 
+	r = export_group_leader(action, ghost, task);
+	if (r)
+		GOTO_ERROR;
+
 #ifdef CONFIG_KRG_SCHED
 	r = export_krg_sched_info(action, ghost, task);
 	if (r)
@@ -739,6 +749,12 @@ void unimport_ptraced(struct task_struct *task)
 }
 
 static
+void unimport_group_leader(struct task_struct *task)
+{
+	/* Nothing to do... */
+}
+
+static
 void unimport_children(struct epm_action *action, struct task_struct *task)
 {
 	switch (action->type) {
@@ -809,6 +825,7 @@ static void unimport_task(struct epm_action *action,
 #ifdef CONFIG_KRG_SCHED
 	unimport_krg_sched_info(ghost_task);
 #endif
+	unimport_group_leader(ghost_task);
 	unimport_nsproxy(ghost_task);
 	unimport_thread_info(ghost_task);
 	free_task_struct(ghost_task);
@@ -931,6 +948,21 @@ static int import_children(struct epm_action *action,
 	}
 
 	return r;
+}
+
+static int import_group_leader(struct epm_action *action,
+			       ghost_t *ghost, struct task_struct *task)
+{
+	struct task_struct *leader = task;
+
+	if (action->type == EPM_CHECKPOINT && task->pid != task->tgid) {
+		leader = find_task_by_pid_ns(task->tgid, &init_pid_ns);
+		BUG_ON(!leader);
+	}
+
+	task->group_leader = leader;
+
+	return 0;
 }
 
 static int import_ptraced(struct epm_action *action,
@@ -1315,13 +1347,7 @@ static struct task_struct *import_task(struct epm_action *action,
 	task->parent = NULL;
 	INIT_LIST_HEAD(&task->children);
 	INIT_LIST_HEAD(&task->sibling);
-	task->group_leader = task;
-	if (action->type == EPM_CHECKPOINT && task->pid != task->tgid) {
-		struct task_struct *leader;
-		leader = find_task_by_pid_ns(task->tgid, &init_pid_ns);
-		BUG_ON(!leader);
-		task->group_leader = leader;
-	}
+	task->group_leader = NULL;
 	INIT_LIST_HEAD(&task->ptraced);
 	INIT_LIST_HEAD(&task->ptrace_entry);
 #ifdef CONFIG_X86_PTRACE_BTS
@@ -1413,6 +1439,10 @@ static struct task_struct *import_task(struct epm_action *action,
 	retval = import_nsproxy(action, ghost, task);
 	if (retval)
 		goto err_nsproxy;
+
+	retval = import_group_leader(action, ghost, task);
+	if (retval)
+		goto err_group_leader;
 
 #ifdef CONFIG_KRG_SCHED
 	retval = import_krg_sched_info(action, ghost, task);
@@ -1559,6 +1589,8 @@ err_sched_info:
 	unimport_krg_sched_info(task);
 err_krg_sched_info:
 #endif
+	unimport_group_leader(task);
+err_group_leader:
 	unimport_nsproxy(task);
 err_nsproxy:
 	unimport_thread_info(task);
