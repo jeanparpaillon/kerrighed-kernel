@@ -387,14 +387,16 @@ void krg_children_unlock(struct children_kddm_object *obj)
 	_kddm_put_object(children_kddm_set, tgid);
 }
 
-struct children_kddm_object *krg_children_alloc(struct task_struct *task)
+static
+struct children_kddm_object *
+children_alloc(struct task_struct *task, pid_t tgid)
 {
 	struct children_kddm_object *obj;
 
 	/* Filter well known cases of no children kddm object. */
-	BUG_ON(!(task->tgid & GLOBAL_PID_MASK));
+	BUG_ON(!(tgid & GLOBAL_PID_MASK));
 
-	obj = children_create_writelock(task->tgid);
+	obj = children_create_writelock(tgid);
 	if (obj) {
 		obj->nr_threads = 1;
 		obj->self_exec_id = task->self_exec_id;
@@ -405,12 +407,15 @@ struct children_kddm_object *krg_children_alloc(struct task_struct *task)
 	return obj;
 }
 
+struct children_kddm_object *krg_children_alloc(struct task_struct *task)
+{
+	return children_alloc(task, task->tgid);
+}
+
 static void free_children(struct task_struct *task)
 {
 	struct children_kddm_object *obj = task->children_obj;
 
-	/* Filter well known cases of no children kddm object. */
-	BUG_ON(!(task->tgid & GLOBAL_PID_MASK));
 	BUG_ON(!obj);
 	BUG_ON(!list_empty(&obj->children));
 	BUG_ON(obj->nr_threads);
@@ -418,7 +423,7 @@ static void free_children(struct task_struct *task)
 	rcu_assign_pointer(task->children_obj, NULL);
 
 	up_write(&obj->sem);
-	_kddm_remove_frozen_object(children_kddm_set, task->tgid);
+	_kddm_remove_frozen_object(children_kddm_set, obj->tgid);
 }
 
 void __krg_children_share(struct task_struct *task)
@@ -429,9 +434,9 @@ void __krg_children_share(struct task_struct *task)
 
 void krg_children_share(struct task_struct *task)
 {
-	struct children_kddm_object *obj;
+	struct children_kddm_object *obj = task->children_obj;
 
-	obj = __krg_children_writelock(task);
+	obj = krg_children_writelock(obj->tgid);
 	BUG_ON(!obj);
 	BUG_ON(obj != task->children_obj);
 	__krg_children_share(task);
@@ -1341,7 +1346,7 @@ int krg_children_prepare_fork(struct task_struct *task,
 
 	/* Attach task to the children kddm object of its thread group */
 	if (!(clone_flags & CLONE_THREAD)) {
-		obj = krg_children_alloc(task);
+		obj = children_alloc(task, task->tgid);
 		if (!obj) {
 			err = -ENOMEM;
 			goto out;
@@ -1420,6 +1425,7 @@ void krg_children_commit_fork(struct task_struct *task)
 void krg_children_abort_fork(struct task_struct *task)
 {
 	struct children_kddm_object *parent_obj = task->parent_children_obj;
+	struct children_kddm_object *obj = task->children_obj;
 
 	if (krg_current)
 		return;
@@ -1429,8 +1435,8 @@ void krg_children_abort_fork(struct task_struct *task)
 		krg_children_put(parent_obj);
 	}
 
-	if (task->children_obj) {
-		__krg_children_writelock(task);
+	if (obj) {
+		krg_children_writelock(obj->tgid);
 		krg_children_exit(task);
 	}
 }
