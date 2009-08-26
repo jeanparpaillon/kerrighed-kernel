@@ -190,7 +190,7 @@ parent_children_writelock_pid_location_lock(struct task_struct *task,
 							     &real_parent_tgid);
 		if (!children_obj)
 			break;
-		krg_get_parent(children_obj, task->pid,
+		krg_get_parent(children_obj, task,
 			       &parent_pid, &real_parent_pid);
 		obj = krg_task_readlock(parent_pid);
 		BUG_ON(!obj);

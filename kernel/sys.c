@@ -1090,7 +1090,7 @@ static int krg_forward_setpgid(kerrighed_node_t node, pid_t pid, pid_t pgid)
 	struct setpgid_message msg;
 	int retval = -ESRCH;
 
-	if (krg_get_parent(children_obj, pid, &parent, &real_parent))
+	if (__krg_get_parent(children_obj, pid, &parent, &real_parent))
 		goto out;
 
 	msg.pid = pid;
@@ -1171,7 +1171,7 @@ void krg_cleanup_setpgid(pid_t pid, pid_t pgid,
 		if (node != KERRIGHED_NODE_ID_NONE)
 			krg_task_unlock(pid);
 		if (success)
-			krg_set_child_pgid(parent_children_obj, pid, pgid);
+			__krg_set_child_pgid(parent_children_obj, pid, pgid);
 		krg_children_unlock(parent_children_obj);
 	}
 	up_read(&kerrighed_init_sem);
@@ -1416,8 +1416,7 @@ out:
 #ifdef CONFIG_KRG_EPM
 	if (parent_children_obj) {
 		if (err >= 0)
-			krg_set_child_pgid(parent_children_obj,
-					   session, session);
+			krg_set_child_pgid(parent_children_obj, current);
 		krg_children_unlock(parent_children_obj);
 	}
 	up_read(&kerrighed_init_sem);

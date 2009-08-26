@@ -459,11 +459,11 @@ static int krg_children_alive(struct children_kddm_object *obj)
 	return obj && obj->alive;
 }
 
-int krg_new_child(struct children_kddm_object *obj,
-		  pid_t parent_pid,
-		  pid_t child_pid, pid_t child_tgid,
-		  struct pid *pgrp, struct pid *session,
-		  int exit_signal)
+static int new_child(struct children_kddm_object *obj,
+		     pid_t parent_pid,
+		     pid_t child_pid, pid_t child_tgid,
+		     struct pid *pgrp, struct pid *session,
+		     int exit_signal)
 {
 	struct remote_child *item;
 
@@ -490,9 +490,18 @@ int krg_new_child(struct children_kddm_object *obj,
 	return 0;
 }
 
+int krg_new_child(struct children_kddm_object *obj,
+		  pid_t parent_pid,
+		  struct task_struct *child)
+{
+	return new_child(obj, parent_pid, child->pid, child->tgid,
+			 task_pgrp(child), task_session(child),
+			 child->exit_signal);
+}
+
 /* Expects obj write locked */
-void krg_set_child_pgid(struct children_kddm_object *obj,
-			pid_t pid, pid_t pgid)
+void __krg_set_child_pgid(struct children_kddm_object *obj,
+			  pid_t pid, pid_t pgid)
 {
 	struct remote_child *item;
 
@@ -504,6 +513,13 @@ void krg_set_child_pgid(struct children_kddm_object *obj,
 			item->pgid = pgid;
 			break;
 		}
+}
+
+void krg_set_child_pgid(struct children_kddm_object *obj,
+			struct task_struct *child)
+{
+	__krg_set_child_pgid(obj, child->pid,
+			     task_pgrp_nr_ns(child, &init_pid_ns));
 }
 
 int krg_set_child_ptraced(struct children_kddm_object *obj,
@@ -905,8 +921,8 @@ pid_t krg_get_real_parent_tgid(struct task_struct *task,
 }
 
 /* Expects obj locked */
-int krg_get_parent(struct children_kddm_object *obj, pid_t pid,
-		   pid_t *parent_pid, pid_t *real_parent_pid)
+int __krg_get_parent(struct children_kddm_object *obj, pid_t pid,
+		     pid_t *parent_pid, pid_t *real_parent_pid)
 {
 	struct remote_child *item;
 	int retval = -ESRCH;
@@ -924,6 +940,12 @@ int krg_get_parent(struct children_kddm_object *obj, pid_t pid,
 
 out:
 	return retval;
+}
+
+int krg_get_parent(struct children_kddm_object *obj, struct task_struct *child,
+		   pid_t *parent_pid, pid_t *real_parent_pid)
+{
+	return __krg_get_parent(obj, child->pid, parent_pid, real_parent_pid);
 }
 
 struct children_kddm_object *
@@ -1017,7 +1039,7 @@ pid_t krg_get_real_parent_pid(struct task_struct *task)
 	} else {
 		/* gcc ... */
 		real_parent_pid = 0;
-		krg_get_parent(parent_obj, task->pid,
+		krg_get_parent(parent_obj, task,
 			       &parent_pid, &real_parent_pid);
 		krg_children_unlock(parent_obj);
 	}
@@ -1369,12 +1391,10 @@ int krg_children_fork(struct task_struct *task)
 		parent_pid = current->task_obj->real_parent;
 	else
 		parent_pid = task->real_parent->pid;
-	err = krg_new_child(obj,
-			    parent_pid,
-			    task->pid, task->tgid,
-			    task_pgrp(current),
-			    task_session(current),
-			    task->exit_signal);
+	err = new_child(obj, parent_pid,
+			task->pid, task->tgid,
+			task_pgrp(current), task_session(current),
+			task->exit_signal);
 
 	if (!err && task->real_parent == baby_sitter)
 		add_to_krg_parent(task, parent_pid);

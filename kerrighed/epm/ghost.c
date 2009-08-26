@@ -1721,7 +1721,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 
 		parent_children_obj =
 			krg_children_readlock(real_parent_tgid);
-		if (!krg_get_parent(parent_children_obj, tskRecv->pid,
+		if (!krg_get_parent(parent_children_obj, tskRecv,
 				    &parent, &real_parent)) {
 			krg_children_get(parent_children_obj);
 			rcu_assign_pointer(tskRecv->parent_children_obj,
@@ -1800,10 +1800,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	if (action->type == EPM_REMOTE_CLONE) {
 		retval = krg_new_child(parent_children_obj,
 				       action->remote_clone.from_pid,
-				       newTsk->pid, newTsk->tgid,
-				       task_pgrp(newTsk),
-				       task_session(newTsk),
-				       newTsk->exit_signal);
+				       newTsk);
 
 		krg_children_unlock(parent_children_obj);
 		if (retval)
