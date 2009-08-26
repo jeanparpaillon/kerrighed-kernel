@@ -131,7 +131,7 @@ static inline void ptrace_link(struct task_struct *child,
 		int ret = krg_ptrace_link(child, new_parent);
 		BUG_ON(ret);
 		ret = krg_set_child_ptraced(child->parent_children_obj,
-					    child->pid, 1);
+					    child, 1);
 		BUG_ON(ret);
 		__ptrace_link(child, new_parent);
 	}
