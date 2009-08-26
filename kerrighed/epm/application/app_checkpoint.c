@@ -127,7 +127,7 @@ static inline int write_task_parent_links(task_state_t *t,
 
 	obj = krg_parent_children_readlock(t->task, &real_parent_tgid);
 	if (obj) {
-		r = krg_get_parent(obj, t->task->pid, &parent, &real_parent);
+		r = krg_get_parent(obj, t->task, &parent, &real_parent);
 		BUG_ON(r);
 		krg_children_unlock(obj);
 	} else {

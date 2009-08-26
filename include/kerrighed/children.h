@@ -17,11 +17,11 @@ void krg_children_get(struct children_kddm_object *obj);
 void krg_children_put(struct children_kddm_object *obj);
 int krg_new_child(struct children_kddm_object *obj,
 		  pid_t parent_pid,
-		  pid_t child_pid, pid_t child_tgid,
-		  struct pid *pgrp, struct pid *session,
-		  int exit_signal);
+		  struct task_struct *child);
+void __krg_set_child_pgid(struct children_kddm_object *obj,
+			  pid_t pid, pid_t pgid);
 void krg_set_child_pgid(struct children_kddm_object *obj,
-			pid_t pid, pid_t pgid);
+			struct task_struct *child);
 int krg_set_child_ptraced(struct children_kddm_object *obj,
 			  struct task_struct *child, int ptraced);
 void krg_set_child_exit_signal(struct children_kddm_object *obj,
@@ -37,8 +37,10 @@ void krg_forget_original_remote_parent(struct task_struct *parent,
 pid_t krg_get_real_parent_tgid(struct task_struct *task,
 			       struct pid_namespace *ns);
 pid_t krg_get_real_parent_pid(struct task_struct *task);
-int krg_get_parent(struct children_kddm_object *obj, pid_t pid,
-		   pid_t *parent_pid, pid_t *real_parent_pid);
+int __krg_get_parent(struct children_kddm_object *obj, pid_t pid,
+		     pid_t *parent_pid, pid_t *real_parent_pid);
+int krg_get_parent(struct children_kddm_object *obj, struct task_struct *child,
+		     pid_t *parent_pid, pid_t *real_parent_pid);
 struct children_kddm_object *krg_children_writelock(pid_t tgid);
 struct children_kddm_object *__krg_children_writelock(struct task_struct *task);
 struct children_kddm_object *krg_children_writelock_nested(pid_t tgid);

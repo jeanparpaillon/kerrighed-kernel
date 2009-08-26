@@ -195,7 +195,7 @@ static int krg_set_father_cap(struct task_struct *tsk,
 		if (!parent_children_obj)
 			/* Parent is init. Do not change init's capabilities! */
 			return -EPERM;
-		krg_get_parent(parent_children_obj, tsk->pid,
+		krg_get_parent(parent_children_obj, tsk,
 			       &parent_pid, &real_parent_pid);
 		retval = remote_set_pid_cap(real_parent_pid, requested_cap);
 		krg_children_unlock(parent_children_obj);
@@ -302,7 +302,7 @@ static int krg_get_father_cap(struct task_struct *son,
 			/* Parent is init. */
 			return krg_get_cap(son->nsproxy->pid_ns->child_reaper,
 					   resulting_cap);
-		krg_get_parent(parent_children_obj, son->pid,
+		krg_get_parent(parent_children_obj, son,
 			       &parent_pid, &real_parent_pid);
 		retval = remote_get_pid_cap(parent_pid, resulting_cap);
 		krg_children_unlock(parent_children_obj);

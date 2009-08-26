@@ -819,13 +819,7 @@ static inline int task_restore_children_object(task_state_t *t)
 	BUG_ON(!(t->restart.real_parent_tgid & GLOBAL_PID_MASK));
 	obj = krg_children_writelock(t->restart.real_parent_tgid);
 
-	r = krg_new_child(obj,
-			  t->restart.real_parent,
-			  t->restart.pid,
-			  t->restart.tgid,
-			  task_pgrp(t->task),
-			  task_session(t->task),
-			  t->task->exit_signal);
+	r = krg_new_child(obj, t->restart.real_parent, t->task);
 
 	t->task->parent_children_obj = obj;
 	krg_children_get(t->task->parent_children_obj);
