@@ -40,8 +40,10 @@ pid_t krg_get_real_parent_pid(struct task_struct *task);
 int krg_get_parent(struct children_kddm_object *obj, pid_t pid,
 		   pid_t *parent_pid, pid_t *real_parent_pid);
 struct children_kddm_object *krg_children_writelock(pid_t tgid);
+struct children_kddm_object *__krg_children_writelock(struct task_struct *task);
 struct children_kddm_object *krg_children_writelock_nested(pid_t tgid);
 struct children_kddm_object *krg_children_readlock(pid_t tgid);
+struct children_kddm_object *__krg_children_readlock(struct task_struct *task);
 struct children_kddm_object *
 krg_parent_children_writelock(struct task_struct *task,
 			      pid_t *parent_tgid);

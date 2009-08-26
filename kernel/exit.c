@@ -907,7 +907,7 @@ static void forget_original_parent(struct task_struct *father)
 
 #ifdef CONFIG_KRG_EPM
 	if (rcu_dereference(father->children_obj))
-		children_obj = krg_children_writelock(father->tgid);
+		children_obj = __krg_children_writelock(father);
 #endif
 	write_lock_irq(&tasklist_lock);
 	reaper = find_new_reaper(father);
@@ -1896,7 +1896,7 @@ repeat:
 
 #ifdef CONFIG_KRG_EPM
 	if (current->children_obj)
-		krg_children_readlock(current->tgid);
+		__krg_children_readlock(current);
 #endif
 	current->state = TASK_INTERRUPTIBLE;
 	read_lock(&tasklist_lock);

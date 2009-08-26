@@ -314,6 +314,11 @@ struct children_kddm_object *krg_children_readlock(pid_t tgid)
 	return obj;
 }
 
+struct children_kddm_object *__krg_children_readlock(struct task_struct *task)
+{
+	return krg_children_readlock(task->tgid);
+}
+
 static struct children_kddm_object *children_writelock(pid_t tgid, int nested)
 {
 	struct children_kddm_object *obj;
@@ -340,6 +345,11 @@ static struct children_kddm_object *children_writelock(pid_t tgid, int nested)
 struct children_kddm_object *krg_children_writelock(pid_t tgid)
 {
 	return children_writelock(tgid, 0);
+}
+
+struct children_kddm_object *__krg_children_writelock(struct task_struct *task)
+{
+	return children_writelock(task->tgid, 0);
 }
 
 struct children_kddm_object *krg_children_writelock_nested(pid_t tgid)
@@ -421,7 +431,7 @@ void krg_children_share(struct task_struct *task)
 {
 	struct children_kddm_object *obj;
 
-	obj = krg_children_writelock(task->tgid);
+	obj = __krg_children_writelock(task);
 	BUG_ON(!obj);
 	BUG_ON(obj != task->children_obj);
 	__krg_children_share(task);
@@ -815,7 +825,7 @@ retry:
 				if (ret)
 					goto out;
 				/* Raced with another thread. Retry. */
-				krg_children_readlock(current->tgid);
+				__krg_children_readlock(current);
 				goto retry;
 			}
 		}
@@ -832,7 +842,7 @@ void krg_update_self_exec_id(struct task_struct *task)
 	struct children_kddm_object *obj;
 
 	if (rcu_dereference(task->children_obj)) {
-		obj = krg_children_writelock(task->tgid);
+		obj = __krg_children_writelock(task);
 		BUG_ON(!obj);
 		obj->self_exec_id = task->self_exec_id;
 		krg_children_unlock(obj);
@@ -1181,7 +1191,7 @@ static void update_relatives(struct task_struct *task)
 /* Used by import_process() */
 void join_local_relatives(struct task_struct *orphan)
 {
-	krg_children_readlock(orphan->tgid);
+	__krg_children_readlock(orphan);
 	write_lock_irq(&tasklist_lock);
 
 	/*
@@ -1323,7 +1333,7 @@ int krg_children_prepare_fork(struct task_struct *task,
 		parent_obj = krg_parent_children_writelock(current,
 							   &parent_tgid);
 	} else {
-		parent_obj = krg_children_writelock(current->tgid);
+		parent_obj = __krg_children_writelock(current);
 	}
 	krg_children_get(parent_obj);
 	rcu_assign_pointer(task->parent_children_obj, parent_obj);
@@ -1388,7 +1398,7 @@ void krg_children_abort_fork(struct task_struct *task)
 	}
 
 	if (task->children_obj) {
-		krg_children_writelock(task->tgid);
+		__krg_children_writelock(task);
 		krg_children_exit(task);
 	}
 }
@@ -1443,7 +1453,7 @@ krg_children_prepare_de_thread(struct task_struct *task)
 	if (rcu_dereference(task->children_obj)) {
 		struct children_kddm_object *children_obj;
 
-		children_obj = krg_children_writelock(task->tgid);
+		children_obj = __krg_children_writelock(task);
 		BUG_ON(!children_obj);
 		/*
 		 * All children were reparented to task, but the children
