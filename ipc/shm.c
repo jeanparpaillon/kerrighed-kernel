@@ -75,7 +75,9 @@ struct vm_operations_struct shm_vm_ops;
 	ipc_unlock(&(shp)->shm_perm)
 #endif
 
+#ifndef CONFIG_KRG_IPC
 static int newseg(struct ipc_namespace *, struct ipc_params *);
+#endif
 static void shm_open(struct vm_area_struct *vma);
 static void shm_close(struct vm_area_struct *vma);
 
@@ -405,8 +407,10 @@ struct vm_operations_struct shm_vm_ops = {
  *
  * Called with shm_ids.rw_mutex held as a writer.
  */
-
-static int newseg(struct ipc_namespace *ns, struct ipc_params *params)
+#ifndef CONFIG_KRG_IPC
+static
+#endif
+int newseg(struct ipc_namespace *ns, struct ipc_params *params)
 {
 	key_t key = params->key;
 	int shmflg = params->flg;

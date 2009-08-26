@@ -22,6 +22,8 @@ extern const struct file_operations shm_file_operations;
 
 /** Exported functions  **/
 
+int newseg(struct ipc_namespace *ns, struct ipc_params *params);
+
 struct shm_file_data {
 	int id;
 	struct ipc_namespace *ns;

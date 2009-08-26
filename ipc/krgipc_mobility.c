@@ -11,6 +11,7 @@
 #include <linux/ipc.h>
 #include <linux/ipc_namespace.h>
 #include <linux/file.h>
+#include <linux/hugetlb.h>
 #include <linux/msg.h>
 #include <linux/security.h>
 #include <linux/sem.h>
@@ -707,3 +708,245 @@ out_freeary:
 	kh_ipc_sem_freeary(ns, &sma->sem_perm);
 	goto out_put_ns;
 }
+
+/******************************************************************************/
+
+static int export_full_one_shm_page(ghost_t * ghost, struct kddm_set *kset,
+				    unsigned long pageid, unsigned long size)
+{
+	int r;
+	struct page *page;
+	char *data;
+	const int no_page=0, page_used = 1;
+
+	page = _kddm_get_object_no_ft(kset, (objid_t)pageid);
+	if (page) {
+		r = ghost_write(ghost, &page_used, sizeof(int));
+		if (r)
+			goto put_page;
+		data = (char *)kmap(page);
+		r = ghost_write(ghost, data, size);
+		kunmap(page);
+	} else
+		r = ghost_write(ghost, &no_page, sizeof(int));
+
+put_page:
+	_kddm_put_object(kset, (objid_t)pageid);
+	return r;
+}
+
+/* shp must be locked */
+static int export_full_shm_content(ghost_t * ghost, struct ipc_namespace *ns,
+				   struct shmid_kernel **shp)
+{
+	int r = 0;
+	int shmid;
+	struct kddm_set *kset;
+	unsigned long i;
+	unsigned long nb_pages;
+	unsigned long left_size;
+
+	shmid = (*shp)->shm_perm.id;
+
+	nb_pages = (*shp)->shm_segsz / PAGE_SIZE;
+	left_size = (*shp)->shm_segsz % PAGE_SIZE;
+
+	kset = (*shp)->shm_file->f_dentry->d_inode->i_mapping->kddm_set;
+
+	/* to ensure the SHP will stay alive without deadlocking
+	 * with the IO Linker...
+	 */
+	(*shp)->shm_nattch++;
+	shm_unlock(*shp);
+
+	for (i = 0; i < nb_pages && r == 0; i++)
+		r = export_full_one_shm_page(ghost, kset, i, PAGE_SIZE);
+
+	if (r)
+		goto error;
+
+	if (left_size)
+		r = export_full_one_shm_page(ghost, kset, i, left_size);
+
+error:
+	*shp = shm_lock(ns, shmid);
+	BUG_ON(IS_ERR(*shp));
+	(*shp)->shm_nattch--;
+
+	return r;
+}
+
+int export_full_sysv_shm(ghost_t *ghost, int shmid)
+{
+	int r, flag;
+	struct ipc_namespace *ns;
+	struct shmid_kernel *shp;
+
+	ns = find_get_krg_ipcns();
+	if (!ns)
+		return -ENOSYS;
+
+	shp = shm_lock(ns, shmid);
+	if (IS_ERR(shp)) {
+		r = PTR_ERR(shp);
+		goto out;
+	}
+
+	r = ghost_write(ghost, shp, sizeof(struct shmid_kernel));
+	if (r)
+		goto out_shm_unlock;
+
+	flag = shp->shm_perm.mode;
+	if (shp->shm_file->f_op == &hugetlbfs_file_operations)
+		flag |= SHM_HUGETLB;
+	/* SHM_NORESERVE not handled */
+
+	r = ghost_write(ghost, &flag, sizeof(int));
+	if (r)
+		goto out_shm_unlock;
+
+	r = export_full_shm_content(ghost, ns, &shp);
+
+out_shm_unlock:
+	shm_unlock(shp);
+out:
+	put_ipc_ns(ns);
+	return r;
+}
+
+static int import_full_one_shm_page(ghost_t * ghost, struct kddm_set *kset,
+				    unsigned long pageid,
+				    unsigned long size)
+{
+	int r;
+	struct page *page;
+	char* data;
+	int page_used;
+
+	r = ghost_read(ghost, &page_used, sizeof(page_used));
+	if (r)
+		goto out;
+
+	if (!page_used)
+		goto out;
+
+	/* it should return an existing but empty object */
+	page = _kddm_grab_object(kset, (objid_t)pageid);
+	if (!page)
+		goto put_page;
+
+	data = (char *)kmap(page);
+	r = ghost_read(ghost, data, size);
+	kunmap(page);
+
+put_page:
+	_kddm_put_object(kset, (objid_t)pageid);
+out:
+	return r;
+}
+
+/* shp must be locked */
+static int import_full_shm_content(ghost_t * ghost, struct ipc_namespace *ns,
+				   struct shmid_kernel **shp)
+{
+	int r = 0;
+	int shmid;
+	struct kddm_set *kset;
+	unsigned long nb_pages;
+	unsigned long left_size;
+	unsigned long i;
+
+	shmid = (*shp)->shm_perm.id;
+
+	nb_pages = (*shp)->shm_segsz / PAGE_SIZE;
+	left_size = (*shp)->shm_segsz % PAGE_SIZE;
+
+	kset = (*shp)->shm_file->f_dentry->d_inode->i_mapping->kddm_set;
+
+	/* to ensure the SHP will stay alive without deadlocking
+	 * with the IO Linker...
+	 */
+	(*shp)->shm_nattch++;
+	shm_unlock(*shp);
+
+	for (i = 0; i < nb_pages && r == 0; i++)
+		r = import_full_one_shm_page(ghost, kset, i, PAGE_SIZE);
+
+	if (r)
+		goto error;
+
+	if (left_size)
+		r = import_full_one_shm_page(ghost, kset, i, left_size);
+
+error:
+	*shp = shm_lock(ns, shmid);
+	BUG_ON(IS_ERR(*shp));
+	(*shp)->shm_nattch--;
+
+	return r;
+}
+
+int import_full_sysv_shm(ghost_t *ghost)
+{
+	int r, flag;
+	struct ipc_namespace *ns;
+	struct shmid_kernel copy_shp, *shp;
+	struct ipc_params params;
+
+	r = ghost_read(ghost, &copy_shp, sizeof(struct shmid_kernel));
+	if (r)
+		goto out;
+
+	r = ghost_read(ghost, &flag, sizeof(int));
+	if (r)
+		goto out;
+
+	ns = find_get_krg_ipcns();
+	if (!ns)
+		return -ENOSYS;
+
+	down_write(&shm_ids(ns).rw_mutex);
+
+	params.requested_id = copy_shp.shm_perm.id;
+	params.key = copy_shp.shm_perm.key;
+	params.flg = flag;
+	params.u.size = copy_shp.shm_segsz;
+
+	r = newseg(ns, &params);
+	if (r < 0)
+		goto out_put_ns;
+
+	BUG_ON(r != params.requested_id);
+
+	/* the memory segment cannot disappear since we hold the ns mutex */
+	shp = shm_lock(ns, params.requested_id);
+	if (IS_ERR(shp)) {
+		r = PTR_ERR(shp);
+		goto out_put_ns;
+	}
+
+	r = import_full_shm_content(ghost, ns, &shp);
+	if (r)
+		goto out_freeshm;
+
+	shp->shm_atim = copy_shp.shm_atim;
+	shp->shm_dtim = copy_shp.shm_dtim;
+	shp->shm_ctim = copy_shp.shm_ctim;
+	shp->shm_cprid = copy_shp.shm_cprid;
+	shp->shm_lprid = copy_shp.shm_lprid;
+
+	shm_unlock(shp);
+
+out_put_ns:
+	up_write(&shm_ids(ns).rw_mutex);
+
+	put_ipc_ns(ns);
+out:
+	return r;
+out_freeshm:
+	BUG_ON(shp->shm_nattch);
+	krg_ipc_shm_destroy(ns, shp);
+	goto out;
+}
+
+
