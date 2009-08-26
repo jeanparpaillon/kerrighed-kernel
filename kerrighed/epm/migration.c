@@ -173,9 +173,9 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 
 	krg_unset_pid_location(tsk->pid);
 
-	krg_task_writelock(tsk->pid);
+	__krg_task_writelock(tsk);
 	leave_all_relatives(tsk);
-	krg_task_unlock(tsk->pid);
+	__krg_task_unlock(tsk);
 
 	/*
 	 * Prevent the migrated task from removing the sighand_struct and
@@ -204,13 +204,13 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 		krg_sighand_unlock(tsk->sighand->krg_objid);
 		krg_sighand_unpin(tsk->sighand);
 
-		obj = krg_task_writelock(tsk->pid);
+		obj = __krg_task_writelock(tsk);
 		BUG_ON(!obj);
 		write_lock_irq(&tasklist_lock);
 		obj->task = tsk;
 		tsk->task_obj = obj;
 		write_unlock_irq(&tasklist_lock);
-		krg_task_unlock(tsk->pid);
+		__krg_task_unlock(tsk);
 
 		join_local_relatives(tsk);
 

@@ -832,7 +832,7 @@ static int de_thread(struct task_struct *tsk)
 		parent_children_obj = rcu_dereference(tsk->parent_children_obj);
 #endif
 #ifdef CONFIG_KRG_PROC
-		/* tsk->pid will disappear just below. */
+		/* tsk's pid will disappear just below. */
 		obj = leader->task_obj;
 		BUG_ON(!obj ^ !tsk->task_obj);
 		if (
@@ -850,7 +850,7 @@ static int de_thread(struct task_struct *tsk)
 			krg_task_free(tsk);
 
 			if (obj)
-				krg_task_writelock(leader->pid);
+				__krg_task_writelock(leader);
 
 			write_lock_irq(&tasklist_lock);
 		}
@@ -905,7 +905,7 @@ static int de_thread(struct task_struct *tsk)
 #ifdef CONFIG_KRG_PROC
 		/* tsk has taken leader's pid. */
 		if (obj)
-			krg_task_unlock(tsk->pid);
+			__krg_task_unlock(tsk);
 #endif /* CONFIG_KRG_PROC */
 #ifdef CONFIG_KRG_EPM
 		krg_children_finish_de_thread(parent_children_obj, tsk);

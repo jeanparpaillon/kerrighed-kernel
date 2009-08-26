@@ -1715,9 +1715,9 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 		 * We must not call krg_parent_children_readlock since we are
 		 * restoring here the data needed for this function to work.
 		 */
-		obj = krg_task_readlock(tskRecv->pid);
+		obj = __krg_task_readlock(tskRecv);
 		real_parent_tgid = obj->real_parent_tgid;
-		krg_task_unlock(tskRecv->pid);
+		__krg_task_unlock(tskRecv);
 
 		parent_children_obj =
 			krg_children_readlock(real_parent_tgid);
@@ -1760,7 +1760,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	pid = task_pid(tskRecv);
 	BUG_ON(!pid);
 
-	obj = krg_task_writelock(tskRecv->pid);
+	obj = __krg_task_writelock(tskRecv);
 
 	krg_current = tskRecv;
 	newTsk = copy_process(flags, stack_start, l_regs, stack_size,
@@ -1768,7 +1768,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	krg_current = NULL;
 
 	if (IS_ERR(newTsk)) {
-		krg_task_unlock(tskRecv->pid);
+		__krg_task_unlock(tskRecv);
 
 		if (action->type == EPM_REMOTE_CLONE)
 			krg_children_unlock(tskRecv->parent_children_obj);
@@ -1816,7 +1816,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	if (action->type == EPM_MIGRATE || action->type == EPM_CHECKPOINT)
 		newTsk->did_exec = tskRecv->did_exec;
 
-	krg_task_unlock(tskRecv->pid);
+	__krg_task_unlock(tskRecv);
 
 	retval = register_pids(newTsk, action);
 	BUG_ON(retval);

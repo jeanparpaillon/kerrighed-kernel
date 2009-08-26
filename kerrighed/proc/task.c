@@ -327,7 +327,7 @@ void krg_task_fill(struct task_struct *task, unsigned long clone_flags)
 void krg_task_commit(struct task_struct *task)
 {
 	if (task->task_obj)
-		krg_task_unlock(task->pid);
+		__krg_task_unlock(task);
 }
 
 void krg_task_abort(struct task_struct *task)
@@ -409,6 +409,11 @@ struct task_kddm_object *krg_task_readlock(pid_t pid)
 	return obj;
 }
 
+struct task_kddm_object *__krg_task_readlock(struct task_struct *task)
+{
+	return krg_task_readlock(task->pid);
+}
+
 /**
  * @author Pascal Gallard
  */
@@ -444,9 +449,19 @@ struct task_kddm_object *krg_task_writelock(pid_t pid)
 	return task_writelock(pid, 0);
 }
 
+struct task_kddm_object *__krg_task_writelock(struct task_struct *task)
+{
+	return task_writelock(task->pid, 0);
+}
+
 struct task_kddm_object *krg_task_writelock_nested(pid_t pid)
 {
 	return task_writelock(pid, 1);
+}
+
+struct task_kddm_object *__krg_task_writelock_nested(struct task_struct *task)
+{
+	return task_writelock(task->pid, 1);
 }
 
 /**
@@ -500,6 +515,11 @@ void krg_task_unlock(pid_t pid)
 		}
 	}
 	_kddm_put_object(task_kddm_set, pid);
+}
+
+void __krg_task_unlock(struct task_struct *task)
+{
+	krg_task_unlock(task->pid);
 }
 
 #ifdef CONFIG_KRG_EPM

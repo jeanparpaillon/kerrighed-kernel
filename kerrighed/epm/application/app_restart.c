@@ -784,7 +784,7 @@ static int local_restore_task_object(struct app_struct *app)
 
 		if (t->restart.parent != 1) {
 
-			task->task_obj = krg_task_writelock(task->pid);
+			task->task_obj = __krg_task_writelock(task);
 
 			write_lock_irq(&tasklist_lock);
 
@@ -799,7 +799,7 @@ static int local_restore_task_object(struct app_struct *app)
 
 			write_unlock_irq(&tasklist_lock);
 
-			krg_task_unlock(task->pid);
+			__krg_task_unlock(task);
 		}
 
 		BUG_ON(task->task_obj->group_leader != t->restart.tgid);
