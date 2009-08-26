@@ -32,9 +32,6 @@ void krg_set_child_location(struct children_kddm_object *obj,
 			    pid_t pid, kerrighed_node_t node);
 void krg_remove_child(struct children_kddm_object *obj,
 		      pid_t child_pid);
-void krg_reparent_child(struct children_kddm_object *obj,
-			pid_t child_pid,
-			pid_t reaper_pid, int same_group);
 void krg_forget_original_remote_parent(struct task_struct *parent,
 				       struct task_struct *reaper);
 pid_t krg_get_real_parent_tgid(struct task_struct *task,
