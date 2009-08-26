@@ -470,8 +470,7 @@ static void reparent_to_kthreadd(void)
 #ifdef CONFIG_KRG_EPM
 	if (parent_children_obj) {
 		krg_set_child_ptraced(parent_children_obj, current->pid, 0);
-		krg_reparent_child(parent_children_obj, current->pid,
-				   kthreadd_task->pid, 0);
+		krg_remove_child(parent_children_obj, current->pid);
 		krg_children_unlock(parent_children_obj);
 	}
 

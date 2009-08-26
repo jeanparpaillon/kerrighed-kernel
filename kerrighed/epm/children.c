@@ -600,23 +600,6 @@ static void reparent_child(struct children_kddm_object *obj,
 	}
 }
 
-/* Expects obj write locked */
-void krg_reparent_child(struct children_kddm_object *obj,
-			pid_t child_pid,
-			pid_t reaper_pid, int same_group)
-{
-	struct remote_child *item;
-
-	if (!obj)
-		return;
-
-	list_for_each_entry(item, &obj->children, sibling)
-		if (item->pid == child_pid) {
-			reparent_child(obj, item, reaper_pid, same_group);
-			break;
-		}
-}
-
 /*
  * Expects parent->children_obj write locked
  * and tasklist_lock write locked
