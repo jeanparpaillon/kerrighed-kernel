@@ -257,7 +257,7 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
 	*childregs = *regs;
 #ifdef CONFIG_KRG_EPM
 	/* Do not corrupt ax in migration/restart */
-	if (!krg_current || krg_current->tgid != krg_current->signal->krg_objid)
+	if (!krg_current || in_krg_do_fork())
 #endif
 	childregs->ax = 0;
 	childregs->sp = sp;
@@ -301,8 +301,7 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
 
 #ifdef CONFIG_KRG_EPM
 	/* Do not corrupt debugctlmsr in migration/restart */
-	if (!krg_current
-	    || krg_current->tgid != krg_current->signal->krg_objid) {
+	if (!krg_current || in_krg_do_fork()) {
 #endif
 	clear_tsk_thread_flag(p, TIF_DEBUGCTLMSR);
 	p->thread.debugctlmsr = 0;

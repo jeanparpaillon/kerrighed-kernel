@@ -12,6 +12,7 @@
 #include <linux/freezer.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/sys/types.h>
+#include <kerrighed/pid.h>
 #include <kerrighed/hotplug.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
@@ -134,6 +135,11 @@ static void handle_remote_clone(struct rpc_desc *desc, void *msg, size_t size)
 	krg_action_stop(task, EPM_REMOTE_CLONE);
 
 	wake_up_new_task(task, CLONE_VM);
+}
+
+bool in_krg_do_fork(void)
+{
+	return task_tgid_knr(krg_current) != krg_current->signal->krg_objid;
 }
 
 static inline struct vfork_done_proxy *vfork_done_proxy_alloc(void)

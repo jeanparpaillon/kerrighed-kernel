@@ -859,7 +859,7 @@ static int copy_sighand(unsigned long clone_flags, struct task_struct *tsk)
 	struct sighand_struct *sig;
 
 #ifdef CONFIG_KRG_EPM
-	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid)
+	if (krg_current && !in_krg_do_fork())
 		/*
 		 * This is a process migration or restart: sighand_struct is
 		 * already setup.
@@ -946,7 +946,7 @@ static int copy_signal(unsigned long clone_flags, struct task_struct *tsk)
 	struct signal_struct *sig;
 
 #ifdef CONFIG_KRG_EPM
-	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid) {
+	if (krg_current && !in_krg_do_fork()) {
 		/*
 		 * This is a process migration or restart: signal_struct is
 		 * already setup.
@@ -1237,8 +1237,7 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	p->default_timer_slack_ns = current->timer_slack_ns;
 
 #ifdef CONFIG_KRG_EPM
-	if (!krg_current
-	    || krg_current->tgid != krg_current->signal->krg_objid) {
+	if (!krg_current || in_krg_do_fork()) {
 #endif
 	task_io_accounting_init(&p->ioac);
 	acct_clear_integrals(p);
@@ -1370,7 +1369,7 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	 * Clear TID on mm_release()?
 	 */
 #ifdef CONFIG_KRG_EPM
-	if (!krg_current || krg_current->tgid != krg_current->signal->krg_objid)
+	if (!krg_current || in_krg_do_fork())
 #endif
 	p->clear_child_tid = (clone_flags & CLONE_CHILD_CLEARTID) ? child_tidptr: NULL;
 #ifdef CONFIG_FUTEX
@@ -1410,7 +1409,7 @@ struct task_struct *copy_process(unsigned long clone_flags,
 #ifdef CONFIG_KRG_EPM
 	} else {
 		p->exit_signal = clone_flags & CSIGNAL;
-		if (p->tgid != krg_current->signal->krg_objid) {
+		if (in_krg_do_fork()) {
 			/* Remote clone */
 			p->pdeath_signal = 0;
 			p->exit_state = 0;
@@ -1515,7 +1514,7 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	recalc_sigpending();
 #ifdef CONFIG_KRG_EPM
 	/* Only check if inside a remote clone() */
-	if (krg_current && krg_current->signal->krg_objid != p->tgid)
+	if (krg_current && in_krg_do_fork())
 #endif
 	if (signal_pending(current)) {
 		spin_unlock(&current->sighand->siglock);
@@ -1632,12 +1631,12 @@ bad_fork_cleanup_mm:
 		mmput(p->mm);
 bad_fork_cleanup_signal:
 #ifdef CONFIG_KRG_EPM
-	if (!krg_current || krg_current->tgid != krg_current->signal->krg_objid)
+	if (!krg_current || in_krg_do_fork())
 #endif
 	cleanup_signal(p);
 bad_fork_cleanup_sighand:
 #ifdef CONFIG_KRG_EPM
-	if (!krg_current || krg_current->tgid != krg_current->signal->krg_objid)
+	if (!krg_current || in_krg_do_fork())
 		krg_sighand_cleanup(p->sighand);
 #else
 	__cleanup_sighand(p->sighand);

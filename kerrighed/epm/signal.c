@@ -414,7 +414,7 @@ void krg_signal_alloc(struct task_struct *task, struct pid *pid,
 	if (!task->nsproxy->krg_ns)
 		return;
 
-	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid)
+	if (krg_current && !in_krg_do_fork())
 		/*
 		 * This is a process migration or restart: signal_struct is
 		 * already setup.

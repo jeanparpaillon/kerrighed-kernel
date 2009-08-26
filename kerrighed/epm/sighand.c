@@ -298,7 +298,7 @@ void krg_sighand_alloc(struct task_struct *task, unsigned long clone_flags)
 {
 	struct sighand_struct *sig = task->sighand;
 
-	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid)
+	if (krg_current && !in_krg_do_fork())
 		/*
 		 * This is a process migration or restart: sighand_struct is
 		 * already setup.
