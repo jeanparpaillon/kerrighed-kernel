@@ -73,12 +73,13 @@ struct msg_sender {
 
 #ifndef CONFIG_KRG_IPC
 #define msg_ids(ns)	((ns)->ids[IPC_MSG_IDS])
+#define msg_unlock(msq)		ipc_unlock(&(msq)->q_perm)
 #endif
 
-#define msg_unlock(msq)		ipc_unlock(&(msq)->q_perm)
-
 static void freeque(struct ipc_namespace *, struct kern_ipc_perm *);
+#ifndef CONFIG_KRG_IPC
 static int newque(struct ipc_namespace *, struct ipc_params *);
+#endif
 #ifdef CONFIG_PROC_FS
 static int sysvipc_msg_proc_show(struct seq_file *s, void *it);
 #endif
@@ -164,6 +165,7 @@ void __init msg_init(void)
 				IPC_MSG_IDS, sysvipc_msg_proc_show);
 }
 
+#ifndef CONFIG_KRG_IPC
 /*
  * msg_lock_(check_) routines are called in the paths where the rw_mutex
  * is not held.
@@ -177,6 +179,7 @@ static inline struct msg_queue *msg_lock(struct ipc_namespace *ns, int id)
 
 	return container_of(ipcp, struct msg_queue, q_perm);
 }
+#endif
 
 static inline struct msg_queue *msg_lock_check(struct ipc_namespace *ns,
 						int id)
@@ -201,7 +204,10 @@ static inline void msg_rmid(struct ipc_namespace *ns, struct msg_queue *s)
  *
  * Called with msg_ids.rw_mutex held (writer)
  */
-static int newque(struct ipc_namespace *ns, struct ipc_params *params)
+#ifndef CONFIG_KRG_IPC
+static
+#endif
+int newque(struct ipc_namespace *ns, struct ipc_params *params)
 {
 	struct msg_queue *msq;
 	int id, retval;

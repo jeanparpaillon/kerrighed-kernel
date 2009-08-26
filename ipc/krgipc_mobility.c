@@ -12,6 +12,7 @@
 #include <linux/ipc_namespace.h>
 #include <linux/file.h>
 #include <linux/msg.h>
+#include <linux/security.h>
 #include <linux/sem.h>
 #include <linux/shm.h>
 #include <linux/unique_id.h>
@@ -25,6 +26,7 @@
 #include <kerrighed/regular_file_mgr.h>
 #include "ipc_handler.h"
 #include "krgshm.h"
+#include "krgmsg.h"
 #include "sem_handler.h"
 #include "semundolst_io_linker.h"
 
@@ -363,3 +365,254 @@ struct shared_object_operations cr_shared_semundo_ops = {
 	.import_complete   = cr_import_complete_sysv_sem,
 	.delete            = cr_delete_sysv_sem,
 };
+
+/******************************************************************************/
+
+/* mostly copy/paste from store_msg */
+static int export_full_one_msg(ghost_t *ghost, struct msg_msg *msg)
+{
+	int r = 0;
+
+	int alen;
+	int len;
+	struct msg_msgseg *seg;
+
+	r = ghost_write(ghost, &msg->m_ts, sizeof(int));
+	if (r)
+		goto out;
+
+	r = ghost_write(ghost, msg, sizeof(struct msg_msg));
+	if (r)
+		goto out;
+
+	len = msg->m_ts;
+	alen = len;
+	if (alen > DATALEN_MSG)
+		alen = DATALEN_MSG;
+
+	r = ghost_write(ghost, msg + 1, alen);
+	if (r)
+		goto out;
+
+	len -= alen;
+	seg = msg->next;
+	while (len > 0) {
+		alen = len;
+		if (alen > DATALEN_SEG)
+			alen = DATALEN_SEG;
+
+		r = ghost_write(ghost, seg + 1, alen);
+		if (r)
+			goto out;
+
+		len -= alen;
+		seg = seg->next;
+	}
+out:
+	return r;
+}
+
+static int export_full_all_msgs(ghost_t * ghost, struct msg_queue *msq)
+{
+	int r = 0;
+	struct msg_msg *msg;
+
+	r = ghost_write(ghost, &msq->q_qnum, sizeof(unsigned long));
+	if (r)
+		goto out;
+
+	list_for_each_entry(msg, &msq->q_messages, m_list) {
+		r = export_full_one_msg(ghost, msg);
+		if (r)
+			goto out;
+	}
+out:
+	return r;
+}
+
+static int export_full_sysv_msgq(ghost_t *ghost, int msgid)
+{
+	int r = 0;
+	struct msg_queue *msq;
+	struct ipc_namespace *ns;
+
+	ns = find_get_krg_ipcns();
+	if (!ns)
+		return -ENOSYS;
+
+	msq = msg_lock(ns, msgid);
+	if (IS_ERR(msq)) {
+		r = PTR_ERR(msq);
+		goto out;
+	}
+
+	if (!msq->is_master) {
+		r = -EPERM;
+		goto out_unlock;
+	}
+
+	r = ghost_write(ghost, msq, sizeof(struct msg_queue));
+	if (r)
+		goto out_unlock;
+
+	r = export_full_all_msgs(ghost, msq);
+
+out_unlock:
+	msg_unlock(msq);
+out:
+	put_ipc_ns(ns);
+	return r;
+}
+
+/* mostly copy/paste from load_msg */
+static struct msg_msg *import_full_one_msg(ghost_t * ghost)
+{
+	struct msg_msg *msg = NULL;
+	struct msg_msgseg **pseg;
+	int r;
+	int len, alen;
+
+	r = ghost_read(ghost, &len, sizeof(int));
+	if (r)
+		goto out_err;
+
+	alen = len;
+	if (alen > DATALEN_MSG)
+		alen = DATALEN_MSG;
+
+	msg = kmalloc(sizeof(*msg) + alen, GFP_KERNEL);
+	if (msg == NULL)
+		return ERR_PTR(-ENOMEM);
+
+	r = ghost_read(ghost, msg, sizeof(struct msg_msg));
+	if (r)
+		goto out_err;
+
+	r = ghost_read(ghost, msg + 1, alen);
+	if (r)
+		goto out_err;
+
+	msg->next = NULL;
+	msg->security = NULL;
+
+	len -= alen;
+	pseg = &msg->next;
+	while (len > 0) {
+		struct msg_msgseg *seg;
+		alen = len;
+		if (alen > DATALEN_SEG)
+			alen = DATALEN_SEG;
+
+		seg = kmalloc(sizeof(*seg) + alen, GFP_KERNEL);
+
+		if (!seg) {
+			r = -ENOMEM;
+			goto out_err;
+		}
+		*pseg = seg;
+		seg->next = NULL;
+
+		r = ghost_read(ghost, seg + 1, alen);
+		if (r)
+			goto out_err;
+
+		pseg = &seg->next;
+		len -= alen;
+	}
+
+	r = security_msg_msg_alloc(msg);
+	if (r)
+		goto out_err;
+
+	return msg;
+
+out_err:
+	free_msg(msg);
+	return ERR_PTR(r);
+}
+
+static int import_full_all_msgs(ghost_t *ghost, struct ipc_namespace *ns,
+				struct msg_queue *msq)
+{
+	int i;
+	int r = 0;
+	unsigned long nbmsg;
+
+	r = ghost_read(ghost, &nbmsg, sizeof(unsigned long));
+	if (r)
+		goto out;
+
+	for (i = 0; i < nbmsg; i++) {
+		struct msg_msg * msg = import_full_one_msg(ghost);
+		if (IS_ERR(msg)) {
+			r = PTR_ERR(msg);
+			goto out;
+		}
+		list_add_tail(&msg->m_list, &msq->q_messages);
+		atomic_inc(&ns->msg_hdrs);
+		atomic_add(msg->m_ts, &ns->msg_bytes);
+		msq->q_qnum++;
+		msq->q_cbytes += msg->m_ts;
+	}
+
+out:
+	return r;
+}
+
+int import_full_sysv_msgq(ghost_t *ghost)
+{
+	int r;
+	struct ipc_namespace *ns;
+	struct msg_queue copy_msq, *msq;
+	struct ipc_params params;
+
+	r = ghost_read(ghost, &copy_msq, sizeof(struct msg_queue));
+	if (r)
+		goto out;
+
+	ns = find_get_krg_ipcns();
+	if (!ns)
+		return -ENOSYS;
+
+	down_write(&msg_ids(ns).rw_mutex);
+
+	params.requested_id = copy_msq.q_perm.id;
+	params.key = copy_msq.q_perm.key;
+	params.flg = copy_msq.q_perm.mode;
+
+	r = newque(ns, &params);
+	if (r < 0)
+		goto out_put_ns;
+
+	BUG_ON(r != params.requested_id);
+
+	/* the message queue cannot disappear since we hold the ns mutex */
+	msq = msg_lock(ns, params.requested_id);
+	if (IS_ERR(msq)) {
+		r = PTR_ERR(msq);
+		goto out_put_ns;
+	}
+
+	r = import_full_all_msgs(ghost, ns, msq);
+	if (r)
+		goto out_freeque;
+
+	msq->q_stime = copy_msq.q_stime;
+	msq->q_rtime = copy_msq.q_rtime;
+	msq->q_ctime = copy_msq.q_ctime;
+
+	msq->q_lspid = copy_msq.q_lspid;
+	msq->q_lrpid = copy_msq.q_lrpid;
+
+	msg_unlock(msq);
+out_put_ns:
+	up_write(&msg_ids(ns).rw_mutex);
+
+	put_ipc_ns(ns);
+out:
+	return r;
+
+out_freeque:
+	kh_ipc_msg_freeque(ns, &msq->q_perm);
+	goto out_put_ns;
+}
