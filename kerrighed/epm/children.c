@@ -461,7 +461,7 @@ static int krg_children_alive(struct children_kddm_object *obj)
 
 static int new_child(struct children_kddm_object *obj,
 		     pid_t parent_pid,
-		     pid_t child_pid, pid_t child_tgid,
+		     struct pid *pid, struct pid *tgid,
 		     struct pid *pgrp, struct pid *session,
 		     int exit_signal)
 {
@@ -475,8 +475,8 @@ static int new_child(struct children_kddm_object *obj,
 	if (!item)
 		return -ENOMEM;
 
-	item->pid = child_pid;
-	item->tgid = child_tgid;
+	item->pid = pid_nr(pid);
+	item->tgid = pid_nr(tgid);
 	item->pgid = pid_nr(pgrp);
 	item->sid = pid_nr(session);
 	item->parent = item->real_parent = parent_pid;
@@ -494,7 +494,7 @@ int krg_new_child(struct children_kddm_object *obj,
 		  pid_t parent_pid,
 		  struct task_struct *child)
 {
-	return new_child(obj, parent_pid, child->pid, child->tgid,
+	return new_child(obj, parent_pid, task_pid(child), task_tgid(child),
 			 task_pgrp(child), task_session(child),
 			 child->exit_signal);
 }
@@ -1370,10 +1370,13 @@ out:
 	return err;
 }
 
-int krg_children_fork(struct task_struct *task)
+int krg_children_fork(struct task_struct *task,
+		      struct pid *pid,
+		      unsigned long clone_flags)
 {
 	struct children_kddm_object *obj = task->parent_children_obj;
 	pid_t parent_pid;
+	struct pid *tgid;
 	int err = 0;
 
 	if (krg_current)
@@ -1391,8 +1394,11 @@ int krg_children_fork(struct task_struct *task)
 		parent_pid = current->task_obj->real_parent;
 	else
 		parent_pid = task->real_parent->pid;
+	tgid = pid;
+	if (clone_flags & CLONE_THREAD)
+		tgid = task_tgid(current);
 	err = new_child(obj, parent_pid,
-			task->pid, task->tgid,
+			pid, tgid,
 			task_pgrp(current), task_session(current),
 			task->exit_signal);
 

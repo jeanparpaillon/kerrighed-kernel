@@ -61,7 +61,9 @@ u32 krg_get_real_parent_self_exec_id(struct task_struct *task,
 int krg_children_prepare_fork(struct task_struct *task,
 			      struct pid *pid,
 			      unsigned long clone_flags);
-int krg_children_fork(struct task_struct *task);
+int krg_children_fork(struct task_struct *task,
+		      struct pid *pid,
+		      unsigned long clone_flags);
 void krg_children_commit_fork(struct task_struct *task);
 void krg_children_abort_fork(struct task_struct *task);
 
