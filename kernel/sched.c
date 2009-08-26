@@ -2499,8 +2499,7 @@ int wake_up_state(struct task_struct *p, unsigned int state)
 static void __sched_fork(struct task_struct *p)
 {
 #ifdef CONFIG_KRG_EPM
-	if (!krg_current
-	    || krg_current->tgid != krg_current->signal->krg_objid) {
+	if (!krg_current || in_krg_do_fork()) {
 #endif
 	p->se.exec_start		= 0;
 	p->se.sum_exec_runtime		= 0;
@@ -2565,7 +2564,7 @@ void sched_fork(struct task_struct *p, int clone_flags)
 
 #if defined(CONFIG_SCHEDSTATS) || defined(CONFIG_TASK_DELAY_ACCT)
 #ifdef CONFIG_KRG_EPM
-	if (!krg_current || krg_current->tgid != krg_current->signal->krg_objid)
+	if (!krg_current || in_krg_do_fork())
 #endif
 	if (likely(sched_info_on()))
 		memset(&p->sched_info, 0, sizeof(p->sched_info));

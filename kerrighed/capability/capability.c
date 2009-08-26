@@ -42,7 +42,7 @@ void krg_cap_fork(struct task_struct *task, unsigned long clone_flags)
 	int i;
 
 #ifdef CONFIG_KRG_EPM
-	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid)
+	if (krg_current && !in_krg_do_fork())
 		/* Migration/restart: do not recompute krg caps */
 		return;
 #endif

@@ -2076,6 +2076,7 @@ int krg_do_fork(unsigned long clone_flags,
 		int *parent_tidptr,
 		int *child_tidptr,
 		int trace);
+bool in_krg_do_fork(void);
 /* vfork with remote child */
 void krg_vfork_done(struct completion *vfork_done);
 #endif /* CONFIG_KRG_EPM */
