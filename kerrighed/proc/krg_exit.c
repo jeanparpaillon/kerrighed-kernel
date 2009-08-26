@@ -233,7 +233,7 @@ int krg_delayed_notify_parent(struct task_struct *leader)
 				&real_parent_pid,
 				&parent_pid,
 				&parent_node);
-	krg_task_writelock_nested(leader->pid);
+	__krg_task_writelock_nested(leader);
 
 	write_lock_irq(&tasklist_lock);
 	BUG_ON(task_detached(leader));
@@ -258,7 +258,7 @@ int krg_delayed_notify_parent(struct task_struct *leader)
 		leader->exit_state = EXIT_DEAD;
 	write_unlock_irq(&tasklist_lock);
 
-	krg_task_unlock(leader->pid);
+	__krg_task_unlock(leader);
 	if (parent_children_obj) {
 		krg_unlock_pid_location(parent_pid);
 		if (zap_leader)
@@ -474,9 +474,9 @@ krg_prepare_exit_ptrace_task(struct task_struct *tracer,
 							  &parent_pid,
 							  &parent_node);
 	if (obj)
-		krg_task_writelock_nested(task->pid);
+		__krg_task_writelock_nested(task);
 	else
-		krg_task_writelock(task->pid);
+		__krg_task_writelock(task);
 
 	krg_set_child_ptraced(obj, task->pid, 0);
 
@@ -512,7 +512,7 @@ void krg_finish_exit_ptrace_task(struct task_struct *task,
 			krg_remove_child(obj, task->pid);
 		krg_children_unlock(obj);
 	}
-	krg_task_unlock(task->pid);
+	__krg_task_unlock(task);
 }
 
 #endif /* CONFIG_KRG_EPM */
@@ -539,9 +539,9 @@ void *krg_prepare_exit_notify(struct task_struct *task)
 
 	if (task->task_obj) {
 		if (cookie)
-			krg_task_writelock_nested(task->pid);
+			__krg_task_writelock_nested(task);
 		else
-			krg_task_writelock(task->pid);
+			__krg_task_writelock(task);
 
 #ifdef CONFIG_KRG_EPM
 		write_lock_irq(&tasklist_lock);
@@ -595,7 +595,7 @@ void krg_finish_exit_notify(struct task_struct *task, int signal, void *cookie)
 #endif /* CONFIG_KRG_EPM */
 
 	if (task->task_obj)
-		krg_task_unlock(task->pid);
+		__krg_task_unlock(task);
 }
 
 void krg_release_task(struct task_struct *p)
