@@ -317,12 +317,12 @@ repeat:
 	if (retval)
 		goto bad;
 #ifdef CONFIG_KRG_EPM
-	retval = krg_set_child_ptraced(parent_children_obj, task->pid, 1);
+	retval = krg_set_child_ptraced(parent_children_obj, task, 1);
 	if (retval)
 		goto bad;
 	retval = krg_ptrace_link(task, current);
 	if (retval) {
-		krg_set_child_ptraced(parent_children_obj, task->pid, 0);
+		krg_set_child_ptraced(parent_children_obj, task, 0);
 		goto bad;
 	}
 #endif /* CONFIG_KRG_EPM */
@@ -426,7 +426,7 @@ int ptrace_detach(struct task_struct *child, unsigned int data)
 	if (child->ptrace) {
 		child->exit_code = data;
 		dead = __ptrace_detach(current, child);
-		krg_set_child_ptraced(parent_children_obj, child->pid, 0);
+		krg_set_child_ptraced(parent_children_obj, child, 0);
 		if (!child->exit_state)
 			wake_up_process(child);
 	}
@@ -772,12 +772,12 @@ repeat:
 #ifdef CONFIG_KRG_EPM
 		if (!ret)
 			ret = krg_set_child_ptraced(parent_children_obj,
-						    current->pid, 1);
+						    current, 1);
 		if (!ret) {
 			ret = krg_ptrace_link(current, current->parent);
 			if (ret)
 				krg_set_child_ptraced(parent_children_obj,
-						      current->pid, 0);
+						      current, 0);
 		}
 #endif /* CONFIG_KRG_EPM */
 
@@ -798,7 +798,7 @@ repeat:
 			 * __ptrace_link() before.
 			 */
 			krg_ptrace_unlink(current);
-			krg_set_child_ptraced(parent_children_obj, current->pid, 0);
+			krg_set_child_ptraced(parent_children_obj, current, 0);
 		}
 #endif /* CONFIG_KRG_EPM */
 

@@ -269,8 +269,7 @@ int krg_delayed_notify_parent(struct task_struct *leader)
 			 * anymore. Remove leader from its children kddm
 			 * object before parent can access it again.
 			 */
-			krg_remove_child(parent_children_obj,
-					 leader->pid);
+			krg_remove_child(parent_children_obj, leader);
 		krg_children_unlock(parent_children_obj);
 	}
 
@@ -481,7 +480,7 @@ krg_prepare_exit_ptrace_task(struct task_struct *tracer,
 	else
 		__krg_task_writelock(task);
 
-	krg_set_child_ptraced(obj, task->pid, 0);
+	krg_set_child_ptraced(obj, task, 0);
 
 	write_lock_irq(&tasklist_lock);
 	BUG_ON(!task->ptrace);
@@ -512,7 +511,7 @@ void krg_finish_exit_ptrace_task(struct task_struct *task,
 	if (obj) {
 		krg_unlock_pid_location(parent_pid);
 		if (dead)
-			krg_remove_child(obj, task->pid);
+			krg_remove_child(obj, task);
 		krg_children_unlock(obj);
 	}
 	__krg_task_unlock(task);
@@ -584,14 +583,11 @@ void krg_finish_exit_notify(struct task_struct *task, int signal, void *cookie)
 			 * as a child anymore. Remove tsk from its children kddm
 			 * object before parent can access it again.
 			 */
-			krg_remove_child(parent_children_obj, task->pid);
+			krg_remove_child(parent_children_obj, task);
 		} else {
-			krg_set_child_exit_signal(parent_children_obj,
-						  task->pid, task->exit_signal);
-			krg_set_child_exit_state(parent_children_obj,
-						 task->pid, task->exit_state);
-			krg_set_child_location(parent_children_obj,
-					       task->pid, kerrighed_node_id);
+			krg_set_child_exit_signal(parent_children_obj, task);
+			krg_set_child_exit_state(parent_children_obj, task);
+			krg_set_child_location(parent_children_obj, task);
 		}
 		krg_children_unlock(parent_children_obj);
 	}

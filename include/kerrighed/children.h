@@ -23,15 +23,15 @@ int krg_new_child(struct children_kddm_object *obj,
 void krg_set_child_pgid(struct children_kddm_object *obj,
 			pid_t pid, pid_t pgid);
 int krg_set_child_ptraced(struct children_kddm_object *obj,
-			  pid_t pid, int ptraced);
+			  struct task_struct *child, int ptraced);
 void krg_set_child_exit_signal(struct children_kddm_object *obj,
-			       pid_t pid, int exit_signal);
+			       struct task_struct *child);
 void krg_set_child_exit_state(struct children_kddm_object *obj,
-			      pid_t pid, long exit_signal);
+			      struct task_struct *child);
 void krg_set_child_location(struct children_kddm_object *obj,
-			    pid_t pid, kerrighed_node_t node);
+			    struct task_struct *child);
 void krg_remove_child(struct children_kddm_object *obj,
-		      pid_t child_pid);
+		      struct task_struct *child);
 void krg_forget_original_remote_parent(struct task_struct *parent,
 				       struct task_struct *reaper);
 pid_t krg_get_real_parent_tgid(struct task_struct *task,

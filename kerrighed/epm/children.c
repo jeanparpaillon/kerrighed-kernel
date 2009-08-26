@@ -507,8 +507,9 @@ void krg_set_child_pgid(struct children_kddm_object *obj,
 }
 
 int krg_set_child_ptraced(struct children_kddm_object *obj,
-			  pid_t pid, int ptraced)
+			  struct task_struct *child, int ptraced)
 {
+	pid_t = child->pid;
 	struct remote_child *item;
 
 	if (unlikely(!obj))
@@ -527,8 +528,9 @@ int krg_set_child_ptraced(struct children_kddm_object *obj,
 
 /* Expects obj write locked */
 void krg_set_child_exit_signal(struct children_kddm_object *obj,
-			       pid_t pid, int exit_signal)
+			       struct task_struct *child)
 {
+	pid_t pid = child->pid;
 	struct remote_child *item;
 
 	if (!obj)
@@ -536,15 +538,16 @@ void krg_set_child_exit_signal(struct children_kddm_object *obj,
 
 	list_for_each_entry(item, &obj->children, sibling)
 		if (item->pid == pid) {
-			item->exit_signal = exit_signal;
+			item->exit_signal = child->exit_signal;
 			break;
 		}
 }
 
 /* Expects obj write locked */
 void krg_set_child_exit_state(struct children_kddm_object *obj,
-			      pid_t pid, long exit_state)
+			      struct task_struct *child)
 {
+	pid_t pid = child->pid;
 	struct remote_child *item;
 
 	if (!obj)
@@ -552,14 +555,15 @@ void krg_set_child_exit_state(struct children_kddm_object *obj,
 
 	list_for_each_entry(item, &obj->children, sibling)
 		if (item->pid == pid) {
-			item->exit_state = exit_state;
+			item->exit_state = child->exit_state;
 			break;
 		}
 }
 
 void krg_set_child_location(struct children_kddm_object *obj,
-			    pid_t pid, kerrighed_node_t node)
+			    struct task_struct *child)
 {
+	pid_t pid = child->pid;
 	struct remote_child *item;
 
 	if (!obj)
@@ -567,7 +571,7 @@ void krg_set_child_location(struct children_kddm_object *obj,
 
 	list_for_each_entry(item, &obj->children, sibling)
 		if (item->pid == pid) {
-			item->node = node;
+			item->node = kerrighed_node_id;
 			break;
 		}
 }
@@ -636,8 +640,10 @@ void krg_forget_original_remote_parent(struct task_struct *parent,
 }
 
 /* Expects obj write locked */
-void krg_remove_child(struct children_kddm_object *obj, pid_t child_pid)
+void
+krg_remove_child(struct children_kddm_object *obj, struct task_struct *child)
 {
+	pid_t child_pid = child->pid;
 	struct remote_child *item;
 
 	if (!obj)
@@ -1448,7 +1454,7 @@ krg_children_prepare_de_thread(struct task_struct *task)
 		 */
 		krg_children_unlink_krg_parent(task);
 		write_unlock_irq(&tasklist_lock);
-		krg_remove_child(obj, task->pid);
+		krg_remove_child(obj, task);
 	}
 	if (rcu_dereference(task->children_obj)) {
 		struct children_kddm_object *children_obj;
@@ -1477,8 +1483,8 @@ void krg_children_finish_de_thread(struct children_kddm_object *obj,
 		write_lock_irq(&tasklist_lock);
 		krg_children_relink_krg_parent(task);
 		write_unlock_irq(&tasklist_lock);
-		krg_set_child_exit_signal(obj, task->pid, task->exit_signal);
-		krg_set_child_exit_state(obj, task->pid, task->exit_state);
+		krg_set_child_exit_signal(obj, task);
+		krg_set_child_exit_state(obj, task);
 		krg_children_unlock(obj);
 	}
 }
@@ -1552,7 +1558,7 @@ void krg_unhash_process(struct task_struct *tsk)
 	 * have a children kddm object.
 	 */
 	/* Won't do anything if obj is NULL. */
-	krg_remove_child(obj, tsk->pid);
+	krg_remove_child(obj, tsk);
 	write_lock_irq(&tasklist_lock);
 	if (tsk->real_parent == baby_sitter) {
 		remove_from_krg_parent(tsk, tsk->task_obj->real_parent);

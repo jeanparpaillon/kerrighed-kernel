@@ -469,8 +469,8 @@ static void reparent_to_kthreadd(void)
 	write_unlock_irq(&tasklist_lock);
 #ifdef CONFIG_KRG_EPM
 	if (parent_children_obj) {
-		krg_set_child_ptraced(parent_children_obj, current->pid, 0);
-		krg_remove_child(parent_children_obj, current->pid);
+		krg_set_child_ptraced(parent_children_obj, current, 0);
+		krg_remove_child(parent_children_obj, current);
 		krg_children_unlock(parent_children_obj);
 	}
 
@@ -1577,12 +1577,8 @@ int wait_task_zombie(struct task_struct *p, int options,
 		write_unlock_irq(&tasklist_lock);
 #ifdef CONFIG_KRG_EPM
 		if (parent_children_obj) {
-			krg_set_child_ptraced(parent_children_obj,
-					      saved_p->pid,
-					      0);
-			krg_set_child_exit_signal(parent_children_obj,
-						  saved_p->pid,
-						  saved_p->exit_signal);
+			krg_set_child_ptraced(parent_children_obj, saved_p, 0);
+			krg_set_child_exit_signal(parent_children_obj, saved_p);
 			krg_children_unlock(parent_children_obj);
 		}
 #endif /* CONFIG_KRG_EPM */
