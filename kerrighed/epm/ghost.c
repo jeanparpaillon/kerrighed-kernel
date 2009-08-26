@@ -761,7 +761,7 @@ void unimport_children(struct epm_action *action, struct task_struct *task)
 	switch (action->type) {
 	case EPM_REMOTE_CLONE:
 	case EPM_CHECKPOINT:
-		krg_children_writelock(task->tgid);
+		__krg_children_writelock(task);
 		krg_children_exit(task);
 		break;
 	default:
@@ -921,7 +921,7 @@ static int import_children(struct epm_action *action,
 
 	switch (action->type) {
 	case EPM_MIGRATE:
-		task->children_obj = krg_children_readlock(task->tgid);
+		task->children_obj = __krg_children_readlock(task);
 		BUG_ON(!task->children_obj);
 		krg_children_unlock(task->children_obj);
 		break;
@@ -935,7 +935,7 @@ static int import_children(struct epm_action *action,
 		if (task->pid == task->tgid) {
 			task->children_obj = krg_children_alloc(task);
 		} else {
-			task->children_obj = krg_children_writelock(task->tgid);
+			task->children_obj = __krg_children_writelock(task);
 			BUG_ON(!task->children_obj);
 			__krg_children_share(task);
 			krg_children_unlock(task->children_obj);

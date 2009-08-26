@@ -1136,7 +1136,7 @@ krg_prepare_setpgid(pid_t pid, pid_t pgid, kerrighed_node_t *nodep)
 
 
 	for (;;) {
-		parent_children_obj = krg_children_writelock(current->tgid);
+		parent_children_obj = __krg_children_writelock(current);
 		BUG_ON(!parent_children_obj);
 
 		task_obj = krg_task_readlock(pid);
