@@ -1514,7 +1514,7 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	}
 
 #ifdef CONFIG_KRG_EPM
-	retval = krg_children_fork(p);
+	retval = krg_children_fork(p, pid, clone_flags);
 	if (retval) {
 		spin_unlock(&current->sighand->siglock);
 		write_unlock_irq(&tasklist_lock);
