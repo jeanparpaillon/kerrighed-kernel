@@ -153,7 +153,12 @@
 #define KSYS_IPC_MSGQ_RESTART          _IOW(KERRIGHED_PROC_MAGIC, \
 					    IPC_PROC_BASE + 1,	  \
 					    int)
-
+#define KSYS_IPC_SEM_CHKPT             _IOW(KERRIGHED_PROC_MAGIC,       \
+					    IPC_PROC_BASE + 2,		\
+					    int[2])
+#define KSYS_IPC_SEM_RESTART           _IOW(KERRIGHED_PROC_MAGIC, \
+					    IPC_PROC_BASE + 3,	  \
+					    int)
 
 /*
  * HotPlug
