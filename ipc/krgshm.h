@@ -57,6 +57,4 @@ static inline void shm_unlock(struct shmid_kernel *shp)
 
 void local_shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp);
 
-void shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp);
-
 #endif // __KKRG_SHM__

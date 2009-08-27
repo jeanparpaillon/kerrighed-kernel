@@ -79,10 +79,7 @@ static int newseg(struct ipc_namespace *, struct ipc_params *);
 static void shm_open(struct vm_area_struct *vma);
 static void shm_close(struct vm_area_struct *vma);
 
-#ifndef CONFIG_KRG_IPC
-static
-#endif
-void shm_destroy (struct ipc_namespace *ns, struct shmid_kernel *shp);
+static void shm_destroy (struct ipc_namespace *ns, struct shmid_kernel *shp);
 #ifdef CONFIG_PROC_FS
 static int sysvipc_shm_proc_show(struct seq_file *s, void *it);
 #endif
@@ -225,12 +222,11 @@ static void shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
 }
 
 #ifdef CONFIG_KRG_IPC
-void shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
+static void shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
 {
-	if (is_krg_ipc(&shm_ids(ns))) {
-		local_shm_unlock(shp);
+	if (is_krg_ipc(&shm_ids(ns)))
 		krg_ipc_shm_destroy(ns, shp);
-	} else
+	else
 		local_shm_destroy(ns, shp);
 }
 #endif

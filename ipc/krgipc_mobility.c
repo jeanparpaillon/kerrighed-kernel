@@ -140,7 +140,7 @@ out_put_dentry:
 	shp->shm_nattch--;
 	if (shp->shm_nattch == 0 &&
 	    shp->shm_perm.mode & SHM_DEST)
-		shm_destroy(ns, shp);
+		krg_ipc_shm_destroy(ns, shp);
 	else
 		shm_unlock(shp);
 	up_write(&shm_ids(ns).rw_mutex);
