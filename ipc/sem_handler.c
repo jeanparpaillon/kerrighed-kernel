@@ -11,6 +11,7 @@
 #include <linux/sem.h>
 #include <linux/nsproxy.h>
 #include <kddm/kddm.h>
+#include <kerrighed/pid.h>
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/hotplug.h>
 #include "ipc_handler.h"
@@ -265,9 +266,9 @@ void handle_ipcsem_wakeup_process(struct rpc_desc *desc, void *_msg,
 	BUG_ON(!sma);
 
 	list_for_each_entry_safe(q, tq, &sma->sem_pending, list) {
-		/* compare to q->sleeper->pid instead of q->pid
-		   because q->pid == q->sleeper->tgid */
-		if (q->sleeper->pid == msg->pid) {
+		/* compare to q->sleeper's pid instead of q->pid
+		   because q->pid == q->sleeper's tgid */
+		if (task_pid_knr(q->sleeper) == msg->pid) {
 			list_del(&q->list);
 			goto found;
 		}
@@ -278,7 +279,8 @@ found:
 	q->status = 1; /* IN_WAKEUP; */
 
 	BUG_ON(!q->sleeper);
-	BUG_ON(q->pid != q->sleeper->tgid);
+	BUG_ON(q->pid != task_tgid_nr_ns(q->sleeper,
+					 task_active_pid_ns(q->sleeper)));
 
 	wake_up_process(q->sleeper);
 	smp_wmb();
