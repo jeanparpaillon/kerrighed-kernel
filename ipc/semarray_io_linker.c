@@ -13,6 +13,7 @@
 #include <linux/ipc.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
+#include <kerrighed/pid.h>
 
 #include "ipc_handler.h"
 #include "semarray_io_linker.h"
@@ -92,7 +93,7 @@ static inline void update_sem_queues(struct sem_array *sma,
 			 *  as they contains only tgid, two or more threads
 			 *  can be pending.
 			 */
-			if (local_q->sleeper->pid == remote_sleeper_pid(q)) {
+			if (task_pid_knr(local_q->sleeper) == remote_sleeper_pid(q)) {
 				/* the sem_queue is local */
 				is_local = 1;
 
@@ -331,8 +332,8 @@ static inline void __export_one_local_semqueue(struct rpc_desc *desc,
 	   (needed to be thread aware) */
 	struct sem_queue q2 = *q;
 
-	/* Make remote_sleeper_pid(q2) equal to q->sleeper->pid */
-	q2.sleeper = (void*)((long)(q->sleeper->pid));
+	/* Make remote_sleeper_pid(q2) equal to q->sleeper's pid */
+	q2.sleeper = (void*)((long)(task_pid_knr(q->sleeper)));
 
 	rpc_pack_type(desc, q2);
 	if (q->nsops)
