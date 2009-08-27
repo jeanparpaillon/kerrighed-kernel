@@ -245,6 +245,40 @@ int proc_sem_restart(void *arg)
 	return r;
 }
 
+int proc_shm_chkpt(void *arg)
+{
+	int r;
+	int args[2];
+	int shmid, fd;
+
+	if (copy_from_user((void *) args, arg, 2*sizeof(int))) {
+		PANIC("cannot set the arg of proc_shm_checkpoint system call\n");
+		return -EINVAL;
+	}
+
+	shmid = args[0];
+	fd = args[1];
+
+	r = sys_shm_checkpoint(shmid, fd);
+
+	return r;
+}
+
+int proc_shm_restart(void *arg)
+{
+	int r;
+	int fd;
+
+	if (copy_from_user(&fd, arg, sizeof(int))) {
+		PANIC("cannot set the arg of proc_shm_restart system call\n");
+		return -EINVAL;
+	}
+
+	r = sys_shm_restart(fd);
+
+	return r;
+}
+
 /*****************************************************************************/
 /*                                                                           */
 /*                              INITIALIZATION                               */
@@ -278,9 +312,20 @@ static int ipc_procfs_start(void)
 	if (r != 0)
 		goto unreg_sem_chkpt;
 
+	r = register_proc_service(KSYS_IPC_SHM_CHKPT, proc_shm_chkpt);
+	if (r != 0)
+		goto unreg_sem_restart;
+
+	r = register_proc_service(KSYS_IPC_SHM_RESTART, proc_shm_restart);
+	if (r != 0)
+		goto unreg_shm_chkpt;
+
 	return 0;
 
-
+unreg_shm_chkpt:
+	unregister_proc_service(KSYS_IPC_SHM_CHKPT);
+unreg_sem_restart:
+	unregister_proc_service(KSYS_IPC_SEM_RESTART);
 unreg_sem_chkpt:
 	unregister_proc_service(KSYS_IPC_SEM_CHKPT);
 unreg_msgq_restart:
@@ -297,6 +342,8 @@ void ipc_procfs_exit(void)
 	unregister_proc_service(KSYS_IPC_MSGQ_RESTART);
 	unregister_proc_service(KSYS_IPC_SEM_CHKPT);
 	unregister_proc_service(KSYS_IPC_SEM_RESTART);
+	unregister_proc_service(KSYS_IPC_SHM_CHKPT);
+	unregister_proc_service(KSYS_IPC_SHM_RESTART);
 }
 
 void ipc_handler_init(void)

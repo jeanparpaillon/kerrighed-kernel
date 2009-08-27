@@ -105,4 +105,50 @@ exit:
 	return r;
 }
 
+int sys_shm_checkpoint(int shmid, int fd)
+{
+	int r;
+	ghost_fs_t oldfs;
+	ghost_t *ghost;
+
+	__set_ghost_fs(&oldfs);
+
+	ghost = create_file_ghost_from_fd(GHOST_WRITE, fd);
+
+	if (IS_ERR(ghost)) {
+		r = PTR_ERR(ghost);
+		goto exit;
+	}
+
+	r = export_full_sysv_shm(ghost, shmid);
+
+	ghost_close(ghost);
+exit:
+	unset_ghost_fs(&oldfs);
+	return r;
+}
+
+int sys_shm_restart(int fd)
+{
+	int r;
+	ghost_fs_t oldfs;
+	ghost_t *ghost;
+
+	__set_ghost_fs(&oldfs);
+
+	ghost = create_file_ghost_from_fd(GHOST_READ, fd);
+
+	if (IS_ERR(ghost)) {
+		r = PTR_ERR(ghost);
+		goto exit;
+	}
+
+	r = import_full_sysv_shm(ghost);
+
+	ghost_close(ghost);
+exit:
+	unset_ghost_fs(&oldfs);
+	return r;
+}
+
 

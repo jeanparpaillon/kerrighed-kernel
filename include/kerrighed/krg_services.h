@@ -159,6 +159,12 @@
 #define KSYS_IPC_SEM_RESTART           _IOW(KERRIGHED_PROC_MAGIC, \
 					    IPC_PROC_BASE + 3,	  \
 					    int)
+#define KSYS_IPC_SHM_CHKPT             _IOW(KERRIGHED_PROC_MAGIC,       \
+					    IPC_PROC_BASE + 4,		\
+					    int[2])
+#define KSYS_IPC_SHM_RESTART           _IOW(KERRIGHED_PROC_MAGIC, \
+					    IPC_PROC_BASE + 5,	  \
+					    int)
 
 /*
  * HotPlug
