@@ -29,6 +29,48 @@
 
 #define KERRIGHED_PID_MAX_LIMIT GLOBAL_PID_NODE(0, KERRIGHED_MAX_NODES)
 
+/* Kerrighed container's PID numbers */
+static inline pid_t pid_knr(struct pid *pid)
+{
+	struct pid_namespace *ns = ns_of_pid(pid);
+	if (ns && ns->krg_ns_root)
+		return pid_nr_ns(pid, ns->krg_ns_root);
+	return 0;
+}
+
+static inline pid_t task_pid_knr(struct task_struct *task)
+{
+	return pid_knr(task_pid(task));
+}
+
+static inline pid_t task_tgid_knr(struct task_struct *task)
+{
+	return pid_knr(task_tgid(task));
+}
+
+static inline pid_t task_pgrp_knr(struct task_struct *task)
+{
+	return pid_knr(task_pgrp(task));
+}
+
+static inline pid_t task_session_knr(struct task_struct *task)
+{
+	return pid_knr(task_session(task));
+}
+
+static inline struct pid *find_kpid(int nr)
+{
+	struct pid_namespace *ns = find_get_krg_pid_ns();
+	struct pid *pid = find_pid_ns(nr, ns);
+	put_pid_ns(ns);
+	return pid;
+}
+
+static inline struct task_struct *find_task_by_kpid(pid_t pid)
+{
+	return pid_task(find_kpid(pid), PIDTYPE_PID);
+}
+
 /* PID location */
 #ifdef CONFIG_KRG_EPM
 int krg_set_pid_location(pid_t pid, kerrighed_node_t node);
@@ -37,7 +79,50 @@ int krg_unset_pid_location(pid_t pid);
 kerrighed_node_t krg_lock_pid_location(pid_t pid);
 void krg_unlock_pid_location(pid_t pid);
 
-#endif /* CONFIG_KRG_PROC */
+#else /* !CONFIG_KRG_PROC */
+
+static inline pid_t pid_knr(struct pid *pid)
+{
+	return pid_nr(pid);
+}
+
+static
+inline pid_t __task_pid_knr(struct task_struct *task, enum pid_type type)
+{
+	return __task_pid_nr_ns(task, type, &init_pid_ns);
+}
+
+static inline pid_t task_pid_knr(struct task_struct *task)
+{
+	return task->pid;
+}
+
+static inline pid_t task_tgid_knr(struct task_struct *task)
+{
+	return task->tgid;
+}
+
+static inline pid_t task_pgrp_knr(struct task_struct *task)
+{
+	return __task_pid_knr(task, PIDTYPE_PGID);
+}
+
+static inline pid_t task_session_knr(struct task_struct *task)
+{
+	return __task_pid_knr(task, PIDTYPE_SID);
+}
+
+static inline struct pid *find_kpid(int nr)
+{
+	return find_pid_ns(nr, &init_pid_ns);
+}
+
+static inline struct task_struct *find_task_by_kpid(pid_t pid)
+{
+	return find_task_by_pid_ns(pid, &init_pid_ns);
+}
+
+#endif /* !CONFIG_KRG_PROC */
 
 #ifdef CONFIG_KRG_EPM
 
