@@ -254,7 +254,7 @@ static struct iolinker_struct task_io_linker = {
 int krg_task_alloc(struct task_struct *task, struct pid *pid)
 {
 	struct task_kddm_object *obj;
-	int nr = pid_nr(pid);
+	int nr = pid_knr(pid);
 
 	task->task_obj = NULL;
 	if (!task->nsproxy->krg_ns)
@@ -288,7 +288,8 @@ void krg_task_fill(struct task_struct *task, unsigned long clone_flags)
 {
 	struct task_kddm_object *obj = task->task_obj;
 
-	BUG_ON((task->tgid & GLOBAL_PID_MASK) != (task->pid & GLOBAL_PID_MASK));
+	BUG_ON((task_tgid_knr(task) & GLOBAL_PID_MASK)
+	       != (task_pid_knr(task) & GLOBAL_PID_MASK));
 
 #ifdef CONFIG_KRG_EPM
 	if (krg_current)
@@ -306,14 +307,14 @@ void krg_task_fill(struct task_struct *task, unsigned long clone_flags)
 			obj->real_parent = cur_obj->real_parent;
 			obj->real_parent_tgid = cur_obj->real_parent_tgid;
 		} else {
-			obj->real_parent = current->pid;
-			obj->real_parent_tgid = current->tgid;
+			obj->real_parent = task_pid_knr(current);
+			obj->real_parent_tgid = task_tgid_knr(current);
 		}
 	} else
 #endif
 	{
-		obj->real_parent = task->real_parent->pid;
-		obj->real_parent_tgid = task->real_parent->tgid;
+		obj->real_parent = task_pid_knr(task->real_parent);
+		obj->real_parent_tgid = task_tgid_knr(task->real_parent);
 	}
 	/* Keep parent same as real_parent until ptrace is better supported */
 	obj->parent = obj->real_parent;
@@ -321,7 +322,7 @@ void krg_task_fill(struct task_struct *task, unsigned long clone_flags)
 	/* Distributed threads are not supported yet. */
 	BUG_ON(task->group_leader == baby_sitter);
 #endif
-	obj->group_leader = task->group_leader->pid;
+	obj->group_leader = task_tgid_knr(task);
 }
 
 void krg_task_commit(struct task_struct *task)
@@ -340,12 +341,12 @@ void krg_task_abort(struct task_struct *task)
 	obj->write_locked = 2;
 	up_write(&obj->sem);
 
-	_kddm_remove_frozen_object(task_kddm_set, task->pid);
+	_kddm_remove_frozen_object(task_kddm_set, obj->pid);
 }
 
 void __krg_task_free(struct task_struct *task)
 {
-	_kddm_remove_object(task_kddm_set, task->pid);
+	_kddm_remove_object(task_kddm_set, task_pid_knr(task));
 }
 
 void krg_task_free(struct task_struct *task)
@@ -411,7 +412,7 @@ struct task_kddm_object *krg_task_readlock(pid_t pid)
 
 struct task_kddm_object *__krg_task_readlock(struct task_struct *task)
 {
-	return krg_task_readlock(task->pid);
+	return krg_task_readlock(task_pid_knr(task));
 }
 
 /**
@@ -451,7 +452,7 @@ struct task_kddm_object *krg_task_writelock(pid_t pid)
 
 struct task_kddm_object *__krg_task_writelock(struct task_struct *task)
 {
-	return task_writelock(task->pid, 0);
+	return task_writelock(task_pid_knr(task), 0);
 }
 
 struct task_kddm_object *krg_task_writelock_nested(pid_t pid)
@@ -461,7 +462,7 @@ struct task_kddm_object *krg_task_writelock_nested(pid_t pid)
 
 struct task_kddm_object *__krg_task_writelock_nested(struct task_struct *task)
 {
-	return task_writelock(task->pid, 1);
+	return task_writelock(task_pid_knr(task), 1);
 }
 
 /**
@@ -519,7 +520,7 @@ void krg_task_unlock(pid_t pid)
 
 void __krg_task_unlock(struct task_struct *task)
 {
-	krg_task_unlock(task->pid);
+	krg_task_unlock(task_pid_knr(task));
 }
 
 #ifdef CONFIG_KRG_EPM
