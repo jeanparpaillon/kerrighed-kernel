@@ -93,8 +93,8 @@ int krg_do_fork(unsigned long clone_flags,
 	remote_clone.remote_clone.clone_flags = clone_flags;
 	remote_clone.remote_clone.stack_start = stack_start;
 	remote_clone.remote_clone.stack_size = stack_size;
-	remote_clone.remote_clone.from_pid = task->pid;
-	remote_clone.remote_clone.from_tgid = task->tgid;
+	remote_clone.remote_clone.from_pid = task_pid_knr(task);
+	remote_clone.remote_clone.from_tgid = task_tgid_knr(task);
 	remote_clone.remote_clone.parent_tidptr = parent_tidptr;
 	remote_clone.remote_clone.child_tidptr = child_tidptr;
 	if (clone_flags & CLONE_VFORK) {
