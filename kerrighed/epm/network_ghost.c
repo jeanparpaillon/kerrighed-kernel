@@ -6,6 +6,7 @@
  */
 
 #include <linux/sched.h>
+#include <kerrighed/pid.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
 #include <net/krgrpc/rpc.h>
@@ -64,7 +65,7 @@ struct task_struct *recv_task(struct rpc_desc *desc, struct epm_action *action)
 	if (IS_ERR(new_tsk))
 		goto err_close;
 
-	pid = new_tsk->pid;
+	pid = task_pid_knr(new_tsk);
 	err = rpc_pack_type(desc, pid);
 	if (err)
 		goto err_close;
