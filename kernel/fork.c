@@ -1532,9 +1532,6 @@ struct task_struct *copy_process(unsigned long clone_flags,
 		p->group_leader = current->group_leader;
 		list_add_tail_rcu(&p->thread_group, &p->group_leader->thread_group);
 	}
-#ifdef CONFIG_KRG_PROC
-	krg_task_fill(p, clone_flags);
-#endif
 
 	if (likely(p->pid)) {
 #ifdef CONFIG_KRG_EPM
@@ -1558,6 +1555,9 @@ struct task_struct *copy_process(unsigned long clone_flags,
 		attach_pid(p, PIDTYPE_PID, pid);
 		nr_threads++;
 	}
+#ifdef CONFIG_KRG_PROC
+	krg_task_fill(p, clone_flags);
+#endif
 
 	total_forks++;
 	spin_unlock(&current->sighand->siglock);
