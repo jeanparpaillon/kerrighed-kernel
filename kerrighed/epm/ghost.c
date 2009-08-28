@@ -1882,7 +1882,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 #endif
 
 	/* Now the process can be made world-wide visible. */
-	krg_set_pid_location(newTsk->pid, kerrighed_node_id);
+	krg_set_pid_location(newTsk);
 
 	return newTsk;
 }

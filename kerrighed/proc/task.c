@@ -528,32 +528,28 @@ void __krg_task_unlock(struct task_struct *task)
  * @author Pascal Gallard
  * Set (or update) the location of pid
  */
-int krg_set_pid_location(pid_t pid, kerrighed_node_t node)
+int krg_set_pid_location(struct task_struct *task)
 {
 	struct task_kddm_object *p;
 
-	/* Filter well known cases of no task kddm object. */
-	if (!(pid & GLOBAL_PID_MASK))
-		return 0;
-
-	p = krg_task_writelock(pid);
+	p = __krg_task_writelock(task);
 	if (likely(p))
-		p->node = node;
-	krg_task_unlock(pid);
+		p->node = kerrighed_node_id;
+	__krg_task_unlock(task);
 
 	return 0;
 }
 
-int krg_unset_pid_location(pid_t pid)
+int krg_unset_pid_location(struct task_struct *task)
 {
 	struct task_kddm_object *p;
 
-	BUG_ON(!(pid & GLOBAL_PID_MASK));
+	BUG_ON(!(task_pid_knr(task) & GLOBAL_PID_MASK));
 
-	p = krg_task_writelock(pid);
+	p = __krg_task_writelock(task);
 	BUG_ON(p == NULL);
 	p->node = KERRIGHED_NODE_ID_NONE;
-	krg_task_unlock(pid);
+	__krg_task_unlock(task);
 
 	return 0;
 }
