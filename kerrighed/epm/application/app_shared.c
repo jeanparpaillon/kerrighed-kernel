@@ -217,7 +217,6 @@ struct shared_object {
 			int is_local;
 		} checkpoint;
 		struct {
-			struct task_identity t_identity;
 			enum locality locality;
 			void *data;
 			size_t data_size;
@@ -401,10 +400,6 @@ static void destroy_one_shared_object(struct rb_node *node,
 		container_of(idx, struct shared_object, index);
 
 	rb_erase(node, &app->shared_objects.root);
-
-	fake->pid = this->restart.t_identity.pid;
-	fake->tgid = this->restart.t_identity.tgid;
-
 	this->ops->delete(fake, this->restart.data);
 
 	kfree(this);
@@ -429,18 +424,12 @@ static int export_one_shared_object(ghost_t *ghost,
 				    struct shared_object *this)
 {
 	int r;
-	struct task_identity t;
-	t.pid = this->checkpoint.exporting_task->pid;
-	t.tgid = this->checkpoint.exporting_task->tgid;
 
 	r = ghost_write(ghost, &this->index.type,
 			sizeof(enum shared_obj_type));
 	if (r)
 		goto error;
 	r = ghost_write(ghost, &this->index.key, sizeof(long));
-	if (r)
-		goto error;
-	r = ghost_write(ghost, &t, sizeof(struct task_identity));
 	if (r)
 		goto error;
 	r = ghost_write(ghost, &this->checkpoint.is_local, sizeof(int));
@@ -837,13 +826,6 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 	r = ghost_read(ghost, &stmp.index.key, sizeof(long));
 	if (r)
 		goto err;
-	r = ghost_read(ghost, &stmp.restart.t_identity,
-		       sizeof(struct task_identity));
-	if (r)
-		goto err;
-
-	fake->pid = stmp.restart.t_identity.pid;
-	fake->tgid = stmp.restart.t_identity.tgid;
 
 	r = ghost_read(ghost, &is_local, sizeof(int));
 	if (r)
@@ -1209,15 +1191,9 @@ int local_restart_shared_complete(struct app_struct *app,
 		struct shared_object *this =
 			container_of(idx, struct shared_object, index);
 
-		fake->pid = this->restart.t_identity.pid;
-		fake->tgid = this->restart.t_identity.tgid;
-
 		if (this->restart.locality == LOCAL_ONLY
-		    || this->restart.locality == SHARED_MASTER) {
-			fake->pid = this->restart.t_identity.pid;
-			fake->tgid = this->restart.t_identity.tgid;
+		    || this->restart.locality == SHARED_MASTER)
 			this->ops->import_complete(fake, this->restart.data);
-		}
 
 		rb_erase(node, &app->shared_objects.root);
 		kfree(this);
