@@ -1553,6 +1553,9 @@ struct task_struct *copy_process(unsigned long clone_flags,
 		if (p->real_parent != baby_sitter)
 #endif
 		list_add_tail(&p->sibling, &p->real_parent->children);
+#ifdef CONFIG_KRG_EPM
+		attach_pid(p, PIDTYPE_PID, pid);
+#endif
 		tracehook_finish_clone(p, clone_flags, trace);
 
 		if (thread_group_leader(p)) {
@@ -1567,7 +1570,9 @@ struct task_struct *copy_process(unsigned long clone_flags,
 			list_add_tail_rcu(&p->tasks, &init_task.tasks);
 			__get_cpu_var(process_counts)++;
 		}
+#ifndef CONFIG_KRG_EPM
 		attach_pid(p, PIDTYPE_PID, pid);
+#endif
 		nr_threads++;
 	}
 #ifdef CONFIG_KRG_PROC
