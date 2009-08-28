@@ -196,8 +196,8 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 
 		mm_struct_unpin(tsk->mm);
 
-		krg_signal_writelock(tsk->tgid);
-		krg_signal_unlock(tsk->tgid);
+		krg_signal_writelock(tsk->signal);
+		krg_signal_unlock(tsk->signal);
 		krg_signal_unpin(tsk->signal);
 
 		krg_sighand_writelock(tsk->sighand->krg_objid);

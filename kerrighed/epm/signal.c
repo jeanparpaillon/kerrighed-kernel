@@ -356,7 +356,7 @@ ____krg_signal_alloc(struct signal_struct *sig, objid_t id)
 	return obj;
 }
 
-struct signal_struct *cr_signal_alloc(pid_t tgid)
+static struct signal_struct *cr_signal_alloc(struct task_struct *task)
 {
 	struct signal_struct_kddm_object *obj;
 	struct signal_struct *sig;
@@ -365,15 +365,15 @@ struct signal_struct *cr_signal_alloc(pid_t tgid)
 	if (!sig)
 		return NULL;
 
-	obj = ____krg_signal_alloc(sig, tgid);
+	obj = ____krg_signal_alloc(sig, task->tgid);
 	BUG_ON(!obj);
 
 	return sig;
 }
 
-void cr_signal_free(pid_t id)
+static void cr_signal_free(struct signal_struct *sig)
 {
-	_kddm_remove_frozen_object(signal_struct_kddm_set, id);
+	_kddm_remove_frozen_object(signal_struct_kddm_set, sig->krg_objid);
 }
 
 static void __krg_signal_alloc(struct task_struct *task, struct pid *pid)
@@ -401,7 +401,7 @@ static void __krg_signal_alloc(struct task_struct *task, struct pid *pid)
 
 	obj = ____krg_signal_alloc(sig, tgid);
 	BUG_ON(!obj);
-	krg_signal_unlock(tgid);
+	krg_signal_unlock(sig);
 }
 
 /*
@@ -432,31 +432,43 @@ void krg_signal_alloc(struct task_struct *task, struct pid *pid,
  * Get and lock a signal structure for a given process
  * @author Pascal Gallard
  */
-struct signal_struct *krg_signal_readlock(pid_t tgid)
+static struct signal_struct_kddm_object *__krg_signal_readlock(objid_t id)
 {
 	struct signal_struct_kddm_object *obj;
 
-	/* Filter well known cases of no signal_struct kddm object. */
-	if (!(tgid & GLOBAL_PID_MASK))
-		return NULL;
-
-	obj = _kddm_get_object_no_ft(signal_struct_kddm_set, tgid);
+	obj = _kddm_get_object_no_ft(signal_struct_kddm_set, id);
 	if (!obj) {
-		_kddm_put_object(signal_struct_kddm_set, tgid);
+		_kddm_put_object(signal_struct_kddm_set, id);
 		return NULL;
 	}
 	BUG_ON(!obj->signal);
 
+	return obj;
+}
+
+struct signal_struct *krg_signal_readlock(struct signal_struct *sig)
+{
+	struct signal_struct_kddm_object *obj;
+	objid_t id = sig->krg_objid;
+
+	/* Filter well known cases of no signal_struct kddm object. */
+	if (!sig->kddm_obj)
+		return NULL;
+
+	obj = __krg_signal_readlock(id);
+	if (!obj)
+		return NULL;
+
 	return obj->signal;
 }
 
-static struct signal_struct_kddm_object *__krg_signal_writelock(pid_t tgid)
+static struct signal_struct_kddm_object *__krg_signal_writelock(objid_t id)
 {
 	struct signal_struct_kddm_object *obj;
 
-	obj = _kddm_grab_object_no_ft(signal_struct_kddm_set, tgid);
+	obj = _kddm_grab_object_no_ft(signal_struct_kddm_set, id);
 	if (!obj) {
-		_kddm_put_object(signal_struct_kddm_set, tgid);
+		_kddm_put_object(signal_struct_kddm_set, id);
 		return NULL;
 	}
 	BUG_ON(!obj->signal);
@@ -467,15 +479,16 @@ static struct signal_struct_kddm_object *__krg_signal_writelock(pid_t tgid)
  * Grab and lock a signal structure for a given process
  * @author Pascal Gallard
  */
-struct signal_struct *krg_signal_writelock(pid_t tgid)
+struct signal_struct *krg_signal_writelock(struct signal_struct *sig)
 {
 	struct signal_struct_kddm_object *obj;
+	objid_t id = sig->krg_objid;
 
 	/* Filter well known cases of no signal_struct kddm object. */
-	if (!(tgid & GLOBAL_PID_MASK))
+	if (!sig->kddm_obj)
 		return NULL;
 
-	obj = __krg_signal_writelock(tgid);
+	obj = __krg_signal_writelock(id);
 	if (!obj)
 		return NULL;
 
@@ -486,51 +499,45 @@ struct signal_struct *krg_signal_writelock(pid_t tgid)
  * unlock a signal structure for a given process
  * @author Pascal Gallard
  */
-void krg_signal_unlock(pid_t tgid)
+void krg_signal_unlock(struct signal_struct *sig)
 {
-	_kddm_put_object(signal_struct_kddm_set, tgid);
+	if (sig)
+		_kddm_put_object(signal_struct_kddm_set, sig->krg_objid);
 }
 
 /* Assumes that the associated kddm object is write locked. */
-void krg_signal_share(struct task_struct *task)
+void krg_signal_share(struct signal_struct *sig)
 {
-	struct signal_struct_kddm_object *obj = task->signal->kddm_obj;
+	struct signal_struct_kddm_object *obj = sig->kddm_obj;
 	int count;
 
 	count = atomic_inc_return(&obj->count);
 }
 
-pid_t __krg_signal_exit(pid_t id)
+struct signal_struct *krg_signal_exit(struct signal_struct *sig)
 {
+	objid_t id = sig->krg_objid;
 	struct signal_struct_kddm_object *obj;
 	int count;
 
+	if (!sig->kddm_obj)
+		return NULL;
+
 	obj = __krg_signal_writelock(id);
-	BUG_ON(!obj);
+	BUG_ON(obj != sig->kddm_obj);
 	count = atomic_dec_return(&obj->count);
 	if (count == 0) {
-		krg_signal_unlock(id);
+		krg_signal_unlock(sig);
 		BUG_ON(obj->keep_on_remove);
 		/* Free the kddm object but keep the signal_struct so that
 		 * __exit_signal releases it properly. */
 		obj->keep_on_remove = 1;
 		_kddm_remove_object(signal_struct_kddm_set, id);
 
-		return 0;
+		return NULL;
 	}
 
-	return id;
-}
-
-pid_t krg_signal_exit(struct task_struct *task)
-{
-	struct signal_struct *sig = task->signal;
-	pid_t ret = 0;
-
-	if (sig->kddm_obj)
-		ret = __krg_signal_exit(sig->krg_objid);
-
-	return ret;
+	return sig;
 }
 
 /* EPM actions */
@@ -765,7 +772,7 @@ err:
 int export_signal_struct(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *tsk)
 {
-	unsigned long krg_objid = tsk->signal->krg_objid;
+	objid_t krg_objid = tsk->signal->krg_objid;
 	int r;
 
 	if (action->type == EPM_CHECKPOINT
@@ -787,7 +794,7 @@ int export_signal_struct(struct epm_action *action,
 		break;
 	case EPM_CHECKPOINT: {
 		struct signal_struct *sig =
-			krg_signal_readlock(krg_objid);
+			krg_signal_readlock(tsk->signal);
 		r = ghost_write(ghost, sig, sizeof(*sig));
 		if (!r)
 			r = export_sigpending(ghost,
@@ -799,7 +806,7 @@ int export_signal_struct(struct epm_action *action,
 #endif
 		if (!r)
 			r = export_posix_timers(ghost, tsk);
-		krg_signal_unlock(krg_objid);
+		krg_signal_unlock(sig);
 		break;
 	} default:
 		break;
@@ -836,11 +843,11 @@ static int cr_link_to_signal_struct(struct epm_action *action,
 
 	tsk->signal = sig;
 
-	krg_signal_writelock(tsk->tgid);
+	krg_signal_writelock(sig);
 	atomic_inc(&tsk->signal->count);
 	atomic_inc(&tsk->signal->live);
-	krg_signal_share(tsk);
-	krg_signal_unlock(tsk->tgid);
+	krg_signal_share(sig);
+	krg_signal_unlock(sig);
 err:
 	return r;
 }
@@ -848,7 +855,8 @@ err:
 int import_signal_struct(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *tsk)
 {
-	unsigned long krg_objid;
+	objid_t krg_objid;
+	struct signal_struct_kddm_object *obj;
 	struct signal_struct *sig;
 	int r;
 
@@ -865,7 +873,9 @@ int import_signal_struct(struct epm_action *action,
 	switch (action->type) {
 	case EPM_MIGRATE:
 		/* TODO: this will need more locking with distributed threads */
-		sig = krg_signal_writelock(krg_objid);
+		obj = __krg_signal_writelock(krg_objid);
+		BUG_ON(!obj);
+		sig = obj->signal;
 		BUG_ON(!sig);
 
 		WARN_ON(sig->group_exit_task);
@@ -889,7 +899,7 @@ int import_signal_struct(struct epm_action *action,
 		r = import_posix_timers(ghost, tsk);
 
 out_mig_unlock:
-		krg_signal_unlock(krg_objid);
+		krg_signal_unlock(sig);
 		break;
 
 	case EPM_REMOTE_CLONE:
@@ -897,16 +907,18 @@ out_mig_unlock:
 		 * The structure will be partly copied when creating the
 		 * active process.
 		 */
-		sig = krg_signal_readlock(krg_objid);
-		krg_signal_unlock(krg_objid);
+		obj = __krg_signal_readlock(krg_objid);
+		BUG_ON(!obj);
+		sig = obj->signal;
 		BUG_ON(!sig);
+		krg_signal_unlock(sig);
 		tsk->signal = sig;
 		break;
 
 	case EPM_CHECKPOINT: {
 		struct signal_struct tmp_sig;
 
-		sig = cr_signal_alloc(tsk->tgid);
+		sig = cr_signal_alloc(tsk);
 
 		r = ghost_read(ghost, &tmp_sig, sizeof(tmp_sig));
 		if (r)
@@ -989,11 +1001,11 @@ out_mig_unlock:
 		if (r)
 			goto err_free_signal;
 
-		krg_signal_unlock(krg_objid);
+		krg_signal_unlock(sig);
 		break;
 
 err_free_signal:
-		cr_signal_free(tsk->tgid);
+		cr_signal_free(sig);
 		goto err_read;
 
 	} default:
@@ -1046,24 +1058,23 @@ err:
 static int cr_import_complete_signal_struct(struct task_struct *fake,
 					    void *_sig)
 {
-	pid_t signal_id = 0;
 	struct signal_struct *sig = _sig;
+	struct signal_struct *locked_sig;
 
-	signal_id = __krg_signal_exit(sig->krg_objid);
+	locked_sig = krg_signal_exit(sig);
 
 	atomic_dec(&sig->count);
 	atomic_dec(&sig->live);
 
-	if (signal_id)
-		krg_signal_unlock(signal_id);
+	krg_signal_unlock(locked_sig);
 
 	return 0;
 }
 
 static int cr_delete_signal_struct(struct task_struct *fake, void *_sig)
 {
-	pid_t signal_id = 0;
 	struct signal_struct *sig = _sig;
+	struct signal_struct *locked_sig;
 
 	fake->signal = sig;
 	/*
@@ -1078,13 +1089,12 @@ static int cr_delete_signal_struct(struct task_struct *fake, void *_sig)
 	INIT_LIST_HEAD(&fake->cpu_timers[1]);
 	INIT_LIST_HEAD(&fake->cpu_timers[2]);
 
-	signal_id = __krg_signal_exit(sig->krg_objid);
+	locked_sig = krg_signal_exit(sig);
 
 	atomic_dec(&sig->count);
 	atomic_dec(&sig->live);
 
-	if (signal_id)
-		krg_signal_unlock(signal_id);
+	krg_signal_unlock(locked_sig);
 
 	posix_cpu_timers_exit_group(fake);
 
