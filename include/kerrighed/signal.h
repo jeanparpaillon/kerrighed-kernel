@@ -3,7 +3,6 @@
 
 #ifdef CONFIG_KRG_EPM
 
-#include <linux/types.h>
 #include <kddm/kddm_types.h>
 
 /* signal_struct sharing */
@@ -14,18 +13,13 @@ struct pid;
 
 void krg_signal_alloc(struct task_struct *task, struct pid *pid,
 		      unsigned long clone_flags);
-void krg_signal_share(struct task_struct *task);
-pid_t krg_signal_exit(struct task_struct *task);
-struct signal_struct *krg_signal_readlock(pid_t tgid);
-struct signal_struct *krg_signal_writelock(pid_t tgid);
-void krg_signal_unlock(pid_t tgid);
+void krg_signal_share(struct signal_struct *sig);
+struct signal_struct *krg_signal_exit(struct signal_struct *sig);
+struct signal_struct *krg_signal_readlock(struct signal_struct *sig);
+struct signal_struct *krg_signal_writelock(struct signal_struct *sig);
+void krg_signal_unlock(struct signal_struct *sig);
 void krg_signal_pin(struct signal_struct *sig);
 void krg_signal_unpin(struct signal_struct *sig);
-
-/* Used by restart */
-struct signal_struct *cr_signal_alloc(pid_t tgid);
-void cr_signal_free(pid_t id);
-pid_t __krg_signal_exit(pid_t id);
 
 /* sighand_struct sharing */
 

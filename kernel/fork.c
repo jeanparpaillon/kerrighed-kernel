@@ -956,14 +956,14 @@ static int copy_signal(unsigned long clone_flags, struct task_struct *tsk)
 	if (clone_flags & CLONE_THREAD) {
 #ifdef CONFIG_KRG_EPM
 		if (current->signal->kddm_obj)
-			krg_signal_writelock(current->tgid);
+			krg_signal_writelock(current->signal);
 #endif
 		atomic_inc(&current->signal->count);
 		atomic_inc(&current->signal->live);
 #ifdef CONFIG_KRG_EPM
 		if (current->signal->kddm_obj) {
-			krg_signal_share(current);
-			krg_signal_unlock(current->tgid);
+			krg_signal_share(current->signal);
+			krg_signal_unlock(current->signal);
 		}
 #endif
 		return 0;
@@ -1043,19 +1043,18 @@ static void cleanup_signal(struct task_struct *tsk)
 {
 	struct signal_struct *sig = tsk->signal;
 #ifdef CONFIG_KRG_EPM
-	pid_t locked_signal_id;
+	struct signal_struct *locked_sig;
 #endif
 
 #ifdef CONFIG_KRG_EPM
-	locked_signal_id = krg_signal_exit(tsk);
+	locked_sig = krg_signal_exit(sig);
 #endif
 	atomic_dec(&sig->live);
 
 	if (atomic_dec_and_test(&sig->count))
 		__cleanup_signal(sig);
 #ifdef CONFIG_KRG_EPM
-	if (locked_signal_id)
-		krg_signal_unlock(locked_signal_id);
+	krg_signal_unlock(locked_sig);
 #endif
 }
 

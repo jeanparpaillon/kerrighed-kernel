@@ -210,7 +210,7 @@ void release_task(struct task_struct * p)
 	struct task_struct *leader;
 	int zap_leader;
 #ifdef CONFIG_KRG_EPM
-	pid_t locked_signal_id;
+	struct signal_struct *locked_sig;
 	unsigned long locked_sighand_id;
 	int delay_notify_parent = 0;
 
@@ -232,10 +232,10 @@ repeat:
 	krg_release_task(p);
 #endif /* CONFIG_KRG_PROC */
 #ifdef CONFIG_KRG_EPM
-	locked_signal_id = 0;
+	locked_sig = NULL;
 	locked_sighand_id = 0;
 	if (p->exit_state != EXIT_MIGRATION) {
-		locked_signal_id = krg_signal_exit(p);
+		locked_sig = krg_signal_exit(p->signal);
 		locked_sighand_id = krg_sighand_exit(p->sighand);
 	}
 #endif /* CONFIG_KRG_EPM */
@@ -292,8 +292,7 @@ unlock:
 	krg_children_cleanup(p);
 	if (locked_sighand_id)
 		krg_sighand_unlock(locked_sighand_id);
-	if (locked_signal_id)
-		krg_signal_unlock(locked_signal_id);
+	krg_signal_unlock(locked_sig);
 #endif
 	call_rcu(&p->rcu, delayed_put_task_struct);
 
