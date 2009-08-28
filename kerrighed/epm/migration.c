@@ -171,7 +171,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	migration.migrate.pid = tsk->pid;
 	migration.migrate.target = target;
 
-	krg_unset_pid_location(tsk->pid);
+	krg_unset_pid_location(tsk);
 
 	__krg_task_writelock(tsk);
 	leave_all_relatives(tsk);
@@ -211,7 +211,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 
 		join_local_relatives(tsk);
 
-		krg_set_pid_location(tsk->pid, kerrighed_node_id);
+		krg_set_pid_location(tsk);
 	} else {
 		BUG_ON(remote_pid != tsk->pid);
 		/* Do not notify a task having done vfork() */
