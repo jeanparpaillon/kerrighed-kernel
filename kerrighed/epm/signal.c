@@ -356,7 +356,7 @@ ____krg_signal_alloc(struct signal_struct *sig, objid_t id)
 	return obj;
 }
 
-static struct signal_struct *cr_signal_alloc(struct task_struct *task)
+static struct signal_struct *cr_signal_alloc(objid_t id)
 {
 	struct signal_struct_kddm_object *obj;
 	struct signal_struct *sig;
@@ -365,7 +365,7 @@ static struct signal_struct *cr_signal_alloc(struct task_struct *task)
 	if (!sig)
 		return NULL;
 
-	obj = ____krg_signal_alloc(sig, task_tgid_knr(task));
+	obj = ____krg_signal_alloc(sig, id);
 	BUG_ON(!obj);
 
 	return sig;
@@ -918,7 +918,7 @@ out_mig_unlock:
 	case EPM_CHECKPOINT: {
 		struct signal_struct tmp_sig;
 
-		sig = cr_signal_alloc(tsk);
+		sig = cr_signal_alloc(krg_objid);
 
 		r = ghost_read(ghost, &tmp_sig, sizeof(tmp_sig));
 		if (r)
