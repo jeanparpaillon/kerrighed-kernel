@@ -21,6 +21,7 @@ static void init_baby_sitter(void)
 	if (!baby_sitter)
 		OOM;
 
+	memset(baby_sitter, 0, sizeof(*baby_sitter));
 	baby_sitter->pid = -1;
 	baby_sitter->tgid = baby_sitter->pid;
 	baby_sitter->state = TASK_UNINTERRUPTIBLE;
