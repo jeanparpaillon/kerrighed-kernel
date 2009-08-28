@@ -243,7 +243,7 @@ void handle_ipcsem_wakeup_process(struct rpc_desc *desc, void *_msg,
 	/* take only a local lock because the requester node has the kddm lock
 	   on the semarray */
 	sma = local_sem_lock(ns, msg->sem_id);
-	BUG_ON(!sma);
+	BUG_ON(IS_ERR(sma));
 
 	list_for_each_entry_safe(q, tq, &sma->sem_pending, list) {
 		/* compare to q->sleeper->pid instead of q->pid
@@ -544,7 +544,7 @@ static inline void __remove_semundo_from_sem_list(struct ipc_namespace *ns,
 	struct sem_undo *un, *tu;
 
 	sma = sem_lock(ns, semid);
-	if (!sma)
+	if (IS_ERR(sma))
 		return;
 
 	list_for_each_entry_safe(un, tu, &sma->list_id, list_id) {
