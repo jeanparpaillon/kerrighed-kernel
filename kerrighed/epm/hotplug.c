@@ -3,6 +3,7 @@
  */
 
 #include <linux/sched.h>
+#include <linux/nsproxy.h>
 #include <kerrighed/capabilities.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/krginit.h>
@@ -23,6 +24,9 @@ static void epm_remove(krgnodemask_t *vector)
 
 	read_lock(&tasklist_lock);
 	for_each_process(tsk) {
+		if (!tsk->nsproxy->krg_ns)
+			continue;
+
 		if (cap_raised(tsk->krg_caps.effective, CAP_CAN_MIGRATE)) {
 			/* have to migrate this process */
 			printk("try to migrate %d %s to %d\n", tsk->pid, tsk->comm, dest_node);
