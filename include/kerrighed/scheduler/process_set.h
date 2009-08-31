@@ -6,6 +6,7 @@
 #include <linux/types.h>
 #include <linux/list.h>
 #include <linux/sched.h>
+#include <linux/nsproxy.h>
 #include <linux/rcupdate.h>
 #include <linux/spinlock.h>
 #include <kerrighed/scheduler/global_config.h>
@@ -180,8 +181,12 @@ static inline void process_set_prepare_do_each_process(struct process_set *pset)
 		if (__all) {						   \
 			__type = PIDTYPE_PID;				   \
 			for_each_process(__p) {				   \
-				__pid = __p->pids[PIDTYPE_PID].pid;	   \
-				goto __common_begin;			   \
+				struct nsproxy *__nsp;			   \
+				__nsp = rcu_dereference(__p->nsproxy);	   \
+				if (__nsp && __nsp->krg_ns) {		   \
+					__pid = __p->pids[PIDTYPE_PID].pid;\
+					goto __common_begin;		   \
+				}					   \
 			__all_end_of_loop:				   \
 				continue;				   \
 			}						   \
