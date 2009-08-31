@@ -220,7 +220,7 @@ static void update_processes_load(unsigned int ticks)
 	for_each_process(tsk) {
 		if (unlikely(tsk->exit_state))
 			continue;
-		if (unlikely(!(tsk->pid & GLOBAL_PID_MASK)))
+		if (unlikely(!(task_pid_knr(tsk) & GLOBAL_PID_MASK)))
 			continue;
 		if (unlikely(!(p = get_mosix_probe_info(tsk))))
 			continue;
@@ -596,7 +596,7 @@ DEFINE_SCHEDULER_PROBE_SOURCE_GET_WITH_INPUT(value_process_load,
 	for (i = 0; i < in_nr && i < nr; i++) {
 		pid = in_value_p[i];
 
-		task = find_task_by_pid_ns(pid, &init_pid_ns);
+		task = find_task_by_kpid(pid);
 		if (!task)
 			break;
 		info = get_mosix_probe_info(task);

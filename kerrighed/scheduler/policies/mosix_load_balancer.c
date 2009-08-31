@@ -20,6 +20,7 @@
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/krginit.h>
+#include <kerrighed/pid.h>
 #include <kerrighed/migration.h>
 #include <kerrighed/scheduler/policy.h>
 #include <kerrighed/scheduler/port.h>
@@ -90,7 +91,7 @@ static struct pid *find_target_task(struct mosix_load_balancer *lb)
 		if (!may_migrate(p))
 			continue;
 
-		pid = p->pid;
+		pid = task_pid_knr(p);
 		ret = scheduler_port_get_value(&lb->ports[PORT_PROCESS_LOAD],
 					       &load, 1, &pid, 1);
 		if (ret < 1)
@@ -270,7 +271,7 @@ static void __expell_all(struct mosix_load_balancer *lb,
 		if (!may_migrate(t)) {
 			printk(KERN_WARNING "mosix_load_balancer:"
 			       " task %d(%s) is not migratable!\n",
-			       t->pid, t->comm);
+			       task_pid_knr(t), t->comm);
 			continue;
 		}
 
@@ -282,7 +283,7 @@ static void __expell_all(struct mosix_load_balancer *lb,
 		if (err && err != -EALREADY)
 			printk(KERN_WARNING "mosix_load_balancer:"
 			       " task %d(%s) could not be migrated!\n",
-			       t->pid, t->comm);
+			       task_pid_knr(t), t->comm);
 	} process_set_while_each_process(t, processes);
 
 	process_set_cleanup_do_each_process(processes);
