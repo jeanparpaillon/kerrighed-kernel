@@ -7,6 +7,7 @@
 #include <kerrighed/capabilities.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/krginit.h>
+#include <kerrighed/pid.h>
 #include <kerrighed/hotplug.h>
 #include <kerrighed/migration.h>
 
@@ -29,7 +30,8 @@ static void epm_remove(krgnodemask_t *vector)
 
 		if (cap_raised(tsk->krg_caps.effective, CAP_CAN_MIGRATE)) {
 			/* have to migrate this process */
-			printk("try to migrate %d %s to %d\n", tsk->pid, tsk->comm, dest_node);
+			printk("try to migrate %d %s to %d\n",
+			       task_pid_knr(tsk), tsk->comm, dest_node);
 
 			__migrate_linux_threads(tsk, MIGR_LOCAL_PROCESS,
 						dest_node);
@@ -46,8 +48,8 @@ static void epm_remove(krgnodemask_t *vector)
 
 		if (cap_raised(tsk->krg_caps.effective, CAP_USE_REMOTE_MEMORY)) {
 			/* have to kill this process */
-			printk("epm_remove: have to kill %d (%s)\n", tsk->pid,
-			       tsk->comm);
+			printk("epm_remove: have to kill %d (%s)\n",
+			       task_pid_knr(tsk), tsk->comm);
 			continue;
 		}
 	}
