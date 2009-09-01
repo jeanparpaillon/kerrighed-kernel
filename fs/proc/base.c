@@ -2871,8 +2871,8 @@ struct dentry *proc_pid_lookup(struct inode *dir, struct dentry * dentry, struct
 	if (!task)
 #if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
 	{
-		if (kh_proc_pid_lookup && ns == &init_pid_ns
-		    && (tgid & GLOBAL_PID_MASK))
+		if (current->nsproxy->krg_ns && kh_proc_pid_lookup
+		    && ns == &init_pid_ns && (tgid & GLOBAL_PID_MASK))
 			result = kh_proc_pid_lookup(dir, dentry, tgid);
 #endif
                 goto out;
@@ -2882,7 +2882,8 @@ struct dentry *proc_pid_lookup(struct inode *dir, struct dentry * dentry, struct
 
 	result = proc_pid_instantiate(dir, dentry, task, NULL);
 #if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_EPM)
-	if (IS_ERR(result) && task->exit_state == EXIT_MIGRATION)
+	if (current->nsproxy->krg_ns
+	    && IS_ERR(result) && task->exit_state == EXIT_MIGRATION)
 		result = kh_proc_pid_lookup(dir, dentry, tgid);
 #endif
 	put_task_struct(task);
@@ -2972,7 +2973,8 @@ int proc_pid_readdir(struct file * filp, void * dirent, filldir_t filldir)
 	iter.task = NULL;
 	iter.tgid = filp->f_pos - TGID_OFFSET;
 #if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
-	if (kh_proc_pid_readdir && ns == &init_pid_ns) {
+	if (current->nsproxy->krg_ns && kh_proc_pid_readdir
+	    && ns == &init_pid_ns) {
 		/* All filling is done by kh_proc_pid_readdir */
 		if (kh_proc_pid_readdir(filp, dirent, filldir, TGID_OFFSET))
 			goto out;
