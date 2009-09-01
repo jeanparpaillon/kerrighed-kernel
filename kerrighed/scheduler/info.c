@@ -6,6 +6,7 @@
 
 #include <linux/module.h>
 #include <linux/sched.h>
+#include <linux/nsproxy.h>
 #include <linux/slab.h>
 #include <linux/rcupdate.h>
 #include <linux/mutex.h>
@@ -320,11 +321,18 @@ int krg_sched_info_copy(struct task_struct *task)
 	struct krg_sched_module_info *mod_info, *new_mod_info;
 	u64 start_version;
 
+	rcu_assign_pointer(task->krg_sched, NULL);
+
 	if (!cluster_started)
 		return 0;
 
-	if (krg_current)
+	if (!task->nsproxy->krg_ns)
 		return 0;
+
+	if (krg_current) {
+		rcu_assign_pointer(task->krg_sched, krg_current->krg_sched);
+		return 0;
+	}
 
 	/* Kernel threads do not need krg_sched_info */
 	/*
@@ -332,10 +340,8 @@ int krg_sched_info_copy(struct task_struct *task)
 	 * the mm of the caller (parent or sister task), but we only want to
 	 * know if the new task will have an mm or not.
 	 */
-	if (task->flags & PF_KTHREAD) {
-		rcu_assign_pointer(task->krg_sched, NULL);
+	if (task->flags & PF_KTHREAD)
 		return 0;
-	}
 
 	new_info = alloc_sched_info(task, GFP_KERNEL);
 	if (!new_info)

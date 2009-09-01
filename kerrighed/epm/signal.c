@@ -15,6 +15,7 @@
 #include <linux/taskstats.h>
 #include <linux/taskstats_kern.h>
 #endif
+#include <linux/nsproxy.h>
 #include <linux/pid_namespace.h>
 #include <linux/pid.h>
 #include <linux/user_namespace.h>
@@ -413,6 +414,9 @@ void krg_signal_alloc(struct task_struct *task, struct pid *pid,
 		      unsigned long clone_flags)
 {
 	if (!cluster_started)
+		return;
+
+	if (!task->nsproxy->krg_ns)
 		return;
 
 	if (krg_current && krg_current->tgid == krg_current->signal->krg_objid)

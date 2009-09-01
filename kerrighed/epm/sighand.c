@@ -270,6 +270,9 @@ static void __krg_sighand_alloc(struct task_struct *task,
 {
 	struct sighand_struct_kddm_object *obj;
 
+	if (!task->nsproxy->krg_ns)
+		return;
+
 	/*
 	 * Exclude kernel threads and local pids from using sighand_struct kddm
 	 * objects.

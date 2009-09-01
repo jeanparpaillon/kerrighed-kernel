@@ -6,6 +6,7 @@
  */
 
 #include <linux/sched.h>
+#include <linux/nsproxy.h>
 #include <linux/cred.h>
 #include <linux/hashtable.h>
 #include <kerrighed/remote_cred.h>
@@ -371,6 +372,9 @@ int krg_copy_application(struct task_struct *task)
 {
 	int r = 0;
 	task->application = NULL;
+
+	if (!task->nsproxy->krg_ns)
+		return 0;
 
 	/* father is no more checkpointable? */
 	if (!cap_raised(current->krg_caps.effective, CAP_CHECKPOINTABLE) &&
