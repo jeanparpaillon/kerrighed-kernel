@@ -17,6 +17,7 @@
 #include <linux/file.h>
 #include <linux/cred.h>
 #include <linux/kernel.h>
+#include <kerrighed/pid.h>
 #include <kerrighed/application.h>
 #include <kerrighed/kerrighed_signal.h>
 #include <kerrighed/hotplug.h>
@@ -122,7 +123,7 @@ int checkpoint_task_on_disk(struct epm_action *action,
 	ghost = create_file_ghost(GHOST_WRITE,
 				  app->app_id,
 				  app->chkpt_sn,
-				  task_to_checkpoint->pid, "task");
+				  task_pid_knr(task_to_checkpoint), "task");
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);

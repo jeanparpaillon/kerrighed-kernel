@@ -150,7 +150,7 @@ struct task_struct *restart_process(pid_t pid, long app_id, int chkpt_sn)
 	struct epm_action action;
 
 	/* Check if the process has not been already restarted */
-	if (find_task_by_pid_ns(pid, &init_pid_ns) != NULL)
+	if (find_task_by_kpid(pid) != NULL)
 		return ERR_PTR(-EALREADY);
 
 	action.type = EPM_CHECKPOINT;

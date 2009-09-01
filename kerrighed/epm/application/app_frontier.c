@@ -100,7 +100,7 @@ static inline long __get_appid_from_local_pid(pid_t pid)
 	struct task_struct * task;
 
 	rcu_read_lock();
-	task = find_task_by_pid_ns(pid, &init_pid_ns);
+	task = find_task_by_kpid(pid);
 	rcu_read_unlock();
 	if (task)
 		return __get_appid_from_task(task);

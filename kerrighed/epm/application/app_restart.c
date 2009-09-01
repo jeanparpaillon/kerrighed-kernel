@@ -869,7 +869,7 @@ static inline void local_join_relatives(struct app_struct *app)
 		tsk = t->task;
 
 		join_local_relatives(tsk);
-		krg_pid_link_task(tsk->pid);
+		krg_pid_link_task(task_pid_knr(tsk));
 	}
 }
 
