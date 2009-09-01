@@ -316,7 +316,7 @@ struct children_kddm_object *krg_children_readlock(pid_t tgid)
 
 struct children_kddm_object *__krg_children_readlock(struct task_struct *task)
 {
-	return krg_children_readlock(task->tgid);
+	return krg_children_readlock(task_tgid_knr(task));
 }
 
 static struct children_kddm_object *children_writelock(pid_t tgid, int nested)
@@ -349,7 +349,7 @@ struct children_kddm_object *krg_children_writelock(pid_t tgid)
 
 struct children_kddm_object *__krg_children_writelock(struct task_struct *task)
 {
-	return children_writelock(task->tgid, 0);
+	return children_writelock(task_tgid_knr(task), 0);
 }
 
 struct children_kddm_object *krg_children_writelock_nested(pid_t tgid)
@@ -409,7 +409,7 @@ children_alloc(struct task_struct *task, pid_t tgid)
 
 struct children_kddm_object *krg_children_alloc(struct task_struct *task)
 {
-	return children_alloc(task, task->tgid);
+	return children_alloc(task, task_tgid_knr(task));
 }
 
 static void free_children(struct task_struct *task)
@@ -480,10 +480,10 @@ static int new_child(struct children_kddm_object *obj,
 	if (!item)
 		return -ENOMEM;
 
-	item->pid = pid_nr(pid);
-	item->tgid = pid_nr(tgid);
-	item->pgid = pid_nr(pgrp);
-	item->sid = pid_nr(session);
+	item->pid = pid_knr(pid);
+	item->tgid = pid_knr(tgid);
+	item->pgid = pid_knr(pgrp);
+	item->sid = pid_knr(session);
 	item->parent = item->real_parent = parent_pid;
 	item->ptraced = 0;
 	item->exit_signal = exit_signal;
@@ -523,14 +523,13 @@ void __krg_set_child_pgid(struct children_kddm_object *obj,
 void krg_set_child_pgid(struct children_kddm_object *obj,
 			struct task_struct *child)
 {
-	__krg_set_child_pgid(obj, child->pid,
-			     task_pgrp_nr_ns(child, &init_pid_ns));
+	__krg_set_child_pgid(obj, task_pid_knr(child), task_pgrp_knr(child));
 }
 
 int krg_set_child_ptraced(struct children_kddm_object *obj,
 			  struct task_struct *child, int ptraced)
 {
-	pid_t = child->pid;
+	pid_t pid = task_pid_knr(child);
 	struct remote_child *item;
 
 	if (unlikely(!obj))
@@ -551,7 +550,7 @@ int krg_set_child_ptraced(struct children_kddm_object *obj,
 void krg_set_child_exit_signal(struct children_kddm_object *obj,
 			       struct task_struct *child)
 {
-	pid_t pid = child->pid;
+	pid_t pid = task_pid_knr(child);
 	struct remote_child *item;
 
 	if (!obj)
@@ -568,7 +567,7 @@ void krg_set_child_exit_signal(struct children_kddm_object *obj,
 void krg_set_child_exit_state(struct children_kddm_object *obj,
 			      struct task_struct *child)
 {
-	pid_t pid = child->pid;
+	pid_t pid = task_pid_knr(child);
 	struct remote_child *item;
 
 	if (!obj)
@@ -584,7 +583,7 @@ void krg_set_child_exit_state(struct children_kddm_object *obj,
 void krg_set_child_location(struct children_kddm_object *obj,
 			    struct task_struct *child)
 {
-	pid_t pid = child->pid;
+	pid_t pid = task_pid_knr(child);
 	struct remote_child *item;
 
 	if (!obj)
@@ -645,9 +644,10 @@ void krg_forget_original_remote_parent(struct task_struct *parent,
 	int threaded_reparent = same_thread_group(reaper, parent);
 	struct children_kddm_object *obj = parent->children_obj;
 	struct remote_child *child, *tmp_child;
+	pid_t ppid = task_pid_knr(parent);
 
 	list_for_each_entry_safe(child, tmp_child, &obj->children, sibling)
-		if (child->real_parent == parent->pid) {
+		if (child->real_parent == ppid) {
 			if (!threaded_reparent
 			    && child->exit_state == EXIT_ZOMBIE
 			    && child->node != kerrighed_node_id)
@@ -656,7 +656,7 @@ void krg_forget_original_remote_parent(struct task_struct *parent,
 				notify_remote_child_reaper(child->pid,
 							   child->node);
 			reparent_child(obj, child,
-				       reaper->pid, threaded_reparent);
+				       task_pid_knr(reaper), threaded_reparent);
 		}
 }
 
@@ -664,7 +664,7 @@ void krg_forget_original_remote_parent(struct task_struct *parent,
 void
 krg_remove_child(struct children_kddm_object *obj, struct task_struct *child)
 {
-	pid_t child_pid = child->pid;
+	pid_t child_pid = task_pid_knr(child);
 	struct remote_child *item;
 
 	if (!obj)
@@ -824,6 +824,7 @@ int krg_do_wait(struct children_kddm_object *obj, int *notask_error,
 		struct rusage __user *ru)
 {
 	struct remote_child *item;
+	pid_t current_pid = task_pid_knr(current);
 	int ret = 0;
 
 	if (!is_krg_pid_ns_root(current->nsproxy->pid_ns))
@@ -838,7 +839,7 @@ retry:
 	/* Remote version of do_wait_thread() */
 	list_for_each_entry(item, &obj->children, sibling) {
 		if ((options & __WNOTHREAD)
-		    && item->real_parent != current->pid)
+		    && item->real_parent != current_pid)
 			continue;
 
 		/*
@@ -901,6 +902,12 @@ pid_t krg_get_real_parent_tgid(struct task_struct *task,
 
 	if (real_parent != baby_sitter) {
 		real_parent_tgid = task_tgid_nr_ns(real_parent, ns);
+	} else if (!ns->krg_ns_root) {
+		/*
+		 * ns is an ancestor of task's root Kerrighed namespace, and
+		 * thus has no names for remote parents.
+		 */
+		real_parent_tgid = 0;
 	} else {
 		struct task_kddm_object *task_obj =
 			rcu_dereference(task->task_obj);
@@ -950,21 +957,24 @@ out:
 int krg_get_parent(struct children_kddm_object *obj, struct task_struct *child,
 		   pid_t *parent_pid, pid_t *real_parent_pid)
 {
-	return __krg_get_parent(obj, child->pid, parent_pid, real_parent_pid);
+	return __krg_get_parent(obj, task_pid_knr(child),
+				parent_pid, real_parent_pid);
 }
 
 struct children_kddm_object *
 krg_parent_children_writelock(struct task_struct *task, pid_t *parent_tgid)
 {
 	struct children_kddm_object *obj;
+	struct pid_namespace *ns = task_active_pid_ns(task)->krg_ns_root;
 	pid_t tgid, reaper_tgid;
 
+	BUG_ON(!ns);
 	rcu_read_lock();
-	tgid = krg_get_real_parent_tgid(task, &init_pid_ns);
+	tgid = krg_get_real_parent_tgid(task, ns);
 	obj = rcu_dereference(task->parent_children_obj);
 	rcu_read_unlock();
 	BUG_ON(!tgid);
-	reaper_tgid = task_active_pid_ns(task)->child_reaper->tgid;
+	reaper_tgid = task_tgid_knr(task_active_pid_ns(task)->child_reaper);
 	if (!obj || tgid == reaper_tgid) {
 		obj = NULL;
 		goto out;
@@ -978,7 +988,7 @@ krg_parent_children_writelock(struct task_struct *task, pid_t *parent_tgid)
 	 * is_child may also return 0 if task's parent is init. In that case, it
 	 * is still correct to return NULL as long as parent_tgid is set.
 	 */
-	if (!is_child(obj, task->pid)) {
+	if (!is_child(obj, task_pid_knr(task))) {
 		if (obj)
 			krg_children_unlock(obj);
 		obj = NULL;
@@ -995,14 +1005,16 @@ struct children_kddm_object *
 krg_parent_children_readlock(struct task_struct *task, pid_t *parent_tgid)
 {
 	struct children_kddm_object *obj;
+	struct pid_namespace *ns = task_active_pid_ns(task)->krg_ns_root;
 	pid_t tgid, reaper_tgid;
 
+	BUG_ON(!ns);
 	rcu_read_lock();
-	tgid = krg_get_real_parent_tgid(task, &init_pid_ns);
+	tgid = krg_get_real_parent_tgid(task, ns);
 	obj = rcu_dereference(task->parent_children_obj);
 	rcu_read_unlock();
 	BUG_ON(!tgid);
-	reaper_tgid = task_active_pid_ns(task)->child_reaper->tgid;
+	reaper_tgid = task_tgid_knr(task_active_pid_ns(task)->child_reaper);
 	if (!obj || tgid == reaper_tgid) {
 		obj = NULL;
 		goto out;
@@ -1016,7 +1028,7 @@ krg_parent_children_readlock(struct task_struct *task, pid_t *parent_tgid)
 	 * is_child may also return 0 if task's parent is init. In that case, it
 	 * is still correct to return NULL as long as parent_tgid is set.
 	 */
-	if (!is_child(obj, task->pid)) {
+	if (!is_child(obj, task_pid_knr(task))) {
 		if (obj)
 			krg_children_unlock(obj);
 		obj = NULL;
@@ -1150,10 +1162,11 @@ static inline void fix_chain_to_parent(struct task_struct *child,
  */
 static inline void rechain_local_children(struct task_struct *parent)
 {
+	pid_t ppid = task_pid_knr(parent);
 	struct list_head *children;
 	struct task_struct *child, *tmp;
 
-	children = get_krg_parent_entry(parent->pid);
+	children = get_krg_parent_entry(ppid);
 	if (!children)
 		return;
 
@@ -1163,17 +1176,17 @@ static inline void rechain_local_children(struct task_struct *parent)
 		 * If parent has reused a pid, this krg_parent list may still
 		 * contain children of a former user of this pid.
 		 */
-		if (!likely(is_child(parent->children_obj, child->pid)))
+		if (!likely(is_child(parent->children_obj, task_pid_knr(child))))
 			continue;
 		child->real_parent = parent;
 		list_move_tail(&child->sibling, &parent->children);
 		if (child->parent == baby_sitter &&
-		    child->task_obj->parent == parent->pid)
+		    child->task_obj->parent == ppid)
 			child->parent = parent;
 	}
 
 	if (likely(list_empty(children)))
-		delete_krg_parent_entry(parent->pid);
+		delete_krg_parent_entry(ppid);
 }
 
 /* Expects write lock on tasklist held */
@@ -1187,7 +1200,7 @@ static inline struct task_struct *find_relative(pid_t pid)
 {
 	struct task_struct *p;
 
-	p = find_task_by_pid_ns(pid, &init_pid_ns);
+	p = find_task_by_kpid(pid);
 	if (p && !unlikely(p->flags & PF_AWAY))
 		return p;
 	else
@@ -1289,15 +1302,15 @@ void leave_all_relatives(struct task_struct *tsk)
 	 * we were chained in its regular children list
 	 */
 	if (tsk->parent != baby_sitter)
-		tsk->task_obj->parent = tsk->parent->pid;
+		tsk->task_obj->parent = task_pid_knr(tsk->parent);
 	if (tsk->real_parent != baby_sitter) {
-		tsk->task_obj->real_parent = tsk->real_parent->pid;
-		tsk->task_obj->real_parent_tgid = tsk->real_parent->tgid;
+		tsk->task_obj->real_parent = task_pid_knr(tsk->real_parent);
+		tsk->task_obj->real_parent_tgid = task_tgid_knr(tsk->real_parent);
 	}
 
 	/* Make local children act as if tsk were already remote */
 	list_for_each_entry_safe(child, tmp, &tsk->children, sibling)
-		reparent_to_baby_sitter(child, tsk->pid);
+		reparent_to_baby_sitter(child, task_pid_knr(tsk));
 
 	/* Make parent act as if tsk were already remote */
 	if (tsk->real_parent == baby_sitter) {
@@ -1308,7 +1321,7 @@ void leave_all_relatives(struct task_struct *tsk)
 		remove_from_krg_parent(tsk, tsk->task_obj->real_parent);
 		list_add_tail(&tsk->sibling, &baby_sitter->children);
 	} else {
-		__reparent_to_baby_sitter(tsk, tsk->real_parent->pid);
+		__reparent_to_baby_sitter(tsk, task_pid_knr(tsk->real_parent));
 	}
 
 	write_unlock_irq(&tasklist_lock);
@@ -1323,6 +1336,7 @@ int krg_children_prepare_fork(struct task_struct *task,
 			      unsigned long clone_flags)
 {
 	struct children_kddm_object *obj, *parent_obj;
+	pid_t tgid;
 	int err = 0;
 
 	rcu_assign_pointer(task->children_obj, NULL);
@@ -1340,13 +1354,18 @@ int krg_children_prepare_fork(struct task_struct *task,
 		goto out;
 	}
 
+	if (clone_flags & CLONE_THREAD)
+		tgid = task_tgid_knr(current);
+	else
+		tgid = pid_knr(pid);
+
 	/* Kernel threads and local pids must not use the children kddm set. */
-	if (!(task->tgid & GLOBAL_PID_MASK) || (current->flags & PF_KTHREAD))
+	if (!(tgid & GLOBAL_PID_MASK) || (current->flags & PF_KTHREAD))
 		goto out;
 
 	/* Attach task to the children kddm object of its thread group */
 	if (!(clone_flags & CLONE_THREAD)) {
-		obj = children_alloc(task, task->tgid);
+		obj = children_alloc(task, tgid);
 		if (!obj) {
 			err = -ENOMEM;
 			goto out;
@@ -1398,7 +1417,7 @@ int krg_children_fork(struct task_struct *task,
 		 */
 		parent_pid = current->task_obj->real_parent;
 	else
-		parent_pid = task->real_parent->pid;
+		parent_pid = task_pid_knr(task->real_parent);
 	tgid = pid;
 	if (clone_flags & CLONE_THREAD)
 		tgid = task_tgid(current);
@@ -1495,8 +1514,8 @@ krg_children_prepare_de_thread(struct task_struct *task)
 		BUG_ON(!children_obj);
 		/*
 		 * All children were reparented to task, but the children
-		 * object knows them as children of task->pid, while task
-		 * is taking leader->pid.
+		 * object knows them as children of task's pid, while task
+		 * is taking leader's pid.
 		 * krg_forget_original_remote_parent() will only record
 		 * the pid of leader, so this is safe.
 		 */
@@ -1542,19 +1561,21 @@ void krg_reparent_to_local_child_reaper(struct task_struct *task)
 {
 	struct task_kddm_object *task_obj = task->task_obj;
 	struct task_struct *reaper = task_active_pid_ns(task)->child_reaper;
-	pid_t parent_pid;
+	pid_t parent_pid, reaper_pid, reaper_tgid;
 
 	/*
 	 * If task is ptraced, the ptracer is local and we can safely set
-	 * task_obj->parent to parent->pid.
+	 * task_obj->parent to parent's pid.
 	 */
 	parent_pid = task_obj->real_parent;
-	task_obj->real_parent = reaper->pid;
-	task_obj->real_parent_tgid = reaper->tgid;
+	reaper_pid = task_pid_knr(reaper);
+	reaper_tgid = task_tgid_knr(reaper);
+	task_obj->real_parent = reaper_pid;
+	task_obj->real_parent_tgid = reaper_tgid;
 	if (task->parent == baby_sitter)
-		task_obj->parent = reaper->pid;
+		task_obj->parent = reaper_pid;
 	else
-		BUG_ON(task_obj->parent != task->parent->pid);
+		BUG_ON(task_obj->parent != task_pid_knr(task->parent));
 	leave_baby_sitter(task, parent_pid);
 	BUG_ON(task->real_parent != reaper);
 	BUG_ON(task->parent == baby_sitter);
@@ -1577,11 +1598,11 @@ void krg_unhash_process(struct task_struct *tsk)
 	/*
 	 * If we are inside de_thread() and tsk is an old thread group leader
 	 * being reaped by the new thread group leader, we do not want to remove
-	 * tsk->pid from the global children list of tsk's parent.
+	 * tsk's pid from the global children list of tsk's parent.
 	 * Moreover tsk is already reparented to baby_sitter, so we have nothing
 	 * to do here.
 	 */
-	if (tsk->pid == tsk->tgid && !thread_group_leader(tsk))
+	if (has_group_leader_pid(tsk) && !thread_group_leader(tsk))
 		return;
 
 	obj = krg_parent_children_writelock(tsk, &real_parent_tgid);
