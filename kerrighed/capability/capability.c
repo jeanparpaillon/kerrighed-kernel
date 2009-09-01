@@ -528,32 +528,34 @@ int init_krg_cap(void)
 {
 	int r;
 
-	r = register_proc_service(KSYS_SET_CAP, proc_set_cap);
+	r = __register_proc_service(KSYS_SET_CAP, proc_set_cap, false);
 	if (r != 0)
 		goto out;
 
-	r = register_proc_service(KSYS_GET_CAP, proc_get_cap);
+	r = __register_proc_service(KSYS_GET_CAP, proc_get_cap, false);
 	if (r != 0)
 		goto unreg_set_cap;
 
-	r = register_proc_service(KSYS_SET_FATHER_CAP, proc_set_father_cap);
+	r = __register_proc_service(KSYS_SET_FATHER_CAP, proc_set_father_cap,
+				    false);
 	if (r != 0)
 		goto unreg_get_cap;
 
-	r = register_proc_service(KSYS_GET_FATHER_CAP, proc_get_father_cap);
+	r = __register_proc_service(KSYS_GET_FATHER_CAP, proc_get_father_cap,
+				    false);
 	if (r != 0)
 		goto unreg_set_father_cap;
 
-	r = register_proc_service(KSYS_SET_PID_CAP, proc_set_pid_cap);
+	r = __register_proc_service(KSYS_SET_PID_CAP, proc_set_pid_cap, false);
 	if (r != 0)
 		goto unreg_get_father_cap;
 
-	r = register_proc_service(KSYS_GET_PID_CAP, proc_get_pid_cap);
+	r = __register_proc_service(KSYS_GET_PID_CAP, proc_get_pid_cap, false);
 	if (r != 0)
 		goto unreg_set_pid_cap;
 
-	r = register_proc_service(KSYS_GET_SUPPORTED_CAP,
-				  proc_get_supported_cap);
+	r = __register_proc_service(KSYS_GET_SUPPORTED_CAP,
+				    proc_get_supported_cap, false);
 	if (r != 0)
 		goto unreg_get_pid_cap;
 
