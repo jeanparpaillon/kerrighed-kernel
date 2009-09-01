@@ -262,6 +262,8 @@ int krg_task_alloc(struct task_struct *task, struct pid *pid)
 	task->task_obj = NULL;
 	if (!kh_task_alloc)
 		return 0;
+	if (!task->nsproxy->krg_ns)
+		return 0;
 #ifdef CONFIG_KRG_EPM
 	if (krg_current)
 		return 0;
