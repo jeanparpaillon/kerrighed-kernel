@@ -37,7 +37,7 @@ struct rpc_desc *krg_remote_syscall_begin(int req, pid_t pid,
 	if (!current->nsproxy->krg_ns)
 		goto err;
 
-	if (task_active_pid_ns(current) != &init_pid_ns)
+	if (!is_krg_pid_ns_root(task_active_pid_ns(current)))
 		goto err;
 
 	if (pid < 0 || !(pid & GLOBAL_PID_MASK))
