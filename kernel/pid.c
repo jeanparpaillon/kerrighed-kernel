@@ -336,8 +336,7 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 		if (nr < 0)
 			goto out_free;
 #ifdef CONFIG_KRG_PROC
-		if (tmp->global && nr != 1
-		    && ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_NODEID))
+		if (tmp->global && nr != 1)
 			nr = GLOBAL_PID(nr);
 #endif
 #ifdef CONFIG_KRG_EPM
@@ -614,9 +613,7 @@ struct pid *find_ge_pid(int nr, struct pid_namespace *ns)
 		nr = next_pidmap(ns, nr);
 	} while (nr > 0);
 #ifdef CONFIG_KRG_PROC
-	if (nr <= 0
-	    && ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_NODEID) && !global
-	    && ns->global)
+	if (nr <= 0 && !global && ns->global)
 		return find_ge_pid(GLOBAL_PID(0), ns);
 #endif
 
