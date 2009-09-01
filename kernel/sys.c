@@ -1046,7 +1046,8 @@ SYSCALL_DEFINE2(setpgid, pid_t, pid, pid_t, pgid)
 #ifdef CONFIG_KRG_EPM
 	down_read(&kerrighed_init_sem);
 
-	if (forwarded_call || current->nsproxy->pid_ns != &init_pid_ns
+	if (forwarded_call || !current->nsproxy->krg_ns
+	    || current->nsproxy->pid_ns != &init_pid_ns
 	    || !(pid & GLOBAL_PID_MASK))
 		goto lock_tasklist;
 

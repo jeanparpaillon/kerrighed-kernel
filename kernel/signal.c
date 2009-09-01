@@ -1389,6 +1389,9 @@ static int krg_kill_pg_info(int sig, struct siginfo *info, pid_t pgid)
 	kerrighed_node_t node;
 	int retval = -ESRCH;
 
+	if (!current->nsproxy->krg_ns)
+		goto out;
+
 	if (task_active_pid_ns(current) != &init_pid_ns)
 		goto out;
 
@@ -1430,6 +1433,9 @@ err_cancel:
 
 static void krg_kill_all(int sig, struct siginfo *info, int *count, int *retval)
 {
+	if (!current->nsproxy->krg_ns)
+		return;
+
 	if (task_active_pid_ns(current) != &init_pid_ns)
 		return;
 }
