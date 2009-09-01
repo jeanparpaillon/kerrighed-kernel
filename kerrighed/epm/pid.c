@@ -163,6 +163,7 @@ static void __get_pid(struct pid_kddm_object *obj)
 
 static struct pid *no_pid(int nr)
 {
+	struct pid_namespace *ns;
 	struct pid_kddm_object *obj;
 	struct pid *pid;
 
@@ -175,7 +176,7 @@ static struct pid *no_pid(int nr)
 
 	spin_lock(&pid_kddm_lock);
 	rcu_read_lock();
-	pid = find_pid_ns(nr, &init_pid_ns); /* Double check once locked */
+	pid = find_kpid(nr); /* Double check once locked */
 	rcu_read_unlock();
 	/*
 	 * No need to get a reference on pid since we know that it is used on
@@ -183,7 +184,9 @@ static struct pid *no_pid(int nr)
 	 */
 
 	if (!pid) {
-		pid = __alloc_pid(&init_pid_ns, &nr);
+		ns = find_get_krg_pid_ns();
+		pid = __alloc_pid(ns, &nr);
+		put_pid_ns(ns);
 		if (!pid)
 			goto out_unlock;
 		obj->pid = pid;
@@ -206,7 +209,7 @@ static struct pid *krg_get_pid(int nr)
 	struct pid *pid;
 
 	rcu_read_lock();
-	pid = find_pid_ns(nr, &init_pid_ns);
+	pid = find_kpid(nr);
 	rcu_read_unlock();
 	/*
 	 * No need to get a reference on pid since we know that it is used on
@@ -273,7 +276,7 @@ static int may_put_pid(struct pid_kddm_object *obj)
 static void __put_pid(struct pid_kddm_object *obj)
 {
 	struct pid *pid = obj->pid;
-	int nr = pid_nr(pid);
+	int nr = pid_knr(pid);
 	int may_put;
 	int grabbed = 0;
 
@@ -364,11 +367,9 @@ void krg_put_pid(struct pid *pid)
 
 static int create_pid_kddm_object(struct pid *pid, int early)
 {
-	int nr = pid_nr(pid);
+	int nr = pid_knr(pid);
 	struct pid_kddm_object *obj;
 	struct task_kddm_object *task_obj;
-
-	BUG_ON(pid->level > 0);
 
 	obj = _kddm_grab_object(pid_kddm_set, nr);
 	if (IS_ERR(obj)) {
@@ -410,7 +411,7 @@ int export_pid(struct epm_action *action,
 	       ghost_t *ghost, struct pid_link *link)
 {
 	struct pid *pid = link->pid;
-	int nr = pid_nr(pid);
+	int nr = pid_knr(pid);
 	int retval;
 
 	if (!(nr & GLOBAL_PID_MASK))
@@ -442,11 +443,12 @@ int export_pid_namespace(struct epm_action *action,
 
 static int __reserve_pid(pid_t nr)
 {
+	struct pid_namespace *ns = find_get_krg_pid_ns();
 	struct pid *pid;
 	int pidmap = 1, r;
 
 	if (ORIG_NODE(nr) == kerrighed_node_id) {
-		r = reserve_pidmap(&init_pid_ns, nr);
+		r = reserve_pidmap(ns, nr);
 		if (r) {
 			r = -E_CR_PIDBUSY;
 			goto out;
@@ -459,7 +461,7 @@ static int __reserve_pid(pid_t nr)
 		pidmap = 0;
 	}
 
-	pid = __alloc_pid(&init_pid_ns, &nr);
+	pid = __alloc_pid(ns, &nr);
 	if (!pid) {
 		r = -ENOMEM;
 		goto err_alloc_pid;
@@ -481,12 +483,13 @@ err_alloc_pid:
 	if (pidmap) {
 		struct upid upid = {
 			.nr = nr,
-			.ns = &init_pid_ns,
+			.ns = ns,
 		};
 
 		free_pidmap(&upid);
 	}
 out:
+	put_pid_ns(ns);
 	return r;
 }
 
@@ -584,8 +587,7 @@ int import_pid(struct epm_action *action, ghost_t *ghost, struct pid_link *link)
 int import_pid_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *task)
 {
-	get_pid_ns(&init_pid_ns);
-	task->nsproxy->pid_ns = &init_pid_ns;
+	task->nsproxy->pid_ns = find_get_krg_pid_ns();
 
 	return 0;
 }
