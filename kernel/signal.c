@@ -1768,7 +1768,7 @@ int do_notify_parent(struct task_struct *tsk, int sig)
 	rcu_read_lock();
 #ifdef CONFIG_KRG_EPM
 	if (tsk->parent == baby_sitter)
-		info.si_pid = task_pid_nr_ns(tsk, &init_pid_ns);
+		info.si_pid = task_pid_knr(tsk);
 	else
 #endif
 	info.si_pid = task_pid_nr_ns(tsk, tsk->parent->nsproxy->pid_ns);
