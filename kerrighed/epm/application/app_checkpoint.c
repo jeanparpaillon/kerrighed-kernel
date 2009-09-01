@@ -10,6 +10,7 @@
 #include <linux/cred.h>
 #include <linux/syscalls.h>
 #include <linux/version.h>
+#include <kerrighed/pid.h>
 #include <kerrighed/task.h>
 #include <kerrighed/children.h>
 #include <kerrighed/kerrighed_signal.h>
@@ -109,7 +110,7 @@ static inline int write_task_parent_links(task_state_t *t,
 {
 	int r = 0;
 	pid_t parent, real_parent, real_parent_tgid;
-	pid_t pgrp, session;
+	pid_t pid, tgid, pgrp, session;
 	struct children_kddm_object *obj;
 
 	if (!can_be_checkpointed(t->task)) {
@@ -117,11 +118,13 @@ static inline int write_task_parent_links(task_state_t *t,
 		goto error;
 	}
 
-	r = ghost_write(ghost, &t->task->pid, sizeof(pid_t));
+	pid = task_pid_knr(t->task);
+	r = ghost_write(ghost, &pid, sizeof(pid_t));
 	if (r)
 		goto error;
 
-	r = ghost_write(ghost, &t->task->tgid, sizeof(pid_t));
+	tgid = task_tgid_knr(t->task);
+	r = ghost_write(ghost, &tgid, sizeof(pid_t));
 	if (r)
 		goto error;
 
@@ -133,8 +136,8 @@ static inline int write_task_parent_links(task_state_t *t,
 	} else {
 		struct task_struct *reaper =
 			task_active_pid_ns(t->task)->child_reaper;
-		parent = real_parent = reaper->pid;
-		real_parent_tgid = reaper->tgid;
+		parent = real_parent = task_pid_knr(reaper);
+		real_parent_tgid = parent;
 	}
 
 	r = ghost_write(ghost, &parent, sizeof(pid_t));
@@ -148,12 +151,12 @@ static inline int write_task_parent_links(task_state_t *t,
 		goto error;
 
 	if (has_group_leader_pid(t->task)) {
-		pgrp = task_pgrp_nr_ns(t->task, &init_pid_ns);
+		pgrp = task_pgrp_knr(t->task);
 		r = ghost_write(ghost, &pgrp, sizeof(pid_t));
 		if (r)
 			goto error;
 
-		session = task_session_nr_ns(t->task, &init_pid_ns);
+		session = task_session_knr(t->task);
 		r = ghost_write(ghost, &session, sizeof(pid_t));
 		if (r)
 			goto error;

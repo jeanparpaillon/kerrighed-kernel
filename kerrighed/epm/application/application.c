@@ -10,6 +10,7 @@
 #include <linux/cred.h>
 #include <linux/hashtable.h>
 #include <kerrighed/remote_cred.h>
+#include <kerrighed/pid.h>
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
 #include <kerrighed/kerrighed_signal.h>
@@ -156,7 +157,7 @@ int create_application(struct task_struct *task)
 {
 	struct app_struct *app;
 	struct app_kddm_object *obj;
-	long app_id = task->pid;
+	long app_id = task_pid_knr(task);
 	int r = 0;
 
 	obj = _kddm_grab_object(app_kddm_set, app_id);
@@ -748,7 +749,7 @@ static int _kill_process(task_state_t *tsk, int signal)
 		goto exit;
 	}
 
-	r = kill_pid(tsk->task->pids[PIDTYPE_PID].pid, signal, 1);
+	r = kill_pid(task_pid(tsk->task), signal, 1);
 	if (r)
 		goto exit;
 

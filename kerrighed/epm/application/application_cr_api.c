@@ -5,6 +5,7 @@
  *  Copyright (C) 2007-2008 Matthieu Fertré - INRIA
  */
 
+#include <kerrighed/pid.h>
 #include <kerrighed/sys/checkpoint.h>
 #include <kerrighed/application.h>
 #include "application_cr_api.h"
@@ -52,8 +53,8 @@ int sys_app_restart(struct restart_request *req, pid_t *root_pid)
 {
 	task_identity_t requester;
 
-	requester.pid = current->pid;
-	requester.tgid = current->tgid;
+	requester.pid = task_pid_knr(current);
+	requester.tgid = task_tgid_knr(current);
 
 	return app_restart(req, &requester, root_pid);
 }
