@@ -1173,6 +1173,46 @@ out_unlock:
 }
 
 #ifdef CONFIG_KRG_PROC
+static int do_getpgid(pid_t pid, struct pid_namespace *ns)
+#else
+SYSCALL_DEFINE1(getpgid, pid_t, pid)
+#endif
+{
+	struct task_struct *p;
+	struct pid *grp;
+	int retval;
+
+	rcu_read_lock();
+	if (!pid)
+		grp = task_pgrp(current);
+	else {
+		retval = -ESRCH;
+#ifdef CONFIG_KRG_PROC
+		p = find_task_by_pid_ns(pid, ns);
+#else
+		p = find_task_by_vpid(pid);
+#endif
+		if (!p)
+			goto out;
+		grp = task_pgrp(p);
+		if (!grp)
+			goto out;
+
+		retval = security_task_getpgid(p);
+		if (retval)
+			goto out;
+	}
+#ifdef CONFIG_KRG_PROC
+	retval = pid_nr_ns(grp, ns);
+#else
+	retval = pid_vnr(grp);
+#endif
+out:
+	rcu_read_unlock();
+	return retval;
+}
+
+#ifdef CONFIG_KRG_PROC
 static int handle_getpgid(struct rpc_desc *desc, void *msg, size_t size)
 {
 	struct pid *pid;
@@ -1186,7 +1226,7 @@ static int handle_getpgid(struct rpc_desc *desc, void *msg, size_t size)
 		goto out;
 	}
 
-	retval = sys_getpgid(pid_nr_ns(pid, &init_pid_ns));
+	retval = do_getpgid(pid_knr(pid), ns_of_pid(pid)->krg_ns_root);
 
 	krg_handle_remote_syscall_end(pid, old_cred);
 
@@ -1198,42 +1238,18 @@ static int krg_getpgid(pid_t pid)
 {
 	return krg_remote_syscall_simple(PROC_GETPGID, pid, NULL, 0);
 }
-#endif /* CONFIG_KRG_PROC */
 
 SYSCALL_DEFINE1(getpgid, pid_t, pid)
 {
-	struct task_struct *p;
-	struct pid *grp;
 	int retval;
 
-	rcu_read_lock();
-	if (!pid)
-		grp = task_pgrp(current);
-	else {
-		retval = -ESRCH;
-#ifdef CONFIG_KRG_PROC
-		grp = NULL;
-#endif
-		p = find_task_by_vpid(pid);
-		if (!p)
-			goto out;
-		grp = task_pgrp(p);
-		if (!grp)
-			goto out;
-
-		retval = security_task_getpgid(p);
-		if (retval)
-			goto out;
-	}
-	retval = pid_vnr(grp);
-out:
-	rcu_read_unlock();
-#ifdef CONFIG_KRG_PROC
-	if (!grp)
+	retval = do_getpgid(pid, current->nsproxy->pid_ns);
+	if (retval == -ESRCH)
 		retval = krg_getpgid(pid);
-#endif
+
 	return retval;
 }
+#endif /* CONFIG_KRG_PROC */
 
 #ifdef __ARCH_WANT_SYS_GETPGRP
 
@@ -1243,6 +1259,46 @@ SYSCALL_DEFINE0(getpgrp)
 }
 
 #endif
+
+#ifdef CONFIG_KRG_PROC
+static int do_getsid(pid_t pid, struct pid_namespace *ns)
+#else
+SYSCALL_DEFINE1(getsid, pid_t, pid)
+#endif
+{
+	struct task_struct *p;
+	struct pid *sid;
+	int retval;
+
+	rcu_read_lock();
+	if (!pid)
+		sid = task_session(current);
+	else {
+		retval = -ESRCH;
+#ifdef CONFIG_KRG_PROC
+		p = find_task_by_pid_ns(pid, ns);
+#else
+		p = find_task_by_vpid(pid);
+#endif
+		if (!p)
+			goto out;
+		sid = task_session(p);
+		if (!sid)
+			goto out;
+
+		retval = security_task_getsid(p);
+		if (retval)
+			goto out;
+	}
+#ifdef CONFIG_KRG_PROC
+	retval = pid_nr_ns(sid, ns);
+#else
+	retval = pid_vnr(sid);
+#endif
+out:
+	rcu_read_unlock();
+	return retval;
+}
 
 #ifdef CONFIG_KRG_PROC
 static int handle_getsid(struct rpc_desc *desc, void *msg, size_t size)
@@ -1258,7 +1314,7 @@ static int handle_getsid(struct rpc_desc *desc, void *msg, size_t size)
 		goto out;
 	}
 
-	retval = sys_getsid(pid_nr_ns(pid, &init_pid_ns));
+	retval = do_getsid(pid_knr(pid), ns_of_pid(pid)->krg_ns_root);
 
 	krg_handle_remote_syscall_end(pid, old_cred);
 
@@ -1270,44 +1326,18 @@ static int krg_getsid(pid_t pid)
 {
 	return krg_remote_syscall_simple(PROC_GETSID, pid, NULL, 0);;
 }
-#endif /* CONFIG_KRG_PROC */
 
 SYSCALL_DEFINE1(getsid, pid_t, pid)
 {
-	struct task_struct *p;
-	struct pid *sid;
 	int retval;
 
-	rcu_read_lock();
-	if (!pid)
-		sid = task_session(current);
-	else {
-		retval = -ESRCH;
-#ifdef CONFIG_KRG_PROC
-		sid = NULL;
-#endif
-		p = find_task_by_vpid(pid);
-		if (!p)
-			goto out;
-		sid = task_session(p);
-		if (!sid)
-			goto out;
-
-		retval = security_task_getsid(p);
-		if (retval)
-			goto out;
-	}
-	retval = pid_vnr(sid);
-out:
-	rcu_read_unlock();
-#ifdef CONFIG_KRG_PROC
-	if (!sid)
+	retval = do_getsid(pid, current->nsproxy->pid_ns);
+	if (retval == -ESRCH)
 		retval = krg_getsid(pid);
-#endif
+
 	return retval;
 }
 
-#ifdef CONFIG_KRG_PROC
 void remote_sys_init(void)
 {
 	rpc_register_int(PROC_GETPGID, handle_getpgid, 0);
