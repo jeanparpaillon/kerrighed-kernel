@@ -13,6 +13,7 @@
  */
 
 #include <linux/sched.h>
+#include <linux/nsproxy.h>
 #include <linux/file.h>
 #include <linux/cred.h>
 #include <linux/kernel.h>
@@ -35,6 +36,17 @@
 
 int can_be_checkpointed(struct task_struct *task_to_checkpoint)
 {
+	struct nsproxy *nsp;
+
+	/* Task must live in the Kerrighed container. */
+	rcu_read_lock();
+	nsp = rcu_dereference(task_to_checkpoint->nsproxy);
+	if (!nsp || !nsp->krg_ns) {
+		rcu_read_unlock();
+		goto exit;
+	}
+	rcu_read_unlock();
+
 	/* Check permissions */
 	if (!permissions_ok(task_to_checkpoint))
 		goto exit;
