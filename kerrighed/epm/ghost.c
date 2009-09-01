@@ -122,7 +122,13 @@ static int export_children(struct epm_action *action,
 static int export_group_leader(struct epm_action *action,
 			       ghost_t *ghost, struct task_struct *task)
 {
-	return 0;
+	pid_t tgid = task_tgid_knr(task);
+	int err = 0;
+
+	if (action->type == EPM_CHECKPOINT && !thread_group_leader(task))
+		err = ghost_write(ghost, &tgid, sizeof(tgid));
+
+	return err;
 }
 
 static int export_ptraced(struct epm_action *action,
@@ -724,16 +730,14 @@ static void __unimport_pids(struct task_struct *task, enum pid_type max_type)
 {
 	enum pid_type type;
 
-	for (type = 0; type < max_type; type++) {
-		if (!thread_group_leader(task) && type > PIDTYPE_PID)
-			break;
+	for (type = 0; type < max_type; type++)
 		unimport_pid(&task->pids[type]);
-	}
 }
 
 static void unimport_pids(struct task_struct *task)
 {
-	__unimport_pids(task, PIDTYPE_MAX);
+	__unimport_pids(task, task->pid == task->tgid ? PIDTYPE_MAX :
+							PIDTYPE_PID + 1);
 }
 
 static void unimport_bts(struct task_struct *task)
@@ -932,7 +936,7 @@ static int import_children(struct epm_action *action,
 		 * C/R: children are restored later in
 		 * app_restart.c:local_restore_children_objects()
 		 */
-		if (task->pid == task->tgid) {
+		if (thread_group_leader(task)) {
 			task->children_obj = krg_children_alloc(task);
 		} else {
 			task->children_obj = __krg_children_writelock(task);
@@ -955,15 +959,29 @@ static int import_group_leader(struct epm_action *action,
 			       ghost_t *ghost, struct task_struct *task)
 {
 	struct task_struct *leader = task;
+	pid_t tgid;
+	int err = 0;
 
-	if (action->type == EPM_CHECKPOINT && task->pid != task->tgid) {
-		leader = find_task_by_pid_ns(task->tgid, &init_pid_ns);
+	/*
+	 * import_pids() set task->tgid to task->pid for a group leader, and 0
+	 * otherwise.
+	 */
+	if (task->pid != task->tgid) {
+		BUG_ON(action->type != EPM_CHECKPOINT);
+
+		err = ghost_read(ghost, &tgid, sizeof(tgid));
+		if (err)
+			goto out;
+
+		leader = find_task_by_kpid(tgid);
 		BUG_ON(!leader);
+		task->tgid = leader->pid;
 	}
 
 	task->group_leader = leader;
 
-	return 0;
+out:
+	return err;
 }
 
 static int import_ptraced(struct epm_action *action,
@@ -986,26 +1004,26 @@ static int import_pids(struct epm_action *action,
 		       ghost_t *ghost, struct task_struct *task)
 {
 	enum pid_type type, max_type;
+	bool leader;
 	int retval = 0;
 
-	if ((action->type == EPM_REMOTE_CLONE
-	     && (action->remote_clone.clone_flags & CLONE_THREAD))
-	    || (action->type != EPM_REMOTE_CLONE && task->pid != task->tgid))
+	leader = !((action->type == EPM_REMOTE_CLONE
+		    && (action->remote_clone.clone_flags & CLONE_THREAD))
+		   || (action->type != EPM_REMOTE_CLONE
+		       && task->pid != task->tgid));
+	if (!leader)
 		max_type = PIDTYPE_PID + 1;
 	else
 		max_type = PIDTYPE_MAX;
 
 	type = PIDTYPE_PID;
 	if (action->type == EPM_REMOTE_CLONE) {
-		struct pid *pid = alloc_pid(&init_pid_ns);
+		struct pid *pid = alloc_pid(task->nsproxy->pid_ns);
 		if (!pid) {
 			retval = -ENOMEM;
 			goto out;
 		} else {
 			task->pids[PIDTYPE_PID].pid = pid;
-			task->pid = pid_nr(pid);
-			if (!(action->remote_clone.clone_flags & CLONE_THREAD))
-				task->tgid = task->pid;
 		}
 
 		type++;
@@ -1027,6 +1045,13 @@ static int import_pids(struct epm_action *action,
 		}
 #endif /* CONFIG_KRG_SCHED */
 	}
+
+	task->pid = pid_nr(task_pid(task));
+	/*
+	 * Marker for import_group_leader(), and unimport_pids() whenever
+	 * import_group_leader() fails.
+	 */
+	task->tgid = leader ? task->pid : 0;
 
 out:
 	return retval;
@@ -1209,6 +1234,7 @@ out:
 static int import_krg_structs(struct epm_action *action,
 			      ghost_t *ghost, struct task_struct *tsk)
 {
+	struct task_struct *reaper;
 	/* Inits are only needed to prevent compiler warnings. */
 	pid_t parent_pid = 0, real_parent_pid = 0, real_parent_tgid = 0;
 	pid_t group_leader_pid = 0;
@@ -1241,7 +1267,7 @@ static int import_krg_structs(struct epm_action *action,
 			parent_pid = action->remote_clone.from_pid;
 			real_parent_pid = action->remote_clone.from_pid;
 			real_parent_tgid = action->remote_clone.from_tgid;
-			group_leader_pid = tsk->pid;
+			group_leader_pid = task_tgid_knr(tsk);
 		}
 	}
 
@@ -1249,7 +1275,7 @@ static int import_krg_structs(struct epm_action *action,
 	 * Not a simple write lock because with REMOTE_CLONE and CHECKPOINT the
 	 * task container object does not exist yet.
 	 */
-	obj = krg_task_create_writelock(tsk->pid);
+	obj = krg_task_create_writelock(task_pid_knr(tsk));
 	BUG_ON(!obj);
 
 	switch (action->type) {
@@ -1270,20 +1296,21 @@ static int import_krg_structs(struct epm_action *action,
 		 * Bringing restarted processes to foreground will need more
 		 * work
 		 */
-		obj->parent = init_pid_ns.child_reaper->pid;
-		obj->real_parent = init_pid_ns.child_reaper->pid;
-		obj->real_parent_tgid = init_pid_ns.child_reaper->tgid;
+		reaper = tsk->nsproxy->pid_ns->child_reaper;
+		obj->parent = task_pid_knr(reaper);
+		obj->real_parent = obj->parent;
+		obj->real_parent_tgid = task_tgid_knr(reaper);
 		/*
 		 * obj->group_leader has already been set when creating the
 		 * object. Fix it for non leader threads.
 		 */
-		obj->group_leader = tsk->tgid;
+		obj->group_leader = task_tgid_knr(tsk);
 		break;
 	default:
 		BUG();
 	}
 
-	krg_task_unlock(tsk->pid);
+	krg_task_unlock(obj->pid);
 
 out:
 	return retval;
@@ -1795,7 +1822,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 
 	/* TODO: distributed threads */
 	BUG_ON(newTsk->group_leader->pid != newTsk->tgid);
-	BUG_ON(newTsk->task_obj->group_leader != newTsk->tgid);
+	BUG_ON(newTsk->task_obj->group_leader != task_tgid_knr(newTsk));
 
 	if (action->type == EPM_REMOTE_CLONE) {
 		retval = krg_new_child(parent_children_obj,
@@ -1806,7 +1833,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 		if (retval)
 			PANIC("Remote child %d of %d created"
 			      " but could not be registered!",
-			      newTsk->pid,
+			      task_pid_knr(newTsk),
 			      action->remote_clone.from_pid);
 	}
 
@@ -1904,18 +1931,18 @@ struct task_struct *import_process(struct epm_action *action,
 		 */
 		struct pid *pid;
 
-		BUG_ON(current->nsproxy->pid_ns != &init_pid_ns);
-		pid = find_get_pid(action->migrate.pid);
+		rcu_read_lock();
+		pid = find_kpid(action->migrate.pid);
 		if (pid) {
-			rcu_read_lock();
+			get_pid(pid);
 			while (pid_task(pid, PIDTYPE_PID)) {
 				rcu_read_unlock();
 				schedule();
 				rcu_read_lock();
 			}
-			rcu_read_unlock();
 			put_pid(pid);
 		}
+		rcu_read_unlock();
 	}
 
 	ghost_task = import_task(action, ghost, &regs);
