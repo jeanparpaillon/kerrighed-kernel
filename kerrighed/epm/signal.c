@@ -261,7 +261,7 @@ static int signal_struct_export_object(struct rpc_desc *desc,
 	int retval;
 
 	rcu_read_lock();
-	tsk = find_task_by_pid_ns(obj->signal->krg_objid, &init_pid_ns);
+	tsk = find_task_by_kpid(obj->signal->krg_objid);
 	/*
 	 * We may find no task in the middle of a migration. In that case, kddm
 	 * locking is enough since neither userspace nor the kernel will access
@@ -365,7 +365,7 @@ static struct signal_struct *cr_signal_alloc(struct task_struct *task)
 	if (!sig)
 		return NULL;
 
-	obj = ____krg_signal_alloc(sig, task->tgid);
+	obj = ____krg_signal_alloc(sig, task_tgid_knr(task));
 	BUG_ON(!obj);
 
 	return sig;
@@ -380,7 +380,7 @@ static void __krg_signal_alloc(struct task_struct *task, struct pid *pid)
 {
 	struct signal_struct_kddm_object *obj;
 	struct signal_struct *sig = task->signal;
-	pid_t tgid = pid_nr(pid);
+	pid_t tgid = pid_knr(pid);
 
 	/*
 	 * Exclude kernel threads and local pids from using signal_struct
