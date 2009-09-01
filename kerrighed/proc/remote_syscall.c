@@ -6,6 +6,7 @@
 #include <net/krgrpc/rpc.h>
 #include <linux/cred.h>
 #include <kerrighed/remote_cred.h>
+#include <linux/nsproxy.h>
 #include <linux/pid_namespace.h>
 #include <kerrighed/pid.h>
 #include <kerrighed/hotplug.h>
@@ -31,6 +32,9 @@ struct rpc_desc *krg_remote_syscall_begin(int req, pid_t pid,
 	int err = -ESRCH;
 
 	if (!cluster_started)
+		goto err;
+
+	if (!current->nsproxy->krg_ns)
 		goto err;
 
 	if (task_active_pid_ns(current) != &init_pid_ns)
