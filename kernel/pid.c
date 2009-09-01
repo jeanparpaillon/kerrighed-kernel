@@ -83,8 +83,8 @@ struct pid_namespace init_pid_ns = {
 	.level = 0,
 	.child_reaper = &init_task,
 #ifdef CONFIG_KRG_PROC
-	.krg_ns_root = &init_pid_ns,
-	.global = 1,
+	.krg_ns_root = NULL,
+	.global = 0,
 #endif
 };
 EXPORT_SYMBOL_GPL(init_pid_ns);

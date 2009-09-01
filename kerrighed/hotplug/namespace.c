@@ -54,6 +54,9 @@ int copy_krg_ns(struct task_struct *task, struct nsproxy *new)
 				get_task_struct(task);
 				ns->root_task = task;
 
+				BUG_ON(ns->root_pid_ns->krg_ns_root);
+				ns->root_pid_ns->krg_ns_root = ns->root_pid_ns;
+
 				rcu_assign_pointer(krg_ns, ns);
 			} else {
 				retval = -ENOMEM;
@@ -122,13 +125,14 @@ struct krg_namespace *find_get_krg_ns(void)
 
 bool can_create_krg_ns(unsigned long flags)
 {
-	struct nsproxy *nsp = current->nsproxy;
-	struct nsproxy *init_nsp = init_task.nsproxy;
 	return current->create_krg_ns
 #ifdef CONFIG_KRG_IPC
 		&& (flags & CLONE_NEWIPC)
 #endif
-		&& !(flags & CLONE_NEWPID) && nsp->pid_ns == init_nsp->pid_ns;
+#ifdef CONFIG_KRG_PROC
+		&& (flags & CLONE_NEWPID)
+#endif
+		;
 }
 
 int krg_set_cluster_creator(void __user *arg)
