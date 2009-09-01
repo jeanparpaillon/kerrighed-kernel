@@ -14,6 +14,7 @@ struct proc_service_entry {
 	proc_service_function_t fct;
 	char label[32];
 	unsigned long count;
+	bool restricted;
 };
 
 /*--------------------------------------------------------------------------*
@@ -30,6 +31,8 @@ extern struct proc_dir_entry *proc_services;
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
+int __register_proc_service(unsigned int cmd, proc_service_function_t fun,
+			    bool restricted);
 int register_proc_service(unsigned int cmd, proc_service_function_t fun);
 int unregister_proc_service(unsigned int cmd);
 

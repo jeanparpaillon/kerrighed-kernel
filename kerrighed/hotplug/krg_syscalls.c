@@ -7,6 +7,7 @@
 #include <linux/proc_fs.h>
 #include <linux/fs.h>
 #include <linux/module.h>
+#include <linux/nsproxy.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/hashtable.h>
@@ -44,6 +45,8 @@ static int proc_services_ioctl(struct inode *inode, struct file *filp,
 							cmd);
 
 	if (service_entry != NULL) {
+		if (service_entry->restricted && !current->nsproxy->krg_ns)
+			return -EPERM;
 		service_entry->count++;
 		return service_entry->fct((void *)arg);
 	}
@@ -98,7 +101,8 @@ static ssize_t proc_services_read(struct file *f, char *buff,
  *  @param cmd   Identifier of the service.
  *  @param fun   Service function.
  */
-int register_proc_service(unsigned int cmd, proc_service_function_t fun)
+int __register_proc_service(unsigned int cmd, proc_service_function_t fun,
+			    bool restricted)
 {
 	struct proc_service_entry *service_entry;
 
@@ -117,9 +121,15 @@ int register_proc_service(unsigned int cmd, proc_service_function_t fun)
 	sprintf(service_entry->label, "%d-%d (0x%08x)",
 		cmd & 0xE0, cmd & 0x1F, cmd);
 	service_entry->count = 0;
+	service_entry->restricted = restricted;
 
 	hashtable_add(proc_service_functions, cmd, service_entry);
 	return 0;
+}
+
+int register_proc_service(unsigned int cmd, proc_service_function_t fun)
+{
+	return __register_proc_service(cmd, fun, true);
 }
 EXPORT_SYMBOL(register_proc_service);
 
