@@ -65,7 +65,7 @@ static void handle_do_notify_parent(struct rpc_desc *desc,
 	ret = sig;
 
 	read_lock(&tasklist_lock);
-	parent = find_task_by_pid_ns(req->parent_pid, &init_pid_ns);
+	parent = find_task_by_kpid(req->parent_pid);
 	BUG_ON(!parent);
 
 	/* Adapted from do_notify_parent() for a remote child */
@@ -95,7 +95,7 @@ static void handle_do_notify_parent(struct rpc_desc *desc,
 			sig = -1;
 	}
 	if (valid_signal(sig) && sig > 0)
-		__group_send_sig_info(sig, &req->info, parent);
+		__krg_group_send_sig_info(sig, &req->info, parent);
 	wake_up_interruptible_sync(&parent->signal->wait_chldexit);
 	spin_unlock_irq(&psig->siglock);
 
@@ -147,7 +147,7 @@ err_cancel:
 	rpc_end(desc, 0);
 err:
 	printk(KERN_ERR "error: child %d cannot notify remote parent %d\n",
-	       task->pid, req.parent_pid);
+	       task_pid_knr(task), req.parent_pid);
 	goto out;
 }
 
@@ -305,7 +305,7 @@ static void handle_wait_task_zombie(struct rpc_desc *desc,
 	int err = -ENOMEM;
 
 	read_lock(&tasklist_lock);
-	p = find_task_by_pid_ns(req->pid, &init_pid_ns);
+	p = find_task_by_kpid(req->pid);
 	BUG_ON(!p);
 
 	/*
@@ -377,7 +377,7 @@ int krg_wait_task_zombie(pid_t pid, kerrighed_node_t zombie_location,
 
 	req.pid = pid;
 	/* True as long as no remote ptrace is allowed */
-	req.real_parent_tgid = current->tgid;
+	req.real_parent_tgid = task_tgid_knr(current);
 	req.options = options;
 	err = rpc_pack_type(desc, req);
 	if (err)
@@ -504,7 +504,7 @@ void krg_finish_exit_ptrace_task(struct task_struct *task,
 	if (task->real_parent == baby_sitter)
 		parent_pid = task->task_obj->parent;
 	else
-		parent_pid = task->real_parent->pid;
+		parent_pid = task_pid_knr(task->real_parent);
 
 	write_unlock_irq(&tasklist_lock);
 
@@ -573,7 +573,7 @@ void krg_finish_exit_notify(struct task_struct *task, int signal, void *cookie)
 		if (task->parent == baby_sitter)
 			parent_pid = task->task_obj->parent;
 		else
-			parent_pid = task->parent->pid;
+			parent_pid = task_pid_knr(task->parent);
 		krg_unlock_pid_location(parent_pid);
 
 		if (signal == DEATH_REAP) {
@@ -675,7 +675,7 @@ static void handle_notify_remote_child_reaper(struct rpc_desc *desc,
 	krg_task_writelock(msg->zombie_pid);
 	write_lock_irq(&tasklist_lock);
 
-	zombie = find_task_by_pid_ns(msg->zombie_pid, &init_pid_ns);
+	zombie = find_task_by_kpid(msg->zombie_pid);
 	BUG_ON(!zombie);
 
 	/* Real parent died and let us reparent zombie to local init. */
