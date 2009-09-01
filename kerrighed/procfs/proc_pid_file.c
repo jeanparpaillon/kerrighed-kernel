@@ -39,7 +39,8 @@ struct environ_read_msg {
 static int do_handle_environ_read(struct task_struct *task,
 				  char *buf, size_t count, loff_t *ppos)
 {
-	struct dentry *root = init_pid_ns.proc_mnt->mnt_root;
+	struct pid_namespace *ns = find_get_krg_pid_ns();
+	struct dentry *root = ns->proc_mnt->mnt_root;
 	struct dentry *pid_dentry;
 	struct dentry *environ_dentry;
 	struct file *file;
@@ -48,7 +49,7 @@ static int do_handle_environ_read(struct task_struct *task,
 	int len;
 	int ret;
 
-	len = snprintf(str_buf, sizeof(str_buf), "%d", task->pid);
+	len = snprintf(str_buf, sizeof(str_buf), "%d", task_pid_nr_ns(task, ns));
 	pid_dentry = lookup_one_len(str_buf, root, len);
 	if (IS_ERR(pid_dentry)) {
 		ret = PTR_ERR(pid_dentry);
@@ -64,7 +65,7 @@ static int do_handle_environ_read(struct task_struct *task,
 	}
 
 	file = dentry_open(environ_dentry,
-			   mntget(init_pid_ns.proc_mnt),
+			   mntget(ns->proc_mnt),
 			   O_RDONLY,
 			   current_cred());
 	if (IS_ERR(file)) {
@@ -80,6 +81,7 @@ static int do_handle_environ_read(struct task_struct *task,
 out_put_pid_dentry:
 	dput(pid_dentry);
 out:
+	put_pid_ns(ns);
 	return ret;
 }
 
@@ -95,7 +97,7 @@ static void handle_read_proc_pid_environ(struct rpc_desc *desc,
 	int err;
 
 	rcu_read_lock();
-	tsk = find_task_by_pid_ns(msg->pid, &init_pid_ns);
+	tsk = find_task_by_kpid(msg->pid);
 	BUG_ON(!tsk);
 	get_task_struct(tsk);
 	rcu_read_unlock();
@@ -116,7 +118,9 @@ static void handle_read_proc_pid_environ(struct rpc_desc *desc,
 	if (!page)
 		res = -ENOMEM;
 	else
-		res = do_handle_environ_read(tsk, (char *)page, msg->count, &msg->pos);
+		res = do_handle_environ_read(tsk,
+					     (char *)page, msg->count,
+					     &msg->pos);
 
 	revert_creds(old_cred);
 	put_cred(cred);
@@ -319,7 +323,7 @@ static void handle_generic_proc_read(struct rpc_desc *desc, void *_msg,
 	int err;
 
 	rcu_read_lock();
-	tsk = find_task_by_pid_ns(msg->pid, &init_pid_ns);
+	tsk = find_task_by_kpid(msg->pid);
 	BUG_ON(!tsk);
 	get_task_struct(tsk);
 	rcu_read_unlock();
@@ -603,6 +607,7 @@ typedef int proc_show_t(struct seq_file *,
 
 struct anonymous_proc_single_data {
 	struct task_struct *task;
+	struct pid_namespace *ns;
 	proc_show_t *proc_show;
 };
 
@@ -611,7 +616,7 @@ static int krg_proc_handler_single_show(struct seq_file *m, void *v)
 	struct anonymous_proc_single_data *data = m->private;
 	struct task_struct *task = data->task;
 
-	return data->proc_show(m, &init_pid_ns, task_pid(task), task);
+	return data->proc_show(m, data->ns, task_pid(task), task);
 }
 
 static
@@ -620,6 +625,7 @@ int krg_proc_handler_single_release(struct inode *inode, struct file *file)
 	struct seq_file *m = file->private_data;
 	struct anonymous_proc_single_data *data = m->private;
 
+	put_pid_ns(data->ns);
 	put_task_struct(data->task);
 	kfree(data);
 	return single_release(inode, file);
@@ -632,6 +638,7 @@ static const struct file_operations krg_proc_handler_single_file_operations = {
 };
 
 static int krg_proc_handler_single_getfd(struct task_struct *task,
+					 struct pid_namespace *ns,
 					 proc_show_t *proc_show)
 {
 	struct anonymous_proc_single_data *data;
@@ -644,6 +651,8 @@ static int krg_proc_handler_single_getfd(struct task_struct *task,
 		goto out;
 	get_task_struct(task);
 	data->task = task;
+	get_pid_ns(ns);
+	data->ns = ns;
 	data->proc_show = proc_show;
 
 	fd = anon_inode_getfd("krg-proc-handler-single",
@@ -667,6 +676,7 @@ out:
 	return fd;
 
 err_free_data:
+	put_pid_ns(ns);
 	put_task_struct(data->task);
 	kfree(data);
 	goto out;
@@ -677,6 +687,7 @@ static void handle_generic_proc_show(struct rpc_desc *desc, void *_msg,
 				     enum rpcid REQ)
 {
 	struct generic_proc_show_msg *msg = _msg;
+	struct pid_namespace *ns = find_get_krg_pid_ns();
 	struct task_struct *tsk;
 	struct cred *cred;
 	const struct cred *old_cred = NULL;
@@ -687,7 +698,7 @@ static void handle_generic_proc_show(struct rpc_desc *desc, void *_msg,
 	int err;
 
 	rcu_read_lock();
-	tsk = find_task_by_pid_ns(msg->pid, &init_pid_ns);
+	tsk = find_task_by_pid_ns(msg->pid, ns);
 	BUG_ON(!tsk);
 	get_task_struct(tsk);
 	rcu_read_unlock();
@@ -708,7 +719,7 @@ static void handle_generic_proc_show(struct rpc_desc *desc, void *_msg,
 	if (!page)
 		goto out_err;
 
-	res = krg_proc_handler_single_getfd(tsk, proc_show);
+	res = krg_proc_handler_single_getfd(tsk, ns, proc_show);
 	if (res < 0)
 		goto out_err;
 	fd = res;
@@ -740,6 +751,7 @@ out:
 	if (old_cred)
 		revert_creds(old_cred);
 	put_task_struct(tsk);
+	put_pid_ns(ns);
 	if (err)
 		res = err;
 	return;
@@ -778,11 +790,13 @@ static int generic_proc_show(struct file *file,
 {
 	struct generic_proc_show_msg msg;
 	struct krg_proc_single_private *private = file->private_data;
+	struct pid_namespace *ns = file->f_dentry->d_sb->s_fs_info;
 	struct rpc_desc *desc;
 	int bytes_read;
 	int err;
 
 	BUG_ON(task->prob_node == KERRIGHED_NODE_ID_NONE);
+	BUG_ON(!is_krg_pid_ns_root(ns));
 
 	msg.pid = task->pid;
 

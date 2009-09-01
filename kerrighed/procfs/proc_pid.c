@@ -607,7 +607,7 @@ static int krg_proc_pid_fill_cache(struct file *filp,
 }
 
 /* Must be called under rcu_read_lock() */
-static struct task_kddm_object *next_tgid(pid_t tgid)
+static struct task_kddm_object *next_tgid(pid_t tgid, struct pid_namespace *ns)
 {
 	struct pid *pid;
 	struct task_struct *task;
@@ -615,9 +615,9 @@ static struct task_kddm_object *next_tgid(pid_t tgid)
 
 retry:
 	task_obj = NULL;
-	pid = find_ge_pid(tgid, &init_pid_ns);
+	pid = find_ge_pid(tgid, ns);
 	if (pid) {
-		tgid = pid_nr(pid) + 1;
+		tgid = pid_nr_ns(pid, ns) + 1;
 		task = pid_task(pid, PIDTYPE_PID);
 		if (task && !has_group_leader_pid(task))
 			goto retry;
@@ -647,6 +647,7 @@ static void handle_req_available_tgids(struct rpc_desc *desc,
 				       void *_msg, size_t size)
 {
 	struct pid_list_msg *msg = _msg;
+	struct pid_namespace *ns = find_get_krg_pid_ns();
 	pid_t pid_array[PROC_MAXPIDS];
 	pid_t tgid;
 	struct task_kddm_object *task;
@@ -656,13 +657,15 @@ static void handle_req_available_tgids(struct rpc_desc *desc,
 	tgid = msg->next_tgid;
 	BUG_ON(tgid < GLOBAL_PID_MASK);
 	rcu_read_lock();
-	for (task = next_tgid(tgid); task; task = next_tgid(tgid + 1)) {
+	for (task = next_tgid(tgid, ns); task; task = next_tgid(tgid + 1, ns)) {
 		tgid = task->pid;
 		pid_array[nr_tgids++] = tgid;
 		if (nr_tgids >= PROC_MAXPIDS)
 			break;
 	}
 	rcu_read_unlock();
+
+	put_pid_ns(ns);
 
 	retval = rpc_pack_type(desc, nr_tgids);
 	if (retval)
@@ -684,6 +687,7 @@ static int fill_next_remote_tgids(kerrighed_node_t node,
 				  void *dirent, filldir_t filldir,
 				  loff_t offset)
 {
+	struct pid_namespace *ns = filp->f_dentry->d_sb->s_fs_info;
 	struct tgid_iter iter;
 	struct pid_list_msg msg;
 	struct rpc_desc *desc;
@@ -694,6 +698,8 @@ static int fill_next_remote_tgids(kerrighed_node_t node,
 #endif
 	int i;
 	int retval;
+
+	BUG_ON(!is_krg_pid_ns_root(ns));
 
 	iter.tgid = filp->f_pos - offset;
 	if (iter.tgid < GLOBAL_PID_MASK)
@@ -725,7 +731,7 @@ static int fill_next_remote_tgids(kerrighed_node_t node,
 		iter.task = NULL;
 #ifdef CONFIG_KRG_EPM
 		rcu_read_lock();
-		pid = find_pid_ns(iter.tgid, &init_pid_ns);
+		pid = find_pid_ns(iter.tgid, ns);
 		if (pid) {
 			iter.task = pid_task(pid, PIDTYPE_PID);
 			if (iter.task)
@@ -767,6 +773,7 @@ static int fill_next_local_tgids(struct file *filp,
 				 void *dirent, filldir_t filldir,
 				 loff_t offset)
 {
+	struct pid_namespace *ns = filp->f_dentry->d_sb->s_fs_info;
 	struct tgid_iter iter;
 	pid_t tgid = filp->f_pos - offset;
 	struct pid *pid;
@@ -777,12 +784,14 @@ static int fill_next_local_tgids(struct file *filp,
 	int nr;
 	int retval;
 
+	BUG_ON(!is_krg_pid_ns_root(ns));
+
 	rcu_read_lock();
 	for (;;) {
-		pid = find_ge_pid(tgid, &init_pid_ns);
+		pid = find_ge_pid(tgid, ns);
 		if (!pid)
 			break;
-		nr = pid_nr(pid);
+		nr = pid_nr_ns(pid, ns);
 		if (!global_mode && (nr & GLOBAL_PID_MASK))
 			break;
 
