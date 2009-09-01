@@ -168,7 +168,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 		return -ENOMEM;
 
 	migration.type = EPM_MIGRATE;
-	migration.migrate.pid = tsk->pid;
+	migration.migrate.pid = task_pid_knr(tsk);
 	migration.migrate.target = target;
 
 	krg_unset_pid_location(tsk);
@@ -216,7 +216,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 
 		krg_set_pid_location(tsk);
 	} else {
-		BUG_ON(remote_pid != tsk->pid);
+		BUG_ON(remote_pid != task_pid_knr(tsk));
 		/* Do not notify a task having done vfork() */
 		cleanup_vfork_done(tsk);
 	}
@@ -375,9 +375,8 @@ static int handle_migrate_remote_process(struct rpc_desc *desc,
 		retval = PTR_ERR(pid);
 		goto out;
 	}
-	BUG_ON(current->nsproxy->pid_ns != &init_pid_ns);
-	retval = migrate_linux_threads(pid_vnr(pid), msg.scope,
-				       msg.destination_node_id);
+	retval = __migrate_linux_threads(pid_task(pid, PIDTYPE_PID), msg.scope,
+					 msg.destination_node_id);
 	krg_handle_remote_syscall_end(pid, old_cred);
 out:
 	return retval;
@@ -457,9 +456,9 @@ int sys_migrate_thread(pid_t pid, kerrighed_node_t dest_node)
 #ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
 void krg_syscall_exit(long syscall_nr)
 {
-	migrate_linux_threads(current->pid, MIGR_LOCAL_PROCESS,
-			      next_krgnode_in_ring(kerrighed_node_id,
-						   krgnode_possible_map));
+	__migrate_linux_threads(current, MIGR_LOCAL_PROCESS,
+				next_krgnode_in_ring(kerrighed_node_id,
+						     krgnode_possible_map));
 }
 #endif
 
