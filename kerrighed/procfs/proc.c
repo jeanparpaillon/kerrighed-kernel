@@ -13,6 +13,7 @@
 #include <linux/vmalloc.h>
 #include <linux/hugetlb.h>
 #include <linux/sched.h>
+#include <linux/nsproxy.h>
 #include <linux/proc_fs.h>
 #include <kerrighed/krgflags.h>
 #include <kerrighed/procfs.h>
@@ -53,6 +54,13 @@ static inline int timespec_lt(struct timespec *a, struct timespec *b)
 
 static inline kerrighed_node_t get_req_node(kerrighed_node_t nodeid)
 {
+	if (!current->nsproxy->krg_ns) {
+		if (nodeid == PROC_STAT_DEPEND_ON_CAPABILITY)
+			return kerrighed_node_id;
+		else
+			return nodeid;
+	}
+
 #ifdef CONFIG_KRG_CAP
 	if (nodeid == PROC_STAT_DEPEND_ON_CAPABILITY) {
 		if (cap_raised
