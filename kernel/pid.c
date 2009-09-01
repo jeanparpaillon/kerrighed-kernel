@@ -322,14 +322,14 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 		goto out;
 #ifdef CONFIG_KRG_EPM
 	pid->kddm_obj = NULL;
-	BUG_ON(req_nr && ns != &init_pid_ns);
+	BUG_ON(req_nr && !is_krg_pid_ns_root(ns));
 #endif
 
 	tmp = ns;
 	for (i = ns->level; i >= 0; i--) {
 #ifdef CONFIG_KRG_EPM
-		if (req_nr) {
-			nr = req_nr[i];
+		if (req_nr && tmp == ns) {
+			nr = req_nr[i - tmp->level];
 		} else {
 #endif
 		nr = alloc_pidmap(tmp);

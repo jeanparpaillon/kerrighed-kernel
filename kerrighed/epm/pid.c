@@ -428,7 +428,7 @@ int export_pid(struct epm_action *action,
 int export_pid_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *task)
 {
-	if (task->nsproxy->pid_ns != &init_pid_ns) {
+	if (!is_krg_pid_ns_root(task->nsproxy->pid_ns)) {
 		PANIC("Cannot export processes"
 		      " using a non default PID namespace!\n");
 		return -EINVAL;

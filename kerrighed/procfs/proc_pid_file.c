@@ -534,7 +534,7 @@ static ssize_t krg_proc_single_read(struct file *file, char __user *buf,
 	ssize_t length;
 
 	ns = inode->i_sb->s_fs_info;
-	BUG_ON(ns != &init_pid_ns);
+	BUG_ON(!is_krg_pid_ns_root(ns));
 
 	length = -ESRCH;
 	/*
