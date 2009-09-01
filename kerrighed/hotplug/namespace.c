@@ -52,6 +52,9 @@ int copy_krg_ns(struct task_struct *task, struct nsproxy *new)
 				get_task_struct(task);
 				ns->root_task = task;
 
+				BUG_ON(ns->root_pid_ns->krg_ns_root);
+				ns->root_pid_ns->krg_ns_root = ns->root_pid_ns;
+
 				rcu_assign_pointer(krg_ns, ns);
 			} else {
 				retval = -ENOMEM;

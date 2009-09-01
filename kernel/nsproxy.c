@@ -163,7 +163,10 @@ int copy_namespaces(unsigned long flags, struct task_struct *tsk)
 #ifdef CONFIG_KRG_IPC
 	    && (flags & CLONE_NEWIPC)
 #endif
-	    && !(flags & CLONE_NEWPID) && old_ns->pid_ns == init_task.nsproxy->pid_ns)
+#ifdef CONFIG_KRG_PROC
+	    && (flags & CLONE_NEWPID)
+#endif
+	   )
 		current->in_global_copy_namespaces = 1;
 #endif
 	new_ns = create_new_namespaces(flags, tsk, tsk->fs);
