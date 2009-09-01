@@ -15,6 +15,7 @@
 #include <linux/mutex.h>
 #include <linux/module.h>
 #include <linux/err.h>
+#include <kerrighed/pid.h>
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/ghost.h>
 #include <kerrighed/action.h>
@@ -176,7 +177,7 @@ static inline void process_set_element_link(struct process_set_element *pset_el,
 {
 	struct pid *pid;
 	rcu_read_lock();
-	pid = find_pid_ns(pset_el->id, &init_pid_ns);
+	pid = find_kpid(pset_el->id);
 	if (pid)
 		__process_set_element_link(pset_el, pid, type);
 	rcu_read_unlock();
