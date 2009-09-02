@@ -113,8 +113,6 @@ struct pid *krg_handle_remote_syscall_begin(struct rpc_desc *desc,
 	struct cred *cred;
 	int err;
 
-	BUG_ON(task_active_pid_ns(current) != &init_pid_ns);
-
 	if (hdr->payload) {
 		err = rpc_unpack(desc, 0, msg, hdr->payload);
 		if (err)
@@ -133,7 +131,7 @@ struct pid *krg_handle_remote_syscall_begin(struct rpc_desc *desc,
 	*old_cred = override_creds(cred);
 
 	rcu_read_lock();
-	pid = get_pid(find_pid(hdr->pid, &init_pid_ns));
+	pid = get_pid(find_kpid(hdr->pid));
 	rcu_read_unlock();
 	BUG_ON(!pid);
 
