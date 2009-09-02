@@ -16,6 +16,7 @@
 #include <linux/security.h>
 #include <linux/sem.h>
 #include <linux/shm.h>
+#include <linux/syscalls.h>
 #include <linux/unique_id.h>
 #include <kddm/kddm.h>
 #include <kerrighed/namespace.h>
@@ -24,12 +25,16 @@
 #include <kerrighed/action.h>
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
+#include <kerrighed/faf.h>
+#include <kerrighed/faf_file_mgr.h>
+#include <kerrighed/file.h>
 #include <kerrighed/regular_file_mgr.h>
 #include "ipc_handler.h"
 #include "krgipc_mobility.h"
 #include "krgshm.h"
 #include "krgmsg.h"
 #include "krgsem.h"
+#include "msg_handler.h"
 #include "sem_handler.h"
 #include "semundolst_io_linker.h"
 
@@ -433,7 +438,7 @@ out:
 	return r;
 }
 
-int export_full_sysv_msgq(ghost_t *ghost, int msgid)
+static int export_full_local_sysv_msgq(ghost_t *ghost, int msgid)
 {
 	int r = 0;
 	struct msg_queue *msq;
@@ -465,6 +470,209 @@ out_unlock:
 out:
 	put_ipc_ns(ns);
 	return r;
+}
+
+static int local_sys_msgq_checkpoint(int msqid, int fd)
+{
+	int r;
+	ghost_fs_t oldfs;
+	ghost_t *ghost;
+
+	__set_ghost_fs(&oldfs);
+
+	ghost = create_file_ghost_from_fd(GHOST_WRITE, fd);
+
+	if (IS_ERR(ghost)) {
+		r = PTR_ERR(ghost);
+		goto exit;
+	}
+
+	r = export_full_local_sysv_msgq(ghost, msqid);
+
+	ghost_close(ghost);
+exit:
+	unset_ghost_fs(&oldfs);
+	return r;
+}
+
+static int receive_fd_from_network(struct rpc_desc *desc)
+{
+	int r, fd, fdesc_size, first_import;
+	void *fdesc;
+	struct file *file;
+	unsigned long fobjid;
+	struct dvfs_file_struct *dvfs_file;
+
+	fd = get_unused_fd();
+	if (fd < 0) {
+		r = fd;
+		goto out;
+	}
+
+	r = rpc_unpack_type(desc, fdesc_size);
+	if (r)
+		goto out_put_fd;
+
+	fdesc = kmalloc(fdesc_size, GFP_KERNEL);
+	if (!fdesc) {
+		r = -ENOMEM;
+		goto out_put_fd;
+	}
+
+	r = rpc_unpack(desc, 0, fdesc, fdesc_size);
+	if (r)
+		goto out_put_fd;
+
+	r = rpc_unpack_type(desc, fobjid);
+	if (r)
+		goto out_put_fd;
+
+	file = begin_import_dvfs_file(fobjid, &dvfs_file);
+
+	if (!file) {
+		file = create_faf_file_from_krg_desc(current, fdesc);
+		first_import = 1;
+	}
+
+	kfree(fdesc);
+
+	r = end_import_dvfs_file(fobjid, dvfs_file, file, first_import);
+
+	if (r)
+		goto out_put_fd;
+
+	fd_install(fd, file);
+
+	r = fd;
+
+out:
+	return r;
+
+out_put_fd:
+	put_unused_fd(fd);
+	goto out;
+}
+
+static int send_file_desc(struct rpc_desc *desc, struct file *file)
+{
+	int r, fdesc_size;
+	void *fdesc;
+
+	if (!file->f_objid) {
+		r = create_kddm_file_object(file);
+		if (r)
+			goto out;
+	}
+
+	r = setup_faf_file(file);
+	if (r && r != -EALREADY)
+		goto out;
+
+	get_faf_file_krg_desc(file, &fdesc, &fdesc_size);
+
+	r = rpc_pack_type(desc, fdesc_size);
+	if (r)
+		goto out_free_fdesc;
+
+	r = rpc_pack(desc, 0, fdesc, fdesc_size);
+	if (r)
+		goto out_free_fdesc;
+
+	r = rpc_pack_type(desc, file->f_objid);
+	if (r)
+		goto out_free_fdesc;
+
+out_free_fdesc:
+	kfree(fdesc);
+
+out:
+	return r;
+}
+
+struct msgq_checkpoint_msg
+{
+	int msqid;
+};
+
+void handle_msg_checkpoint(struct rpc_desc *desc, void *_msg, size_t size)
+{
+	int r, fd;
+	struct msgq_checkpoint_msg *msg = _msg;
+
+	fd = receive_fd_from_network(desc);
+	if (fd < 0) {
+		r = fd;
+		goto error;
+	}
+
+	r = __sys_msgq_checkpoint(msg->msqid, fd);
+
+	sys_close (fd);
+
+error:
+	r = rpc_pack_type(desc, r);
+	if (r)
+		rpc_cancel(desc);
+}
+
+int __sys_msgq_checkpoint(int msqid, int fd)
+{
+	int r, index, err;
+	struct msgq_checkpoint_msg msg;
+	struct kddm_set *master_set;
+	kerrighed_node_t *master_node;
+	struct ipc_namespace *ns;
+	struct file *file;
+	struct rpc_desc *desc;
+
+	ns = find_get_krg_ipcns();
+
+	index = ipcid_to_idx(msqid);
+
+	master_set = krgipc_ops_master_set(msg_ids(ns).krgops);
+
+	master_node = _kddm_get_object_no_ft(master_set, index);
+	if (!master_node) {
+		_kddm_put_object(master_set, index);
+		r = -EINVAL;
+		goto out;
+	}
+
+	if (*master_node == kerrighed_node_id) {
+		_kddm_put_object(master_set, index);
+		r = local_sys_msgq_checkpoint(msqid, fd);
+		goto out;
+	}
+
+	file = fget(fd);
+
+	desc = rpc_begin(IPC_MSG_CHKPT, *master_node);
+	_kddm_put_object(master_set, index);
+
+	msg.msqid = msqid;
+	r = rpc_pack_type(desc, msg);
+	if (r)
+		goto err_rpc;
+
+	r = send_file_desc(desc, file);
+	if (r)
+		goto err_rpc;
+
+	r = rpc_unpack_type(desc, err);
+	if (r)
+		goto err_rpc;
+
+	r = err;
+
+out_put_file:
+	fput(file);
+out:
+	put_ipc_ns(ns);
+	return r;
+
+err_rpc:
+	rpc_cancel(desc);
+	goto out_put_file;
 }
 
 /* mostly copy/paste from load_msg */

@@ -80,4 +80,6 @@ unsigned long krg___clear_user(void __user *mem, unsigned long len);
 /* functions used by other subsystems */
 int setup_faf_file_if_needed(struct file *file);
 
+int setup_faf_file(struct file *file);
+
 #endif // __FAF_H__

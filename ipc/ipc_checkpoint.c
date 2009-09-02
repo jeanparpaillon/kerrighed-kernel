@@ -16,23 +16,9 @@
 int sys_msgq_checkpoint(int msqid, int fd)
 {
 	int r;
-	ghost_fs_t oldfs;
-	ghost_t *ghost;
 
-	__set_ghost_fs(&oldfs);
+	r = __sys_msgq_checkpoint(msqid, fd);
 
-	ghost = create_file_ghost_from_fd(GHOST_WRITE, fd);
-
-	if (IS_ERR(ghost)) {
-		r = PTR_ERR(ghost);
-		goto exit;
-	}
-
-	r = export_full_sysv_msgq(ghost, msqid);
-
-	ghost_close(ghost);
-exit:
-	unset_ghost_fs(&oldfs);
 	return r;
 }
 

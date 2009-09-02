@@ -147,6 +147,7 @@ enum rpcid {
 /** System V IPC messages types */
 	IPC_MSG_SEND,
 	IPC_MSG_RCV,
+	IPC_MSG_CHKPT,
 
 /** System V IPC semaphores */
 	IPC_SEM_WAKEUP,

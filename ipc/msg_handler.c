@@ -21,13 +21,14 @@
 #include "ipcmap_io_linker.h"
 #include "util.h"
 #include "krgmsg.h"
+#include "krgipc_mobility.h"
 
 struct msgkrgops {
 	struct krgipc_ops krgops;
 	struct kddm_set *master_kddm_set;
 };
 
-static struct kddm_set *krgipc_ops_master_set(struct krgipc_ops *ipcops)
+struct kddm_set *krgipc_ops_master_set(struct krgipc_ops *ipcops)
 {
 	struct msgkrgops *msgops;
 
@@ -535,6 +536,7 @@ void msg_handler_init(void)
 
 	rpc_register_void(IPC_MSG_SEND, handle_do_msg_send, 0);
 	rpc_register_void(IPC_MSG_RCV, handle_do_msg_rcv, 0);
+	rpc_register_void(IPC_MSG_CHKPT, handle_msg_checkpoint, 0);
 }
 
 

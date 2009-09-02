@@ -10,6 +10,10 @@
 
 #include <linux/msg.h>
 
+struct kddm_set;
+
+struct kddm_set *krgipc_ops_master_set(struct krgipc_ops *ipcops);
+
 void msg_handler_init(void);
 void msg_handler_finalize(void);
 

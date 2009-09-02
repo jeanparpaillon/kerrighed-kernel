@@ -49,8 +49,6 @@ void faf_finalize (void);
 void check_activate_faf (struct task_struct *tsk, int index, struct file *file,
 			 struct epm_action *action);
 
-int setup_faf_file(struct file *file);
-
 void check_last_faf_client_close(struct file *file,
 				 struct dvfs_file_struct *dvfs_file);
 void check_close_faf_srv_file(struct file *file);

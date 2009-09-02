@@ -1,6 +1,8 @@
 #include <kerrighed/ghost.h>
 
-int export_full_sysv_msgq(ghost_t *ghost, int msgid);
+int __sys_msgq_checkpoint(int msqid, int fd);
+
+void handle_msg_checkpoint(struct rpc_desc *desc, void *_msg, size_t size);
 
 int import_full_sysv_msgq(ghost_t *ghost);
 
