@@ -14,6 +14,9 @@
 #include <kerrighed/ghost.h>
 #include <kerrighed/file_ghost.h>
 #include <kerrighed/physical_fs.h>
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -45,7 +48,12 @@ int file_ghost_read(ghost_t *ghost, void *buff, size_t length)
 	file = ghost_data->file;
 	BUG_ON(!file);
 
-	r = file->f_op->read(file, (char*)buff, length, &file->f_pos);
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT)
+		r = krg_faf_read(file, (char*)buff, length);
+	else
+#endif
+		r = file->f_op->read(file, (char*)buff, length, &file->f_pos);
 
 	if (r == length)
 		r = 0;
@@ -79,7 +87,12 @@ int file_ghost_write(struct ghost *ghost, const void *buff, size_t length)
 	file = ghost_data->file;
 	BUG_ON(!file);
 
-	r = file->f_op->write(file, (char*)buff, length, &file->f_pos);
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT)
+		r = krg_faf_write(file, (char*)buff, length);
+	else
+#endif
+		r = file->f_op->write(file, (char*)buff, length, &file->f_pos);
 
 	if (r == length)
 		r = 0;
@@ -96,25 +109,28 @@ int file_ghost_write(struct ghost *ghost, const void *buff, size_t length)
  */
 int file_ghost_close(ghost_t *ghost)
 {
+	struct file *file;
+
+	file = ((struct file_ghost_data *)ghost->data)->file;
+
 	if (ghost->access & GHOST_WRITE) {
 #if 0
-		do_fdatasync (ghost->data->file);
+		do_fdatasync(file);
 #else
-		int r = ((struct file_ghost_data *)ghost->data)->file->f_op->
-			fsync(((struct file_ghost_data *)ghost->data)->file,
-			      ((struct file_ghost_data *)ghost->data)->file
-			      ->f_dentry, 1);
-		if (r)
-			printk("<0>-- WARNING -- (%s) : Something wrong in the sync : %d\n",
-			       __PRETTY_FUNCTION__, r);
+		if (file->f_op->fsync) {
+			int r = file->f_op->fsync(file, file->f_dentry, 1);
+			if (r)
+				printk("<0>-- WARNING -- (%s) : "
+				       "Something wrong in the sync : %d\n",
+				       __PRETTY_FUNCTION__, r);
+		}
 #endif
 	}
 
 	if (((struct file_ghost_data *)ghost->data)->from_fd)
-		fput(((struct file_ghost_data *)ghost->data)->file);
+		fput(file);
 	else
-		filp_close(((struct file_ghost_data *)ghost->data)->file,
-			   current->files);
+		filp_close(file, current->files);
 
 	return free_ghost(ghost);
 }
