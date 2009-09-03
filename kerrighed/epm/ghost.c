@@ -451,7 +451,10 @@ static int export_task(struct epm_action *action,
 {
 	int r;
 
-#define GOTO_ERROR goto ERROR_LABEL
+#define GOTO_ERROR do {                                                            \
+        printk("export_task %d: line %d r=%d\n", task_pid_knr(task), __LINE__, r); \
+        goto ERROR_LABEL;                                                          \
+} while (0)
 #define ERROR_LABEL error
 
 	BUG_ON(task->journal_info);
