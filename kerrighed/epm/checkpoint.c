@@ -81,6 +81,8 @@ static int checkpoint_task_to_ghost(struct epm_action *action,
 	}
 
 	r = export_process(action, ghost, task_to_checkpoint, regs);
+	if (!r)
+		post_export_process(action, ghost, task_to_checkpoint);
 
 exit:
 	return r;

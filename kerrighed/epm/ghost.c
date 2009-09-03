@@ -165,23 +165,33 @@ static int export_pids(struct epm_action *action,
 		    || action->type != EPM_REMOTE_CLONE) {
 			retval = export_pid(action, ghost, &task->pids[type]);
 			if (retval)
-				goto out;
+				goto err;
 #ifdef CONFIG_KRG_SCHED
 			retval = export_process_set_links(action, ghost,
 							  task->pids[type].pid,
 							  type);
 			if (retval)
-				goto out;
+				goto err;
 #endif /* CONFIG_KRG_SCHED */
 		}
 	}
 
-#ifdef CONFIG_KRG_SCHED
-	retval = export_process_set_links_end(action, ghost, task);
-#endif /* CONFIG_KRG_SCHED */
-
 out:
 	return retval;
+
+err:
+#ifdef CONFIG_KRG_SCHED
+	export_process_set_links_end(action, ghost, task);
+#endif
+	goto out;
+}
+
+static void post_export_pids(struct epm_action *action,
+			     ghost_t *ghost, struct task_struct *task)
+{
+#ifdef CONFIG_KRG_SCHED
+	export_process_set_links_end(action, ghost, task);
+#endif
 }
 
 /* export_vfork_done() is located in kerrighed/epm/remote_clone.c */
@@ -479,6 +489,9 @@ static int export_task(struct epm_action *action,
 	if (r)
 		GOTO_ERROR;
 
+#undef ERROR_LABEL
+#define ERROR_LABEL error_pids
+
 	r = export_cred(action, ghost, task);
 	if (r)
 		GOTO_ERROR;
@@ -550,6 +563,17 @@ static int export_task(struct epm_action *action,
 
 error:
 	return r;
+
+error_pids:
+	post_export_pids(action, ghost, task);
+	goto error;
+}
+
+static void post_export_task(struct epm_action *action,
+			     ghost_t *ghost,
+			     struct task_struct *task)
+{
+	post_export_pids(action, ghost, task);
 }
 
 int export_process(struct epm_action *action,
@@ -565,10 +589,21 @@ int export_process(struct epm_action *action,
 
 	r = export_application(action, ghost, task);
 	if (r)
-		goto error;
+		goto error_app;
 
 error:
 	return r;
+
+error_app:
+	post_export_task(action, ghost, task);
+	goto error;
+}
+
+void post_export_process(struct epm_action *action,
+			 ghost_t *ghost,
+			 struct task_struct *task)
+{
+	post_export_task(action, ghost, task);
 }
 
 /* Unimport */
@@ -905,12 +940,6 @@ static int import_pids(struct epm_action *action,
 	enum pid_type type;
 	int retval = 0;
 
-#ifdef CONFIG_KRG_SCHED
-	retval = import_process_set_links_start(action, ghost, task);
-	if (retval)
-		goto out;
-#endif
-
 	for (type = 0; type < PIDTYPE_MAX; type++) {
 		if (!thread_group_leader(task) && type > PIDTYPE_PID)
 			break;
@@ -947,12 +976,6 @@ static int import_pids(struct epm_action *action,
 		}
 #endif /* CONFIG_KRG_SCHED */
 	}
-
-#ifdef CONFIG_KRG_SCHED
-	if (!retval)
-		retval = import_process_set_links_end(action, ghost, task);
-out:
-#endif
 
 	return retval;
 }

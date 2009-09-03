@@ -28,6 +28,9 @@ int export_process(struct epm_action *action,
 		   ghost_t *ghost,
 		   struct task_struct *task,
 		   struct pt_regs *regs);
+void post_export_process(struct epm_action *action,
+			 ghost_t *ghost,
+			 struct task_struct *task);
 
 /**
  *  Import a process from a ghost.

@@ -732,17 +732,11 @@ out_unlock:
 	return err;
 }
 
-int export_process_set_links_end(struct epm_action *action, ghost_t *ghost,
-				 struct task_struct *task)
+void export_process_set_links_end(struct epm_action *action, ghost_t *ghost,
+				  struct task_struct *task)
 {
-	int retval = 0;
-	if (action->type != EPM_MIGRATE && action->type != EPM_REMOTE_CLONE)
-		goto out;
-	/* Synchronization point */
-	retval = ghost_read(ghost, (void *) 1, 0);
-	global_config_thaw();
-out:
-	return retval;
+	if (action->type == EPM_MIGRATE || action->type == EPM_REMOTE_CLONE)
+		global_config_thaw();
 }
 
 int import_process_set_links(struct epm_action *action, ghost_t *ghost,
@@ -797,15 +791,6 @@ int import_process_set_links(struct epm_action *action, ghost_t *ghost,
 
 out:
 	return err;
-}
-
-int import_process_set_links_end(struct epm_action *action, ghost_t *ghost,
-				 struct task_struct *task)
-{
-	if (action->type != EPM_MIGRATE && action->type != EPM_REMOTE_CLONE)
-		return 0;
-	/* Synchronization point */
-	return ghost_write(ghost, (void *) 1, 0);
 }
 
 #endif /* CONFIG_KRG_EPM */

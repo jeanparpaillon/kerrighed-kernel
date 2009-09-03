@@ -35,6 +35,7 @@ pid_t send_task(struct rpc_desc *desc,
 		goto out_close;
 
 	err = rpc_unpack_type(desc, pid_remote_task);
+	post_export_process(action, ghost, tsk);
 	if (err) {
 		if (err == RPC_EPIPE)
 			err = -EPIPE;
