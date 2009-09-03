@@ -61,12 +61,12 @@ static struct kddm_set *global_items_set;
 static struct vfsmount *scheduler_fs_mount; /* vfsmount attached to configfs */
 static int mount_count;
 
-int global_config_lock(void)
+int global_config_freeze(void)
 {
-	return global_lock_lock(0);
+	return global_lock_readlock(0);
 }
 
-void global_config_unlock(void)
+void global_config_thaw(void)
 {
 	global_lock_unlock(0);
 }
@@ -569,7 +569,7 @@ struct string_list_object *create_begin(struct config_item *parent,
 	if (!current->mm)
 		return NULL;
 
-	err = global_lock_try_lock(0);
+	err = global_lock_try_writelock(0);
 	if (err)
 		goto err_lock;
 
@@ -913,7 +913,7 @@ static void drop(struct global_config_item *item)
 	struct string_list_object *list;
 	int err;
 
-	err = global_lock_try_lock(0);
+	err = global_lock_try_writelock(0);
 	if (err) {
 		delay_drop(item);
 		return;

@@ -652,7 +652,7 @@ int export_process_set_links_start(struct epm_action *action, ghost_t *ghost,
 {
 	if (action->type != EPM_MIGRATE && action->type != EPM_REMOTE_CLONE)
 		return 0;
-	return global_config_lock();
+	return global_config_freeze();
 }
 
 int export_process_set_links(struct epm_action *action, ghost_t *ghost,
@@ -740,7 +740,7 @@ int export_process_set_links_end(struct epm_action *action, ghost_t *ghost,
 		goto out;
 	/* Synchronization point */
 	retval = ghost_read(ghost, (void *) 1, 0);
-	global_config_unlock();
+	global_config_thaw();
 out:
 	return retval;
 }

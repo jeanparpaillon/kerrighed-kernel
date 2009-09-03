@@ -36,11 +36,11 @@ struct global_config_item {
  * @return		0 if success,
  *			negative error code otherwise
  */
-int global_config_lock(void);
+int global_config_freeze(void);
 /**
  * Un-block globalized config operations
  */
-void global_config_unlock(void);
+void global_config_thaw(void);
 
 /**
  * Initialize a global_config_item

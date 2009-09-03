@@ -54,7 +54,7 @@ static struct iolinker_struct global_lock_io_linker = {
 	.remove_object = global_lock_remove_object
 };
 
-int global_lock_try_lock(unsigned long lock_id)
+int global_lock_try_writelock(unsigned long lock_id)
 {
 	void *ret = _kddm_try_grab_object(lock_set, lock_id);
 	int retval;
@@ -71,9 +71,24 @@ int global_lock_try_lock(unsigned long lock_id)
 	return retval;
 }
 
-int global_lock_lock(unsigned long lock_id)
+int global_lock_writelock(unsigned long lock_id)
 {
 	void *ret = _kddm_grab_object(lock_set, lock_id);
+	int retval;
+
+	if (likely(ret == ZERO_SIZE_LOCK_OBJECT))
+		retval = 0;
+	else if (!ret)
+		retval = -ENOMEM;
+	else
+		retval = PTR_ERR(ret);
+
+	return retval;
+}
+
+int global_lock_readlock(unsigned long lock_id)
+{
+	void *ret = _kddm_get_object(lock_set, lock_id);
 	int retval;
 
 	if (likely(ret == ZERO_SIZE_LOCK_OBJECT))
