@@ -20,6 +20,7 @@
 #include <kerrighed/sys/checkpoint.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/remote_cred.h>
+#include <kerrighed/physical_fs.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
@@ -545,9 +546,15 @@ exit_kddmput:
 static inline int create_app_folder(long app_id, int chkpt_sn)
 {
 	ghost_fs_t oldfs;
+	struct path prev_root;
 	int r;
+
 	__set_ghost_fs(&oldfs);
+	chroot_to_physical_root(&prev_root);
+
 	r = mkdir_chkpt_path(app_id, chkpt_sn);
+
+	chroot_to_prev_root(&prev_root);
 	unset_ghost_fs(&oldfs);
 
 	return r;
