@@ -415,6 +415,9 @@ static int export_task(struct epm_action *action,
 {
 	int r;
 
+#define GOTO_ERROR goto ERROR_LABEL
+#define ERROR_LABEL error
+
 	BUG_ON(task->journal_info);
 
 	/* Check against what we cannot manage right now */
@@ -428,12 +431,12 @@ static int export_task(struct epm_action *action,
 	    || (r = export_last_siginfo(action, ghost, task))
 	    || (r = export_pi_state(action, ghost, task))
 	    || (r = export_mempolicy(action, ghost, task)))
-		goto error;
+		GOTO_ERROR;
 
 #ifndef CONFIG_KRG_IPC
 	if (task->sysvsem.undo_list) {
 		r = -EBUSY;
-		goto error;
+		GOTO_ERROR;
 	}
 #endif
 
@@ -441,106 +444,109 @@ static int export_task(struct epm_action *action,
 	prepare_to_export(task);
 	r = ghost_write(ghost, task, sizeof(*task));
 	if (r)
-		goto error;
+		GOTO_ERROR;
 	r = ghost_write(ghost, l_regs, sizeof(*l_regs));
 	if (r)
-		goto error;
+		GOTO_ERROR;
 
 	r = export_thread_info(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 
 #ifdef CONFIG_KRG_SCHED
 	r = export_krg_sched_info(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 #endif
 
 	r = export_sched_info(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 #ifdef CONFIG_KRG_MM
 	r = export_mm_struct(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 #endif
 
 	r = export_binfmt(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 
 	r = export_vfork_done(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 	r = export_pids(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 
 	r = export_cred(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 
 	r = export_audit_context(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 
 	r = export_thread_struct(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 
 #ifdef CONFIG_KRG_DVFS
 	r = export_fs_struct(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 	r = export_files_struct(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 #endif
 
 	r = export_nsproxy(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 	r = export_cgroups(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 
 	r = export_sched(action,ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 
 	r = export_children(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 	r = export_krg_structs(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 	r = export_kddm_info_struct(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 
 	r = export_private_signals(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 	r = export_signal_struct(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 	r = export_sighand_struct(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 
 #ifdef CONFIG_KRG_IPC
 	r = export_sysv_sem(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 #endif
 
 	r = export_delays(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
 
 	r = export_exec_ids(action, ghost, task);
 	if (r)
-		goto error;
+		GOTO_ERROR;
+
+#undef ERROR_LABEL
+#undef GOTO_ERROR
 
 error:
 	return r;
