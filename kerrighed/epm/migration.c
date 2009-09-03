@@ -157,11 +157,15 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	 * migration request.
 	 */
 #ifdef CONFIG_KRG_CAP
-	if (!can_use_krg_cap(tsk, CAP_CAN_MIGRATE))
+	if (!can_use_krg_cap(tsk, CAP_CAN_MIGRATE)) {
+		printk("krg_cap check failed!\n");
 		return -ENOSYS;
+	}
 #endif
-	if (!migration_implemented(tsk))
+	if (!migration_implemented(tsk)) {
+		printk("migration not implemented!\n");
 		return -ENOSYS;
+	}
 
 	desc = rpc_begin(RPC_EPM_MIGRATE, target);
 	if (!desc)
