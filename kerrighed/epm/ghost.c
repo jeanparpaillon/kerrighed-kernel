@@ -149,7 +149,8 @@ static int export_bts(struct epm_action *action,
 static int export_pids(struct epm_action *action,
 		       ghost_t *ghost, struct task_struct *task)
 {
-	enum pid_type type;
+	enum pid_type type, max_type;
+	struct pid_link *link;
 	int retval = 0; /* Prevent gcc from warning */
 
 #ifdef CONFIG_KRG_SCHED
@@ -158,22 +159,32 @@ static int export_pids(struct epm_action *action,
 		goto out;
 #endif /* CONFIG_KRG_SCHED */
 
-	for (type = 0; type < PIDTYPE_MAX; type++) {
-		if (!thread_group_leader(task) && type > PIDTYPE_PID)
-			break;
-		if (type != PIDTYPE_PID
-		    || action->type != EPM_REMOTE_CLONE) {
-			retval = export_pid(action, ghost, &task->pids[type]);
-			if (retval)
-				goto err;
+	if ((action->type == EPM_REMOTE_CLONE
+	     && (action->remote_clone.clone_flags & CLONE_THREAD))
+	    || (action->type != EPM_REMOTE_CLONE && !thread_group_leader(task)))
+		max_type = PIDTYPE_PID + 1;
+	else
+		max_type = PIDTYPE_MAX;
+
+	type = PIDTYPE_PID;
+	if (action->type == EPM_REMOTE_CLONE)
+		type++;
+
+	for (; type < max_type; type++) {
+		if (type == PIDTYPE_PID)
+			link = &task->pids[type];
+		else
+			link = &task->group_leader->pids[type];
+
+		retval = export_pid(action, ghost, link);
+		if (retval)
+			goto err;
 #ifdef CONFIG_KRG_SCHED
-			retval = export_process_set_links(action, ghost,
-							  task->pids[type].pid,
-							  type);
-			if (retval)
-				goto err;
+		retval = export_process_set_links(action, ghost,
+						  link->pid, type);
+		if (retval)
+			goto err;
 #endif /* CONFIG_KRG_SCHED */
-		}
 	}
 
 out:
@@ -937,46 +948,50 @@ static int import_bts(struct epm_action *action,
 static int import_pids(struct epm_action *action,
 		       ghost_t *ghost, struct task_struct *task)
 {
-	enum pid_type type;
+	enum pid_type type, max_type;
 	int retval = 0;
 
-	for (type = 0; type < PIDTYPE_MAX; type++) {
-		if (!thread_group_leader(task) && type > PIDTYPE_PID)
-			break;
+	if ((action->type == EPM_REMOTE_CLONE
+	     && (action->remote_clone.clone_flags & CLONE_THREAD))
+	    || (action->type != EPM_REMOTE_CLONE && !thread_group_leader(task)))
+		max_type = PIDTYPE_PID + 1;
+	else
+		max_type = PIDTYPE_MAX;
 
-		if (type == PIDTYPE_PID
-		    && action->type == EPM_REMOTE_CLONE) {
-			struct pid *pid = alloc_pid(&init_pid_ns);
-			if (!pid) {
-				retval = -ENOMEM;
-			} else {
-				task->pids[PIDTYPE_PID].pid = pid;
-				task->pid = pid_nr(pid);
-				if (!(action->remote_clone.clone_flags & CLONE_THREAD))
-					task->tgid = task->pid;
-			}
-
+	type = PIDTYPE_PID;
+	if (action->type == EPM_REMOTE_CLONE) {
+		struct pid *pid = alloc_pid(&init_pid_ns);
+		if (!pid) {
+			retval = -ENOMEM;
+			goto out;
 		} else {
-			retval = import_pid(action, ghost, &task->pids[type]);
+			task->pids[PIDTYPE_PID].pid = pid;
+			task->pid = pid_nr(pid);
+			if (!(action->remote_clone.clone_flags & CLONE_THREAD))
+				task->tgid = task->pid;
 		}
+
+		type++;
+	}
+
+	for (; type < max_type; type++) {
+		retval = import_pid(action, ghost, &task->pids[type]);
 		if (retval) {
 			__unimport_pids(task, type);
 			break;
 		}
 
 #ifdef CONFIG_KRG_SCHED
-		if (type != PIDTYPE_PID || action->type != EPM_REMOTE_CLONE) {
-			retval = import_process_set_links(
-				action, ghost,
-				task->pids[type].pid, type);
-			if (retval) {
-				__unimport_pids(task, type + 1);
-				break;
-			}
+		retval = import_process_set_links(action, ghost,
+						  task->pids[type].pid, type);
+		if (retval) {
+			__unimport_pids(task, type + 1);
+			break;
 		}
 #endif /* CONFIG_KRG_SCHED */
 	}
 
+out:
 	return retval;
 }
 
