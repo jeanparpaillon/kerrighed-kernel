@@ -126,7 +126,6 @@ bool can_create_krg_ns(unsigned long flags)
 	struct nsproxy *init_nsp = init_task.nsproxy;
 	return current->create_krg_ns
 		&& !(flags & CLONE_NEWIPC) && nsp->ipc_ns == init_nsp->ipc_ns
-		&& !(flags & CLONE_NEWNS) && nsp->mnt_ns == init_nsp->mnt_ns
 		&& !(flags & CLONE_NEWPID) && nsp->pid_ns == init_nsp->pid_ns
 		&& !(flags & CLONE_NEWNET) && nsp->net_ns == init_nsp->net_ns
 		&& !(flags & CLONE_NEWUSER)

@@ -20,6 +20,7 @@
 #include <linux/file.h>
 #include <linux/namei.h>
 #include <kerrighed/physical_fs.h>
+#include <kerrighed/namespace.h>
 
 char *physical_d_path(const struct path *path, char *tmp)
 {
@@ -47,9 +48,13 @@ char *physical_d_path(const struct path *path, char *tmp)
 
 void get_physical_root(struct path *root)
 {
-	root->mnt = init_task.nsproxy->mnt_ns->root;
+	struct krg_namespace *krg_ns = find_get_krg_ns();
+
+	BUG_ON(!krg_ns);
+	root->mnt = krg_ns->root_mnt_ns->root;
 	root->dentry = root->mnt->mnt_root;
 	path_get(root);
+	put_krg_ns(krg_ns);
 
 	while (d_mountpoint(root->dentry) &&
 	       follow_down(&root->mnt, &root->dentry))
