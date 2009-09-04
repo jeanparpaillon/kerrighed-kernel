@@ -227,7 +227,7 @@ static void balance(struct mosix_load_balancer *lb, unsigned long current_load)
 	/* Second, check whether migrating the task could improve balance */
 	target_node = find_target_node(lb, current_load);
 	if (target_node == KERRIGHED_NODE_ID_NONE)
-		goto out;
+		goto out_put_pid;
 
 	/* Third, migrate the selected task to the selected node */
 	rcu_read_lock();
@@ -236,6 +236,8 @@ static void balance(struct mosix_load_balancer *lb, unsigned long current_load)
 		__migrate_linux_threads(target_task, MIGR_LOCAL_PROCESS,
 					target_node);
 	rcu_read_unlock();
+
+out_put_pid:
 	put_pid(target_pid);
 
 out:
