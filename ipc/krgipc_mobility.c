@@ -338,6 +338,10 @@ err:
 static int cr_import_complete_sysv_sem(struct task_struct * fake,
 				       void * _undo_list_id)
 {
+	unique_id_t undo_list_id = (unique_id_t)_undo_list_id;
+
+	fake->sysvsem.undo_list_id = undo_list_id;
+
 	exit_sem(fake);
 
 	return 0;
