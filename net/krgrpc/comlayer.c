@@ -1132,6 +1132,8 @@ u32 port_dispatcher(struct tipc_port *p_ptr, struct sk_buff *buf)
 		queue_delayed_work_on(cpuid, krgcom_wq,
 				      &engine->reachable_work, REJECT_BACKOFF);
 	}
+
+	kfree_skb(buf);
 	return TIPC_OK;
 }
 
