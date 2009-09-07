@@ -385,7 +385,7 @@ static int __share_new_semundo(struct task_struct *task)
 	semundo_list_object_t *undo_list;
 	struct kddm_set *undo_list_set;
 
-	/* TODO BUG_ON(krg_current);*/
+	BUG_ON(krg_current);
 	BUG_ON(current->sysvsem.undo_list_id != UNIQUE_ID_NONE);
 
 	undo_list_set = task_undolist_set(task);
@@ -449,10 +449,8 @@ int kcb_ipc_sem_copy_semundo(unsigned long clone_flags,
 
 	BUG_ON(!tsk);
 
-	/* TODO
-	 * if (krg_current)
-	 *	goto exit;
-	 */
+	if (krg_current)
+		goto exit;
 
 	if (clone_flags & CLONE_SYSVSEM) {
 
