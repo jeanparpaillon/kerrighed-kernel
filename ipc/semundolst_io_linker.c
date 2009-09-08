@@ -21,7 +21,7 @@
 /*                                                                           */
 /*****************************************************************************/
 
-static inline void __undolist_remove(semundo_list_object_t *undo_list)
+static inline void __undolist_remove(struct semundo_list_object *undo_list)
 {
 	struct semundo_id *id, *next;
 
@@ -34,11 +34,11 @@ static inline void __undolist_remove(semundo_list_object_t *undo_list)
 	}
 }
 
-static inline semundo_list_object_t * __undolist_alloc(void)
+static inline struct semundo_list_object * __undolist_alloc(void)
 {
-	semundo_list_object_t *undo_list;
+	struct semundo_list_object *undo_list;
 
-	undo_list = kzalloc(sizeof(semundo_list_object_t), GFP_KERNEL);
+	undo_list = kzalloc(sizeof(struct semundo_list_object), GFP_KERNEL);
 	if (!undo_list)
 		return ERR_PTR(-ENOMEM);
 
@@ -56,7 +56,7 @@ int undolist_alloc_object (struct kddm_obj * obj_entry,
 			   struct kddm_set * set,
 			   objid_t objid)
 {
-	semundo_list_object_t *undo_list;
+	struct semundo_list_object *undo_list;
 
 	undo_list = __undolist_alloc();
 	if (IS_ERR(undo_list))
@@ -96,7 +96,7 @@ int undolist_remove_object (void *object,
 			    struct kddm_set * set,
 			    objid_t objid)
 {
-	semundo_list_object_t *undo_list;
+	struct semundo_list_object *undo_list;
 	undo_list = object;
 
 	__undolist_remove(undo_list);
@@ -117,7 +117,7 @@ int undolist_invalidate_object (struct kddm_obj * obj_entry,
 				struct kddm_set * set,
 				objid_t objid)
 {
-	semundo_list_object_t *undo_list;
+	struct semundo_list_object *undo_list;
 	undo_list = obj_entry->object;
 
 	__undolist_remove(undo_list);
@@ -135,7 +135,7 @@ int undolist_invalidate_object (struct kddm_obj * obj_entry,
 int undolist_export_object (struct rpc_desc *desc,
 			    struct kddm_obj *obj_entry)
 {
-	semundo_list_object_t *undo_list;
+	struct semundo_list_object *undo_list;
 	struct semundo_id *un;
 	int nb_semundo = 0, r;
 
@@ -172,7 +172,7 @@ error:
 int undolist_import_object (struct kddm_obj *obj_entry,
 			    struct rpc_desc *desc)
 {
-	semundo_list_object_t *undo_list;
+	struct semundo_list_object *undo_list;
 	struct semundo_id *un, *prev = NULL;
 	int nb_semundo = 0, i=0, r;
 

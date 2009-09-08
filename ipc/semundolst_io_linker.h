@@ -21,12 +21,12 @@ struct semundo_id {
 	struct semundo_id *next;
 };
 
-typedef struct semundo_list_object {
+struct semundo_list_object {
 	unique_id_t id;
 	atomic_t refcnt;
 	atomic_t semcnt;
 	struct semundo_id *list;
-} semundo_list_object_t;
+};
 
 extern struct iolinker_struct semundo_linker;
 

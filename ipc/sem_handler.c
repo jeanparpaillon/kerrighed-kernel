@@ -184,7 +184,7 @@ static inline void __remove_semundo_from_proc_list(struct sem_array *sma,
 {
 	struct semundo_id * undo_id, *next, *prev;
 	struct kddm_set *undo_list_set;
-	semundo_list_object_t *undo_list;
+	struct semundo_list_object *undo_list;
 
 	undo_list_set = krgipc_ops_undolist_set(sma->sem_perm.krgops);
 
@@ -309,11 +309,11 @@ void kcb_ipc_sem_wakeup_process(struct sem_queue *q, int error)
 	rpc_end(desc, 0);
 }
 
-static inline semundo_list_object_t * __create_semundo_proc_list(
+static inline struct semundo_list_object * __create_semundo_proc_list(
 	struct task_struct *task, struct kddm_set *undo_list_set)
 {
 	unique_id_t undo_list_id;
-	semundo_list_object_t *undo_list;
+	struct semundo_list_object *undo_list;
 	struct ipc_namespace *ns;
 	struct semkrgops *semops;
 
@@ -330,7 +330,7 @@ static inline semundo_list_object_t * __create_semundo_proc_list(
 
 	BUG_ON(undo_list);
 
-	undo_list = kzalloc(sizeof(semundo_list_object_t), GFP_KERNEL);
+	undo_list = kzalloc(sizeof(struct semundo_list_object), GFP_KERNEL);
 	if (!undo_list) {
 		undo_list = ERR_PTR(-ENOMEM);
 		goto err_alloc;
@@ -354,7 +354,7 @@ int create_semundo_proc_list(struct task_struct *task)
 {
 	int r = 0;
 	struct kddm_set *undo_list_set;
-	semundo_list_object_t *undo_list;
+	struct semundo_list_object *undo_list;
 
 	BUG_ON(task->sysvsem.undo_list_id != UNIQUE_ID_NONE);
 
@@ -382,7 +382,7 @@ err:
 static int __share_new_semundo(struct task_struct *task)
 {
 	int r = 0;
-	semundo_list_object_t *undo_list;
+	struct semundo_list_object *undo_list;
 	struct kddm_set *undo_list_set;
 
 	BUG_ON(krg_current);
@@ -415,7 +415,7 @@ int share_existing_semundo_proc_list(struct task_struct *task,
 				     unique_id_t undo_list_id)
 {
 	int r = 0;
-	semundo_list_object_t *undo_list;
+	struct semundo_list_object *undo_list;
 	struct kddm_set *undo_list_set;
 
 	undo_list_set = task_undolist_set(task);
@@ -481,10 +481,9 @@ exit:
 	return r;
 }
 
-static inline int __add_semundo_to_proc_list(semundo_list_object_t *undo_list,
-					     int semid)
+int add_semundo_to_proc_list(struct semundo_list_object *undo_list, int semid)
 {
-	struct semundo_id * undo_id;
+	struct semundo_id *undo_id;
 	int r = 0;
 	BUG_ON(!undo_list);
 
@@ -519,7 +518,7 @@ struct sem_undo * kcb_ipc_sem_find_undo(struct sem_array* sma)
 	struct sem_undo * undo;
 	int r = 0;
 	struct kddm_set *undo_list_set;
-	semundo_list_object_t *undo_list = NULL;
+	struct semundo_list_object *undo_list = NULL;
 	unique_id_t undo_list_id;
 
 	undo_list_set = krgipc_ops_undolist_set(sma->sem_perm.krgops);
@@ -579,7 +578,7 @@ struct sem_undo * kcb_ipc_sem_find_undo(struct sem_array* sma)
 		goto exit_free_undo;
 	}
 
-	r = __add_semundo_to_proc_list(undo_list, undo->semid);
+	r = add_semundo_to_proc_list(undo_list, undo->semid);
 
 exit_free_undo:
 	if (r) {
@@ -625,7 +624,7 @@ void destroy_semundo_proc_list(struct task_struct *task,
 			       unique_id_t undo_list_id)
 {
 	struct kddm_set *undo_list_set;
-	semundo_list_object_t * undo_list;
+	struct semundo_list_object * undo_list;
 
 	BUG_ON(task->sysvsem.undo_list_id != undo_list_id);
 
@@ -650,7 +649,7 @@ void kcb_ipc_sem_exit_sem(struct task_struct * task)
 {
 	struct kddm_set *undo_list_kddm_set;
 	unique_id_t undo_list_id;
-	semundo_list_object_t * undo_list;
+	struct semundo_list_object * undo_list;
 	struct semundo_id * undo_id, *next;
 	struct ipc_namespace *ns;
 
@@ -741,7 +740,7 @@ int krg_sem_init_ns(struct ipc_namespace *ns)
 
 	sem_ops->undo_list_kddm_set = create_new_kddm_set(
 		kddm_def_ns, SEMUNDO_KDDM_ID, SEMUNDO_LINKER,
-		KDDM_RR_DEF_OWNER, sizeof(semundo_list_object_t),
+		KDDM_RR_DEF_OWNER, sizeof(struct semundo_list_object),
 		KDDM_LOCAL_EXCLUSIVE);
 
 	if (IS_ERR(sem_ops->undo_list_kddm_set)) {
