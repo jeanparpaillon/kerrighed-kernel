@@ -698,7 +698,7 @@ err:
 	rpc_cancel(desc);
 }
 
-int global_continue(struct app_kddm_object *obj, int first_run)
+static int global_continue(struct app_kddm_object *obj)
 {
 	struct rpc_desc *desc;
 	struct app_continue_msg msg;
@@ -707,7 +707,13 @@ int global_continue(struct app_kddm_object *obj, int first_run)
 	/* prepare message */
 	msg.requester = kerrighed_node_id;
 	msg.app_id = obj->app_id;
-	msg.first_run = first_run;
+
+	BUG_ON(obj->state != RESTARTED && obj->state != FROZEN);
+
+	if (obj->state == RESTARTED)
+		msg.first_run = 1;
+	else
+		msg.first_run = 0;
 
 	desc = rpc_begin_m(APP_CONTINUE, &obj->nodes);
 
@@ -807,7 +813,7 @@ err:
 	rpc_cancel(desc);
 }
 
-int global_kill(struct app_kddm_object *obj, int signal)
+static int global_kill(struct app_kddm_object *obj, int signal)
 {
 	struct rpc_desc *desc;
 	struct app_kill_msg msg;
@@ -838,6 +844,31 @@ exit:
 err_rpc:
 	rpc_cancel(desc);
 	goto exit;
+}
+
+int global_unfreeze(struct app_kddm_object *obj, int signal)
+{
+	int r;
+
+	if (obj->state != FROZEN
+	    && obj->state != RESTARTED) {
+		r = -EPERM;
+		goto err;
+	}
+
+	if (signal) {
+		r = global_kill(obj, signal);
+		if (r)
+			goto err;
+	}
+
+	r = global_continue(obj);
+	if (r)
+		goto err;
+
+	obj->state = RUNNING;
+err:
+	return r;
 }
 
 int app_set_userdata(__u64 user_data)

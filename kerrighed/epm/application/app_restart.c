@@ -1226,8 +1226,8 @@ int app_restart(struct restart_request *req,
 	if (r)
 		goto exit_put_term;
 
-	/* go back to computation */
-	global_continue(obj, 1);
+	if (!r)
+		obj->state = RESTARTED;
 
 exit_put_term:
 	if (term)

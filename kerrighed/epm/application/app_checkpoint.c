@@ -456,7 +456,7 @@ static int _freeze_app(long appid)
 		goto exit_kddmput;
 	}
 
-	if (obj->state == FROZEN) {
+	if (obj->state != RUNNING) {
 		r = -EPERM;
 		goto exit_kddmput;
 	}
@@ -467,20 +467,6 @@ static int _freeze_app(long appid)
 
 exit_kddmput:
 	kddm_put_object(kddm_def_ns, APP_KDDM_ID, appid);
-	return r;
-}
-
-static int __unfreeze_app(struct app_kddm_object *obj, int signal)
-{
-	int r;
-
-	r = global_continue(obj, 0);
-	if (r)
-		goto err;
-
-	if (signal)
-		r = global_kill(obj, signal);
-err:
 	return r;
 }
 
@@ -500,10 +486,7 @@ static int _unfreeze_app(long appid, int signal)
 		goto exit_kddmput;
 	}
 
-	r = __unfreeze_app(obj, signal);
-
-	if (!r)
-		obj->state = RUNNING;
+	r = global_unfreeze(obj, signal);
 
 exit_kddmput:
 	kddm_put_object(kddm_def_ns, APP_KDDM_ID, appid);

@@ -64,6 +64,7 @@ typedef struct task_and_state {
 
 typedef enum {
 	FROZEN,
+	RESTARTED,
 	RUNNING
 } app_state_t;
 
@@ -164,9 +165,7 @@ void unimport_application(struct epm_action *action,
 
 int global_stop(struct app_kddm_object *obj);
 
-int global_continue(struct app_kddm_object *obj, int first_run);
-
-int global_kill(struct app_kddm_object *obj, int signal);
+int global_unfreeze(struct app_kddm_object *obj, int signal);
 
 /*--------------------------------------------------------------------------*/
 
