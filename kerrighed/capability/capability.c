@@ -203,7 +203,7 @@ static int krg_set_pid_cap(pid_t pid, const kernel_krg_cap_t *requested_cap)
 	int retval = -ESRCH;
 
 	rcu_read_lock();
-	tsk = find_task_by_pid_ns(pid, &init_pid_ns);
+	tsk = find_task_by_vpid(pid);
 	if (tsk)
 		retval = krg_set_cap(tsk, requested_cap);
 	rcu_read_unlock();
@@ -230,7 +230,7 @@ static int handle_set_pid_cap(struct rpc_desc* desc, void *_msg, size_t size)
 		goto out;
 	}
 
-	ret = krg_set_pid_cap(pid_vnr(pid), &cap);
+	ret = krg_set_cap(pid_task(pid, PIDTYPE_PID), &cap);
 
 	krg_handle_remote_syscall_end(pid, old_cred);
 
@@ -310,7 +310,7 @@ static int krg_get_pid_cap(pid_t pid, kernel_krg_cap_t *resulting_cap)
 	int retval = -ESRCH;
 
 	rcu_read_lock();
-	tsk = find_task_by_pid_ns(pid, &init_pid_ns);
+	tsk = find_task_by_vpid(pid);
 	if (tsk)
 		retval = krg_get_cap(tsk, resulting_cap);
 	rcu_read_unlock();
@@ -337,7 +337,7 @@ static int handle_get_pid_cap(struct rpc_desc *desc, void *_msg, size_t size)
 		goto out;
 	}
 
-	ret = krg_get_pid_cap(pid_vnr(pid), &cap);
+	ret = krg_get_cap(pid_task(pid, PIDTYPE_PID), &cap);
 	if (ret)
 		goto out_end;
 
