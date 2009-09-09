@@ -235,6 +235,12 @@ static inline int valid_signal(unsigned long sig)
 extern int next_signal(struct sigpending *pending, sigset_t *mask);
 extern int group_send_sig_info(int sig, struct siginfo *info, struct task_struct *p);
 extern int __group_send_sig_info(int, struct siginfo *, struct task_struct *);
+#ifdef CONFIG_KRG_PROC
+extern
+int krg_group_send_sig_info(int sig, struct siginfo *info, struct task_struct *p,
+			    pid_t session);
+extern int __krg_group_send_sig_info(int, struct siginfo *, struct task_struct *);
+#endif
 extern long do_sigpending(void __user *, unsigned long);
 extern int sigprocmask(int, sigset_t *, sigset_t *);
 extern int show_unhandled_signals;

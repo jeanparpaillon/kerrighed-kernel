@@ -609,8 +609,14 @@ static int rm_from_queue(unsigned long mask, struct sigpending *s)
  * Bad permissions for sending the signal
  * - the caller must hold at least the RCU read lock
  */
+#ifdef CONFIG_KRG_PROC
+static int __check_kill_permission(int sig, struct siginfo *info,
+				   struct task_struct *t,
+				   struct pid_namespace *ns, pid_t session)
+#else
 static int check_kill_permission(int sig, struct siginfo *info,
 				 struct task_struct *t)
+#endif
 {
 	const struct cred *cred = current_cred(), *tcred;
 	struct pid *sid;
@@ -639,7 +645,11 @@ static int check_kill_permission(int sig, struct siginfo *info,
 			 * We don't return the error if sid == NULL. The
 			 * task was unhashed, the caller must notice this.
 			 */
+#ifdef CONFIG_KRG_PROC
+			if (!sid || pid_nr_ns(sid, ns) == session)
+#else
 			if (!sid || sid == task_session(current))
+#endif
 				break;
 		default:
 			return -EPERM;
@@ -648,6 +658,16 @@ static int check_kill_permission(int sig, struct siginfo *info,
 
 	return security_task_kill(t, info, sig, 0);
 }
+
+#ifdef CONFIG_KRG_PROC
+static int check_kill_permission(int sig, struct siginfo *info,
+				 struct task_struct *t)
+{
+	return __check_kill_permission(sig, info, t, &init_pid_ns,
+				       task_session_nr_ns(current,
+							  &init_pid_ns));
+}
+#endif
 
 /*
  * Handle magic process-wide effects of stop/continue signals. Unlike
@@ -1145,6 +1165,36 @@ retry:
 }
 
 #ifdef CONFIG_KRG_PROC
+/* Caller guarantees that info->si_pid is 0 if from an ancestor namespace. */
+int __krg_group_send_sig_info(int sig, struct siginfo *info,
+			      struct task_struct *p)
+{
+	return __send_signal(sig, info, p, 1, 0);
+}
+
+/* Caller guarantees that p remains hashed. */
+int krg_group_send_sig_info(int sig, struct siginfo *info,
+			    struct task_struct *p,
+			    pid_t session)
+{
+	unsigned long flags;
+	int ret;
+
+	ret = __check_kill_permission(sig, info, p,
+				      task_active_pid_ns(p)->krg_ns_root,
+				      session);
+
+	if (!ret && sig) {
+		ret = -ESRCH;
+		if (lock_task_sighand(p, &flags)) {
+			ret = __krg_group_send_sig_info(sig, info, p);
+			unlock_task_sighand(p, &flags);
+		}
+	}
+
+	return ret;
+}
+
 struct kill_info_msg {
 	int sig;
 	struct siginfo info;
