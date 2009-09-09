@@ -1206,9 +1206,7 @@ static int handle_kill_proc_info(struct rpc_desc *desc, void *_msg, size_t size)
 {
 	struct kill_info_msg msg;
 	struct pid *pid;
-	struct task_struct *p;
-	struct cred *tmp_cred;
-	const struct cred *old_cred, *cred, *tcred;
+	const struct cred *old_cred;
 	int retval;
 
 	pid = krg_handle_remote_syscall_begin(desc, _msg, size,
@@ -1217,43 +1215,13 @@ static int handle_kill_proc_info(struct rpc_desc *desc, void *_msg, size_t size)
 		retval = PTR_ERR(pid);
 		goto out;
 	}
-	retval = -ENOMEM;
-	tmp_cred = prepare_creds();
-	if (!tmp_cred)
-		goto out_end;
 
 	rcu_read_lock();
-
-	p = pid_task(pid, PIDTYPE_PID);
-	BUG_ON(!p);
-
-	/*
-	 * Have to do the job of check_kill_permission() twice regarding
-	 * euid/uid, CAP_KILL, process session, and security checking,
-	 * since we can't reliably override current's session
-	 */
-	cred = current_cred();
-	tcred = __task_cred(p);
-	if (!SI_FROMKERNEL(&msg.info)
-	    && (cred->euid ^ tcred->suid)
-	    && (cred->euid ^ tcred->uid)
-	    && (cred->uid ^ tcred->suid)
-	    && (cred->uid ^ tcred->uid)
-	    && !capable(CAP_KILL)
-	    && (msg.sig != SIGCONT
-		|| msg.session != task_session_nr_ns(p, &init_pid_ns))) {
-		retval = -EPERM;
-	} else {
-		cap_raise(tmp_cred->cap_effective, CAP_KILL);
-		cred = override_creds(tmp_cred);
-		retval = kill_pid_info(msg.sig, &msg.info, pid);
-		revert_creds(cred);
-	}
-
+	retval = krg_group_send_sig_info(msg.sig, &msg.info,
+					 pid_task(pid, PIDTYPE_PID),
+					 msg.session);
 	rcu_read_unlock();
 
-	put_cred(tmp_cred);
-out_end:
 	krg_handle_remote_syscall_end(pid, old_cred);
 
 out:
@@ -1265,14 +1233,14 @@ static void make_kill_info_msg(struct kill_info_msg *msg, int sig,
 {
 	msg->sig = sig;
 	msg->pid = pid;
-	msg->session = task_session_nr_ns(current, &init_pid_ns);
+	msg->session = task_session_knr(current);
 
 	switch ((unsigned long)info) {
 	case (unsigned long)SEND_SIG_NOINFO:
 		msg->info.si_signo = sig;
 		msg->info.si_errno = 0;
 		msg->info.si_code = SI_USER;
-		msg->info.si_pid = current->tgid;
+		msg->info.si_pid = task_tgid_knr(current);
 		msg->info.si_uid = current_uid();
 		break;
 	case (unsigned long)SEND_SIG_PRIV:
@@ -1375,11 +1343,10 @@ static int handle_kill_pg_info(struct rpc_desc *desc, void *_msg, size_t size)
 {
 	struct kill_info_msg *msg = _msg;
 	struct cred *cred;
-	const struct cred *old_cred, *tcred;
+	const struct cred *old_cred;
 	struct pid *pgrp;
 	struct task_struct *p;
 	int retval, err, success;
-	int cap_kill;
 
 	cred = prepare_creds();
 	if (!cred)
@@ -1389,34 +1356,17 @@ static int handle_kill_pg_info(struct rpc_desc *desc, void *_msg, size_t size)
 		put_cred(cred);
 		goto err_cancel;
 	}
+	old_cred = override_creds(cred);
 
 	read_lock(&tasklist_lock);
 
 	retval = -ESRCH;
-	pgrp = find_pid_ns(msg->pid, &init_pid_ns);
+	pgrp = find_kpid(msg->pid);
 
-	/*
-	 * Have to do the job of check_kill_permission() twice regarding
-	 * euid/uid, CAP_KILL, process session, and security checking,
-	 * since we can't reliably override current's session
-	 */
-	cap_kill = capable(CAP_KILL);
-	cap_raise(cred->cap_effective, CAP_KILL);
-	old_cred = override_creds(cred);
 	success = 0;
 	do_each_pid_task(pgrp, PIDTYPE_PGID, p) {
-		tcred = __task_cred(p);
-		if (!SI_FROMKERNEL(&msg->info)
-		    && (cred->euid ^ tcred->suid)
-		    && (cred->euid ^ tcred->uid)
-		    && (cred->uid ^ tcred->suid)
-		    && (cred->uid ^ tcred->uid)
-		    && !cap_kill
-		    && (msg->sig != SIGCONT
-			|| msg->session != task_session_nr_ns(p, &init_pid_ns)))
-			err = -EPERM;
-		else
-			err = group_send_sig_info(msg->sig, &msg->info, p);
+		err = krg_group_send_sig_info(msg->sig, &msg->info, p,
+					      msg->session);
 		success |= !err;
 		retval = err;
 	} while_each_pid_task(pgrp, PIDTYPE_PGID, p);
