@@ -1216,11 +1216,17 @@ static int handle_kill_proc_info(struct rpc_desc *desc, void *_msg, size_t size)
 		goto out;
 	}
 
+	printk("%d handle_kill_proc_info: %d: %d -> %d\n", current->pid,
+	       msg.info.si_pid, msg.sig, msg.pid);
+
 	rcu_read_lock();
 	retval = krg_group_send_sig_info(msg.sig, &msg.info,
 					 pid_task(pid, PIDTYPE_PID),
 					 msg.session);
 	rcu_read_unlock();
+
+	printk("%d handle_kill_proc_info: %d: %d -> %d retval=%d\n", current->pid,
+	       msg.info.si_pid, msg.sig, msg.pid, retval);
 
 	krg_handle_remote_syscall_end(pid, old_cred);
 
@@ -1348,6 +1354,9 @@ static int handle_kill_pg_info(struct rpc_desc *desc, void *_msg, size_t size)
 	struct task_struct *p;
 	int retval, err, success;
 
+	printk("%d handle_kill_pg_info: %d: %d -> %d\n", current->pid,
+	       msg->info.si_pid, msg->sig, msg->pid);
+
 	cred = prepare_creds();
 	if (!cred)
 		goto err_cancel;
@@ -1377,6 +1386,8 @@ static int handle_kill_pg_info(struct rpc_desc *desc, void *_msg, size_t size)
 	revert_creds(old_cred);
 	put_cred(cred);
 
+	printk("%d handle_kill_pg_info: %d: %d -> %d retval=%d\n", current->pid,
+	       msg->info.si_pid, msg->sig, msg->pid, retval);
 	return retval;
 
 err_cancel:
