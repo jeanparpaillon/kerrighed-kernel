@@ -148,9 +148,21 @@ cancel:
 static void cluster_start_worker(struct work_struct *work)
 {
 	struct rpc_desc *desc;
+	char *page;
 	kerrighed_node_t node;
 	int ret;
-	int err;
+	int err = -ENOMEM;
+
+	page = (char *)__get_free_page(GFP_KERNEL);
+	if (!page)
+		goto out;
+
+	ret = krgnodelist_scnprintf(page, PAGE_SIZE, cluster_start_node_set.v);
+	BUG_ON(ret >= PAGE_SIZE);
+	printk("kerrighed: Cluster start with nodes %s ...\n",
+	       page);
+
+	free_page((unsigned long)page);
 
 	desc = rpc_begin_m(CLUSTER_START, &cluster_start_node_set.v);
 	if (!desc)
@@ -175,12 +187,19 @@ static void cluster_start_worker(struct work_struct *work)
 end:
 	rpc_end(desc, 0);
 out:
+	if (err)
+		printk(KERN_ERR "kerrighed: Cluster start failed! err=%d\n",
+		       err);
+	else
+		printk("kerrighed: Cluster start succeeded.\n");
 	spin_lock(&cluster_start_lock);
 	cluster_start_in_progress = 0;
 	spin_unlock(&cluster_start_lock);
 	return;
 cancel:
 	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
 	goto end;
 }
 
