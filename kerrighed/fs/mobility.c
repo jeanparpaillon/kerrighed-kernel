@@ -709,7 +709,7 @@ int export_fs_struct (struct epm_action *action,
 		      ghost_t *ghost,
                       struct task_struct *tsk)
 {
-	char *tmp = (char *) __get_free_page (GFP_KERNEL), *file_name;
+	char *tmp, *file_name;
 	int r, len;
 
 	if (action->type == EPM_CHECKPOINT &&
@@ -718,6 +718,11 @@ int export_fs_struct (struct epm_action *action,
 		r = cr_export_later_fs_struct(action, ghost, tsk);
 		return r;
 	}
+
+	r = -ENOMEM;
+	tmp = (char *) __get_free_page (GFP_KERNEL);
+	if (!tmp)
+		goto err_write;
 
 	{
 		int magic = 55611;
@@ -765,8 +770,6 @@ int export_fs_struct (struct epm_action *action,
 	if (r)
 			goto err_write;
 
-	free_page ((unsigned long) tmp);
-
 	{
 		int magic = 180574;
 
@@ -774,6 +777,8 @@ int export_fs_struct (struct epm_action *action,
 	}
 
 err_write:
+	free_page ((unsigned long) tmp);
+
 	return r;
 }
 
