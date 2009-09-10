@@ -103,6 +103,7 @@ static void init_prekerrighed_process(void)
 static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 {
 	struct hotplug_node_set start_msg;
+	char *page;
 	int ret = 0;
 	int err;
 
@@ -133,7 +134,16 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 	SET_KERRIGHED_NODE_FLAGS(KRGFLAGS_RUNNING);
 	clusters_status[kerrighed_subsession_id] = CLUSTER_DEF;
 
-	printk("Kerrighed is running on %d nodes\n", num_online_krgnodes());
+	page = (char *)__get_free_page(GFP_KERNEL);
+	if (page) {
+		ret = krgnodelist_scnprintf(page, PAGE_SIZE, start_msg.v);
+		BUG_ON(ret >= PAGE_SIZE);
+		printk("Kerrighed is running on %d nodes: %s\n",
+		       krgnodes_weight(start_msg.v), page);
+		free_page((unsigned long)page);
+	} else {
+		printk("Kerrighed is running on %d nodes\n", num_online_krgnodes());
+	}
 	complete_all(&cluster_started);
 
 out:
