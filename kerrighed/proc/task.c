@@ -284,17 +284,6 @@ int krg_task_alloc(struct task_struct *task, struct pid *pid)
 	return 0;
 }
 
-static
-void __krg_task_fill(struct task_struct *task, struct task_kddm_object *obj)
-{
-	obj->node = kerrighed_node_id;
-	obj->real_parent = task->real_parent->pid;
-	obj->real_parent_tgid = task->real_parent->tgid;
-	/* TODO: ptrace is not well supported */
-	obj->parent = obj->real_parent;
-	obj->group_leader = task->group_leader->pid;
-}
-
 void krg_task_fill(struct task_struct *task, unsigned long clone_flags)
 {
 	struct task_kddm_object *obj = task->task_obj;
@@ -308,7 +297,7 @@ void krg_task_fill(struct task_struct *task, unsigned long clone_flags)
 	if (!obj)
 		return;
 
-	__krg_task_fill(task, obj);
+	obj->node = kerrighed_node_id;
 #ifdef CONFIG_KRG_EPM
 	if (task->real_parent == baby_sitter) {
 		BUG_ON(!current->task_obj);
@@ -320,15 +309,19 @@ void krg_task_fill(struct task_struct *task, unsigned long clone_flags)
 			obj->real_parent = current->pid;
 			obj->real_parent_tgid = current->tgid;
 		}
-		/*
-		 * Keep parent same as real_parent until ptrace is better
-		 * supported
-		 */
-		obj->parent = obj->real_parent;
+	} else
+#endif
+	{
+		obj->real_parent = task->real_parent->pid;
+		obj->real_parent_tgid = task->real_parent->tgid;
 	}
+	/* Keep parent same as real_parent until ptrace is better supported */
+	obj->parent = obj->real_parent;
+#ifdef CONFIG_KRG_EPM
 	/* Distributed threads are not supported yet. */
 	BUG_ON(task->group_leader == baby_sitter);
 #endif
+	obj->group_leader = task->group_leader->pid;
 }
 
 void krg_task_commit(struct task_struct *task)
