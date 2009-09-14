@@ -11,11 +11,36 @@
 #include <linux/ipc_namespace.h>
 #include <linux/msg.h>
 #include <kddm/kddm.h>
+#include <kerrighed/namespace.h>
 
 #include "ipcmap_io_linker.h"
 #include "ipc_handler.h"
 #include "util.h"
 #include "krgmsg.h"
+
+struct ipc_namespace *find_get_krg_ipcns(void)
+{
+	struct krg_namespace *krg_ns;
+	struct ipc_namespace *ipc_ns;
+
+	krg_ns = find_get_krg_ns();
+	if (!krg_ns)
+		goto error;
+
+	if (!krg_ns->root_ipc_ns)
+		goto error_ipcns;
+
+	ipc_ns = get_ipc_ns(krg_ns->root_ipc_ns);
+
+	put_krg_ns(krg_ns);
+
+	return ipc_ns;
+
+error_ipcns:
+	put_krg_ns(krg_ns);
+error:
+	return NULL;
+}
 
 /*****************************************************************************/
 /*                                                                           */
