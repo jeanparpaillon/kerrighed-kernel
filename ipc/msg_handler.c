@@ -32,8 +32,6 @@ struct kddm_set *msqkey_struct_kddm_set = NULL;
 /* Kddm set of IPC msg master node */
 struct kddm_set *msq_master_kddm_set = NULL;
 
-struct krgipc_ops krg_sysvipc_msg_ops;
-
 /*****************************************************************************/
 /*                                                                           */
 /*                                KERNEL HOOKS                               */
@@ -121,7 +119,7 @@ int kcb_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 	long *key_index;
 	int index, err = 0;
 
-	BUG_ON(msg_ids(ns).krgops != &krg_sysvipc_msg_ops);
+	BUG_ON(!msg_ids(ns).krgops);
 
 	index = ipcid_to_idx(msq->q_perm.id);
 
@@ -405,17 +403,26 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 /*                                                                           */
 /*****************************************************************************/
 
-void init_msg_ops(struct ipc_namespace *ns)
+void krg_msg_init_ns(struct ipc_namespace *ns)
 {
-	krg_sysvipc_msg_ops.map_kddm = MSGMAP_KDDM_ID;
-	krg_sysvipc_msg_ops.key_kddm = MSGKEY_KDDM_ID;
-	krg_sysvipc_msg_ops.data_kddm = MSG_KDDM_ID;
+	struct krgipc_ops *msg_ops = kmalloc(sizeof(struct krgipc_ops),
+					     GFP_KERNEL);
 
-	krg_sysvipc_msg_ops.ipc_lock = kcb_ipc_msg_lock;
-	krg_sysvipc_msg_ops.ipc_unlock = kcb_ipc_msg_unlock;
-	krg_sysvipc_msg_ops.ipc_findkey = kcb_ipc_msg_findkey;
+	msg_ops->map_kddm = MSGMAP_KDDM_ID;
+	msg_ops->key_kddm = MSGKEY_KDDM_ID;
+	msg_ops->data_kddm = MSG_KDDM_ID;
 
-	msg_ids(ns).krgops = &krg_sysvipc_msg_ops;
+	msg_ops->ipc_lock = kcb_ipc_msg_lock;
+	msg_ops->ipc_unlock = kcb_ipc_msg_unlock;
+	msg_ops->ipc_findkey = kcb_ipc_msg_findkey;
+
+	msg_ids(ns).krgops = msg_ops;
+}
+
+void krg_msg_exit_ns(struct ipc_namespace *ns)
+{
+	if (msg_ids(ns).krgops)
+		kfree(msg_ids(ns).krgops);
 }
 
 void msg_handler_init(void)
@@ -462,7 +469,7 @@ void msg_handler_init(void)
 						  sizeof(kerrighed_node_t),
 						  KDDM_LOCAL_EXCLUSIVE);
 
-	init_msg_ops(&init_ipc_ns);
+	krg_msg_init_ns(&init_ipc_ns);
 
 	hook_register(&kh_ipc_msg_newque, kcb_ipc_msg_newque);
 	hook_register(&kh_ipc_msg_freeque, kcb_ipc_msg_freeque);

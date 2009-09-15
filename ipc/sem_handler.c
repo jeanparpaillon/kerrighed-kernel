@@ -34,8 +34,6 @@ unique_id_root_t undo_list_unique_id_root;
 /* Kddm set of IPC allocation bitmap structures */
 struct kddm_set *semmap_struct_kddm_set = NULL;
 
-struct krgipc_ops krg_sysvipc_sem_ops;
-
 /*****************************************************************************/
 /*                                                                           */
 /*                                KERNEL HOOKS                               */
@@ -122,7 +120,7 @@ int kcb_ipc_sem_newary(struct ipc_namespace *ns, struct sem_array *sma)
 	long *key_index;
 	int index ;
 
-	BUG_ON(sem_ids(ns).krgops != &krg_sysvipc_sem_ops);
+	BUG_ON(!sem_ids(ns).krgops);
 
 	index = ipcid_to_idx(sma->sem_perm.id);
 
@@ -611,17 +609,26 @@ void kcb_ipc_sem_exit_sem(struct task_struct * tsk)
 /*                                                                           */
 /*****************************************************************************/
 
-void init_sem_ops(struct ipc_namespace *ns)
+void krg_sem_init_ns(struct ipc_namespace *ns)
 {
-	krg_sysvipc_sem_ops.map_kddm = SEMMAP_KDDM_ID;
-	krg_sysvipc_sem_ops.key_kddm = SEMKEY_KDDM_ID;
-	krg_sysvipc_sem_ops.data_kddm = SEMARRAY_KDDM_ID;
+	struct krgipc_ops *sem_ops = kmalloc(sizeof(struct krgipc_ops),
+					     GFP_KERNEL);
 
-	krg_sysvipc_sem_ops.ipc_lock = kcb_ipc_sem_lock;
-	krg_sysvipc_sem_ops.ipc_unlock = kcb_ipc_sem_unlock;
-	krg_sysvipc_sem_ops.ipc_findkey = kcb_ipc_sem_findkey;
+	sem_ops->map_kddm = SEMMAP_KDDM_ID;
+	sem_ops->key_kddm = SEMKEY_KDDM_ID;
+	sem_ops->data_kddm = SEMARRAY_KDDM_ID;
 
-	sem_ids(ns).krgops = &krg_sysvipc_sem_ops;
+	sem_ops->ipc_lock = kcb_ipc_sem_lock;
+	sem_ops->ipc_unlock = kcb_ipc_sem_unlock;
+	sem_ops->ipc_findkey = kcb_ipc_sem_findkey;
+
+	sem_ids(ns).krgops = sem_ops;
+}
+
+void krg_sem_exit_ns(struct ipc_namespace *ns)
+{
+	if (sem_ids(ns).krgops)
+		kfree(sem_ids(ns).krgops);
 }
 
 void sem_handler_init (void)
@@ -669,7 +676,7 @@ void sem_handler_init (void)
 						      sizeof(semundo_list_object_t),
 						      KDDM_LOCAL_EXCLUSIVE);
 
-	init_sem_ops(&init_ipc_ns);
+	krg_sem_init_ns(&init_ipc_ns);
 
 	hook_register(&kh_ipc_sem_newary, kcb_ipc_sem_newary);
 	hook_register(&kh_ipc_sem_freeary, kcb_ipc_sem_freeary);

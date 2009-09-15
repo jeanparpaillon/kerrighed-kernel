@@ -132,6 +132,11 @@ void free_ipc_ns(struct ipc_namespace *ns)
 	sem_exit_ns(ns);
 	msg_exit_ns(ns);
 	shm_exit_ns(ns);
+#ifdef CONFIG_KRG_IPC
+	krg_sem_exit_ns(ns);
+	krg_msg_exit_ns(ns);
+	krg_shm_exit_ns(ns);
+#endif
 	kfree(ns);
 	atomic_dec(&nr_ipc_ns);
 

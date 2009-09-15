@@ -28,8 +28,6 @@ struct kddm_set *shmkey_struct_kddm_set = NULL;
 /* Kddm set of IPC allocation bitmap structures */
 struct kddm_set *shmmap_struct_kddm_set = NULL;
 
-struct krgipc_ops krg_sysvipc_shm_ops;
-
 /*****************************************************************************/
 /*                                                                           */
 /*                                KERNEL HOOKS                               */
@@ -117,7 +115,7 @@ int krg_ipc_shm_newseg (struct ipc_namespace *ns, struct shmid_kernel *shp)
 	long *key_index;
 	int index, err;
 
-	BUG_ON(shm_ids(ns).krgops != &krg_sysvipc_shm_ops);
+	BUG_ON(!shm_ids(ns).krgops);
 
 	index = ipcid_to_idx(shp->shm_perm.id);
 
@@ -198,17 +196,26 @@ void krg_ipc_shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
 /*                                                                           */
 /*****************************************************************************/
 
-void init_shm_ops(struct ipc_namespace *ns)
+void krg_shm_init_ns(struct ipc_namespace *ns)
 {
-	krg_sysvipc_shm_ops.map_kddm = SHMMAP_KDDM_ID;
-	krg_sysvipc_shm_ops.key_kddm = SHMKEY_KDDM_ID;
-	krg_sysvipc_shm_ops.data_kddm = SHMID_KDDM_ID;
+	struct krgipc_ops *shm_ops = kmalloc(sizeof(struct krgipc_ops),
+					     GFP_KERNEL);
 
-	krg_sysvipc_shm_ops.ipc_lock = kcb_ipc_shm_lock;
-	krg_sysvipc_shm_ops.ipc_unlock = kcb_ipc_shm_unlock;
-	krg_sysvipc_shm_ops.ipc_findkey = kcb_ipc_shm_findkey;
+	shm_ops->map_kddm = SHMMAP_KDDM_ID;
+	shm_ops->key_kddm = SHMKEY_KDDM_ID;
+	shm_ops->data_kddm = SHMID_KDDM_ID;
 
-	shm_ids(ns).krgops = &krg_sysvipc_shm_ops;
+	shm_ops->ipc_lock = kcb_ipc_shm_lock;
+	shm_ops->ipc_unlock = kcb_ipc_shm_unlock;
+	shm_ops->ipc_findkey = kcb_ipc_shm_findkey;
+
+	shm_ids(ns).krgops = shm_ops;
+}
+
+void krg_shm_exit_ns(struct ipc_namespace *ns)
+{
+	if (shm_ids(ns).krgops)
+		kfree(shm_ids(ns).krgops);
 }
 
 void shm_handler_init(void)
@@ -250,7 +257,7 @@ void shm_handler_init(void)
 
 	krgsyms_register(KRGSYMS_VM_OPS_SHM, &shm_vm_ops);
 
-	init_shm_ops(&init_ipc_ns);
+	krg_shm_init_ns(&init_ipc_ns);
 
 	printk("Shm Server configured\n");
 }
