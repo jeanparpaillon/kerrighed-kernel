@@ -829,6 +829,12 @@ static int kgdb_io_ready(int print_wait)
  * where KGDB is communicating with an external debugger
  */
 
+/* Handle the '!' extended mode request */
+static void gdb_cmd_extended(struct kgdb_state *ks)
+{
+	strcpy(remcom_out_buffer, "OK");
+}
+
 /* Handle the '?' status packets */
 static void gdb_cmd_status(struct kgdb_state *ks)
 {
@@ -1252,6 +1258,9 @@ static int gdb_serial_stub(struct kgdb_state *ks)
 		get_packet(remcom_in_buffer);
 
 		switch (remcom_in_buffer[0]) {
+		case '!': /* extended mode */
+			gdb_cmd_extended(ks);
+			break;
 		case '?': /* gdbserial status */
 			gdb_cmd_status(ks);
 			break;
