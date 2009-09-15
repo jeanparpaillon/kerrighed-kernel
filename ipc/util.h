@@ -214,6 +214,14 @@ int local_ipc_reserveid(struct ipc_ids* ids, struct kern_ipc_perm* new,
 
 int is_krg_ipc(struct ipc_ids *ids);
 
+void krg_msg_init_ns(struct ipc_namespace *ns);
+void krg_sem_init_ns(struct ipc_namespace *ns);
+void krg_shm_init_ns(struct ipc_namespace *ns);
+
+void krg_msg_exit_ns(struct ipc_namespace *ns);
+void krg_sem_exit_ns(struct ipc_namespace *ns);
+void krg_shm_exit_ns(struct ipc_namespace *ns);
+
 #endif
 
 #endif
