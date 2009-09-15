@@ -21,18 +21,11 @@
 #include "util.h"
 #include "krgsem.h"
 
-/* Kddm set of SEM array structures */
-struct kddm_set *semarray_struct_kddm_set = NULL;
-struct kddm_set *semkey_struct_kddm_set = NULL;
-
 /* Kddm set of sem_undo_list */
 struct kddm_set *sem_undo_list_kddm_set = NULL;
 
 /* unique_id generator for sem_undo_list identifier */
 unique_id_root_t undo_list_unique_id_root;
-
-/* Kddm set of IPC allocation bitmap structures */
-struct kddm_set *semmap_struct_kddm_set = NULL;
 
 /*****************************************************************************/
 /*                                                                           */
@@ -608,20 +601,66 @@ void kcb_ipc_sem_exit_sem(struct task_struct * tsk)
 /*                                                                           */
 /*****************************************************************************/
 
-void krg_sem_init_ns(struct ipc_namespace *ns)
+int krg_sem_init_ns(struct ipc_namespace *ns)
 {
+	int r;
+
 	struct krgipc_ops *sem_ops = kmalloc(sizeof(struct krgipc_ops),
 					     GFP_KERNEL);
+	if (!sem_ops) {
+		r = -ENOMEM;
+		goto err;
+	}
 
-	sem_ops->map_kddm_set = semmap_struct_kddm_set;
-	sem_ops->key_kddm_set = semkey_struct_kddm_set;
-	sem_ops->data_kddm_set = semarray_struct_kddm_set;
+	sem_ops->map_kddm_set = create_new_kddm_set(kddm_def_ns,
+						    SEMMAP_KDDM_ID,
+						    IPCMAP_LINKER,
+						    KDDM_RR_DEF_OWNER,
+						    sizeof(ipcmap_object_t),
+						    KDDM_LOCAL_EXCLUSIVE);
+	if (IS_ERR(sem_ops->map_kddm_set)) {
+		r = PTR_ERR(sem_ops->map_kddm_set);
+		goto err_map;
+	}
+
+	sem_ops->key_kddm_set = create_new_kddm_set(kddm_def_ns,
+						    SEMKEY_KDDM_ID,
+						    SEMKEY_LINKER,
+						    KDDM_RR_DEF_OWNER,
+						    sizeof(long),
+						    KDDM_LOCAL_EXCLUSIVE);
+	if (IS_ERR(sem_ops->key_kddm_set)) {
+		r = PTR_ERR(sem_ops->key_kddm_set);
+		goto err_key;
+	}
+
+	sem_ops->data_kddm_set = create_new_kddm_set(kddm_def_ns,
+						     SEMARRAY_KDDM_ID,
+						     SEMARRAY_LINKER,
+						     KDDM_RR_DEF_OWNER,
+						     sizeof(semarray_object_t),
+						     KDDM_LOCAL_EXCLUSIVE);
+	if (IS_ERR(sem_ops->data_kddm_set)) {
+		r = PTR_ERR(sem_ops->data_kddm_set);
+		goto err_data;
+	}
 
 	sem_ops->ipc_lock = kcb_ipc_sem_lock;
 	sem_ops->ipc_unlock = kcb_ipc_sem_unlock;
 	sem_ops->ipc_findkey = kcb_ipc_sem_findkey;
 
 	sem_ids(ns).krgops = sem_ops;
+
+	return 0;
+
+err_data:
+	_destroy_kddm_set(sem_ops->key_kddm_set);
+err_key:
+	_destroy_kddm_set(sem_ops->map_kddm_set);
+err_map:
+	kfree(sem_ops);
+err:
+	return r;
 }
 
 void krg_sem_exit_ns(struct ipc_namespace *ns)
@@ -641,32 +680,6 @@ void sem_handler_init (void)
 	register_io_linker(SEMARRAY_LINKER, &semarray_linker);
 	register_io_linker(SEMKEY_LINKER, &semkey_linker);
 	register_io_linker(SEMUNDO_LINKER, &semundo_linker);
-
-	semarray_struct_kddm_set = create_new_kddm_set(kddm_def_ns,
-						       SEMARRAY_KDDM_ID,
-						       SEMARRAY_LINKER,
-						       KDDM_RR_DEF_OWNER,
-						       sizeof(semarray_object_t),
-						       KDDM_LOCAL_EXCLUSIVE);
-
-	BUG_ON (IS_ERR (semarray_struct_kddm_set));
-
-	semkey_struct_kddm_set = create_new_kddm_set (kddm_def_ns,
-						      SEMKEY_KDDM_ID,
-						      SEMKEY_LINKER,
-						      KDDM_RR_DEF_OWNER,
-						      sizeof(long), 0);
-
-	BUG_ON (IS_ERR (semkey_struct_kddm_set));
-
-	semmap_struct_kddm_set = create_new_kddm_set (kddm_def_ns,
-						      SEMMAP_KDDM_ID,
-						      IPCMAP_LINKER,
-						      KDDM_RR_DEF_OWNER,
-						      sizeof(ipcmap_object_t),
-						      KDDM_LOCAL_EXCLUSIVE);
-
-	BUG_ON (IS_ERR (semmap_struct_kddm_set));
 
 	sem_undo_list_kddm_set = create_new_kddm_set (kddm_def_ns,
 						      SEMUNDO_KDDM_ID,

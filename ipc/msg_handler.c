@@ -22,13 +22,6 @@
 #include "util.h"
 #include "krgmsg.h"
 
-/* Kddm set of IPC allocation bitmap structures */
-struct kddm_set *msgmap_struct_kddm_set = NULL;
-
-/* Kddm set of msg ids structures */
-struct kddm_set *msq_struct_kddm_set = NULL;
-struct kddm_set *msqkey_struct_kddm_set = NULL;
-
 /* Kddm set of IPC msg master node */
 struct kddm_set *msq_master_kddm_set = NULL;
 
@@ -405,26 +398,76 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 /*                                                                           */
 /*****************************************************************************/
 
-void krg_msg_init_ns(struct ipc_namespace *ns)
+int krg_msg_init_ns(struct ipc_namespace *ns)
 {
+	int r;
+
 	struct krgipc_ops *msg_ops = kmalloc(sizeof(struct krgipc_ops),
 					     GFP_KERNEL);
+	if (!msg_ops) {
+		r = -ENOMEM;
+		goto err;
+	}
 
-	msg_ops->map_kddm_set = msgmap_struct_kddm_set;
-	msg_ops->key_kddm_set = msqkey_struct_kddm_set;
-	msg_ops->data_kddm_set = msq_struct_kddm_set;
+	msg_ops->map_kddm_set = create_new_kddm_set(kddm_def_ns,
+						    MSGMAP_KDDM_ID,
+						    IPCMAP_LINKER,
+						    KDDM_RR_DEF_OWNER,
+						    sizeof(ipcmap_object_t),
+						    KDDM_LOCAL_EXCLUSIVE);
+	if (IS_ERR(msg_ops->map_kddm_set)) {
+		r = PTR_ERR(msg_ops->map_kddm_set);
+		goto err_map;
+	}
+
+	msg_ops->key_kddm_set = create_new_kddm_set(kddm_def_ns,
+						    MSGKEY_KDDM_ID,
+						    MSGKEY_LINKER,
+						    KDDM_RR_DEF_OWNER,
+						    sizeof(long),
+						    KDDM_LOCAL_EXCLUSIVE);
+	if (IS_ERR(msg_ops->key_kddm_set)) {
+		r = PTR_ERR(msg_ops->key_kddm_set);
+		goto err_key;
+	}
+
+	msg_ops->data_kddm_set = create_new_kddm_set(kddm_def_ns,
+						     MSG_KDDM_ID,
+						     MSG_LINKER,
+						     KDDM_RR_DEF_OWNER,
+						     sizeof(msq_object_t),
+						     KDDM_LOCAL_EXCLUSIVE);
+	if (IS_ERR(msg_ops->data_kddm_set)) {
+		r = PTR_ERR(msg_ops->data_kddm_set);
+		goto err_data;
+	}
 
 	msg_ops->ipc_lock = kcb_ipc_msg_lock;
 	msg_ops->ipc_unlock = kcb_ipc_msg_unlock;
 	msg_ops->ipc_findkey = kcb_ipc_msg_findkey;
 
 	msg_ids(ns).krgops = msg_ops;
+
+	return 0;
+
+err_data:
+	_destroy_kddm_set(msg_ops->key_kddm_set);
+err_key:
+	_destroy_kddm_set(msg_ops->map_kddm_set);
+err_map:
+	kfree(msg_ops);
+err:
+	return r;
 }
 
 void krg_msg_exit_ns(struct ipc_namespace *ns)
 {
-	if (msg_ids(ns).krgops)
+	if (msg_ids(ns).krgops) {
+		_destroy_kddm_set(msg_ids(ns).krgops->map_kddm_set);
+		_destroy_kddm_set(msg_ids(ns).krgops->key_kddm_set);
+		_destroy_kddm_set(msg_ids(ns).krgops->data_kddm_set);
 		kfree(msg_ids(ns).krgops);
+	}
 }
 
 void msg_handler_init(void)
@@ -436,33 +479,6 @@ void msg_handler_init(void)
 	register_io_linker(MSG_LINKER, &msq_linker);
 	register_io_linker(MSGKEY_LINKER, &msqkey_linker);
 	register_io_linker(MSGMASTER_LINKER, &msqmaster_linker);
-
-	msgmap_struct_kddm_set = create_new_kddm_set(kddm_def_ns,
-						     MSGMAP_KDDM_ID,
-						     IPCMAP_LINKER,
-						     KDDM_RR_DEF_OWNER,
-						     sizeof(ipcmap_object_t),
-						     KDDM_LOCAL_EXCLUSIVE);
-
-	BUG_ON(IS_ERR(msgmap_struct_kddm_set));
-
-	msq_struct_kddm_set = create_new_kddm_set (kddm_def_ns,
-						   MSG_KDDM_ID,
-						   MSG_LINKER,
-						   KDDM_RR_DEF_OWNER,
-						   sizeof(msq_object_t),
-						   KDDM_LOCAL_EXCLUSIVE);
-
-	BUG_ON (IS_ERR (msq_struct_kddm_set));
-
-	msqkey_struct_kddm_set = create_new_kddm_set (kddm_def_ns,
-						      MSGKEY_KDDM_ID,
-						      MSGKEY_LINKER,
-						      KDDM_RR_DEF_OWNER,
-						      sizeof(long),
-						      KDDM_LOCAL_EXCLUSIVE);
-
-	BUG_ON (IS_ERR (msqkey_struct_kddm_set));
 
 	msq_master_kddm_set = create_new_kddm_set(kddm_def_ns,
 						  MSGMASTER_KDDM_ID,

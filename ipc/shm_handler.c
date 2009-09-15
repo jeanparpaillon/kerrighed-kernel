@@ -20,14 +20,6 @@
 #include "ipcmap_io_linker.h"
 #include "shm_memory_linker.h"
 
-
-/* Kddm set of SHM ids structures */
-struct kddm_set *shmid_struct_kddm_set = NULL;
-struct kddm_set *shmkey_struct_kddm_set = NULL;
-
-/* Kddm set of IPC allocation bitmap structures */
-struct kddm_set *shmmap_struct_kddm_set = NULL;
-
 /*****************************************************************************/
 /*                                                                           */
 /*                                KERNEL HOOKS                               */
@@ -198,20 +190,66 @@ void krg_ipc_shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
 /*                                                                           */
 /*****************************************************************************/
 
-void krg_shm_init_ns(struct ipc_namespace *ns)
+int krg_shm_init_ns(struct ipc_namespace *ns)
 {
+	int r;
+
 	struct krgipc_ops *shm_ops = kmalloc(sizeof(struct krgipc_ops),
 					     GFP_KERNEL);
+	if (!shm_ops) {
+		r = -ENOMEM;
+		goto err;
+	}
 
-	shm_ops->map_kddm_set = shmmap_struct_kddm_set;
-	shm_ops->key_kddm_set = shmkey_struct_kddm_set;
-	shm_ops->data_kddm_set = shmid_struct_kddm_set;
+	shm_ops->map_kddm_set = create_new_kddm_set(kddm_def_ns,
+						    SHMMAP_KDDM_ID,
+						    IPCMAP_LINKER,
+						    KDDM_RR_DEF_OWNER,
+						    sizeof(ipcmap_object_t),
+						    KDDM_LOCAL_EXCLUSIVE);
+	if (IS_ERR(shm_ops->map_kddm_set)) {
+		r = PTR_ERR(shm_ops->map_kddm_set);
+		goto err_map;
+	}
+
+	shm_ops->key_kddm_set = create_new_kddm_set(kddm_def_ns,
+						    SHMKEY_KDDM_ID,
+						    SHMKEY_LINKER,
+						    KDDM_RR_DEF_OWNER,
+						    sizeof(long),
+						    KDDM_LOCAL_EXCLUSIVE);
+	if (IS_ERR(shm_ops->key_kddm_set)) {
+		r = PTR_ERR(shm_ops->key_kddm_set);
+		goto err_key;
+	}
+
+	shm_ops->data_kddm_set = create_new_kddm_set(kddm_def_ns,
+						     SHMID_KDDM_ID,
+						     SHMID_LINKER,
+						     KDDM_RR_DEF_OWNER,
+						     sizeof(shmid_object_t),
+						     KDDM_LOCAL_EXCLUSIVE);
+	if (IS_ERR(shm_ops->data_kddm_set)) {
+		r = PTR_ERR(shm_ops->data_kddm_set);
+		goto err_data;
+	}
 
 	shm_ops->ipc_lock = kcb_ipc_shm_lock;
 	shm_ops->ipc_unlock = kcb_ipc_shm_unlock;
 	shm_ops->ipc_findkey = kcb_ipc_shm_findkey;
 
 	shm_ids(ns).krgops = shm_ops;
+
+	return 0;
+
+err_data:
+	_destroy_kddm_set(shm_ops->key_kddm_set);
+err_key:
+	_destroy_kddm_set(shm_ops->map_kddm_set);
+err_map:
+	kfree(shm_ops);
+err:
+	return r;
 }
 
 void krg_shm_exit_ns(struct ipc_namespace *ns)
@@ -229,33 +267,6 @@ void shm_handler_init(void)
 	register_io_linker(SHM_MEMORY_LINKER, &shm_memory_linker);
 	register_io_linker(SHMID_LINKER, &shmid_linker);
 	register_io_linker(SHMKEY_LINKER, &shmkey_linker);
-
-	shmid_struct_kddm_set = create_new_kddm_set(kddm_def_ns,
-						    SHMID_KDDM_ID,
-						    SHMID_LINKER,
-						    KDDM_RR_DEF_OWNER,
-						    sizeof(shmid_object_t),
-						    KDDM_LOCAL_EXCLUSIVE);
-
-	BUG_ON(IS_ERR (shmid_struct_kddm_set));
-
-	shmkey_struct_kddm_set = create_new_kddm_set(kddm_def_ns,
-						     SHMKEY_KDDM_ID,
-						     SHMKEY_LINKER,
-						     KDDM_RR_DEF_OWNER,
-						     sizeof(long),
-						     KDDM_LOCAL_EXCLUSIVE);
-
-	BUG_ON(IS_ERR (shmkey_struct_kddm_set));
-
-	shmmap_struct_kddm_set = create_new_kddm_set(kddm_def_ns,
-						     SHMMAP_KDDM_ID,
-						     IPCMAP_LINKER,
-						     KDDM_RR_DEF_OWNER,
-						     sizeof(ipcmap_object_t),
-						     KDDM_LOCAL_EXCLUSIVE);
-
-	BUG_ON(IS_ERR (shmmap_struct_kddm_set));
 
 	krgsyms_register(KRGSYMS_VM_OPS_SHM, &shm_vm_ops);
 
