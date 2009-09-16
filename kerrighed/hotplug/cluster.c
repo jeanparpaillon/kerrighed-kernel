@@ -61,7 +61,194 @@ static struct krg_namespace *cluster_start_krg_ns;
 static DEFINE_SPINLOCK(cluster_start_lock);
 static DEFINE_MUTEX(cluster_start_mutex);
 static DECLARE_COMPLETION(cluster_started);
+
+#ifdef CONFIG_KRG_IPC
+#define CLUSTER_INIT_OPT_CLONE_FLAGS_IPC CLONE_NEWIPC
+#else
+#define CLUSTER_INIT_OPT_CLONE_FLAGS_IPC 0
+#endif
+#ifdef CONFIG_KRG_PROC
+#define CLUSTER_INIT_OPT_CLONE_FLAGS_PID CLONE_NEWPID
+#else
+#define CLUSTER_INIT_OPT_CLONE_FLAGS_PID 0
+#endif
+static unsigned long cluster_init_opt_clone_flags =
+	CLUSTER_INIT_OPT_CLONE_FLAGS_IPC|CLUSTER_INIT_OPT_CLONE_FLAGS_PID;
+static DEFINE_SPINLOCK(cluster_init_opt_clone_flags_lock);
+
 static char cluster_init_helper_path[PATH_MAX];
+
+static ssize_t isolate_uts_show(struct kobject *obj,
+				struct kobj_attribute *attr,
+				char *page)
+{
+	int isolate = !!(cluster_init_opt_clone_flags & CLONE_NEWUTS);
+	return sprintf(page, "%d\n", isolate);
+}
+
+static ssize_t isolate_uts_store(struct kobject *obj,
+				 struct kobj_attribute *attr,
+				 const char *page, size_t count)
+{
+	unsigned long val = simple_strtoul(page, NULL, 0);
+
+	spin_lock(&cluster_init_opt_clone_flags_lock);
+	if (val)
+		cluster_init_opt_clone_flags |= CLONE_NEWUTS;
+	else
+		cluster_init_opt_clone_flags &= ~CLONE_NEWUTS;
+	spin_unlock(&cluster_init_opt_clone_flags_lock);
+
+	return count;
+}
+
+static struct kobj_attribute isolate_uts_attr =
+	__ATTR(isolate_uts, 0644, isolate_uts_show, isolate_uts_store);
+
+static ssize_t isolate_ipc_show(struct kobject *obj,
+				struct kobj_attribute *attr,
+				char *page)
+{
+	int isolate = !!(cluster_init_opt_clone_flags & CLONE_NEWIPC);
+	return sprintf(page, "%d\n", isolate);
+}
+
+#ifdef CONFIG_KRG_IPC
+static struct kobj_attribute isolate_ipc_attr =
+	__ATTR(isolate_ipc, 0444, isolate_ipc_show, NULL);
+#else
+static ssize_t isolate_ipc_store(struct kobject *obj,
+				 struct kobj_attribute *attr,
+				 const char *page, size_t count)
+{
+	unsigned long val = simple_strtoul(page, NULL, 0);
+
+	spin_lock(&cluster_init_opt_clone_flags_lock);
+	if (val)
+		cluster_init_opt_clone_flags |= CLONE_NEWIPC;
+	else
+		cluster_init_opt_clone_flags &= ~CLONE_NEWIPC;
+	spin_unlock(&cluster_init_opt_clone_flags_lock);
+
+	return count;
+}
+
+static struct kobj_attribute isolate_ipc_attr =
+	__ATTR(isolate_ipc, 0644, isolate_ipc_show, isolate_ipc_store);
+#endif /* !CONFIG_KRG_IPC */
+
+static ssize_t isolate_mnt_show(struct kobject *obj,
+				struct kobj_attribute *attr,
+				char *page)
+{
+	int isolate = !!(cluster_init_opt_clone_flags & CLONE_NEWNS);
+	return sprintf(page, "%d\n", isolate);
+}
+
+static ssize_t isolate_mnt_store(struct kobject *obj,
+				 struct kobj_attribute *attr,
+				 const char *page, size_t count)
+{
+	unsigned long val = simple_strtoul(page, NULL, 0);
+
+	spin_lock(&cluster_init_opt_clone_flags_lock);
+	if (val)
+		cluster_init_opt_clone_flags |= CLONE_NEWNS;
+	else
+		cluster_init_opt_clone_flags &= ~CLONE_NEWNS;
+	spin_unlock(&cluster_init_opt_clone_flags_lock);
+
+	return count;
+}
+
+static struct kobj_attribute isolate_mnt_attr =
+	__ATTR(isolate_mnt, 0644, isolate_mnt_show, isolate_mnt_store);
+
+static ssize_t isolate_pid_show(struct kobject *obj,
+				struct kobj_attribute *attr,
+				char *page)
+{
+	int isolate = !!(cluster_init_opt_clone_flags & CLONE_NEWPID);
+	return sprintf(page, "%d\n", isolate);
+}
+
+#ifdef CONFIG_KRG_PROC
+static struct kobj_attribute isolate_pid_attr =
+	__ATTR(isolate_pid, 0444, isolate_pid_show, NULL);
+#else
+static ssize_t isolate_pid_store(struct kobject *obj,
+				 struct kobj_attribute *attr,
+				 const char *page, size_t count)
+{
+	unsigned long val = simple_strtoul(page, NULL, 0);
+
+	spin_lock(&cluster_init_opt_clone_flags_lock);
+	if (val)
+		cluster_init_opt_clone_flags |= CLONE_NEWPID;
+	else
+		cluster_init_opt_clone_flags &= ~CLONE_NEWPID;
+	spin_unlock(&cluster_init_opt_clone_flags_lock);
+
+	return count;
+}
+
+static struct kobj_attribute isolate_pid_attr =
+	__ATTR(isolate_pid, 0644, isolate_pid_show, isolate_pid_store);
+#endif /* !CONFIG_KRG_PROC */
+
+static ssize_t isolate_net_show(struct kobject *obj,
+				struct kobj_attribute *attr,
+				char *page)
+{
+	int isolate = !!(cluster_init_opt_clone_flags & CLONE_NEWNET);
+	return sprintf(page, "%d\n", isolate);
+}
+
+static ssize_t isolate_net_store(struct kobject *obj,
+				 struct kobj_attribute *attr,
+				 const char *page, size_t count)
+{
+	unsigned long val = simple_strtoul(page, NULL, 0);
+
+	spin_lock(&cluster_init_opt_clone_flags_lock);
+	if (val)
+		cluster_init_opt_clone_flags |= CLONE_NEWNET;
+	else
+		cluster_init_opt_clone_flags &= ~CLONE_NEWNET;
+	spin_unlock(&cluster_init_opt_clone_flags_lock);
+
+	return count;
+}
+
+static struct kobj_attribute isolate_net_attr =
+	__ATTR(isolate_net, 0644, isolate_net_show, isolate_net_store);
+
+static ssize_t isolate_user_show(struct kobject *obj,
+				 struct kobj_attribute *attr,
+				 char *page)
+{
+	int isolate = !!(cluster_init_opt_clone_flags & CLONE_NEWUSER);
+	return sprintf(page, "%d\n", isolate);
+}
+
+static ssize_t isolate_user_store(struct kobject *obj,
+				  struct kobj_attribute *attr,
+				  const char *page, size_t count)
+{
+	unsigned long val = simple_strtoul(page, NULL, 0);
+
+	spin_lock(&cluster_init_opt_clone_flags_lock);
+	if (val)
+		cluster_init_opt_clone_flags |= CLONE_NEWUSER;
+	else
+		cluster_init_opt_clone_flags &= ~CLONE_NEWUSER;
+	spin_unlock(&cluster_init_opt_clone_flags_lock);
+
+	return count;
+}
+
+static struct kobj_attribute isolate_user_attr =
+	__ATTR(isolate_user, 0644, isolate_user_show, isolate_user_store);
 
 static ssize_t cluster_init_helper_show(struct kobject *obj,
 					struct kobj_attribute *attr,
@@ -91,6 +278,12 @@ static struct kobj_attribute cluster_init_helper_attr =
 	       cluster_init_helper_show, cluster_init_helper_store);
 
 static struct attribute *attrs[] = {
+	&isolate_uts_attr.attr,
+	&isolate_ipc_attr.attr,
+	&isolate_mnt_attr.attr,
+	&isolate_pid_attr.attr,
+	&isolate_net_attr.attr,
+	&isolate_user_attr.attr,
 	&cluster_init_helper_attr.attr,
 	NULL,
 };
