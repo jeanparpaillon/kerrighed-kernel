@@ -72,8 +72,8 @@ int shm_memory_insert_page(struct kddm_obj *objEntry, struct kddm_set *ctnr,
 
 	shp = local_shm_lock(ns, shm_id);
 
-	if (!shp) {
-		ret = -EINVAL;
+	if (IS_ERR(shp)) {
+		ret = PTR_ERR(shp);
 		goto error;
 	}
 
@@ -91,12 +91,9 @@ int shm_memory_insert_page(struct kddm_obj *objEntry, struct kddm_set *ctnr,
 	}
 	unlock_page(page);
 
-	put_ipc_ns(ns);
-
-	return 0;
-
 error:
 	put_ipc_ns(ns);
+
 	return ret;
 }
 
