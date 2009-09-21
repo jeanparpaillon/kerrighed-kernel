@@ -566,7 +566,7 @@ struct string_list_object *create_begin(struct config_item *parent,
 	char *path;
 	int err;
 
-	if (!current->mm)
+	if (current->flags & PF_KTHREAD)
 		return NULL;
 
 	err = global_lock_try_writelock(0);
@@ -962,7 +962,7 @@ static void delayed_drop_work(struct work_struct *work)
  */
 void global_config_drop(struct global_config_item *item)
 {
-	if (current->mm)
+	if (!(current->flags & PF_KTHREAD))
 		/* Global drop */
 		drop(item);
 	else {
@@ -987,7 +987,7 @@ global_config_attr_store_begin(struct config_item *item)
 	struct string_list_object *list;
 	char *path;
 
-	if (!current->mm)
+	if (current->flags & PF_KTHREAD)
 		return NULL;
 
 	path = get_full_path(item, NULL);
