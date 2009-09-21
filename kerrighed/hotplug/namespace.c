@@ -145,6 +145,6 @@ int krg_set_cluster_creator(void __user *arg)
 
 int hotplug_namespace_init(void)
 {
-	return register_proc_service(KSYS_HOTPLUG_SET_CREATOR,
-				     krg_set_cluster_creator);
+	return __register_proc_service(KSYS_HOTPLUG_SET_CREATOR,
+				       krg_set_cluster_creator, false);
 }
