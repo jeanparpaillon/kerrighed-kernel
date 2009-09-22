@@ -6,6 +6,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/nsproxy.h>
 #include <linux/slab.h>
 #include <linux/err.h>
 #include <linux/kmod.h>
@@ -153,6 +154,9 @@ static ssize_t scheduler_probe_attribute_store(struct config_item *item,
 	struct scheduler_probe *probe = to_scheduler_probe(item);
 	struct string_list_object *list;
 	ssize_t ret = 0;
+
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
 
 	if (probe_attr->store) {
 		list = global_config_attr_store_begin(item);
@@ -366,6 +370,9 @@ ssize_t scheduler_probe_source_attribute_store(struct config_item *item,
 	struct string_list_object *list;
 	ssize_t ret;
 	int handled;
+
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
 
 	list = global_config_attr_store_begin(item);
 	if (IS_ERR(list))
@@ -705,6 +712,9 @@ static struct config_group *probes_make_group(struct config_group *group,
 	int err;
 
 	ret = ERR_PTR(-EPERM);
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		goto out;
+
 	if (!IS_KERRIGHED_NODE(KRGFLAGS_RUNNING))
 		goto out;
 
@@ -802,6 +812,14 @@ static void scheduler_probe_drop(struct global_config_item *item)
 	module_put(p->group.cg_item.ci_type->ct_owner);
 }
 
+static int probes_allow_drop_item(struct config_group *group,
+				  struct config_item *item)
+{
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
+	return 0;
+}
+
 /**
  * This is a configfs callback function, which is invoked every time user
  * tries to remove directory in "/krg_scheduler/probes/" subdirectory.
@@ -826,6 +844,7 @@ static void probes_drop_item(struct config_group *group,
  */
 static struct configfs_group_operations probes_group_ops = {
 	.make_group = probes_make_group,
+	.allow_drop_item = probes_allow_drop_item,
 	.drop_item = probes_drop_item,
 };
 

@@ -6,6 +6,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/nsproxy.h>
 #include <linux/configfs.h>
 #include <linux/spinlock.h>
 #include <linux/list.h>
@@ -130,6 +131,9 @@ static ssize_t scheduler_port_attribute_store(struct config_item *item,
         ssize_t ret;
 	int handled;
 
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
+
 	list = global_config_attr_store_begin(item);
 	if (IS_ERR(list))
 		return PTR_ERR(list);
@@ -252,6 +256,9 @@ static int scheduler_port_allow_link(struct config_item *src,
 	struct string_list_object *list;
 	int err;
 
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
+
 	/* At most one source connected at a given time */
 	rcu_read_lock();
 	if (connected(src_port)) {
@@ -304,6 +311,14 @@ err_global_begin:
 	goto out;
 }
 
+static int scheduler_port_allow_drop_link(struct config_item *src,
+					  struct config_item *target)
+{
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
+	return 0;
+}
+
 /**
  * Configfs callback called every time symbolic link removal is initiated from
  * a scheduler_port directory
@@ -323,6 +338,7 @@ static struct configfs_item_operations port_item_ops = {
 	.show_attribute = scheduler_port_attribute_show,
 	.store_attribute = scheduler_port_attribute_store,
 	.allow_link = scheduler_port_allow_link,
+	.allow_drop_link = scheduler_port_allow_drop_link,
 	.drop_link = scheduler_port_drop_link,
 };
 
@@ -343,6 +359,9 @@ scheduler_port_make_group(struct config_group *group, const char *name)
 	struct module *peer_owner = NULL;
 	struct string_list_object *global_list = NULL;
 	int err;
+
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return ERR_PTR(-EPERM);
 
 	/* At most one source connected at a given time */
 	rcu_read_lock();
@@ -418,6 +437,14 @@ err_global_begin:
 	return ERR_PTR(err);
 }
 
+static int scheduler_port_allow_drop_item(struct config_group *group,
+					  struct config_item *item)
+{
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
+	return 0;
+}
+
 /*
  * Configfs callback called when user does rmdir in a scheduler port.
  * Initiates the destruction of the child port.
@@ -433,6 +460,7 @@ static void scheduler_port_drop_item(struct config_group *group,
 
 static struct configfs_group_operations port_group_ops = {
 	.make_group = scheduler_port_make_group,
+	.allow_drop_item = scheduler_port_allow_drop_item,
 	.drop_item = scheduler_port_drop_item,
 };
 

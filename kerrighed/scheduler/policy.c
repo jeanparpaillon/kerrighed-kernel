@@ -6,6 +6,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/nsproxy.h>
 #include <linux/configfs.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
@@ -82,6 +83,9 @@ static ssize_t scheduler_policy_attribute_store(struct config_item *item,
 	struct scheduler_policy *policy = to_scheduler_policy(item);
 	struct string_list_object *list;
 	ssize_t ret = -EACCES;
+
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
 
 	if (policy_attr->store) {
 		list = global_config_attr_store_begin(item);

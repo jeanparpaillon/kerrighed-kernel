@@ -7,6 +7,7 @@
 
 #include <linux/configfs.h>
 #include <linux/module.h>
+#include <linux/nsproxy.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -162,6 +163,9 @@ static ssize_t scheduler_store_attribute(struct config_item *item,
 	struct string_list_object *list;
 	ssize_t ret = -EACCES;
 
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
+
 	if (sa->store) {
 		list = global_config_attr_store_begin(item);
 		if (IS_ERR(list))
@@ -230,6 +234,10 @@ static struct config_group *scheduler_make_group(struct config_group *group,
 	struct string_list_object *global_policies;
 	int err;
 
+	ret = ERR_PTR(-EPERM);
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		goto out;
+
 	/* Cannot manage several scheduling policies yet */
 	ret = ERR_PTR(-EBUSY);
 	if (s->policy)
@@ -274,6 +282,14 @@ err_global_end:
 	goto out;
 }
 
+static int scheduler_allow_drop_item(struct config_group *group,
+				     struct config_item *item)
+{
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
+	return 0;
+}
+
 /*
  * Configfs callback called when the scheduling policy directory of a scheduler
  * is removed.
@@ -296,6 +312,7 @@ static void scheduler_drop_item(struct config_group *group,
  */
 static struct configfs_group_operations scheduler_group_ops = {
 	.make_group = scheduler_make_group,
+	.allow_drop_item = scheduler_allow_drop_item,
 	.drop_item = scheduler_drop_item,
 };
 
@@ -548,6 +565,9 @@ static struct config_group *schedulers_make_group(struct config_group *group,
 	int err;
 
 	ret = ERR_PTR(-EPERM);
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		goto out;
+
 	if (!IS_KERRIGHED_NODE(KRGFLAGS_RUNNING))
 		goto out;
 
@@ -591,6 +611,14 @@ err_global_end:
 	goto out;
 }
 
+static int schedulers_allow_drop_item(struct config_group *group,
+				      struct config_item *item)
+{
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
+	return 0;
+}
+
 /* Configfs callback when a scheduler's directory is removed */
 static void schedulers_drop_item(struct config_group *group,
 				 struct config_item *item)
@@ -605,6 +633,7 @@ static void schedulers_drop_item(struct config_group *group,
 
 static struct configfs_group_operations schedulers_group_ops = {
 	.make_group = schedulers_make_group,
+	.allow_drop_item = schedulers_allow_drop_item,
 	.drop_item = schedulers_drop_item,
 };
 

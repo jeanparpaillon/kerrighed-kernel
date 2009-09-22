@@ -6,6 +6,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/nsproxy.h>
 #include <linux/pid.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
@@ -295,6 +296,10 @@ struct config_item *process_subset_make_item(struct config_group *group,
 	pid_t id;
 	int err;
 
+	err = -EPERM;
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		goto err;
+
 	global_ids = global_config_make_item_begin(&group->cg_item, name);
 	if (IS_ERR(global_ids)) {
 		err = PTR_ERR(global_ids);
@@ -356,6 +361,14 @@ err:
 	return ERR_PTR(err);
 }
 
+static int process_subset_allow_drop_item(struct config_group *group,
+					  struct config_item *item)
+{
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
+	return 0;
+}
+
 /**
  * Removes ID from a subset.
  */
@@ -376,6 +389,7 @@ static void process_subset_drop_item(struct config_group *group,
 
 static struct configfs_group_operations process_subset_group_ops = {
 	.make_item = process_subset_make_item,
+	.allow_drop_item = process_subset_allow_drop_item,
 	.drop_item = process_subset_drop_item,
 };
 
@@ -526,6 +540,9 @@ static ssize_t pset_attribute_store(struct config_item *item,
 	struct pset_attribute *pset_attr = to_pset_attribute(attr);
 	struct process_set *pset = to_process_set(item);
 	ssize_t ret = 0;
+
+	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
+		return -EPERM;
 
 	if (pset_attr->store) {
 		struct string_list_object *list;
