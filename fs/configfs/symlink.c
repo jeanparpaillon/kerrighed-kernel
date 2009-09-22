@@ -207,6 +207,18 @@ int configfs_unlink(struct inode *dir, struct dentry *dentry)
 	parent_item = configfs_get_config_item(dentry->d_parent);
 	type = parent_item->ci_type;
 
+#ifdef CONFIG_KRG_SCHED
+	if (type && type->ct_item_ops &&
+	    type->ct_item_ops->allow_drop_link) {
+		ret = type->ct_item_ops->allow_drop_link(parent_item,
+							 sl->sl_target);
+		if (ret) {
+			config_item_put(parent_item);
+			goto out;
+		}
+	}
+#endif
+
 	spin_lock(&configfs_dirent_lock);
 	list_del_init(&sd->s_sibling);
 	spin_unlock(&configfs_dirent_lock);

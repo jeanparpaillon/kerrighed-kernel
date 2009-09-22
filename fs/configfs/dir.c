@@ -1373,6 +1373,24 @@ static int configfs_rmdir(struct inode *dir, struct dentry *dentry)
 		return -EINVAL;
 	}
 
+#ifdef CONFIG_KRG_SCHED
+	/* Get a working ref for the duration of this function */
+	item = configfs_get_config_item(dentry);
+
+	/* Drop reference from above, item already holds one. */
+	config_item_put(parent_item);
+
+	if (parent_item->ci_type->ct_group_ops
+	    && parent_item->ci_type->ct_group_ops->allow_drop_item) {
+		ret = parent_item->ci_type->ct_group_ops->allow_drop_item(
+			to_config_group(parent_item), item);
+		if (ret) {
+			config_item_put(item);
+			return ret;
+		}
+	}
+#endif
+
 	/* configfs_mkdir() shouldn't have allowed this */
 	BUG_ON(!subsys->su_group.cg_item.ci_type);
 	subsys_owner = subsys->su_group.cg_item.ci_type->ct_owner;
@@ -1402,7 +1420,11 @@ static int configfs_rmdir(struct inode *dir, struct dentry *dentry)
 
 		if (ret) {
 			if (ret != -EAGAIN) {
+#ifdef CONFIG_KRG_SCHED
+				config_item_put(item);
+#else
 				config_item_put(parent_item);
+#endif
 				return ret;
 			}
 
@@ -1412,11 +1434,13 @@ static int configfs_rmdir(struct inode *dir, struct dentry *dentry)
 		}
 	} while (ret == -EAGAIN);
 
+#ifndef CONFIG_KRG_SCHED
 	/* Get a working ref for the duration of this function */
 	item = configfs_get_config_item(dentry);
 
 	/* Drop reference from above, item already holds one. */
 	config_item_put(parent_item);
+#endif
 
 	if (item->ci_type)
 		dead_item_owner = item->ci_type->ct_owner;
