@@ -9,6 +9,8 @@ int reserve_pid(pid_t pid);
 int krg_pid_link_task(pid_t pid);
 int cancel_pid_reservation(pid_t pid);
 
+void pid_wait_quiescent(void);
+
 int pidmap_map_alloc(kerrighed_node_t node);
 
 #endif /* __EPM_PID_H__ */
