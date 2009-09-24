@@ -1295,6 +1295,9 @@ int import_vma_phys_file(struct epm_action *action,
 		r = __hashtable_add(file_table, key, file);
 		if (r)
 			goto err;
+
+		/* Get a reference until mm import is done */
+		get_file(file);
 	}
 	else {
 		/* File has already been imported for another VMA: reuse it. */

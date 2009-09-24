@@ -800,11 +800,7 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 		old->anon_vma = NULL;
 	}
 	if (old->vm_file) {
-		if (old->vm_file != vma->vm_file) {
-			printk ("reconcile_vma: file old %p - new %p\n",
-				old->vm_file, vma->vm_file);
-			BUG();
-		}
+		BUG_ON (old->vm_file->f_dentry != vma->vm_file->f_dentry);
 	}
 	else {
 		if (vma->vm_file) {
@@ -920,6 +916,13 @@ err_vma:
 }
 
 
+static void file_table_fput(void *_file, void *data)
+{
+	struct file *file = _file;
+
+	fput(file);
+}
+
 
 /** This function imports the list of VMA from the ghost
  *  @author Renaud Lottiaux
@@ -972,6 +975,9 @@ static int import_vmas (struct epm_action *action,
 	}
 
 exit:
+
+	__hashtable_foreach_data(file_table, file_table_fput, NULL);
+
 	hashtable_free(file_table);
 
 	return r;
