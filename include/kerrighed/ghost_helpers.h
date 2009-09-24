@@ -2,6 +2,7 @@
 #define __GHOST_HELPERS_H__
 
 #include <kerrighed/ghost_types.h>
+#include <linux/hashtable.h>
 
 struct epm_action;
 struct task_struct;
@@ -86,7 +87,8 @@ int export_mm_exe_file(struct epm_action *action, ghost_t *ghost,
 		       struct task_struct *tsk);
 
 int export_vma_file (struct epm_action *action, ghost_t * ghost,
-                     struct task_struct *tsk, struct vm_area_struct *vma);
+		     struct task_struct *tsk, struct vm_area_struct *vma,
+		     hashtable_t *file_table);
 
 int export_mnt_namespace (struct epm_action *action,
 			  ghost_t *ghost, struct task_struct *tsk);
@@ -119,7 +121,8 @@ int import_mm_exe_file(struct epm_action *action, ghost_t *ghost,
 		       struct task_struct *tsk);
 
 int import_vma_file (struct epm_action *action, ghost_t *ghost,
-                     struct task_struct *tsk, struct vm_area_struct *vma);
+		     struct task_struct *tsk, struct vm_area_struct *vma,
+		     hashtable_t *file_table);
 
 int import_mnt_namespace (struct epm_action *action,
 			  ghost_t *ghost, struct task_struct *tsk);

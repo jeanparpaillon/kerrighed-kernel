@@ -141,7 +141,7 @@ int export_one_open_file (struct epm_action *action,
 	if (action->type != EPM_CHECKPOINT
 	    && index != MMAPPED_FILE) {
 		if (!file->f_objid)
-			create_ctnr_file_object(file);
+			create_kddm_file_object(file);
 		check_file_struct_sharing (index, file, action);
 	}
 
@@ -304,17 +304,49 @@ exit:
 static int export_vma_phys_file(struct epm_action *action,
 				ghost_t *ghost,
 				struct task_struct *tsk,
-				struct vm_area_struct *vma)
+				struct vm_area_struct *vma,
+				hashtable_t *file_table)
 {
+	struct file *file = vma->vm_file;
+	unsigned long key = (unsigned long)file;
+	int export_file = 1;
 	int r;
 
 	if (action->type == EPM_CHECKPOINT) {
 		BUG_ON(action->checkpoint.shared != CR_SAVE_NOW);
 		r = cr_write_vma_phys_file_id(ghost, tsk, vma);
-	} else
-		r = export_one_open_file(action, ghost, tsk,
-					 MMAPPED_FILE, vma->vm_file);
+		goto done;
+	}
 
+	/* Don't try to share SHM files */
+	if (file->f_op == &krg_shm_file_operations)
+		goto export_file;
+
+	if (__hashtable_find(file_table, key))
+		/* File already exported. Don't export it again */
+		export_file = 0;
+	else {
+		/* First export ? Add the file in the export file table */
+		r = __hashtable_add(file_table, key, file);
+		if (r)
+			goto done;
+	}
+
+export_file:
+	r = ghost_write(ghost, &key, sizeof(unsigned long));
+	if (r)
+		goto done;
+
+	r = ghost_write(ghost, &export_file, sizeof(int));
+	if (r)
+		goto done;
+
+	/* Only export the file once */
+	if (export_file)
+		r = export_one_open_file(action, ghost, tsk,
+					 MMAPPED_FILE, file);
+
+done:
 	return r;
 }
 
@@ -330,7 +362,8 @@ static int export_vma_phys_file(struct epm_action *action,
 int export_vma_file (struct epm_action *action,
 		     ghost_t *ghost,
 		     struct task_struct *tsk,
-		     struct vm_area_struct *vma)
+                     struct vm_area_struct *vma,
+		     hashtable_t *file_table)
 {
 	int vm_file_type;
 	int r;
@@ -344,19 +377,20 @@ int export_vma_file (struct epm_action *action,
 
 	r = ghost_write (ghost, &vm_file_type, sizeof (int));
 	if (r)
-		goto err_write;
+		goto err;
 
 	switch (vm_file_type) {
 	case VM_FILE_NONE:
 		break;
 	case VM_FILE_PHYS:
-		r = export_vma_phys_file(action, ghost, tsk, vma);
+		  r = export_vma_phys_file(action, ghost, tsk, vma,
+					   file_table);
 		break;
 	default:
 		BUG();
 	}
 
-err_write:
+err:
 	return r;
 }
 
@@ -1228,22 +1262,53 @@ exit:
 int import_vma_phys_file(struct epm_action *action,
 			 ghost_t *ghost,
 			 struct task_struct *tsk,
-			 struct vm_area_struct *vma)
+			 struct vm_area_struct *vma,
+			 hashtable_t *file_table)
 {
+	unsigned long key;
 	struct file *file;
+	int import_file;
 	int r;
 
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_CHECKPOINT) {
 		r = cr_link_to_vma_phys_file(action, ghost, tsk, vma, &file);
-	else
-		r = import_one_open_file(action, ghost, tsk,
-					 MMAPPED_FILE, &file);
+		if (r)
+			goto err;
+		goto map_file;
+	}
+
+	r = ghost_read(ghost, &key, sizeof(unsigned long));
 	if (r)
 		goto err;
 
+	r = ghost_read(ghost, &import_file, sizeof(int));
+	if (r)
+		goto err;
+
+	if (import_file) {
+		/* First import ? Let's do the job ! */
+		r = import_one_open_file(action, ghost, tsk,
+					 MMAPPED_FILE, &file);
+		if (r)
+			goto err;
+
+		r = __hashtable_add(file_table, key, file);
+		if (r)
+			goto err;
+	}
+	else {
+		/* File has already been imported for another VMA: reuse it. */
+		file = __hashtable_find(file_table, key);
+		BUG_ON(file == NULL);
+		get_file(file);
+	}
+
+map_file:
 	vma->vm_file = file;
 	if (file->f_op && file->f_op->mmap)
 		r = file->f_op->mmap(file, vma);
+	if (r)
+		goto err;
 
 err:
 	return r;
@@ -1262,7 +1327,8 @@ err:
 int import_vma_file (struct epm_action *action,
 		     ghost_t *ghost,
                      struct task_struct *tsk,
-                     struct vm_area_struct *vma)
+                     struct vm_area_struct *vma,
+		     hashtable_t *file_table)
 {
 	int vm_file_type;
 	int r;
@@ -1278,7 +1344,8 @@ int import_vma_file (struct epm_action *action,
 		  break;
 
 	  case VM_FILE_PHYS:
-		  r = import_vma_phys_file(action, ghost, tsk, vma);
+		  r = import_vma_phys_file(action, ghost, tsk, vma,
+					   file_table);
 		  if (r)
 			  goto err_read;
 		  BUG_ON (!vma->vm_file);

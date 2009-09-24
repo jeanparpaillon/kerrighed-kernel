@@ -41,6 +41,8 @@
 #include "memory_io_linker.h"
 #include "mm_struct.h"
 
+#define FILE_TABLE_SIZE 16
+
 void unimport_mm_struct(struct task_struct *task);
 
 void __vma_link_file(struct vm_area_struct *vma);
@@ -269,7 +271,8 @@ out:
 static int export_one_vma (struct epm_action *action,
 			   ghost_t *ghost,
                            struct task_struct *tsk,
-                           struct vm_area_struct *vma)
+                           struct vm_area_struct *vma,
+			   hashtable_t *file_table)
 {
 	krgsyms_val_t vm_ops_type, initial_vm_ops_type;
 	int r;
@@ -286,7 +289,7 @@ static int export_one_vma (struct epm_action *action,
 
 #ifdef CONFIG_KRG_DVFS
 	/* Export the associated file */
-	r = export_vma_file (action, ghost, tsk, vma);
+	r = export_vma_file (action, ghost, tsk, vma, file_table);
 	if (r)
 		goto out;
 #endif
@@ -328,10 +331,16 @@ int export_vmas (struct epm_action *action,
                  struct task_struct *tsk)
 {
 	struct vm_area_struct *vma;
+	hashtable_t *file_table;
+
 	int r;
 
 	BUG_ON (tsk == NULL);
 	BUG_ON (tsk->mm == NULL);
+
+	file_table = hashtable_new (FILE_TABLE_SIZE);
+	if (!file_table)
+		return -ENOMEM;
 
 	/* Export process VMAs */
 
@@ -342,7 +351,7 @@ int export_vmas (struct epm_action *action,
 	vma = tsk->mm->mmap;
 
 	while (vma != NULL) {
-		r = export_one_vma (action, ghost, tsk, vma);
+		r = export_one_vma (action, ghost, tsk, vma, file_table);
 		if (r)
 			goto out;
 		vma = vma->vm_next;
@@ -355,6 +364,8 @@ int export_vmas (struct epm_action *action,
 	}
 
 out:
+	hashtable_free(file_table);
+
 	return r;
 }
 
@@ -834,7 +845,8 @@ fail:
 static int import_one_vma (struct epm_action *action,
 			   ghost_t *ghost,
                            struct task_struct *tsk,
-			   unsigned long *last_end)
+			   unsigned long *last_end,
+			   hashtable_t *file_table)
 {
 	struct vm_area_struct *vma;
 	krgsyms_val_t vm_ops_type, initial_vm_ops_type;
@@ -853,7 +865,7 @@ static int import_one_vma (struct epm_action *action,
 
 #ifdef CONFIG_KRG_DVFS
 	/* Import the associated file */
-	r = import_vma_file (action, ghost, tsk, vma);
+	r = import_vma_file (action, ghost, tsk, vma, file_table);
 	if (r)
 		goto err_vma;
 #endif
@@ -923,11 +935,16 @@ static int import_vmas (struct epm_action *action,
 			struct task_struct *tsk)
 {
 	unsigned long last_end = 0;
+	hashtable_t *file_table;
 	struct mm_struct *mm;
 	int nr_vma = -1;
 	int i, r;
 
 	BUG_ON (tsk == NULL);
+
+	file_table = hashtable_new (FILE_TABLE_SIZE);
+	if (!file_table)
+		return -ENOMEM;
 
 	mm = tsk->mm;
 
@@ -936,7 +953,7 @@ static int import_vmas (struct epm_action *action,
 		goto exit;
 
 	for (i = 0; i < nr_vma; i++) {
-		r = import_one_vma (action, ghost, tsk, &last_end);
+		r = import_one_vma (action, ghost, tsk, &last_end, file_table);
 		if (r)
 			/* import_mm_struct will cleanup */
 			goto exit;
@@ -955,6 +972,8 @@ static int import_vmas (struct epm_action *action,
 	}
 
 exit:
+	hashtable_free(file_table);
+
 	return r;
 }
 
