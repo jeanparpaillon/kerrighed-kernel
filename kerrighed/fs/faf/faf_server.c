@@ -77,27 +77,45 @@ void handle_faf_read (struct rpc_desc* desc,
 {
 	struct faf_rw_msg *msg = msgIn;
 	char *buf;
-	ssize_t r = -ENOMEM;
+	long buf_size = PAGE_SIZE;
+	ssize_t to_read, r = -ENOMEM;
 	sigset_t sigset, oldsigset;
 
-	buf = kmalloc (msg->count, GFP_KERNEL);
-	if (!buf)
+	buf = kmalloc (PAGE_SIZE, GFP_KERNEL);
+	if (buf == NULL)
 		goto exit;
-	sigfillset(&sigset);
-	sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
 
-	r = sys_read (msg->server_fd, buf, msg->count);
+	to_read = msg->count;
+	while (to_read > 0) {
+		if (to_read < PAGE_SIZE)
+			buf_size = to_read;
 
-	sigprocmask(SIG_SETMASK, &oldsigset, NULL);
-	flush_signals(current);
+		sigfillset(&sigset);
+		sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
 
-	rpc_pack_type(desc, r);
+		r = sys_read (msg->server_fd, buf, buf_size);
 
+		sigprocmask(SIG_SETMASK, &oldsigset, NULL);
+		flush_signals(current);
+
+		if (r > 0) {
+			rpc_pack_type(desc, r);
+			rpc_pack(desc, 0, buf, r);
+		}
+
+		/* Check if we have reach the end of the file */
+		if (r < buf_size)
+			break;
+		to_read -= r;
+	}
+	/* Pack the end of transmission mark (0) */
 	if (r > 0)
-		rpc_pack(desc, 0, buf, r);
-	kfree (buf);
+		r = 0;
+	/* else, pack the error value */
 exit:
-	return;
+	rpc_pack_type(desc, r);
+	if (buf)
+		kfree (buf);
 }
 
 /** Handler for writing in a FAF open file.
@@ -110,31 +128,49 @@ void handle_faf_write (struct rpc_desc* desc,
 		       void *msgIn, size_t size)
 {
 	struct faf_rw_msg *msg = msgIn;
+	long to_recv;
 	char *buf;
-	ssize_t r = -ENOMEM;
+	ssize_t buf_size = PAGE_SIZE;
+	ssize_t r, nr_received = -ENOMEM;
 	sigset_t sigset, oldsigset;
 
-	buf = kmalloc (msg->count, GFP_KERNEL);
-	if (!buf)
-		goto exit;
+	buf = kmalloc (PAGE_SIZE, GFP_KERNEL);
+	if (buf == NULL)
+		goto err;
 
-	if (rpc_unpack(desc, 0, buf, msg->count) == RPC_ECLOSE) {
-		r = -EPIPE;
-		goto exit;
+	nr_received = 0;
+	to_recv = msg->count;
+	while (to_recv > 0) {
+		if (to_recv < PAGE_SIZE)
+			buf_size = to_recv;
+		if(rpc_unpack(desc, 0, buf, to_recv) == RPC_ECLOSE) {
+			nr_received = -EPIPE;
+			goto err;
+		}
+		sigfillset(&sigset);
+		sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
+
+		r = sys_write (msg->server_fd, buf, buf_size);
+
+		sigprocmask(SIG_SETMASK, &oldsigset, NULL);
+		flush_signals(current);
+
+		/* The last write failed. Break the write sequence */
+		if (r < 0) {
+			nr_received = r;
+			goto err;
+		}
+		nr_received += r;
+		to_recv -= buf_size;
 	}
-
-	sigfillset(&sigset);
-	sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
-
-	r = sys_write (msg->server_fd, buf, msg->count);
-
-	sigprocmask(SIG_SETMASK, &oldsigset, NULL);
-	flush_signals(current);
-
-	rpc_pack_type(desc, r);
-exit:
+err:
+	rpc_pack_type(desc, nr_received);
+	if (nr_received < 0)
+		rpc_cancel(desc);
 	if (buf)
 		kfree (buf);
+
+	return;
 }
 
 /** Handler for doing an IOCTL in a FAF open file.

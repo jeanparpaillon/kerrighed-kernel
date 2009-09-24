@@ -142,12 +142,13 @@ ssize_t krg_faf_read (struct file * file,
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_rw_msg msg;
-	ssize_t r;
+	ssize_t nr;
+	long received = 0;
 	char *kbuff;
 	int err;
 	struct rpc_desc* desc;
 
-	kbuff = kmalloc (count, GFP_KERNEL);
+	kbuff = kmalloc (PAGE_SIZE, GFP_KERNEL);
 	if (!kbuff)
 		return -ENOMEM;
 
@@ -156,24 +157,31 @@ ssize_t krg_faf_read (struct file * file,
 
 	desc = rpc_begin(RPC_FAF_READ, data->server_id);
 
+	/* Send read request */
 	rpc_pack_type(desc, msg);
 
-	r = unpack_res(desc);
-
-	if (r > 0) {
-		rpc_unpack(desc, 0, kbuff, r);
-
-		err = copy_to_user (buf, kbuff, r);
-		BUG_ON(err);
-		if (err)
-			r = -EFAULT;
+	/* Get number of bytes to receive */
+	nr = unpack_res(desc);
+	while (nr > 0) {
+		/* Receive file data */
+		rpc_unpack(desc, 0, kbuff, nr);
+		err = copy_to_user (&buf[received], kbuff, nr);
+		if (err) {
+			nr = -EFAULT;
+			goto err;
+		}
+		received += nr;
+		nr = unpack_res(desc);
 	}
-
+	if (nr == 0)
+		nr = received;
+	/* Else, we received an error */
+err:
 	rpc_end(desc, 0);
 
 	kfree (kbuff);
 
-	return r;
+	return nr;
 }
 
 /** Kerrighed kernel hook for FAF write function.
@@ -189,35 +197,47 @@ ssize_t krg_faf_write (struct file * file,
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_rw_msg msg;
-	ssize_t r = 0;
+	ssize_t buf_size = PAGE_SIZE, r = 0;
+	long offset = 0;
+	long to_send = count;
 	char *kbuff;
 	int err;
 	struct rpc_desc* desc;
 
-	kbuff = kmalloc (count, GFP_KERNEL);
+	kbuff = kmalloc (PAGE_SIZE, GFP_KERNEL);
 	if (!kbuff)
 		return -ENOMEM;
-
-	err = copy_from_user (kbuff, buf, count);
-	BUG_ON(err); /* TODO */
 
 	msg.server_fd = data->server_fd;
 	msg.count = count;
 
 	desc = rpc_begin(RPC_FAF_WRITE, data->server_id);
 
+	/* Send write request */
 	rpc_pack_type(desc, msg);
 
-	rpc_pack(desc, 0, kbuff, count);
+	while (to_send > 0) {
+		if (to_send < PAGE_SIZE)
+			buf_size = to_send;
 
-	kfree (kbuff);
+		err = copy_from_user (kbuff, &buf[offset], buf_size);
+		if (err) {
+			r = -EFAULT;
+			goto err;
+		}
+		rpc_pack(desc, 0, kbuff, buf_size);
 
+		to_send -= buf_size;
+		offset += buf_size;
+	}
 	r = unpack_res(desc);
-
+err:
 	rpc_end(desc, 0);
 
 	if (r == -EPIPE)
 		send_sig(SIGPIPE, current, 0);
+
+	kfree (kbuff);
 
 	return r;
 }
