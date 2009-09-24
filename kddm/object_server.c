@@ -624,8 +624,10 @@ void handle_object_receive (struct rpc_desc* desc,
 	  case INV_NO_COPY:
 		  if (msg->flags & KDDM_SYNC_OBJECT)
 			  obj_state = READ_COPY;
-		  else
+		  else {
+			  change_prob_owner(obj_entry, kerrighed_node_id);
 			  obj_state = WRITE_GHOST;
+		  }
 		  break;
 
 	  case WAIT_OBJ_WRITE:
@@ -641,6 +643,7 @@ void handle_object_receive (struct rpc_desc* desc,
 		  break;
 
 	  case WAIT_OBJ_READ:
+		  change_prob_owner(obj_entry, desc->client);
 		  obj_state = msg->object_state;
 		  break;
 
