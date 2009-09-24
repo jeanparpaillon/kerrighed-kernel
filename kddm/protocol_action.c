@@ -455,8 +455,8 @@ void transfer_write_access_and_unlock(struct kddm_set * set,
 	msg.owner_info = *master_info;
 
 	if (object_frozen_or_pinned(obj_entry, set)) {
-		queue_event(delayed_transfer_write_access, dest_node, &msg,
-			    sizeof(msg_injection_t));
+		queue_event(delayed_transfer_write_access, dest_node, set,
+			    obj_entry, objid, &msg, sizeof(msg_injection_t));
 		put_kddm_obj_entry(set, obj_entry, objid);
 
 		return;
@@ -815,6 +815,8 @@ typedef struct kddm_delayed_action {
 	struct delayed_work work;
 	queue_event_handler_t fn;
 	kerrighed_node_t sender;
+	struct kddm_set *set;
+	objid_t objid;
 	void *data;
 } kddm_delayed_action_t;
 
@@ -840,6 +842,9 @@ void kddm_workqueue_handler(struct work_struct *work)
 
 void queue_event(queue_event_handler_t fn,
 		 kerrighed_node_t sender,
+		 struct kddm_set *set,
+		 struct kddm_obj * obj_entry,
+		 objid_t objid,
 		 void *dataIn,
 		 size_t data_size)
 {
@@ -852,6 +857,8 @@ void queue_event(queue_event_handler_t fn,
 	memcpy(data, dataIn, data_size);
 	action->fn = fn;
 	action->sender = sender;
+	action->set = set;
+	action->objid = objid;
 	action->data = data;
 
 	INIT_DELAYED_WORK(&action->work, kddm_workqueue_handler);

@@ -72,8 +72,8 @@ static inline int __handle_invalidation_ack (kerrighed_node_t sender,
 	 * cannot do it because of the frozen state.
 	 */
 	if (object_frozen_or_pinned (obj_entry, set)) {
-		queue_event (__handle_invalidation_ack, sender, msg,
-			     sizeof (msg_server_t));
+		queue_event (__handle_invalidation_ack, sender, set, obj_entry,
+			     msg->objid, msg, sizeof (msg_server_t));
 
 		goto exit;
 	}
@@ -345,7 +345,8 @@ int __handle_object_invalidation (kerrighed_node_t sender,
 					&set);
 
 	if (object_frozen_or_pinned (obj_entry, set)) {
-		queue_event (__handle_object_invalidation, sender, msg,
+		queue_event (__handle_object_invalidation, sender, set,
+			     obj_entry, msg->objid, msg,
 			     sizeof (msg_server_t));
 
 		goto exit;
@@ -368,7 +369,8 @@ int __handle_object_invalidation (kerrighed_node_t sender,
 
 	  case WAIT_OBJ_READ:
 	  case INV_FILLING:
-		  queue_event (__handle_object_invalidation, sender, msg,
+		  queue_event (__handle_object_invalidation, sender, set,
+			       obj_entry, msg->objid, msg,
 			       sizeof (msg_server_t));
 		  break;
 
@@ -426,7 +428,8 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 
 	if (object_frozen_or_pinned (obj_entry, set)) {
 
-		queue_event (__handle_object_remove_req, sender, msg,
+		queue_event (__handle_object_remove_req, sender, set,
+			     obj_entry, msg->objid, msg,
 			     sizeof (msg_server_t));
 
 		goto exit;
@@ -467,7 +470,8 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 		  goto exit_no_unlock;
 
 	  case INV_FILLING:
-		  queue_event (__handle_object_remove_req, sender, msg,
+		  queue_event (__handle_object_remove_req, sender, set,
+			       obj_entry, msg->objid, msg,
 			       sizeof (msg_server_t));
 		  break;
 
@@ -525,7 +529,8 @@ static inline int __handle_send_ownership_req (kerrighed_node_t sender,
 		  break;
 
 	  case INV_FILLING:
-		  queue_event (__handle_send_ownership_req, sender, msg,
+		  queue_event (__handle_send_ownership_req, sender, set,
+			       obj_entry, msg->objid, msg,
 			       sizeof (msg_injection_t));
 		  break;
 
@@ -719,8 +724,8 @@ int __handle_no_object (kerrighed_node_t sender,
 					      msg->objid, &set);
 
 	if (object_frozen (obj_entry, set)) {
-		queue_event (__handle_no_object, sender, msg,
-			     sizeof (msg_server_t));
+		queue_event (__handle_no_object, sender, set, obj_entry,
+			     msg->objid, msg, sizeof (msg_server_t));
 
 		goto exit;
 	}
@@ -859,7 +864,8 @@ static inline int __handle_object_copy_req (kerrighed_node_t sender,
 			send_no_object (set, obj_entry, msg->objid,
 					msg->reply_node, send_ownership);
 		else
-			queue_event (__handle_object_copy_req, sender, msg,
+			queue_event (__handle_object_copy_req, sender, set,
+				     obj_entry, msg->objid, msg,
 				     sizeof (msg_server_t));
 		goto exit;
 	}
@@ -1036,7 +1042,8 @@ send_copy:
 	  case WAIT_OBJ_WRITE:
 	  case WAIT_ACK_INV:
 	  case INV_FILLING:
-		  queue_event (__handle_object_copy_req, sender, msg,
+		  queue_event (__handle_object_copy_req, sender, set,
+			       obj_entry, msg->objid, msg,
 			       sizeof (msg_server_t));
 		  break;
 
@@ -1084,7 +1091,8 @@ int __handle_object_remove_to_mgr_req (kerrighed_node_t sender,
 					      msg->objid, &set);
 
 	if (object_frozen_or_pinned(obj_entry, set)) {
-		queue_event (__handle_object_remove_to_mgr_req, sender, msg,
+		queue_event (__handle_object_remove_to_mgr_req, sender, set,
+			     obj_entry, msg->objid, msg,
 			     sizeof (msg_server_t));
 		goto exit;
 	}
@@ -1110,7 +1118,8 @@ int __handle_object_remove_to_mgr_req (kerrighed_node_t sender,
 	  case WAIT_CHG_OWN_ACK:
 	  case WAIT_ACK_INV:
 	  case INV_FILLING:
-		  queue_event (__handle_object_remove_to_mgr_req, sender, msg,
+		  queue_event (__handle_object_remove_to_mgr_req, sender, set,
+			       obj_entry, msg->objid, msg,
 			       sizeof (msg_server_t));
 		  break;
 
