@@ -6,8 +6,10 @@
 
 #include <linux/pid_namespace.h>
 #include <linux/pid.h>
+#include <linux/sched.h>
 #include <linux/rwsem.h>
 #include <kerrighed/pid.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
 #include <net/krgrpc/rpc.h>
@@ -192,6 +194,33 @@ void krg_free_pidmap(struct upid *upid)
 
 	if (pidmap_ns)
 		__free_pidmap(&__upid);
+}
+
+void pidmap_map_cleanup(struct krg_namespace *krg_ns)
+{
+	kerrighed_node_t node;
+	struct pid_namespace *ns;
+
+	BUG_ON(num_online_krgnodes());
+
+	/*
+	 * Wait until all PIDs are ready to be reused
+	 * Restarted processes may have created pid kddm objects which logic
+	 * delays the actual free of the pidmap entry after the last user is
+	 * reaped.
+	 */
+	pid_wait_quiescent();
+
+	_kddm_remove_object(pidmap_map_kddm_set, 0);
+
+	for (node = 0; node < KERRIGHED_MAX_NODES; node++) {
+		ns = foreign_pidmap[node];
+		if (ns) {
+			BUG_ON(next_pidmap(ns, 1) >= 0);
+			put_pid_ns(ns);
+			foreign_pidmap[node] = NULL;
+		}
+	}
 }
 
 void epm_pidmap_start(void)

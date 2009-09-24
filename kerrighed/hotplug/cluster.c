@@ -382,6 +382,9 @@ static bool krg_container_may_conflict(struct krg_namespace *ns)
 
 static int krg_container_cleanup(struct krg_namespace *ns)
 {
+#ifdef CONFIG_KRG_EPM
+	pidmap_map_cleanup(ns);
+#endif
 #ifdef CONFIG_KRG_IPC
 	cleanup_ipc_objects ();
 #endif

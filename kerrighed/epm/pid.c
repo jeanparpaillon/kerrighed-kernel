@@ -719,6 +719,11 @@ out:
 /*--------------------------------------------------------------------------*
  *--------------------------------------------------------------------------*/
 
+void pid_wait_quiescent(void)
+{
+	flush_work(&put_pid_work);
+}
+
 void epm_pid_start(void)
 {
 	unsigned long cache_flags = SLAB_PANIC;
