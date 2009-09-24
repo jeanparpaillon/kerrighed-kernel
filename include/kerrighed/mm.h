@@ -73,6 +73,8 @@ void use_mm(struct mm_struct *mm);
 void unuse_mm(struct mm_struct *mm);
 #endif
 
+void mm_struct_pin(struct mm_struct *mm);
+void mm_struct_unpin(struct mm_struct *mm);
 
 /** Kerrighed Kernel Hooks **/
 

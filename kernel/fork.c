@@ -480,6 +480,7 @@ struct mm_struct * mm_init(struct mm_struct * mm, struct task_struct *p)
 #endif
 #ifdef CONFIG_KRG_EPM
 	atomic_set(&mm->mm_ltasks, 1);
+	init_rwsem(&mm->remove_sem);
 #endif
 	atomic_set(&mm->mm_users, 1);
 	atomic_set(&mm->mm_count, 1);

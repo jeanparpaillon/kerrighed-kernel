@@ -109,7 +109,15 @@ err_put_mm:
 	return NULL;
 }
 
+void mm_struct_pin(struct mm_struct *mm)
+{
+	down_read(&mm->remove_sem);
+}
 
+void mm_struct_unpin(struct mm_struct *mm)
+{
+	up_read(&mm->remove_sem);
+}
 
 /* Unique mm_struct id generator root */
 unique_id_root_t mm_struct_unique_id_root;
@@ -378,6 +386,7 @@ static void kcb_mm_release(struct mm_struct *mm, int notify)
 		/* Not a real exit: clean up VMAs */
 		BUG_ON (atomic_read(&mm->mm_ltasks) != 0);
 		clean_up_mm_struct(mm);
+		mm_struct_unpin(mm);
 		return;
 	}
 

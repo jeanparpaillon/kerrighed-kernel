@@ -218,6 +218,7 @@ struct mm_struct {
 	pgd_t * pgd;
 #ifdef CONFIG_KRG_MM
 	atomic_t mm_tasks;			/* How many tasks sharing this mm_struct cluster wide */
+	struct rw_semaphore remove_sem;         /* Protect struct remove during a migration */
 #endif
 #ifdef CONFIG_KRG_EPM
 	atomic_t mm_ltasks;			/* How many tasks sharing this mm_struct locally */

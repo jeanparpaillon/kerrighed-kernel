@@ -49,6 +49,10 @@ int mm_remove_object (void *object,
 {
 	struct mm_struct *mm = object;
 
+	/* Ensure that no thread uses this signal_struct copy */
+	down_write(&mm->remove_sem);
+	up_write(&mm->remove_sem);
+
 	/* Take the mmap_sem to avoid race condition with clean_up_mm_struct */
 
 	atomic_inc(&mm->mm_count);

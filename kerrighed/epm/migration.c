@@ -183,6 +183,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	 */
 	krg_sighand_pin(tsk->sighand);
 	krg_signal_pin(tsk->signal);
+	mm_struct_pin(tsk->mm);
 
 	remote_pid = send_task(desc, tsk, regs, &migration);
 
@@ -192,6 +193,8 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 
 	if (remote_pid < 0) {
 		struct task_kddm_object *obj;
+
+		mm_struct_unpin(tsk->mm);
 
 		krg_signal_writelock(tsk->tgid);
 		krg_signal_unlock(tsk->tgid);
