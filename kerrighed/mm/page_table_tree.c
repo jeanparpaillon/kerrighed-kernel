@@ -54,6 +54,7 @@ static inline void page_put_kddm_count(struct kddm_set *set,
 	 * Such removal would lead to a double page free...
 	 */
 	obj_entry->object = NULL;
+	BUG_ON(TEST_OBJECT_LOCKED(obj_entry));
 	free_kddm_obj_entry(set, obj_entry, page->index);
 	page->obj_entry = NULL;
 }
@@ -448,14 +449,16 @@ static inline void __kddm_pt_insert_object(struct mm_struct *mm,
 {
 	pte_t entry;
 
-	entry = mk_pte(page, vm_get_page_prot(VM_READ));
-	set_pte_at(mm, addr, ptep, entry);
-
-	page->obj_entry = obj_entry;
-	atomic_inc(&page->_kddm_count);
-	inc_mm_counter(mm, anon_rss);
-
-	__SetPageUptodate(page);
+	if (page) {
+		entry = mk_pte(page, vm_get_page_prot(VM_READ));
+		set_pte_at(mm, addr, ptep, entry);
+		page->obj_entry = obj_entry;
+		atomic_inc(&page->_kddm_count);
+		inc_mm_counter(mm, anon_rss);
+		__SetPageUptodate(page);
+	}
+	else
+		set_pte_obj_entry(ptep, obj_entry);
 }
 
 
@@ -506,13 +509,12 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 				    struct kddm_obj *obj_entry, objid_t objid,
 				    int break_type)
 {
-	struct page *new_page, *old_page = obj_entry->object;
+	struct page *new_page = NULL, *old_page = obj_entry->object;
 	struct mm_struct *mm = set->obj_set;
 	struct kddm_obj *new_obj;
+	unsigned long addr = objid * PAGE_SIZE;
 	spinlock_t *ptl;
 	pte_t *ptep;
-
-	/* COW and invalidate entry */
 
 	if (!old_page)
 		return obj_entry;
@@ -520,40 +522,57 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 	BUG_ON(page_kddm_count(old_page) == 0);
 	BUG_ON(!TEST_OBJECT_LOCKED(obj_entry));
 
-	if ((page_kddm_count(old_page) == 1) && (page_mapcount(old_page) == 1))
-		return obj_entry;
+	wait_lock_kddm_page(old_page);
+	if (page_kddm_count(old_page) == 1) {
+		if (page_mapcount(old_page) == 1) {
+			/* Page not shared, nothing to do */
+			unlock_kddm_page(old_page);
+			return obj_entry;
+		}
+		else {
+			/* Page shared with a regular MM, no KDDM COW but a
+			 * regular page COW is needed. Reuse the obj entry. */
+			atomic_dec(&old_page->_kddm_count);
+			old_page->obj_entry = NULL;
+			unlock_kddm_page(old_page);
+			new_obj = obj_entry;
+		}
+	}
+	else {
+		/* Page shared with another KDDM. COW the obj entry */
+		BUG_ON(atomic_dec_and_test(&old_page->_kddm_count));
+		new_obj = dup_kddm_obj_entry(obj_entry);
+		CLEAR_OBJECT_LOCKED(obj_entry);
+		unlock_kddm_page(old_page);
+	}
 
-	new_obj = dup_kddm_obj_entry(obj_entry);
+	if (break_type == KDDM_BREAK_COW_COPY) {
+		new_page = alloc_page (GFP_ATOMIC);
+		if (new_page == NULL)
+			return ERR_PTR(-ENOMEM);
 
-	new_page = alloc_page (GFP_ATOMIC);
-	if (new_page == NULL)
-		return NULL;
-
-	copy_user_highpage(new_page, old_page, objid * PAGE_SIZE, NULL);
+		copy_user_highpage(new_page, old_page, addr, NULL);
+	}
 
 	new_obj->object = new_page;
+
 	SET_OBJECT_LOCKED(new_obj);
 
-	wait_lock_kddm_page(old_page);
-
-	ptep = get_locked_pte(mm, objid * PAGE_SIZE, &ptl);
+	ptep = get_locked_pte(mm, addr, &ptl);
 	BUG_ON (!ptep);
 	BUG_ON (!pte_present(*ptep));
 
 	/* Unmap old page and map the new one in the set mm */
 
-	unmap_page (mm, objid * PAGE_SIZE, old_page, ptep);
-	__kddm_pt_insert_object (mm, new_page, objid * PAGE_SIZE, ptep,
-				 new_obj);
+	unmap_page (mm, addr, old_page, ptep);
+
+	__kddm_pt_insert_object (mm, new_page, addr, ptep, new_obj);
 
 	pte_unmap_unlock(ptep, ptl);
 
-	add_page_anon_rmap (mm, new_page, objid * PAGE_SIZE);
+	if (new_page)
+		add_page_anon_rmap (mm, new_page, addr);
 
-	CLEAR_OBJECT_LOCKED(obj_entry);
-	page_put_kddm_count(set, old_page);
-
-	unlock_kddm_page(old_page);
 	page_cache_release (old_page);
 
 	return new_obj;
@@ -706,6 +725,7 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 		return;
 
 	if (pte_obj_entry(ptep)) {
+		BUG_ON(TEST_OBJECT_LOCKED(obj_entry));
 		free_kddm_obj_entry(set, obj_entry, addr / PAGE_SIZE);
 		pte_clear(mm, addr, ptep);
 	}

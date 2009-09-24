@@ -363,9 +363,6 @@ struct kddm_obj *send_copy_on_write_and_inv(struct kddm_set *set,
 					    kerrighed_node_t dest,
 					    int flags)
 {
-	obj_entry = kddm_break_cow_object(set, obj_entry, objid,
-					  KDDM_BREAK_COW_COPY);
-
 	send_copy_on_write (set, obj_entry, objid, dest, 0);
 
 	kddm_invalidate_local_object_and_unlock(obj_entry, set, objid,

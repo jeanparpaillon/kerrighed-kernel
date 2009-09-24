@@ -208,7 +208,8 @@ static inline void put_kddm_obj_entry (struct kddm_set *set,
 				       struct kddm_obj *obj_entry,
 				       objid_t objid)
 {
-	CLEAR_OBJECT_LOCKED(obj_entry);
+	if (obj_entry)
+		CLEAR_OBJECT_LOCKED(obj_entry);
 
 	kddm_obj_path_unlock (set, objid);
 }

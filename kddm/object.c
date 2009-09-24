@@ -372,6 +372,12 @@ void kddm_invalidate_local_object_and_unlock(struct kddm_obj * obj_entry,
 	BUG_ON(obj_entry->object == NULL);
 	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
+	obj_entry = kddm_break_cow_object (set, obj_entry,objid,
+					   KDDM_BREAK_COW_INV);
+
+	if (!obj_entry)
+		goto done;
+
 	/* Inform interface linkers to invalidate the object */
 	kddm_change_obj_state(set, obj_entry, objid, INV_COPY);
 	if (state != INV_COPY)
@@ -382,6 +388,7 @@ void kddm_invalidate_local_object_and_unlock(struct kddm_obj * obj_entry,
 	/* Ask the IO linker to invalidate the object */
 	kddm_io_invalidate_object(obj_entry, set, objid);
 
+done:
 	put_kddm_obj_entry(set, obj_entry, objid);
 }
 
