@@ -97,6 +97,7 @@ enum pageflags {
 #ifdef CONFIG_KRG_MM
 	PG_to_invalidate,
 	PG_to_set_read_only,
+	PG_locked_kddm,           /* Page is locked in kddm layer */
 #ifdef CONFIG_DEBUG_PAGEALLOC
 	PG_in_vec,
 #endif
@@ -283,6 +284,8 @@ PAGEFLAG_FALSE(Uncached)
 #ifdef CONFIG_KRG_MM
 PAGEFLAG(ToInvalidate, to_invalidate)
 PAGEFLAG(ToSetReadOnly, to_set_read_only)
+PAGEFLAG(LockedKDDM, locked_kddm)
+TESTSCFLAG(LockedKDDM, locked_kddm)
 #ifdef CONFIG_DEBUG_PAGEALLOC
 PAGEFLAG(InVec, in_vec)
 #endif

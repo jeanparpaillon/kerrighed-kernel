@@ -26,10 +26,16 @@
 
 
 
-static void wait_lock_page (struct page *page)
+/* Used to ensure atomicity of operations on kddm_count and obj_entry fields */
+static inline void wait_lock_kddm_page (struct page *page)
 {
-	while (TestSetPageLocked(page))
+       while (TestSetPageLockedKDDM(page))
 		cpu_relax();
+}
+
+static inline void unlock_kddm_page (struct page *page)
+{
+	ClearPageLockedKDDM(page);
 }
 
 
@@ -90,7 +96,7 @@ static inline struct page *replace_zero_page(struct mm_struct *mm,
 	if (!new_page)
 		return NULL;
 
-	BUG_ON (TestSetPageLocked(new_page));
+	BUG_ON (TestSetPageLockedKDDM(new_page));
 
 	unmap_page (mm, addr, page, ptep);
 
@@ -116,7 +122,7 @@ static inline void init_pte(struct mm_struct *mm,
 		return;
 	page = pfn_to_page(pte_pfn(*ptep));
 
-	wait_lock_page(page);
+	wait_lock_kddm_page(page);
 
 	if (!PageAnon(page)) {
 		if (!(page == ZERO_PAGE(NULL)))
@@ -124,7 +130,7 @@ static inline void init_pte(struct mm_struct *mm,
 		new_page = replace_zero_page(mm, vma, page, ptep,
 					     objid * PAGE_SIZE);
 		/* new_page is returned locked */
-		unlock_page(page);
+		unlock_kddm_page(page);
 		page = new_page;
 	}
 
@@ -144,7 +150,7 @@ static inline void init_pte(struct mm_struct *mm,
 
 	page->obj_entry = obj_entry;
 done:
-	unlock_page(page);
+	unlock_kddm_page(page);
 }
 
 
@@ -528,7 +534,7 @@ struct kddm_obj *kddm_pt_cow_object(struct kddm_set *set,
 	new_obj->object = new_page;
 	SET_OBJECT_LOCKED(new_obj);
 
-	wait_lock_page(old_page);
+	wait_lock_kddm_page(old_page);
 
 	ptep = get_locked_pte(mm, objid * PAGE_SIZE, &ptl);
 	BUG_ON (!ptep);
@@ -547,7 +553,7 @@ struct kddm_obj *kddm_pt_cow_object(struct kddm_set *set,
 	CLEAR_OBJECT_LOCKED(obj_entry);
 	page_put_kddm_count(set, old_page);
 
-	unlock_page(old_page);
+	unlock_kddm_page(old_page);
 	page_cache_release (old_page);
 
 	return new_obj;
@@ -707,9 +713,9 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 		page = (struct page *) obj_entry->object;
 		BUG_ON(!page);
 
-		wait_lock_page(page);
+		wait_lock_kddm_page(page);
 		page_put_kddm_count(set, page);
-		unlock_page(page);
+		unlock_kddm_page(page);
 	}
 }
 
