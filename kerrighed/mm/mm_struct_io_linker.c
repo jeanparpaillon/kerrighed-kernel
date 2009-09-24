@@ -173,6 +173,7 @@ struct iolinker_struct mm_struct_io_linker = {
 	export_object:     mm_export_object,
 	import_object:     mm_import_object,
 	remove_object:     mm_remove_object,
+	default_owner:     unique_id_default_owner,
 	linker_name:       "MM ",
 	linker_id:         MM_STRUCT_LINKER,
 };

@@ -443,7 +443,7 @@ void mm_struct_init (void)
 	mm_struct_kddm_set = create_new_kddm_set(kddm_def_ns,
 						 MM_STRUCT_KDDM_ID,
 						 MM_STRUCT_LINKER,
-						 KDDM_RR_DEF_OWNER,
+						 KDDM_CUSTOM_DEF_OWNER,
 						 sizeof (struct mm_struct),
 						 KDDM_LOCAL_EXCLUSIVE);
 
