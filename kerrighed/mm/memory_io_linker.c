@@ -175,7 +175,7 @@ void memory_change_state (struct kddm_obj * obj_entry,
 	switch (state) {
 	  case READ_COPY :
 	  case READ_OWNER :
-		  BUG_ON (TestSetPageLocked(page));
+		  wait_lock_page(page);
 
 		  if (page_mapped(page)) {
 			  BUG_ON ((page->mapping == NULL) &&

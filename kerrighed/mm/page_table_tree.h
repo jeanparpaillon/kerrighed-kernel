@@ -27,7 +27,11 @@ extern struct kddm_set_ops kddm_pt_set_ops;
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-
+static inline void wait_lock_page (struct page *page)
+{
+	while (TestSetPageLocked(page))
+		cpu_relax();
+}
 
 int kddm_pt_invalidate (struct kddm_set *set, objid_t objid,
 			struct kddm_obj *obj_entry, struct page *page);
