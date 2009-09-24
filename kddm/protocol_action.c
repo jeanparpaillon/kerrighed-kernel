@@ -862,7 +862,7 @@ void queue_event(queue_event_handler_t fn,
 		 size_t data_size)
 {
 	struct kddm_delayed_action *action;
-	int delay = 100 * HZ / 1000;
+	int delay = 1;
 	void *data;
 
 	action = kmem_cache_alloc(kddm_da_cachep, GFP_ATOMIC);
@@ -879,6 +879,8 @@ void queue_event(queue_event_handler_t fn,
 	spin_lock(&set->event_lock);
 	list_add_tail(&action->list, &set->event_list);
 	spin_unlock(&set->event_lock);
+
+	SET_OBJECT_PENDING(obj_entry);
 
 	queue_delayed_work(kddm_wq, &action->work, delay);
 }

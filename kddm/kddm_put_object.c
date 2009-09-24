@@ -26,6 +26,7 @@ void _kddm_put_object(struct kddm_set *set,
 		      objid_t objid)
 {
 	struct kddm_obj *obj_entry;
+	int pending = 0;
 
 	obj_entry = __get_kddm_obj_entry(set, objid);
 	if (!obj_entry)
@@ -37,9 +38,15 @@ void _kddm_put_object(struct kddm_set *set,
 
 	kddm_io_put_object(obj_entry, set, objid);
 	object_clear_frozen(obj_entry, set);
+	if (TEST_OBJECT_PENDING(obj_entry)) {
+		CLEAR_OBJECT_PENDING(obj_entry);
+		pending = 1;
+	}
 
 exit:
 	put_kddm_obj_entry(set, obj_entry, objid);
+	if (pending)
+		flush_kddm_event(set, objid);
 }
 EXPORT_SYMBOL(_kddm_put_object);
 

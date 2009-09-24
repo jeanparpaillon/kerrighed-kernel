@@ -20,10 +20,11 @@
 //                                            +------------------------------------------- Object state
 //                                            |
 //                         |-----------------------------------|
-// |31 30 29 28 27 26 25 24|23|22|21|20|19 18 17 16 15 14 13 12|11|10|9|8|7 6 5 4 3 2 1 0|
-// |-----------------------|--|--|--|--|-----------------------|--|--|-|-|---------------|
-//             |             |  |  |  |            |             |  | | |        |
-//             |             |  |  |  |            |             |  | | |        +-------- Reserved
+// |31 30 29 28 27 26 25 24|23|22|21|20|19 18 17 16 15 14 13 12|11|10|9|8|7|6 5 4 3 2 1 0|
+// |-----------------------|--|--|--|--|-----------------------|--|--|-|-|-|-------------|
+//             |             |  |  |  |            |             |  | | | |      |
+//             |             |  |  |  |            |             |  | | | |      +-------- Reserved
+//             |             |  |  |  |            |             |  | | | +--------------- Pending event
 //             |             |  |  |  |            |             |  | | +----------------- Pinned flag
 //             |             |  |  |  |            |             |  | +------------------- SEND_RM_ACK2 flag
 //             |             |  |  |  |            |             |  +--------------------- Failure Flag
@@ -36,6 +37,7 @@
 //             +-------------------------------------------------------------------------- Probe Owner
 
 /* Various object flags */
+#define OBJECT_PENDING_EVENT 7  /* An event is pending on the object */
 #define OBJECT_PINNED        8  /* Lock the object to give waiting
 				   processes a change to access
 				   the object before a potential
@@ -76,6 +78,13 @@
         clear_bit(OBJECT_LOCKED, &(obj_entry)->flags)
 #define TEST_OBJECT_LOCKED(obj_entry) \
         test_bit(OBJECT_LOCKED, &(obj_entry)->flags)
+
+#define SET_OBJECT_PENDING(obj_entry) \
+        set_bit(OBJECT_PENDING_EVENT, &(obj_entry)->flags)
+#define CLEAR_OBJECT_PENDING(obj_entry) \
+        clear_bit(OBJECT_PENDING_EVENT, &(obj_entry)->flags)
+#define TEST_OBJECT_PENDING(obj_entry) \
+        test_bit(OBJECT_PENDING_EVENT, &(obj_entry)->flags)
 
 #define SET_OBJECT_RM_ACK2(obj_entry) \
         set_bit (SEND_RM_ACK2, &(obj_entry)->flags)
