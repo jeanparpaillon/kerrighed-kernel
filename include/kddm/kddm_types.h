@@ -205,7 +205,8 @@ typedef struct kddm_set {
 	int private_data_size;               /**< Size of private data... */
 
 	spinlock_t obj_lock[NR_OBJ_ENTRY_LOCKS];    /**< Objects lock */
-
+	struct list_head event_list;
+	spinlock_t event_lock;
 	atomic_t nr_masters;
 	atomic_t nr_copies;
 	atomic_t nr_entries;

@@ -812,6 +812,7 @@ kerrighed_node_t choose_injection_node_in_copyset(struct kddm_obj * object)
 
 
 typedef struct kddm_delayed_action {
+	struct list_head list;
 	struct delayed_work work;
 	queue_event_handler_t fn;
 	kerrighed_node_t sender;
@@ -820,10 +821,7 @@ typedef struct kddm_delayed_action {
 	void *data;
 } kddm_delayed_action_t;
 
-atomic_t nr_kddm_events;
-
-
-struct workqueue_struct *kddm_wq;
+static struct workqueue_struct *kddm_wq;
 
 void kddm_workqueue_handler(struct work_struct *work)
 {
@@ -831,14 +829,29 @@ void kddm_workqueue_handler(struct work_struct *work)
 
 	action = container_of(work, struct kddm_delayed_action, work.work);
 
+	spin_lock(&action->set->event_lock);
+	list_del(&action->list);
+	spin_unlock(&action->set->event_lock);
+
 	action->fn(action->sender, action->data);
 	kfree(action->data);
 	kmem_cache_free(kddm_da_cachep, action);
-	if (!atomic_dec_and_test(&nr_kddm_events))
-		schedule();
 }
 
+void flush_kddm_event(struct kddm_set *set,
+		      objid_t objid)
+{
+	struct kddm_delayed_action *action;
 
+	spin_lock(&set->event_lock);
+	list_for_each_entry(action, &set->event_list, list) {
+		if (action->objid == objid) {
+			if (cancel_delayed_work (&action->work))
+				queue_delayed_work(kddm_wq, &action->work, 0);
+		}
+	}
+	spin_unlock(&set->event_lock);
+}
 
 void queue_event(queue_event_handler_t fn,
 		 kerrighed_node_t sender,
@@ -863,7 +876,10 @@ void queue_event(queue_event_handler_t fn,
 
 	INIT_DELAYED_WORK(&action->work, kddm_workqueue_handler);
 
-	atomic_inc (&nr_kddm_events);
+	spin_lock(&set->event_lock);
+	list_add_tail(&action->list, &set->event_list);
+	spin_unlock(&set->event_lock);
+
 	queue_delayed_work(kddm_wq, &action->work, delay);
 }
 
@@ -871,7 +887,6 @@ void queue_event(queue_event_handler_t fn,
 
 void start_run_queue_thread()
 {
-	atomic_set (&nr_kddm_events, 0);
 	kddm_da_cachep = KMEM_CACHE(kddm_delayed_action, SLAB_PANIC);
 
 	kddm_wq = create_singlethread_workqueue("kddm");

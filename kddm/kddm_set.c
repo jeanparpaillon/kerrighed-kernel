@@ -120,6 +120,8 @@ int init_kddm_set (struct kddm_set *set,
 	set->remove_object_counter = 0;
 	set->flush_object_counter = 0;
 	set->private = NULL;
+	INIT_LIST_HEAD(&set->event_list);
+	spin_lock_init(&set->event_lock);
 
 	set->obj_set = set->ops->obj_set_alloc(set, tree_init_data);
 	if (!set->obj_set)
