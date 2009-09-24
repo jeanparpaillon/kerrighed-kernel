@@ -211,7 +211,7 @@
  */
 
 #define TIPC_MIN_LINK_WIN 16
-#define TIPC_DEF_LINK_WIN 50
+#define TIPC_DEF_LINK_WIN 100
 #define TIPC_MAX_LINK_WIN 150
 
 
