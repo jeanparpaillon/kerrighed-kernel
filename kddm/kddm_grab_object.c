@@ -28,8 +28,9 @@ static inline struct kddm_obj *check_cow (struct kddm_set *set,
 			}
 		}
 		else
-			obj_entry = kddm_cow_object (set, obj_entry,
-						     objid);
+			obj_entry = kddm_break_cow_object(set, obj_entry,
+							  objid,
+							  KDDM_BREAK_COW_COPY);
 	}
 	return obj_entry;
 }

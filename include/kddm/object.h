@@ -286,12 +286,13 @@ void kddm_insert_object (struct kddm_set *set, objid_t objid,
                          struct kddm_obj * obj_entry,
 			 kddm_obj_state_t state);
 
-static inline struct kddm_obj *kddm_cow_object (struct kddm_set * set,
-						struct kddm_obj *obj_entry,
-						objid_t objid)
+static inline struct kddm_obj *kddm_break_cow_object (struct kddm_set * set,
+					      struct kddm_obj *obj_entry,
+					      objid_t objid,
+					      int break_type)
 {
-	if (set->ops->cow_object)
-		return set->ops->cow_object (set, obj_entry, objid);
+	if (set->ops->break_cow)
+		return set->ops->break_cow (set, obj_entry, objid, break_type);
 	return obj_entry;
 }
 

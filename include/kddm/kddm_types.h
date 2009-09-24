@@ -144,6 +144,8 @@ typedef struct kddm_obj {
 #define KDDM_LOCAL_EXCLUSIVE  0x00000001
 #define KDDM_FT_LINKED        0x00000002
 
+#define KDDM_BREAK_COW_COPY 1
+#define KDDM_BREAK_COW_INV 2
 
 #define NR_OBJ_ENTRY_LOCKS 16
 
@@ -161,8 +163,9 @@ typedef struct kddm_set_ops {
 					  objid_t objid, struct kddm_obj *obj);
 	void (*insert_object)(struct kddm_set * set, objid_t objid,
 			      struct kddm_obj *obj_entry);
-	struct kddm_obj *(*cow_object)(struct kddm_set * set,
-				       struct kddm_obj *obj_entry, objid_t objid);
+	struct kddm_obj *(*break_cow)(struct kddm_set * set,
+				      struct kddm_obj *obj_entry,objid_t objid,
+				      int break_type);
 	void (*remove_obj_entry) (struct kddm_set *set, objid_t objid);
 	void (*for_each_obj_entry)(struct kddm_set *set,
 				   int(*f)(unsigned long, void *, void*),

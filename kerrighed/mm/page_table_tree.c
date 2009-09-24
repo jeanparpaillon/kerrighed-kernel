@@ -43,13 +43,12 @@ static inline void unlock_kddm_page (struct page *page)
 static inline void page_put_kddm_count(struct kddm_set *set,
 				       struct page *page)
 {
-	struct kddm_obj *obj_entry;
+	struct kddm_obj *obj_entry = page->obj_entry;
+
+	BUG_ON(obj_entry == NULL);
 
 	if (!atomic_dec_and_test(&page->_kddm_count))
 		return;
-
-	obj_entry = page->obj_entry;
-	BUG_ON(obj_entry == NULL);
 
 	/* Kill obj_entry->object field to avoid removal in IO linker.
 	 * Such removal would lead to a double page free...
@@ -503,8 +502,9 @@ static void kddm_pt_insert_object(struct kddm_set * set,
 
 
 
-struct kddm_obj *kddm_pt_cow_object(struct kddm_set *set,
-				    struct kddm_obj *obj_entry, objid_t objid)
+struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
+				    struct kddm_obj *obj_entry, objid_t objid,
+				    int break_type)
 {
 	struct page *new_page, *old_page = obj_entry->object;
 	struct mm_struct *mm = set->obj_set;
@@ -727,7 +727,7 @@ struct kddm_set_ops kddm_pt_set_ops = {
 	lookup_obj_entry:    kddm_pt_lookup_obj_entry,
 	get_obj_entry:       kddm_pt_get_obj_entry,
 	insert_object:       kddm_pt_insert_object,
-	cow_object:          kddm_pt_cow_object,
+	break_cow:           kddm_pt_break_cow_object,
 	remove_obj_entry:    kddm_pt_remove_obj_entry,
 	for_each_obj_entry:  kddm_pt_for_each_obj_entry,
 	export:              kddm_pt_export,
