@@ -41,6 +41,8 @@
 #define VM_FILE_NONE 0
 #define VM_FILE_PHYS 1
 
+#define MMAPPED_FILE -1
+
 void free_ghost_files (struct task_struct *ghost)
 {
 	struct fdtable *fdt;
@@ -136,14 +138,16 @@ int export_one_open_file (struct epm_action *action,
 
 	BUG_ON(action->type == EPM_CHECKPOINT);
 
-	if (!file->f_objid)
-		create_kddm_file_object(file);
+	if (action->type != EPM_CHECKPOINT
+	    && index != MMAPPED_FILE) {
+		if (!file->f_objid)
+			create_ctnr_file_object(file);
+		check_file_struct_sharing (index, file, action);
+	}
 
 #ifdef CONFIG_KRG_FAF
 	check_activate_faf (tsk, index, file, action);
 #endif
-	check_file_struct_sharing (index, file, action);
-
 	ops = get_dvfs_mobility_ops(file);
 
 	dvfs_ops_type = krgsyms_export(ops);
@@ -308,8 +312,8 @@ static int export_vma_phys_file(struct epm_action *action,
 		BUG_ON(action->checkpoint.shared != CR_SAVE_NOW);
 		r = cr_write_vma_phys_file_id(ghost, tsk, vma);
 	} else
-		r = export_one_open_file(action, ghost, tsk, -1,
-					 vma->vm_file);
+		r = export_one_open_file(action, ghost, tsk,
+					 MMAPPED_FILE, vma->vm_file);
 
 	return r;
 }
@@ -840,6 +844,9 @@ int import_one_open_file (struct epm_action *action,
 	if (r)
 		goto exit;
 
+	if (index == MMAPPED_FILE)
+		goto exit;
+
 	/* Check if the file struct is already present */
 	file = begin_import_dvfs_file(objid, &dvfs_file);
 
@@ -1229,7 +1236,8 @@ int import_vma_phys_file(struct epm_action *action,
 	if (action->type == EPM_CHECKPOINT)
 		r = cr_link_to_vma_phys_file(action, ghost, tsk, vma, &file);
 	else
-		r = import_one_open_file(action, ghost, tsk, -1, &file);
+		r = import_one_open_file(action, ghost, tsk,
+					 MMAPPED_FILE, &file);
 	if (r)
 		goto err;
 
