@@ -65,7 +65,7 @@ int get_shm_file_krg_desc (struct file *file,
 		goto exit;
 	}
 
-	data->sysv = 1;
+	data->type = SHM;
 	data->shm.shmid = file->f_dentry->d_inode->i_ino;
 	data->shm.f_mode = file->f_mode;
 	*desc = data;

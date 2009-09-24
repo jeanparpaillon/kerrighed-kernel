@@ -22,6 +22,12 @@
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/app_shared.h>
+#include <kerrighed/ghost.h>
+#include <kerrighed/regular_file_mgr.h>
+#endif
+
 /*
  * We use a start+len construction, which provides full use of the 
  * allocated memory.
@@ -936,11 +942,10 @@ fail_inode:
 	return NULL;
 }
 
-struct file *create_write_pipe(int flags)
+struct dentry *__prepare_pipe_dentry(void)
 {
 	int err;
 	struct inode *inode;
-	struct file *f;
 	struct dentry *dentry;
 	struct qstr name = { .name = "" };
 
@@ -963,25 +968,59 @@ struct file *create_write_pipe(int flags)
 	dentry->d_flags &= ~DCACHE_UNHASHED;
 	d_instantiate(dentry, inode);
 
-	err = -ENFILE;
+	return dentry;
+
+err_inode:
+	free_pipe_info(inode);
+	iput(inode);
+err:
+	return ERR_PTR(err);
+}
+
+struct file *__create_write_pipe(struct dentry *dentry, int flags)
+{
+	struct file *f;
+	int err = -ENFILE;
+
 	f = alloc_file(pipe_mnt, dentry, FMODE_WRITE, &write_pipefifo_fops);
 	if (!f)
-		goto err_dentry;
-	f->f_mapping = inode->i_mapping;
+		goto err;
+	f->f_mapping = dentry->d_inode->i_mapping;
 
 	f->f_flags = O_WRONLY | (flags & O_NONBLOCK);
 	f->f_version = 0;
 
 	return f;
 
+err:
+	return ERR_PTR(err);
+}
+
+struct file *create_write_pipe(int flags)
+{
+	int err;
+	struct file *f;
+	struct dentry *dentry;
+
+	dentry = __prepare_pipe_dentry();
+	if (IS_ERR(dentry)) {
+		err = PTR_ERR(dentry);
+		goto err;
+	}
+
+	f = __create_write_pipe(dentry, flags);
+	if (IS_ERR(f)) {
+		err = PTR_ERR(f);
+		goto err_dentry;
+	}
+
+	return f;
+
  err_dentry:
-	free_pipe_info(inode);
+	free_pipe_info(dentry->d_inode);
 	dput(dentry);
 	return ERR_PTR(err);
 
- err_inode:
-	free_pipe_info(inode);
-	iput(inode);
  err:
 	return ERR_PTR(err);
 }
@@ -993,16 +1032,17 @@ void free_write_pipe(struct file *f)
 	put_filp(f);
 }
 
-struct file *create_read_pipe(struct file *wrf, int flags)
+struct file *__create_read_pipe(struct dentry *dentry, int flags)
 {
 	struct file *f = get_empty_filp();
 	if (!f)
 		return ERR_PTR(-ENFILE);
 
 	/* Grab pipe from the writer */
-	f->f_path = wrf->f_path;
-	path_get(&wrf->f_path);
-	f->f_mapping = wrf->f_path.dentry->d_inode->i_mapping;
+	f->f_path.dentry = dget(dentry);
+	f->f_path.mnt = mntget(pipe_mnt);
+
+	f->f_mapping = dentry->d_inode->i_mapping;
 
 	f->f_pos = 0;
 	f->f_flags = O_RDONLY | (flags & O_NONBLOCK);
@@ -1011,6 +1051,11 @@ struct file *create_read_pipe(struct file *wrf, int flags)
 	f->f_version = 0;
 
 	return f;
+}
+
+struct file *create_read_pipe(struct file *wrf, int flags)
+{
+	return __create_read_pipe(wrf->f_path.dentry, flags);
 }
 
 int do_pipe_flags(int *fd, int flags)
@@ -1057,6 +1102,161 @@ int do_pipe_flags(int *fd, int flags)
 	free_write_pipe(fw);
 	return error;
 }
+
+#ifdef CONFIG_KRG_EPM
+
+int cr_export_now_pipe_inode(struct epm_action *action, ghost_t *ghost,
+			     struct task_struct *task,
+			     union export_args *args)
+{
+	int r;
+	struct inode *inode = args->file_args.file->f_path.dentry->d_inode;
+
+	r = ghost_write(ghost, &inode->i_atime, sizeof(struct timespec));
+	if (r)
+		goto err;
+	r = ghost_write(ghost, &inode->i_mtime, sizeof(struct timespec));
+	if (r)
+		goto err;
+	r = ghost_write(ghost, &inode->i_ctime, sizeof(struct timespec));
+	if (r)
+		goto err;
+
+	/* TODO: save pipe buffer (inode->i_pipe) */
+
+err:
+	return r;
+}
+
+static int cr_import_now_pipe_inode(struct epm_action *action,
+				    ghost_t *ghost,
+				    struct task_struct *fake,
+				    int local_only,
+				    void **returned_data,
+				    size_t *data_size)
+{
+	int r;
+	struct inode *inode;
+	struct dentry *dentry;
+
+	BUG_ON(!local_only);
+
+	dentry = __prepare_pipe_dentry();
+	if (IS_ERR(dentry)) {
+		r = PTR_ERR(dentry);
+		goto err;
+	}
+
+	inode = dentry->d_inode;
+
+	r = ghost_read(ghost, &inode->i_atime, sizeof(struct timespec));
+	if (r)
+		goto err_inode;
+	r = ghost_read(ghost, &inode->i_mtime, sizeof(struct timespec));
+	if (r)
+		goto err_inode;
+	r = ghost_read(ghost, &inode->i_ctime, sizeof(struct timespec));
+	if (r)
+		goto err_inode;
+
+	/* TODO: restore pipe buffer (inode->i_pipe) */
+
+	*returned_data = dentry;
+	data_size = 0;
+
+err:
+	return r;
+
+err_inode:
+	free_pipe_info(dentry->d_inode);
+	dput(dentry);
+	goto err;
+}
+
+int cr_import_complete_pipe_inode(struct task_struct *fake,
+				  void *_pipe_dentry)
+{
+	struct dentry *dentry = _pipe_dentry;
+
+	/* dput(dentry); */
+
+	return 0;
+}
+
+int cr_delete_pipe_inode(struct task_struct *fake,
+				  void *_pipe_dentry)
+{
+	struct dentry *dentry = _pipe_dentry;
+
+	free_pipe_info(dentry->d_inode);
+
+	dput(dentry);
+
+	return 0;
+}
+
+struct shared_object_operations cr_shared_pipe_inode_ops = {
+	.export_now        = cr_export_now_pipe_inode,
+	.import_now        = cr_import_now_pipe_inode,
+	.import_complete   = cr_import_complete_pipe_inode,
+	.delete            = cr_delete_pipe_inode,
+};
+
+/** Return a kerrighed descriptor corresponding to the given file.
+ *  @author Matthieu Fertré
+ *
+ *  @param file       The file to get a Kerrighed descriptor for.
+ *  @param desc       The returned descriptor.
+ *  @param desc_size  Size of the returned descriptor.
+ *
+ *  @return   0 if everything ok.
+ *            Negative value otherwise.
+ */
+int get_pipe_file_krg_desc(struct file *file, void **desc, int *desc_size)
+{
+	struct regular_file_krg_desc *data;
+	int size, r = -ENOENT;
+
+	size = sizeof(struct regular_file_krg_desc);
+
+	data = kmalloc(size, GFP_KERNEL);
+	if (!data) {
+		r = -ENOMEM;
+		goto exit;
+	}
+
+	data->type = PIPE;
+	data->pipe.f_flags = file->f_flags;
+	data->pipe.key = (long)(file->f_path.dentry->d_inode);
+	*desc = data;
+	*desc_size = size;
+
+	r = 0;
+exit:
+	return r;
+}
+
+struct file *reopen_pipe_file_entry_from_krg_desc(struct task_struct *task,
+						  void *_desc)
+{
+	struct regular_file_krg_desc *desc = _desc;
+	struct dentry *dentry;
+	struct file *file;
+
+	dentry = get_imported_shared_object(task->application,
+					   PIPE_INODE, desc->pipe.key);
+
+	BUG_ON(!dentry);
+
+	if (desc->pipe.f_flags & O_WRONLY)
+		file = __create_write_pipe(dentry, desc->pipe.f_flags);
+	else
+		file = __create_read_pipe(dentry, desc->pipe.f_flags);
+
+	return file;
+}
+
+#endif
 
 /*
  * sys_pipe() is the normal C calling standard for creating

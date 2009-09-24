@@ -15,13 +15,23 @@
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
+enum file_krg_type {
+	FILE,
+	PIPE,
+	SHM
+};
+
 struct regular_file_krg_desc {
-	int sysv;
+	enum file_krg_type type;
 	union {
 		struct {
 			fmode_t f_mode;
 			int shmid;
 		} shm;
+		struct {
+			unsigned long f_flags;
+			long key;
+		} pipe;
 		struct {
 			umode_t mode;
 			loff_t pos;
@@ -74,5 +84,10 @@ int cr_link_to_dvfs_regular_file(struct epm_action *action, ghost_t *ghost,
 				 struct task_struct *task,
 				 struct file **returned_file,
 				 long key);
+
+int get_pipe_file_krg_desc(struct file *file, void **desc, int *desc_size);
+
+struct file *reopen_pipe_file_entry_from_krg_desc(struct task_struct *task,
+						  void *_desc);
 
 #endif // __REGULAR_FILE_MGR__

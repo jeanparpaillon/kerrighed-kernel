@@ -94,8 +94,10 @@ struct file *import_regular_file_from_krg_desc (struct task_struct *task,
 
 	desc->file.filename = (char *) &desc[1];
 
+	if (desc->type == PIPE)
+		return reopen_pipe_file_entry_from_krg_desc(task, desc);
 #ifdef CONFIG_KRG_IPC
-	if (desc->sysv)
+	else if (desc->type == SHM)
 		return reopen_shm_file_entry_from_krg_desc (task, desc);
 #endif
 
@@ -170,6 +172,10 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 		goto exit;
 	}
 #endif
+	if (S_ISFIFO(file->f_dentry->d_inode->i_mode)) {
+		r = get_pipe_file_krg_desc(file, desc, desc_size);
+		goto exit;
+	}
 
 	file_name = get_filename(file, tmp, PAGE_SIZE);
 
@@ -185,7 +191,7 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 		goto exit;
 	}
 
-	data->sysv = 0;
+	data->type = FILE;
 	data->file.filename = (char *) &data[1];
 
 	strncpy(data->file.filename, file_name, name_len);

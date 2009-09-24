@@ -41,6 +41,9 @@ int local_restart_shared_complete(struct app_struct *app,
 /*--------------------------------------------------------------------------*/
 
 enum shared_obj_type {
+	/* things to restore before files */
+	PIPE_INODE,
+
 	/* file descriptors */
 	REGULAR_FILE,
 	REGULAR_DVFS_FILE,

@@ -197,8 +197,10 @@ static int is_file_type_supported(const struct file *file)
 		if (S_ISSOCK(file->f_dentry->d_inode->i_mode)) {
 			printk("Checkpoint of socket file is not supported\n");
 			return 0;
-		} else if (S_ISFIFO(file->f_dentry->d_inode->i_mode)) {
-			printk("Checkpoint of fifo file is not supported\n");
+		} else if (S_ISFIFO(file->f_dentry->d_inode->i_mode)
+			   && (file->f_flags & O_FAF_CLT
+			       || file->f_flags & O_FAF_SRV)) {
+			printk("Checkpoint of faffed fifo file is not supported\n");
 			return 0;
 		}
 	} else if (file->f_flags & O_KRG_NO_CHKPT) {
@@ -250,7 +252,8 @@ void cr_get_file_type_and_key(const struct file *file,
 	BUG_ON(r);
 }
 
-int cr_ghost_write_file_id(ghost_t *ghost, struct file *file, int allow_unsupported)
+static int cr_ghost_write_file_id(ghost_t *ghost, struct file *file,
+				  int allow_unsupported)
 {
 	int r, tty;
 	long key;
@@ -275,12 +278,12 @@ int cr_ghost_write_file_id(ghost_t *ghost, struct file *file, int allow_unsuppor
 	r = ghost_write(ghost, &tty, sizeof(int));
 	if (r)
 		goto error;
+
 error:
 	return r;
 }
 
-static int cr_write_vma_phys_file_id(ghost_t *ghost, struct task_struct *tsk,
-				     struct vm_area_struct *vma)
+static int cr_write_vma_phys_file_id(ghost_t *ghost, struct vm_area_struct *vma)
 {
 	int r;
 
@@ -317,7 +320,7 @@ static int export_vma_phys_file(struct epm_action *action,
 
 	if (action->type == EPM_CHECKPOINT) {
 		BUG_ON(action->checkpoint.shared != CR_SAVE_NOW);
-		r = cr_write_vma_phys_file_id(ghost, tsk, vma);
+		r = cr_write_vma_phys_file_id(ghost, vma);
 		goto done;
 	}
 
@@ -507,7 +510,7 @@ int cr_add_file_to_shared_table(struct task_struct *task,
 				int index, struct file *file,
 				int allow_unsupported)
 {
-	int r, tty;
+	int r, tty, fifo;
 	long key;
 	enum shared_obj_type type;
 	enum object_locality locality;
@@ -535,6 +538,23 @@ int cr_add_file_to_shared_table(struct task_struct *task,
 	if (tty < 0) {
 		r = tty;
 		goto error;
+	}
+
+	fifo = S_ISFIFO(file->f_dentry->d_inode->i_mode);
+
+	if (fifo) {
+		union export_args args;
+		long key = (long)(file->f_dentry->d_inode);
+
+		args.file_args.index = -1;
+		args.file_args.file = file;
+
+		r = add_to_shared_objects_list(task->application,
+					       PIPE_INODE, key, 1 /*is_local*/,
+					       task, &args);
+
+		if (r == -ENOKEY) /* the inode was already in the list */
+			r = 0;
 	}
 
 	if (tty)
