@@ -35,7 +35,7 @@
 /*****************************************************************************/
 
 struct file *reopen_file_entry_from_krg_desc (struct task_struct *task,
-                                              regular_file_krg_desc_t *desc)
+                                              struct regular_file_krg_desc *desc)
 {
 	struct file *file = NULL;
 
@@ -55,7 +55,7 @@ struct file *reopen_file_entry_from_krg_desc (struct task_struct *task,
 }
 
 struct file *create_file_entry_from_krg_desc (struct task_struct *task,
-                                              regular_file_krg_desc_t *desc)
+                                              struct regular_file_krg_desc *desc)
 {
 	struct file *file = NULL;
 
@@ -87,7 +87,7 @@ struct file *create_file_entry_from_krg_desc (struct task_struct *task,
 struct file *import_regular_file_from_krg_desc (struct task_struct *task,
                                                 void *_desc)
 {
-	regular_file_krg_desc_t *desc = _desc;
+	struct regular_file_krg_desc *desc = _desc;
 
 	BUG_ON (!task);
 	BUG_ON (!desc);
@@ -158,7 +158,7 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 {
 	char *tmp = (char *) __get_free_page (GFP_KERNEL);
 	char *file_name;
-	regular_file_krg_desc_t *data;
+	struct regular_file_krg_desc *data;
 	int size = 0, name_len;
 	int r = -ENOENT;
 
@@ -177,7 +177,7 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 		goto exit;
 
 	name_len = strlen (file_name) + 1;
-	size = sizeof (regular_file_krg_desc_t) + name_len;
+	size = sizeof (struct regular_file_krg_desc) + name_len;
 
 	data = kmalloc (size, GFP_KERNEL);
 	if (!data) {

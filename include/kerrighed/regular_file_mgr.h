@@ -15,7 +15,7 @@
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-typedef struct regular_file_krg_desc {
+struct regular_file_krg_desc {
 	int sysv;
 	union {
 		struct {
@@ -32,7 +32,7 @@ typedef struct regular_file_krg_desc {
 			char *filename;
 		} file;
 	};
-} regular_file_krg_desc_t;
+};
 
 struct epm_action;
 struct dvfs_file_struct;

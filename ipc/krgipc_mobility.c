@@ -54,10 +54,10 @@ int get_shm_file_krg_desc (struct file *file,
 			   void **desc,
 			   int *desc_size)
 {
-	regular_file_krg_desc_t *data;
+	struct regular_file_krg_desc *data;
 	int size, r = -ENOENT;
 
-	size = sizeof (regular_file_krg_desc_t);
+	size = sizeof(struct regular_file_krg_desc);
 
 	data = kmalloc (size, GFP_KERNEL);
 	if (!data) {
@@ -84,7 +84,7 @@ struct file *reopen_shm_file_entry_from_krg_desc(struct task_struct *task,
 	struct shmid_kernel *shp;
 	struct shm_file_data *sfd;
 	struct file *file = NULL;
-	regular_file_krg_desc_t *desc = _desc;
+	struct regular_file_krg_desc *desc = _desc;
 	struct ipc_namespace *ns;
 	struct path path;
 
