@@ -60,9 +60,9 @@ extern int proc_pid_statm(struct seq_file *m, struct pid_namespace *ns,
 
 extern struct dentry *(*kh_proc_pid_lookup)(struct inode *dir,
 					    struct dentry *dentry, pid_t pid);
-extern int (*kh_proc_pid_readdir)(struct file *filp,
-				  void *dirent, filldir_t filldir,
-				  loff_t offset);
+extern int krg_proc_pid_readdir(struct file *filp,
+				void *dirent, filldir_t filldir,
+				loff_t offset);
 #endif /* CONFIG_KRG_PROC */
 
 #endif /* CONFIG_KRG_PROCFS */
