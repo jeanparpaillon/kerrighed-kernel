@@ -869,13 +869,9 @@ static int fill_next_tgids(kerrighed_node_t node,
 	return retval;
 }
 
-int (*kh_proc_pid_readdir)(struct file *filp,
-			   void *dirent, filldir_t filldir,
-			   loff_t offset);
-
-static int kcb_proc_pid_readdir(struct file *filp,
-				void *dirent, filldir_t filldir,
-				loff_t offset)
+int krg_proc_pid_readdir(struct file *filp,
+			 void *dirent, filldir_t filldir,
+			 loff_t offset)
 {
 	pid_t tgid;
 	kerrighed_node_t node;
@@ -904,7 +900,7 @@ static int kcb_proc_pid_readdir(struct file *filp,
 	for (; node < KERRIGHED_MAX_NODES;
 	     node++,
 	     filp->f_pos = GLOBAL_PID_NODE(0, node) + offset) {
-		if (!krgnode_online(node))
+		if (node != kerrighed_node_id && !krgnode_online(node))
 			continue;
 #if defined(CONFIG_KRG_CAP) && !defined(CONFIG_KRG_EPM)
 		if (node != kerrighed_node_id
@@ -928,7 +924,6 @@ int proc_pid_init(void)
 {
 	rpc_register_void(REQ_AVAILABLE_TGIDS, handle_req_available_tgids, 0);
 
-	hook_register(&kh_proc_pid_readdir, kcb_proc_pid_readdir);
 	hook_register(&kh_proc_pid_lookup, kcb_proc_pid_lookup);
 
 	proc_pid_file_init();

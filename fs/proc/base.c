@@ -2973,10 +2973,9 @@ int proc_pid_readdir(struct file * filp, void * dirent, filldir_t filldir)
 	iter.task = NULL;
 	iter.tgid = filp->f_pos - TGID_OFFSET;
 #if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
-	if (current->nsproxy->krg_ns && kh_proc_pid_readdir
-	    && is_krg_pid_ns_root(ns)) {
-		/* All filling is done by kh_proc_pid_readdir */
-		if (kh_proc_pid_readdir(filp, dirent, filldir, TGID_OFFSET))
+	if (current->nsproxy->krg_ns && is_krg_pid_ns_root(ns)) {
+		/* All filling is done by krg_proc_pid_readdir */
+		if (krg_proc_pid_readdir(filp, dirent, filldir, TGID_OFFSET))
 			goto out;
 	} else
 #endif
