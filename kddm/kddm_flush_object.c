@@ -31,7 +31,9 @@ int _kddm_flush_object(struct kddm_set *set,
 {
 	kerrighed_node_t dest_from_copyset;
 	struct kddm_obj *obj_entry;
-	int res = -1;
+	int res = -ENOENT;
+
+	BUG_ON(!set);
 
 	inc_flush_object_counter(set);
 

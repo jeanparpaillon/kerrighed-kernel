@@ -24,6 +24,7 @@
 #include "memory_io_linker.h"
 #include "mm_struct_io_linker.h"
 #include "mm_server.h"
+#include "injection.h"
 
 
 /** Initialisation of the DSM module.
@@ -55,6 +56,7 @@ int init_kermm(void)
 
 	mm_struct_init ();
 	mm_server_init();
+	mm_injection_init();
 
 	printk ("KerMM initialisation done\n");
 
@@ -72,6 +74,7 @@ void cleanup_kermm (void)
 {
 	printk ("KerMM termination : start\n");
 
+	mm_injection_finalize();
 	mm_server_finalize();
 	mm_struct_finalize();
 

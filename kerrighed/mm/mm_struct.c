@@ -38,6 +38,9 @@ void (*kh_do_munmap)(struct mm_struct *, unsigned long, size_t,
 
 int krg_do_execve(struct task_struct *tsk, struct mm_struct *mm)
 {
+	if (can_use_krg_cap(current, CAP_USE_REMOTE_MEMORY))
+		return init_anon_vma_kddm_set(tsk, mm);
+
 	return 0;
 }
 
