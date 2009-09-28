@@ -14,7 +14,6 @@
 #include <kerrighed/pid.h>
 #include <kerrighed/task.h>
 #include <kerrighed/krginit.h>
-#include <kerrighed/hotplug.h>
 
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
@@ -517,7 +516,7 @@ struct dentry *krg_proc_pid_instantiate(struct inode *dir,
 	d_add(dentry, inode);
 	/*
 	 * There is no race of the process dying before we return the dentry
-	 * because either kcb_proc_pid_lookup() or krg_proc_pid_fill_cache()
+	 * because either krg_proc_pid_lookup() or krg_proc_pid_fill_cache()
 	 * has locked the task kddm object.
 	 */
 	error = NULL;
@@ -525,11 +524,8 @@ out:
 	return error;
 }
 
-struct dentry *(*kh_proc_pid_lookup)(struct inode *dir,
-				     struct dentry *dentry, pid_t pid);
-
-static struct dentry *kcb_proc_pid_lookup(struct inode *dir,
-					  struct dentry *dentry, pid_t tgid)
+struct dentry *krg_proc_pid_lookup(struct inode *dir,
+				   struct dentry *dentry, pid_t tgid)
 {
 	/* try and locate pid in the cluster */
 	struct dentry *result = ERR_PTR(-ENOENT);
@@ -923,8 +919,6 @@ out:
 int proc_pid_init(void)
 {
 	rpc_register_void(REQ_AVAILABLE_TGIDS, handle_req_available_tgids, 0);
-
-	hook_register(&kh_proc_pid_lookup, kcb_proc_pid_lookup);
 
 	proc_pid_file_init();
 
