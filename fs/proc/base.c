@@ -2871,7 +2871,8 @@ struct dentry *proc_pid_lookup(struct inode *dir, struct dentry * dentry, struct
 	if (!task)
 #if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
 	{
-		if (kh_proc_pid_lookup && (tgid & GLOBAL_PID_MASK))
+		if (kh_proc_pid_lookup && ns == &init_pid_ns
+		    && (tgid & GLOBAL_PID_MASK))
 			result = kh_proc_pid_lookup(dir, dentry, tgid);
 #endif
                 goto out;
