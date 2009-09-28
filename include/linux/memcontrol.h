@@ -64,7 +64,11 @@ extern unsigned long mem_cgroup_isolate_pages(unsigned long nr_to_scan,
 					unsigned long *scanned, int order,
 					int mode, struct zone *z,
 					struct mem_cgroup *mem_cont,
+#ifdef CONFIG_KRG_MM
+					int active, int file, int kddm);
+#else
 					int active, int file);
+#endif
 extern void mem_cgroup_out_of_memory(struct mem_cgroup *mem, gfp_t gfp_mask);
 int task_in_mem_cgroup(struct task_struct *task, const struct mem_cgroup *mem);
 

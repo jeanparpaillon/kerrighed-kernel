@@ -621,7 +621,11 @@ unsigned long mem_cgroup_isolate_pages(unsigned long nr_to_scan,
 					unsigned long *scanned, int order,
 					int mode, struct zone *z,
 					struct mem_cgroup *mem_cont,
+#ifdef CONFIG_KRG_MM
+					int active, int file, int kddm)
+#else
 					int active, int file)
+#endif
 {
 	unsigned long nr_taken = 0;
 	struct page *page;
@@ -632,7 +636,12 @@ unsigned long mem_cgroup_isolate_pages(unsigned long nr_to_scan,
 	int nid = z->zone_pgdat->node_id;
 	int zid = zone_idx(z);
 	struct mem_cgroup_per_zone *mz;
+#ifdef CONFIG_KRG_MM
+	int lru = BUILD_LRU_ID(!!active, !!file, !!kddm);
+	BUG_ON(kddm && file);
+#else
 	int lru = LRU_FILE * !!file + !!active;
+#endif
 
 	BUG_ON(!mem_cont);
 	mz = mem_cgroup_zoneinfo(mem_cont, nid, zid);

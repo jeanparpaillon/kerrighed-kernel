@@ -97,7 +97,11 @@ struct scan_control {
 	unsigned long (*isolate_pages)(unsigned long nr, struct list_head *dst,
 			unsigned long *scanned, int order, int mode,
 			struct zone *z, struct mem_cgroup *mem_cont,
+#ifdef CONFIG_KRG_MM
+			int active, int file, int kddm);
+#else
 			int active, int file);
+#endif
 };
 
 #define lru_to_page(_head) (list_entry((_head)->prev, struct page, lru))
@@ -997,13 +1001,21 @@ static unsigned long isolate_pages_global(unsigned long nr,
 					unsigned long *scanned, int order,
 					int mode, struct zone *z,
 					struct mem_cgroup *mem_cont,
+#ifdef CONFIG_KRG_MM
+					int active, int file, int kddm)
+#else
 					int active, int file)
+#endif
 {
 	int lru = LRU_BASE;
 	if (active)
 		lru += LRU_ACTIVE;
 	if (file)
 		lru += LRU_FILE;
+#ifdef CONFIG_KRG_MM
+	if (kddm)
+		lru += LRU_KDDM;
+#endif
 	return isolate_lru_pages(nr, &z->lru[lru].list, dst, scanned, order,
 								mode, !!file);
 }
@@ -1118,7 +1130,11 @@ static unsigned long shrink_inactive_list(unsigned long max_scan,
 
 		nr_taken = sc->isolate_pages(sc->swap_cluster_max,
 			     &page_list, &nr_scan, sc->order, mode,
+#ifdef CONFIG_KRG_MM
+				zone, sc->mem_cgroup, 0, file, 0 /* KDDM */);
+#else
 				zone, sc->mem_cgroup, 0, file);
+#endif
 		nr_active = clear_active_flags(&page_list, count);
 		__count_vm_events(PGDEACTIVATE, nr_active);
 
@@ -1278,7 +1294,11 @@ static void shrink_active_list(unsigned long nr_pages, struct zone *zone,
 	spin_lock_irq(&zone->lru_lock);
 	pgmoved = sc->isolate_pages(nr_pages, &l_hold, &pgscanned, sc->order,
 					ISOLATE_ACTIVE, zone,
+#ifdef CONFIG_KRG_MM
+					sc->mem_cgroup, 1, file, 0 /* KDDM */);
+#else
 					sc->mem_cgroup, 1, file);
+#endif
 	/*
 	 * zone->pages_scanned is used for detect zone's oom
 	 * mem_cgroup remembers nr_scan by itself.
