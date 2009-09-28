@@ -1313,7 +1313,11 @@ static inline void note_zone_scanning_priority(struct zone *zone, int priority)
 
 
 static void shrink_active_list(unsigned long nr_pages, struct zone *zone,
+#ifdef CONFIG_KRG_MM
+		struct scan_control *sc, int priority, int file, int kddm)
+#else
 			struct scan_control *sc, int priority, int file)
+#endif
 {
 	unsigned long pgmoved;
 	int pgdeactivate = 0;
@@ -1330,7 +1334,7 @@ static void shrink_active_list(unsigned long nr_pages, struct zone *zone,
 	pgmoved = sc->isolate_pages(nr_pages, &l_hold, &pgscanned, sc->order,
 					ISOLATE_ACTIVE, zone,
 #ifdef CONFIG_KRG_MM
-					sc->mem_cgroup, 1, file, 0 /* KDDM */);
+					sc->mem_cgroup, 1, file, kddm);
 #else
 					sc->mem_cgroup, 1, file);
 #endif
@@ -1342,7 +1346,7 @@ static void shrink_active_list(unsigned long nr_pages, struct zone *zone,
 		zone->pages_scanned += pgscanned;
 	}
 #ifdef CONFIG_KRG_MM
-	reclaim_stat->recent_scanned[RECLAIM_STAT_INDEX(file, 0 /* KDDM */)] += pgmoved;
+	reclaim_stat->recent_scanned[RECLAIM_STAT_INDEX(file, kddm)] += pgmoved;
 #else
 	reclaim_stat->recent_scanned[!!file] += pgmoved;
 #endif
@@ -1350,6 +1354,11 @@ static void shrink_active_list(unsigned long nr_pages, struct zone *zone,
 	if (file)
 		__mod_zone_page_state(zone, NR_ACTIVE_FILE, -pgmoved);
 	else
+#ifdef CONFIG_KRG_MM
+	if (kddm)
+		__mod_zone_page_state(zone, NR_ACTIVE_KDDM, -pgmoved);
+	else
+#endif
 		__mod_zone_page_state(zone, NR_ACTIVE_ANON, -pgmoved);
 	spin_unlock_irq(&zone->lru_lock);
 
@@ -1378,7 +1387,11 @@ static void shrink_active_list(unsigned long nr_pages, struct zone *zone,
 	 * Move the pages to the [file or anon] inactive list.
 	 */
 	pagevec_init(&pvec, 1);
+#ifdef CONFIG_KRG_MM
+	lru = BUILD_LRU_ID(0 /* inactive */, file, kddm);
+#else
 	lru = LRU_BASE + file * LRU_FILE;
+#endif
 
 	spin_lock_irq(&zone->lru_lock);
 	/*
@@ -1388,7 +1401,7 @@ static void shrink_active_list(unsigned long nr_pages, struct zone *zone,
 	 * pages in get_scan_ratio.
 	 */
 #ifdef CONFIG_KRG_MM
-	reclaim_stat->recent_rotated[RECLAIM_STAT_INDEX(file, 0 /* KDDM */)] += pgmoved;
+	reclaim_stat->recent_rotated[RECLAIM_STAT_INDEX(file, kddm)] += pgmoved;
 #else
 	reclaim_stat->recent_rotated[!!file] += pgmoved;
 #endif
@@ -1464,16 +1477,25 @@ static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 	int file = is_file_lru(lru);
 
 	if (lru == LRU_ACTIVE_FILE) {
+#ifdef CONFIG_KRG_MM
+		shrink_active_list(nr_to_scan, zone, sc, priority, file, 0);
+#else
 		shrink_active_list(nr_to_scan, zone, sc, priority, file);
+#endif
 		return 0;
 	}
 
 	if (lru == LRU_ACTIVE_ANON && inactive_anon_is_low(zone, sc)) {
+#ifdef CONFIG_KRG_MM
+		shrink_active_list(nr_to_scan, zone, sc, priority, file, 0);
+#else
 		shrink_active_list(nr_to_scan, zone, sc, priority, file);
+#endif
 		return 0;
 	}
 #ifdef CONFIG_KRG_MM
-	return shrink_inactive_list(nr_to_scan, zone, sc, priority, file, 0 /* KDDM */);
+	return shrink_inactive_list(nr_to_scan, zone, sc, priority, file,
+				    is_kddm_lru(lru));
 #else
 	return shrink_inactive_list(nr_to_scan, zone, sc, priority, file);
 #endif
