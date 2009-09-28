@@ -1126,7 +1126,11 @@ int isolate_lru_page(struct page *page)
  */
 static unsigned long shrink_inactive_list(unsigned long max_scan,
 			struct zone *zone, struct scan_control *sc,
+#ifdef CONFIG_KRG_MM
+			int priority, int file, int kddm)
+#else
 			int priority, int file)
+#endif
 {
 	LIST_HEAD(page_list);
 	struct pagevec pvec;
@@ -1162,7 +1166,7 @@ static unsigned long shrink_inactive_list(unsigned long max_scan,
 		nr_taken = sc->isolate_pages(sc->swap_cluster_max,
 			     &page_list, &nr_scan, sc->order, mode,
 #ifdef CONFIG_KRG_MM
-				zone, sc->mem_cgroup, 0, file, 0 /* KDDM */);
+				zone, sc->mem_cgroup, 0, file, kddm);
 #else
 				zone, sc->mem_cgroup, 0, file);
 #endif
@@ -1468,7 +1472,11 @@ static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 		shrink_active_list(nr_to_scan, zone, sc, priority, file);
 		return 0;
 	}
+#ifdef CONFIG_KRG_MM
+	return shrink_inactive_list(nr_to_scan, zone, sc, priority, file, 0 /* KDDM */);
+#else
 	return shrink_inactive_list(nr_to_scan, zone, sc, priority, file);
+#endif
 }
 
 /*
