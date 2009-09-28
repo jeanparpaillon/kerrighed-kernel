@@ -1544,27 +1544,31 @@ static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 static void get_scan_ratio(struct zone *zone, struct scan_control *sc,
 					unsigned long *percent)
 {
+#ifdef CONFIG_KRG_MM
+	unsigned long kddm, kddm_prio, kp;
+#endif
 	unsigned long anon, file, free;
 	unsigned long anon_prio, file_prio;
 	unsigned long ap, fp;
 	struct zone_reclaim_stat *reclaim_stat = get_reclaim_stat(zone, sc);
 
-#ifdef CONFIG_KRG_MM
-	percent[2] = 0;
-#endif
-
+#ifndef CONFIG_KRG_MM
 	/* If we have no swap space, do not bother scanning anon pages. */
 	if (!sc->may_swap || (nr_swap_pages <= 0)) {
 		percent[0] = 0;
 		percent[1] = 100;
 		return;
 	}
+#endif
 
 	anon  = zone_nr_pages(zone, sc, LRU_ACTIVE_ANON) +
 		zone_nr_pages(zone, sc, LRU_INACTIVE_ANON);
 	file  = zone_nr_pages(zone, sc, LRU_ACTIVE_FILE) +
 		zone_nr_pages(zone, sc, LRU_INACTIVE_FILE);
-
+#ifdef CONFIG_KRG_MM
+	kddm  = zone_nr_pages(zone, sc, LRU_ACTIVE_KDDM) +
+		zone_nr_pages(zone, sc, LRU_INACTIVE_KDDM);
+#else
 	if (scanning_global_lru(sc)) {
 		free  = zone_page_state(zone, NR_FREE_PAGES);
 		/* If we have very few page cache pages,
@@ -1575,7 +1579,7 @@ static void get_scan_ratio(struct zone *zone, struct scan_control *sc,
 			return;
 		}
 	}
-
+#endif
 	/*
 	 * OK, so we have swap space and a fair amount of page cache
 	 * pages.  We use the recently rotated / recently scanned
@@ -1601,13 +1605,33 @@ static void get_scan_ratio(struct zone *zone, struct scan_control *sc,
 		spin_unlock_irq(&zone->lru_lock);
 	}
 
+#ifdef CONFIG_KRG_MM
+	if (unlikely(reclaim_stat->recent_scanned[2] > kddm / 4)) {
+		spin_lock_irq(&zone->lru_lock);
+		reclaim_stat->recent_scanned[2] /= 2;
+		reclaim_stat->recent_rotated[2] /= 2;
+		spin_unlock_irq(&zone->lru_lock);
+	}
+#endif
+
 	/*
 	 * With swappiness at 100, anonymous and file have the same priority.
 	 * This scanning priority is essentially the inverse of IO cost.
 	 */
 	anon_prio = sc->swappiness;
 	file_prio = 200 - sc->swappiness;
-
+#ifdef CONFIG_KRG_MM
+	if (!sc->may_swap || (nr_swap_pages <= 0))
+		anon_prio = 0;
+	if (scanning_global_lru(sc)) {
+		free  = zone_page_state(zone, NR_FREE_PAGES);
+		/* If we have very few page cache pages,
+		   force-scan anon pages. */
+		if (unlikely(file + free <= zone->pages_high))
+			file_prio = 0;
+	}
+	kddm_prio = 400 - anon_prio - file_prio;
+#endif
 	/*
 	 * The amount of pressure on anon vs file pages is inversely
 	 * proportional to the fraction of recently scanned pages on
@@ -1619,9 +1643,20 @@ static void get_scan_ratio(struct zone *zone, struct scan_control *sc,
 	fp = (file_prio + 1) * (reclaim_stat->recent_scanned[1] + 1);
 	fp /= reclaim_stat->recent_rotated[1] + 1;
 
+#ifdef CONFIG_KRG_MM
+	kp = (kddm_prio + 1) * (reclaim_stat->recent_scanned[2] + 1);
+	kp /= reclaim_stat->recent_rotated[2] + 1;
+
+	/* Normalize to percentages */
+	percent[0] = 100 * ap / (ap + fp + kp + 1);
+	percent[1] = 100 * fp / (ap + fp + kp + 1);
+	percent[2] = 100 - percent[0] - percent[1];
+#else
+
 	/* Normalize to percentages */
 	percent[0] = 100 * ap / (ap + fp + 1);
 	percent[1] = 100 - percent[0];
+#endif
 }
 
 
