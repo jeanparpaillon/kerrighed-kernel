@@ -690,6 +690,25 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 					referenced && page_mapping_inuse(page))
 			goto activate_locked;
 
+#ifdef CONFIG_KRG_MM
+		if ((page->obj_entry) && (page_mapped(page))) {
+			switch (try_to_flush_page(page)) {
+			case SWAP_FAIL:
+				goto activate_locked;
+                        case SWAP_AGAIN:
+                                goto keep_locked;
+			case SWAP_MLOCK:
+				goto cull_mlocked;
+                        case SWAP_SUCCESS:
+                                ; /* try to free the page below */
+                        }
+
+			unlock_page(page);
+			if (put_page_testzero(page))
+				goto free_it;
+			BUG();
+		}
+#endif
 		/*
 		 * Anonymous process memory has backing store?
 		 * Try to allocate it some swap space here.
