@@ -98,6 +98,8 @@ extern void (*kh_do_munmap)(struct mm_struct *, unsigned long, size_t,
 
 int try_to_flush_page(struct page *page);
 
+void krg_notify_mem(void);
+
 #define TestClearPageLRU(page)  test_and_clear_bit(PG_lru, &(page)->flags)
 
 #endif // __KKRG_MM__
