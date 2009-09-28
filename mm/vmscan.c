@@ -1471,6 +1471,32 @@ static int inactive_anon_is_low(struct zone *zone, struct scan_control *sc)
 	return low;
 }
 
+#ifdef CONFIG_KRG_MM
+static int inactive_kddm_is_low_global(struct zone *zone)
+{
+	unsigned long active, inactive;
+
+	active = zone_page_state(zone, NR_ACTIVE_KDDM);
+	inactive = zone_page_state(zone, NR_INACTIVE_KDDM);
+
+	if (inactive * zone->inactive_ratio < active)
+		return 1;
+
+	return 0;
+}
+
+static int inactive_kddm_is_low(struct zone *zone, struct scan_control *sc)
+{
+	int low;
+
+	if (scanning_global_lru(sc))
+		low = inactive_kddm_is_low_global(zone);
+	else
+		BUG();
+	return low;
+}
+#endif
+
 static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 	struct zone *zone, struct scan_control *sc, int priority)
 {
@@ -1494,6 +1520,11 @@ static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 		return 0;
 	}
 #ifdef CONFIG_KRG_MM
+	if (lru == LRU_ACTIVE_KDDM && inactive_kddm_is_low(zone, sc)) {
+		shrink_active_list(nr_to_scan, zone, sc, priority, 0, 1);
+		return 0;
+	}
+
 	return shrink_inactive_list(nr_to_scan, zone, sc, priority, file,
 				    is_kddm_lru(lru));
 #else
@@ -1672,7 +1703,13 @@ static void shrink_zone(int priority, struct zone *zone,
 	 * rebalance the anon lru active/inactive ratio.
 	 */
 	if (inactive_anon_is_low(zone, sc))
+#ifdef CONFIG_KRG_MM
+		shrink_active_list(SWAP_CLUSTER_MAX, zone, sc, priority, 0, 0);
+	if (inactive_kddm_is_low(zone, sc))
+		shrink_active_list(SWAP_CLUSTER_MAX, zone, sc, priority, 0, 1);
+#else
 		shrink_active_list(SWAP_CLUSTER_MAX, zone, sc, priority, 0);
+#endif
 
 	throttle_vm_writeout(sc->gfp_mask);
 }
@@ -1973,7 +2010,15 @@ loop_again:
 			 */
 			if (inactive_anon_is_low(zone, &sc))
 				shrink_active_list(SWAP_CLUSTER_MAX, zone,
+#ifndef CONFIG_KRG_MM
 							&sc, priority, 0);
+#else
+							&sc, priority, 0, 0);
+			/* Do the same on kddm lru pages */
+			if (inactive_kddm_is_low(zone, &sc))
+				shrink_active_list(SWAP_CLUSTER_MAX, zone,
+						   &sc, priority, 0, 1);
+#endif
 
 			if (!zone_watermark_ok(zone, order, zone->pages_high,
 					       0, 0)) {
