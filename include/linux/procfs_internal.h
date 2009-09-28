@@ -58,8 +58,8 @@ extern int proc_pid_status(struct seq_file *m, struct pid_namespace *ns,
 extern int proc_pid_statm(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *task);
 
-extern struct dentry *(*kh_proc_pid_lookup)(struct inode *dir,
-					    struct dentry *dentry, pid_t pid);
+extern struct dentry *krg_proc_pid_lookup(struct inode *dir,
+					  struct dentry *dentry, pid_t pid);
 extern int krg_proc_pid_readdir(struct file *filp,
 				void *dirent, filldir_t filldir,
 				loff_t offset);

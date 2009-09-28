@@ -2871,9 +2871,9 @@ struct dentry *proc_pid_lookup(struct inode *dir, struct dentry * dentry, struct
 	if (!task)
 #if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
 	{
-		if (current->nsproxy->krg_ns && kh_proc_pid_lookup
+		if (current->nsproxy->krg_ns
 		    && is_krg_pid_ns_root(ns) && (tgid & GLOBAL_PID_MASK))
-			result = kh_proc_pid_lookup(dir, dentry, tgid);
+			result = krg_proc_pid_lookup(dir, dentry, tgid);
 #endif
                 goto out;
 #if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_PROC)
@@ -2884,7 +2884,7 @@ struct dentry *proc_pid_lookup(struct inode *dir, struct dentry * dentry, struct
 #if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_EPM)
 	if (current->nsproxy->krg_ns
 	    && IS_ERR(result) && task->exit_state == EXIT_MIGRATION)
-		result = kh_proc_pid_lookup(dir, dentry, tgid);
+		result = krg_proc_pid_lookup(dir, dentry, tgid);
 #endif
 	put_task_struct(task);
 out:
