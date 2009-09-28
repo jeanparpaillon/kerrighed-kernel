@@ -132,7 +132,7 @@ extern void free_pid(struct pid *pid);
 #ifdef CONFIG_KRG_EPM
 extern struct pid *__alloc_pid(struct pid_namespace *ns, const int *req_nr);
 extern int reserve_pidmap(struct pid_namespace *ns, int nr);
-extern void free_pidmap(struct upid *upid);
+extern void __free_pidmap(struct upid *upid);
 
 static inline struct pid *alloc_pid(struct pid_namespace *ns)
 {

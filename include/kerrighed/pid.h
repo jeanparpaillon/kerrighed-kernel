@@ -152,6 +152,8 @@ void pidmap_map_read_unlock(void);
 kerrighed_node_t pidmap_node(kerrighed_node_t node);
 struct pid_namespace *node_pidmap(kerrighed_node_t node);
 
+void krg_free_pidmap(struct upid *upid);
+
 #elif defined(CONFIG_KRG_PROC)
 
 static inline int pidmap_map_read_lock(void)

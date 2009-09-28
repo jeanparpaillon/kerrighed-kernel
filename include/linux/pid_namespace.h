@@ -65,6 +65,10 @@ static inline bool is_krg_pid_ns_root(struct pid_namespace *ns)
 struct pid_namespace *find_get_krg_pid_ns(void);
 #endif
 
+#ifdef CONFIG_KRG_EPM
+struct pid_namespace *create_pid_namespace(unsigned int level);
+#endif
+
 #else /* !CONFIG_PID_NS */
 #include <linux/err.h>
 
