@@ -620,6 +620,29 @@ struct pid *find_ge_pid(int nr, struct pid_namespace *ns)
 	return pid;
 }
 
+#ifdef CONFIG_KRG_PROC
+struct pid *krg_find_ge_pid(int nr, struct pid_namespace *pid_ns,
+			    struct pid_namespace *pidmap_ns)
+{
+	kerrighed_node_t node = ORIG_NODE(nr);
+	struct pid *pid;
+
+	BUG_ON(!pid_ns->global);
+	BUG_ON(!(nr & GLOBAL_PID_MASK));
+
+	do {
+		pid = find_pid_ns(nr, pid_ns);
+		if (pid)
+			break;
+		nr = next_pidmap(pidmap_ns, SHORT_PID(nr));
+		if (nr > 0)
+			nr = GLOBAL_PID_NODE(nr, node);
+	} while (nr > 0);
+
+	return pid;
+}
+#endif /* CONFIG_KRG_PROC */
+
 /*
  * The pid hash table is scaled according to the amount of memory in the
  * machine.  From a minimum of 16 slots up to 4096 slots at one gigabyte or
