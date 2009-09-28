@@ -194,7 +194,11 @@ void __init anon_vma_init(void)
  * Getting a lock on a stable anon_vma from a page off the LRU is
  * tricky: page_lock_anon_vma rely on RCU to guard against the races.
  */
+#ifdef CONFIG_KRG_MM
+struct anon_vma *page_lock_anon_vma(struct page *page)
+#else
 static struct anon_vma *page_lock_anon_vma(struct page *page)
+#endif
 {
 	struct anon_vma *anon_vma;
 	unsigned long anon_mapping;
@@ -214,7 +218,11 @@ out:
 	return NULL;
 }
 
+#ifdef CONFIG_KRG_MM
+void page_unlock_anon_vma(struct anon_vma *anon_vma)
+#else
 static void page_unlock_anon_vma(struct anon_vma *anon_vma)
+#endif
 {
 	spin_unlock(&anon_vma->lock);
 	rcu_read_unlock();
@@ -760,8 +768,13 @@ void page_remove_rmap(struct page *page)
  * Subfunctions of try_to_unmap: try_to_unmap_one called
  * repeatedly from either try_to_unmap_anon or try_to_unmap_file.
  */
+#ifdef CONFIG_KRG_MM
+int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
+		     int migration)
+#else
 static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 				int migration)
+#endif
 {
 	struct mm_struct *mm = vma->vm_mm;
 	unsigned long address;
