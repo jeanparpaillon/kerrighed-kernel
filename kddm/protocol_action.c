@@ -669,8 +669,6 @@ int object_first_touch(struct kddm_set * set,
 
 	kddm_insert_object (set, objid, obj_entry, object_state);
 
-	wake_up_on_wait_object(obj_entry, set);
-
 	return res;
 }
 

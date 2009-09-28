@@ -146,7 +146,6 @@ handle_ack:
 		      (OBJ_STATE(obj_entry) != INV_FILLING)) {
 			  kddm_insert_object (set, msg->objid, obj_entry,
 					      WRITE_OWNER);
-			  wake_up_on_wait_object (obj_entry, set);
 		  }
 
 		  break;
