@@ -27,6 +27,8 @@
 
 #include <linux/delay.h>
 
+#include "pid.h"
+
 struct pid_kddm_object {
 	struct list_head wq;
 	struct rcu_head rcu;
@@ -290,6 +292,8 @@ static void __put_pid(struct pid_kddm_object *obj)
 	read_unlock(&tasklist_lock);
 
 	/* The pid seems to be unused locally. Have to check globally. */
+	/* Prevent pidmaps from changing host nodes. */
+	pidmap_map_read_lock();
 	fkddm_grab_object(kddm_def_ns, PID_KDDM_ID, nr,
 			  KDDM_NO_FT_REQ | KDDM_DONT_KILL);
 	grabbed = 1;
@@ -314,10 +318,13 @@ release_work:
 
 	read_unlock(&tasklist_lock);
 
-	if (may_put)
+	if (may_put) {
 		_kddm_remove_frozen_object(pid_kddm_set, nr);
-	else if (grabbed)
+		pidmap_map_read_unlock();
+	} else if (grabbed) {
 		_kddm_put_object(pid_kddm_set, nr);
+		pidmap_map_read_unlock();
+	}
 }
 
 /* This worker cleans all PID related data on this node. */
@@ -443,28 +450,35 @@ int export_pid_namespace(struct epm_action *action,
 
 static int __reserve_pid(pid_t nr)
 {
-	struct pid_namespace *ns = find_get_krg_pid_ns();
+	kerrighed_node_t orig_node = ORIG_NODE(nr);
+	struct pid_namespace *pid_ns = find_get_krg_pid_ns();
+	struct pid_namespace *pidmap_ns;
 	struct pid *pid;
-	int pidmap = 1, r;
+	int r;
 
-	if (ORIG_NODE(nr) == kerrighed_node_id) {
-		r = reserve_pidmap(ns, nr);
-		if (r) {
-			r = -E_CR_PIDBUSY;
-			goto out;
-		}
-	} else {
-		/*
-		 * WARNING: we can not reserve the pidmap because this
-		 * is not the right node
-		 */
-		pidmap = 0;
+	if (orig_node == kerrighed_node_id)
+		pidmap_ns = pid_ns;
+	else
+		pidmap_ns = node_pidmap(orig_node);
+	BUG_ON(!pidmap_ns);
+
+	r = reserve_pidmap(pidmap_ns, nr);
+	if (r) {
+		r = -E_CR_PIDBUSY;
+		goto out;
 	}
 
-	pid = __alloc_pid(ns, &nr);
+	pid = __alloc_pid(pid_ns, &nr);
 	if (!pid) {
+		struct upid upid = {
+			.nr = nr,
+			.ns = pidmap_ns,
+		};
+
+		__free_pidmap(&upid);
+
 		r = -ENOMEM;
-		goto err_alloc_pid;
+		goto out;
 	}
 
 	/*
@@ -472,24 +486,11 @@ static int __reserve_pid(pid_t nr)
 	 * to know when it is or not
 	 */
 	r = create_pid_kddm_object(pid, 1);
-	if (!r)
-		goto out;
+	if (r)
+		free_pid(pid);
 
-	/* release the struct pid in case of failure */
-	free_pid(pid);
-	pidmap = 0;
-
-err_alloc_pid:
-	if (pidmap) {
-		struct upid upid = {
-			.nr = nr,
-			.ns = ns,
-		};
-
-		free_pidmap(&upid);
-	}
 out:
-	put_pid_ns(ns);
+	put_pid_ns(pid_ns);
 	return r;
 }
 
@@ -508,15 +509,36 @@ static int handle_reserve_pid(struct rpc_desc *desc, void *_msg, size_t size)
 int reserve_pid(pid_t pid)
 {
 	int r;
+	kerrighed_node_t orig_node = ORIG_NODE(pid);
+	kerrighed_node_t host_node;
 	struct pid_reservation_msg msg;
+
 	msg.requester = kerrighed_node_id;
 	msg.pid = pid;
 
-	if (krgnode_online(ORIG_NODE(pid)))
-		r = rpc_sync(PROC_RESERVE_PID, ORIG_NODE(pid), &msg, sizeof(msg));
-	else /* the node is not anymore in the cluster */
-		r = __reserve_pid(pid);
+	r = pidmap_map_read_lock();
+	if (r)
+		goto out;
 
+	host_node = pidmap_node(orig_node);
+	if (host_node == KERRIGHED_NODE_ID_NONE) {
+		pidmap_map_read_unlock();
+
+		r = pidmap_map_alloc(orig_node);
+		if (r)
+			goto out;
+
+		pidmap_map_read_lock();
+
+		host_node = pidmap_node(orig_node);
+		BUG_ON(host_node == KERRIGHED_NODE_ID_NONE);
+	}
+
+	r = rpc_sync(PROC_RESERVE_PID, host_node, &msg, sizeof(msg));
+
+	pidmap_map_read_unlock();
+
+out:
 	return r;
 }
 
@@ -549,15 +571,22 @@ static int handle_cancel_pid_reservation(struct rpc_desc *desc, void *_msg,
 int cancel_pid_reservation(pid_t pid)
 {
 	int r;
+	kerrighed_node_t host_node;
 	struct pid_reservation_msg msg;
+
 	msg.requester = kerrighed_node_id;
 	msg.pid = pid;
 
-	if (krgnode_online(ORIG_NODE(pid)))
-		r = rpc_sync(PROC_CANCEL_PID_RESERVATION, ORIG_NODE(pid),
-			     &msg, sizeof(msg));
-	else /* the node is not anymore in the cluster */
-		r = __cancel_pid_reservation(pid);
+	r = pidmap_map_read_lock();
+	if (r)
+		return r;
+
+	host_node = pidmap_node(ORIG_NODE(pid));
+	BUG_ON(host_node == KERRIGHED_NODE_ID_NONE);
+
+	r = rpc_sync(PROC_CANCEL_PID_RESERVATION, host_node, &msg, sizeof(msg));
+
+	pidmap_map_read_unlock();
 
 	return r;
 }
@@ -636,15 +665,22 @@ struct pid_link_task_msg {
 int krg_pid_link_task(pid_t pid)
 {
 	struct pid_link_task_msg msg;
-	int r = 0;
+	kerrighed_node_t host_node;
+	int r;
 
 	msg.requester = kerrighed_node_id;
 	msg.pid = pid;
 
-	if (ORIG_NODE(pid) != kerrighed_node_id
-	    && krgnode_online(ORIG_NODE(pid)))
-		r = rpc_sync(PROC_PID_LINK_TASK, ORIG_NODE(pid),
-			     &msg, sizeof(msg));
+	r = pidmap_map_read_lock();
+	if (r)
+		return r;
+
+	host_node = pidmap_node(ORIG_NODE(pid));
+	BUG_ON(host_node == KERRIGHED_NODE_ID_NONE);
+
+	r = rpc_sync(PROC_PID_LINK_TASK, host_node, &msg, sizeof(msg));
+
+	pidmap_map_read_unlock();
 
 	return r;
 }

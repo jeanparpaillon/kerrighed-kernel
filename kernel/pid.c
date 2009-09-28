@@ -120,10 +120,11 @@ EXPORT_SYMBOL(is_container_init);
 
 static  __cacheline_aligned_in_smp DEFINE_SPINLOCK(pidmap_lock);
 
-#ifndef CONFIG_KRG_EPM
-static
+#ifdef CONFIG_KRG_EPM
+void __free_pidmap(struct upid *upid)
+#else
+static void free_pidmap(struct upid *upid)
 #endif
-void free_pidmap(struct upid *upid)
 {
 #ifndef CONFIG_KRG_PROC
 	int nr = upid->nr;
@@ -133,19 +134,20 @@ void free_pidmap(struct upid *upid)
 	struct pidmap *map = upid->ns->pidmap + nr / BITS_PER_PAGE;
 	int offset = nr & BITS_PER_PAGE_MASK;
 
-#ifdef CONFIG_KRG_EPM
-	if ((upid->nr & GLOBAL_PID_MASK)
-	    && ORIG_NODE(upid->nr) != kerrighed_node_id)
-		return;
-#else /* !CONFIG_KRG_EPM */
-#ifdef CONFIG_KRG_PROC
-	BUG_ON((upid->nr & GLOBAL_PID_MASK) &&
-	       ORIG_NODE(upid->nr) != kerrighed_node_id);
-#endif
-#endif /* !CONFIG_KRG_EPM */
 	clear_bit(offset, map->page);
 	atomic_inc(&map->nr_free);
 }
+
+#ifdef CONFIG_KRG_EPM
+static void free_pidmap(struct upid *upid)
+{
+	if ((upid->nr & GLOBAL_PID_MASK)
+	    && ORIG_NODE(upid->nr) != kerrighed_node_id)
+		krg_free_pidmap(upid);
+	else
+		__free_pidmap(upid);
+}
+#endif
 
 static int alloc_pidmap(struct pid_namespace *pid_ns)
 {
@@ -213,7 +215,6 @@ int reserve_pidmap(struct pid_namespace *pid_ns, int pid)
 	int offset;
 	struct pidmap *map;
 
-	BUG_ON(ORIG_NODE(pid) != kerrighed_node_id);
 	pid = SHORT_PID(pid);
 	if (pid >= pid_max)
 		return -EINVAL;
