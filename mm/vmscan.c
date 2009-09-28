@@ -48,6 +48,12 @@
 
 #include "internal.h"
 
+#ifdef CONFIG_KRG_MM
+#include <net/krgrpc/rpc.h>
+#endif
+
+#define RPC_MAX_PAGES 1700
+
 struct scan_control {
 	/* Incremented by the number of inactive pages that were scanned */
 	unsigned long nr_scanned;
@@ -581,6 +587,25 @@ void putback_lru_page(struct page *page)
 }
 #endif /* CONFIG_UNEVICTABLE_LRU */
 
+static int check_injection_flow(void)
+{
+	long i = 0, limit = RPC_MAX_PAGES;
+
+	if ((rpc_consumed_bytes() / PAGE_SIZE) < limit)
+		return 0;
+
+	if (!current_is_kswapd())
+		return 1;
+
+	limit = limit / 2;
+
+	while ((rpc_consumed_bytes() / PAGE_SIZE) > limit) {
+		schedule();
+		i++;
+	}
+
+	return 0;
+}
 
 /*
  * shrink_page_list() returns the number of reclaimed pages
@@ -604,6 +629,10 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		int referenced;
 
 		cond_resched();
+
+#ifdef CONFIG_KRG_MM
+		check_injection_flow();
+#endif
 
 		page = lru_to_page(page_list);
 		list_del(&page->lru);
