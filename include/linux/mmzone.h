@@ -86,6 +86,10 @@ enum zone_stat_item {
 	NR_ACTIVE_ANON,		/*  "     "     "   "       "         */
 	NR_INACTIVE_FILE,	/*  "     "     "   "       "         */
 	NR_ACTIVE_FILE,		/*  "     "     "   "       "         */
+#ifdef CONFIG_KRG_MM
+	NR_INACTIVE_KDDM,
+	NR_ACTIVE_KDDM,
+#endif
 #ifdef CONFIG_UNEVICTABLE_LRU
 	NR_UNEVICTABLE,		/*  "     "     "   "       "         */
 	NR_MLOCK,		/* mlock()ed pages found and moved off LRU */
@@ -129,12 +133,17 @@ enum zone_stat_item {
 #define LRU_BASE 0
 #define LRU_ACTIVE 1
 #define LRU_FILE 2
+#define LRU_KDDM 4
 
 enum lru_list {
 	LRU_INACTIVE_ANON = LRU_BASE,
 	LRU_ACTIVE_ANON = LRU_BASE + LRU_ACTIVE,
 	LRU_INACTIVE_FILE = LRU_BASE + LRU_FILE,
 	LRU_ACTIVE_FILE = LRU_BASE + LRU_FILE + LRU_ACTIVE,
+#ifdef CONFIG_KRG_MM
+	LRU_INACTIVE_KDDM = LRU_BASE + LRU_KDDM,
+	LRU_ACTIVE_KDDM = LRU_BASE + LRU_KDDM + LRU_ACTIVE,
+#endif
 #ifdef CONFIG_UNEVICTABLE_LRU
 	LRU_UNEVICTABLE,
 #else
@@ -145,16 +154,32 @@ enum lru_list {
 
 #define for_each_lru(l) for (l = 0; l < NR_LRU_LISTS; l++)
 
+#ifdef CONFIG_KRG_MM
+#define for_each_evictable_lru(l) for (l = 0; l <= LRU_ACTIVE_KDDM; l++)
+#else
 #define for_each_evictable_lru(l) for (l = 0; l <= LRU_ACTIVE_FILE; l++)
+#endif
 
 static inline int is_file_lru(enum lru_list l)
 {
 	return (l == LRU_INACTIVE_FILE || l == LRU_ACTIVE_FILE);
 }
 
+#ifdef CONFIG_KRG_MM
+static inline int is_kddm_lru(enum lru_list l)
+{
+	return (l == LRU_INACTIVE_KDDM || l == LRU_ACTIVE_KDDM);
+}
+#endif
+
 static inline int is_active_lru(enum lru_list l)
 {
+#ifdef CONFIG_KRG_MM
+	return (l == LRU_ACTIVE_ANON || l == LRU_ACTIVE_FILE ||
+		l == LRU_ACTIVE_KDDM);
+#else
 	return (l == LRU_ACTIVE_ANON || l == LRU_ACTIVE_FILE);
+#endif
 }
 
 static inline int is_unevictable_lru(enum lru_list l)

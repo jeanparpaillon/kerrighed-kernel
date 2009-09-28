@@ -192,11 +192,21 @@ extern void add_page_to_unevictable_list(struct page *page);
  */
 static inline void lru_cache_add_anon(struct page *page)
 {
+#ifdef CONFIG_KRG_MM
+	if (page->obj_entry)
+		__lru_cache_add(page, LRU_INACTIVE_KDDM);
+	else
+#endif
 	__lru_cache_add(page, LRU_INACTIVE_ANON);
 }
 
 static inline void lru_cache_add_active_anon(struct page *page)
 {
+#ifdef CONFIG_KRG_MM
+	if (page->obj_entry)
+		__lru_cache_add(page, LRU_ACTIVE_KDDM);
+	else
+#endif
 	__lru_cache_add(page, LRU_ACTIVE_ANON);
 }
 

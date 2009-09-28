@@ -1130,6 +1130,12 @@ static unsigned long shrink_inactive_list(unsigned long max_scan,
 						-count[LRU_ACTIVE_ANON]);
 		__mod_zone_page_state(zone, NR_INACTIVE_ANON,
 						-count[LRU_INACTIVE_ANON]);
+#ifdef CONFIG_KRG_MM
+		__mod_zone_page_state(zone, NR_ACTIVE_KDDM,
+						-count[LRU_ACTIVE_KDDM]);
+		__mod_zone_page_state(zone, NR_INACTIVE_ANON,
+						-count[LRU_INACTIVE_KDDM]);
+#endif
 
 		if (scanning_global_lru(sc))
 			zone->pages_scanned += nr_scan;
@@ -1279,6 +1285,8 @@ static void shrink_active_list(unsigned long nr_pages, struct zone *zone,
 	else
 		__mod_zone_page_state(zone, NR_ACTIVE_ANON, -pgmoved);
 	spin_unlock_irq(&zone->lru_lock);
+
+
 
 	pgmoved = 0;
 	while (!list_empty(&l_hold)) {
@@ -2081,6 +2089,10 @@ unsigned long global_lru_pages(void)
 {
 	return global_page_state(NR_ACTIVE_ANON)
 		+ global_page_state(NR_ACTIVE_FILE)
+#ifdef CONFIG_KRG_MM
+		+ global_page_state(NR_ACTIVE_KDDM)
+		+ global_page_state(NR_INACTIVE_KDDM)
+#endif
 		+ global_page_state(NR_INACTIVE_ANON)
 		+ global_page_state(NR_INACTIVE_FILE);
 }

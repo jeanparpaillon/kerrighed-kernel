@@ -23,6 +23,16 @@ static inline int page_is_file_cache(struct page *page)
 	return LRU_FILE;
 }
 
+#ifdef CONFIG_KRG_MM
+static inline int page_is_kddm(struct page *page)
+{
+	if (page->obj_entry)
+		return LRU_KDDM;
+
+	return 0;
+}
+#endif
+
 static inline void
 add_page_to_lru_list(struct zone *zone, struct page *page, enum lru_list l)
 {
@@ -53,6 +63,11 @@ del_page_from_lru(struct zone *zone, struct page *page)
 			__ClearPageActive(page);
 			l += LRU_ACTIVE;
 		}
+#ifdef CONFIG_KRG_MM
+		if (page->obj_entry)
+			l += LRU_KDDM;
+		else
+#endif
 		l += page_is_file_cache(page);
 	}
 	__dec_zone_state(zone, NR_LRU_BASE + l);
@@ -75,10 +90,17 @@ static inline enum lru_list page_lru(struct page *page)
 	else {
 		if (PageActive(page))
 			lru += LRU_ACTIVE;
+#ifdef CONFIG_KRG_MM
+		if (page->obj_entry)
+			lru += LRU_KDDM;
+		else
+#endif
 		lru += page_is_file_cache(page);
 	}
 
 	return lru;
 }
+
+#define BUILD_LRU_ID(active,file,kddm) (LRU_BASE + LRU_KDDM * kddm + LRU_FILE * file + active)
 
 #endif

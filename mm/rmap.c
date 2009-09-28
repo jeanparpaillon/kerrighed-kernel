@@ -689,7 +689,16 @@ void page_add_new_anon_rmap(struct page *page,
 	atomic_set(&page->_mapcount, 0); /* increment count (starts at -1) */
 	__page_set_anon_rmap(page, vma, address);
 	if (page_evictable(page, vma))
+#ifdef CONFIG_KRG_MM
+	{
+		if (page->obj_entry)
+			lru_cache_add_lru(page, LRU_ACTIVE_KDDM);
+		else
+			lru_cache_add_lru(page, LRU_ACTIVE_ANON);
+	}
+#else
 		lru_cache_add_lru(page, LRU_ACTIVE_ANON);
+#endif
 	else
 		add_page_to_unevictable_list(page);
 }
