@@ -1518,6 +1518,10 @@ static void get_scan_ratio(struct zone *zone, struct scan_control *sc,
 	unsigned long ap, fp;
 	struct zone_reclaim_stat *reclaim_stat = get_reclaim_stat(zone, sc);
 
+#ifdef CONFIG_KRG_MM
+	percent[2] = 0;
+#endif
+
 	/* If we have no swap space, do not bother scanning anon pages. */
 	if (!sc->may_swap || (nr_swap_pages <= 0)) {
 		percent[0] = 0;
@@ -1598,7 +1602,11 @@ static void shrink_zone(int priority, struct zone *zone,
 {
 	unsigned long nr[NR_LRU_LISTS];
 	unsigned long nr_to_scan;
+#ifdef CONFIG_KRG_MM
+	unsigned long percent[3];	/* anon @ 0; file @ 1; kddm @ 2 */
+#else
 	unsigned long percent[2];	/* anon @ 0; file @ 1 */
+#endif
 	enum lru_list l;
 	unsigned long nr_reclaimed = sc->nr_reclaimed;
 	unsigned long swap_cluster_max = sc->swap_cluster_max;
@@ -1606,7 +1614,11 @@ static void shrink_zone(int priority, struct zone *zone,
 	get_scan_ratio(zone, sc, percent);
 
 	for_each_evictable_lru(l) {
+#ifdef CONFIG_KRG_MM
+		int file = RECLAIM_STAT_INDEX(is_file_lru(l), is_kddm_lru(l));
+#else
 		int file = is_file_lru(l);
+#endif
 		unsigned long scan;
 
 		scan = zone_nr_pages(zone, sc, l);
@@ -1626,7 +1638,11 @@ static void shrink_zone(int priority, struct zone *zone,
 	}
 
 	while (nr[LRU_INACTIVE_ANON] || nr[LRU_ACTIVE_FILE] ||
+#ifdef CONFIG_KRG_MM
+	       nr[LRU_INACTIVE_KDDM] || nr[LRU_INACTIVE_FILE]) {
+#else
 					nr[LRU_INACTIVE_FILE]) {
+#endif
 		for_each_evictable_lru(l) {
 			if (nr[l]) {
 				nr_to_scan = min(nr[l], swap_cluster_max);
