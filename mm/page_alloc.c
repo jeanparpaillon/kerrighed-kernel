@@ -3578,6 +3578,10 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 		zone->reclaim_stat.recent_rotated[1] = 0;
 		zone->reclaim_stat.recent_scanned[0] = 0;
 		zone->reclaim_stat.recent_scanned[1] = 0;
+#ifdef CONFIG_KRG_MM
+		zone->reclaim_stat.recent_scanned[2] = 0;
+		zone->reclaim_stat.recent_rotated[2] = 0;
+#endif
 		zap_zone_vm_stats(zone);
 		zone->flags = 0;
 		if (!size)

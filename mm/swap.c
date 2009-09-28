@@ -152,10 +152,19 @@ void  rotate_reclaimable_page(struct page *page)
 }
 
 static void update_page_reclaim_stat(struct zone *zone, struct page *page,
+#ifdef CONFIG_KRG_MM
+				     int file, int kddm, int rotated)
+#else
 				     int file, int rotated)
+#endif
 {
 	struct zone_reclaim_stat *reclaim_stat = &zone->reclaim_stat;
 	struct zone_reclaim_stat *memcg_reclaim_stat;
+#ifdef CONFIG_KRG_MM
+	/* Not clean but limit the patch on this function */
+	file = RECLAIM_STAT_INDEX(file, kddm);
+	BUG_ON ((file > 2) || (file < 0));
+#endif
 
 	memcg_reclaim_stat = mem_cgroup_get_reclaim_stat_from_page(page);
 
@@ -188,8 +197,12 @@ void activate_page(struct page *page)
 		lru += LRU_ACTIVE;
 		add_page_to_lru_list(zone, page, lru);
 		__count_vm_event(PGACTIVATE);
-
+#ifdef CONFIG_KRG_MM
+		update_page_reclaim_stat(zone, page, !!file,
+					 page_is_kddm(page), 1);
+#else
 		update_page_reclaim_stat(zone, page, !!file, 1);
+#endif
 	}
 	spin_unlock_irq(&zone->lru_lock);
 }
@@ -433,7 +446,12 @@ void ____pagevec_lru_add(struct pagevec *pvec, enum lru_list lru)
 		file = is_file_lru(lru);
 		if (active)
 			SetPageActive(page);
+#ifdef CONFIG_KRG_MM
+		update_page_reclaim_stat(zone, page, file,
+					 is_kddm_lru(lru), active);
+#else
 		update_page_reclaim_stat(zone, page, file, active);
+#endif
 		add_page_to_lru_list(zone, page, lru);
 	}
 	if (zone)

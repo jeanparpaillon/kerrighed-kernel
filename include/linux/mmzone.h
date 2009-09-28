@@ -297,8 +297,14 @@ struct zone_reclaim_stat {
 	 *
 	 * The anon LRU stats live in [0], file LRU stats in [1]
 	 */
+#ifdef CONFIG_KRG_MM
+	/* The KDDM LRU stats live in [2] */
+	unsigned long		recent_rotated[3];
+	unsigned long		recent_scanned[3];
+#else
 	unsigned long		recent_rotated[2];
 	unsigned long		recent_scanned[2];
+#endif
 };
 
 struct zone {

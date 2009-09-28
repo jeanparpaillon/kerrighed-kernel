@@ -1144,6 +1144,10 @@ static unsigned long shrink_inactive_list(unsigned long max_scan,
 		reclaim_stat->recent_scanned[0] += count[LRU_ACTIVE_ANON];
 		reclaim_stat->recent_scanned[1] += count[LRU_INACTIVE_FILE];
 		reclaim_stat->recent_scanned[1] += count[LRU_ACTIVE_FILE];
+#ifdef CONFIG_KRG_MM
+		reclaim_stat->recent_scanned[2] += count[LRU_INACTIVE_KDDM];
+		reclaim_stat->recent_scanned[2] += count[LRU_ACTIVE_KDDM];
+#endif
 
 		spin_unlock_irq(&zone->lru_lock);
 
@@ -1203,7 +1207,11 @@ static unsigned long shrink_inactive_list(unsigned long max_scan,
 			lru = page_lru(page);
 			add_page_to_lru_list(zone, page, lru);
 			if (PageActive(page)) {
+#ifdef CONFIG_KRG_MM
+				int file = reclaim_stat_index (page);
+#else
 				int file = !!page_is_file_cache(page);
+#endif
 				reclaim_stat->recent_rotated[file]++;
 			}
 			if (!pagevec_add(&pvec, page)) {
@@ -1278,7 +1286,11 @@ static void shrink_active_list(unsigned long nr_pages, struct zone *zone,
 	if (scanning_global_lru(sc)) {
 		zone->pages_scanned += pgscanned;
 	}
+#ifdef CONFIG_KRG_MM
+	reclaim_stat->recent_scanned[RECLAIM_STAT_INDEX(file, 0 /* KDDM */)] += pgmoved;
+#else
 	reclaim_stat->recent_scanned[!!file] += pgmoved;
+#endif
 
 	if (file)
 		__mod_zone_page_state(zone, NR_ACTIVE_FILE, -pgmoved);
@@ -1320,7 +1332,11 @@ static void shrink_active_list(unsigned long nr_pages, struct zone *zone,
 	 * This helps balance scan pressure between file and anonymous
 	 * pages in get_scan_ratio.
 	 */
+#ifdef CONFIG_KRG_MM
+	reclaim_stat->recent_rotated[RECLAIM_STAT_INDEX(file, 0 /* KDDM */)] += pgmoved;
+#else
 	reclaim_stat->recent_rotated[!!file] += pgmoved;
+#endif
 
 	pgmoved = 0;
 	while (!list_empty(&l_inactive)) {
