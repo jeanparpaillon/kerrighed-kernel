@@ -544,6 +544,10 @@ redo:
 		 * We know how to handle that.
 		 */
 		lru = active + page_is_file_cache(page);
+#ifdef CONFIG_KRG_MM
+		BUG_ON(page_is_kddm(page) && page_is_file_cache(page));
+		lru += page_is_kddm(page);
+#endif
 		lru_cache_add_lru(page, lru);
 	} else {
 		/*
@@ -586,6 +590,10 @@ void putback_lru_page(struct page *page)
 	VM_BUG_ON(PageLRU(page));
 
 	lru = !!TestClearPageActive(page) + page_is_file_cache(page);
+#ifdef CONFIG_KRG_MM
+	BUG_ON(page_is_kddm(page) && page_is_file_cache(page));
+	lru += page_is_kddm(page);
+#endif
 	lru_cache_add_lru(page, lru);
 	put_page(page);
 }
@@ -1033,6 +1041,10 @@ static unsigned long clear_active_flags(struct list_head *page_list,
 
 	list_for_each_entry(page, page_list, lru) {
 		lru = page_is_file_cache(page);
+#ifdef CONFIG_KRG_MM
+		BUG_ON(page_is_kddm(page) && page_is_file_cache(page));
+		lru += page_is_kddm(page);
+#endif
 		if (PageActive(page)) {
 			lru += LRU_ACTIVE;
 			ClearPageActive(page);
@@ -2542,6 +2554,10 @@ retry:
 	if (page_evictable(page, NULL)) {
 		enum lru_list l = LRU_INACTIVE_ANON + page_is_file_cache(page);
 
+#ifdef CONFIG_KRG_MM
+		BUG_ON(page_is_kddm(page) && page_is_file_cache(page));
+		l += page_is_kddm(page);
+#endif
 		__dec_zone_state(zone, NR_UNEVICTABLE);
 		list_move(&page->lru, &zone->lru[l].list);
 		mem_cgroup_move_lists(page, LRU_UNEVICTABLE, l);
