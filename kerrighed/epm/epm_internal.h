@@ -61,7 +61,6 @@ void register_children_hooks(void);
 void epm_children_start(void);
 void epm_children_exit(void);
 
-void register_pid_hooks(void);
 void epm_pid_start(void);
 void epm_pid_exit(void);
 
