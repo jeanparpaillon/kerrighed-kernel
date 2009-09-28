@@ -559,6 +559,7 @@ out_no_task:
 #define PROC_MAXPIDS 100
 
 struct pid_list_msg {
+	kerrighed_node_t node;
 	pid_t next_tgid;
 };
 
@@ -603,7 +604,9 @@ static int krg_proc_pid_fill_cache(struct file *filp,
 }
 
 /* Must be called under rcu_read_lock() */
-static struct task_kddm_object *next_tgid(pid_t tgid, struct pid_namespace *ns)
+static struct task_kddm_object *next_tgid(pid_t tgid,
+					  struct pid_namespace *pid_ns,
+					  struct pid_namespace *pidmap_ns)
 {
 	struct pid *pid;
 	struct task_struct *task;
@@ -611,9 +614,9 @@ static struct task_kddm_object *next_tgid(pid_t tgid, struct pid_namespace *ns)
 
 retry:
 	task_obj = NULL;
-	pid = find_ge_pid(tgid, ns);
+	pid = krg_find_ge_pid(tgid, pid_ns, pidmap_ns);
 	if (pid) {
-		tgid = pid_nr_ns(pid, ns) + 1;
+		tgid = pid_nr_ns(pid, pid_ns) + 1;
 		task = pid_task(pid, PIDTYPE_PID);
 		if (task && !has_group_leader_pid(task))
 			goto retry;
@@ -643,17 +646,25 @@ static void handle_req_available_tgids(struct rpc_desc *desc,
 				       void *_msg, size_t size)
 {
 	struct pid_list_msg *msg = _msg;
-	struct pid_namespace *ns = find_get_krg_pid_ns();
+	struct pid_namespace *pid_ns = find_get_krg_pid_ns();
+	struct pid_namespace *pidmap_ns;
 	pid_t pid_array[PROC_MAXPIDS];
 	pid_t tgid;
 	struct task_kddm_object *task;
 	int nr_tgids = 0;
 	int retval;
 
+	if (msg->node == kerrighed_node_id)
+		pidmap_ns = pid_ns;
+	else
+		pidmap_ns = node_pidmap(msg->node);
+	BUG_ON(!pidmap_ns);
 	tgid = msg->next_tgid;
 	BUG_ON(tgid < GLOBAL_PID_MASK);
 	rcu_read_lock();
-	for (task = next_tgid(tgid, ns); task; task = next_tgid(tgid + 1, ns)) {
+	for (task = next_tgid(tgid, pid_ns, pidmap_ns);
+	     task;
+	     task = next_tgid(tgid + 1, pid_ns, pidmap_ns)) {
 		tgid = task->pid;
 		pid_array[nr_tgids++] = tgid;
 		if (nr_tgids >= PROC_MAXPIDS)
@@ -661,7 +672,7 @@ static void handle_req_available_tgids(struct rpc_desc *desc,
 	}
 	rcu_read_unlock();
 
-	put_pid_ns(ns);
+	put_pid_ns(pid_ns);
 
 	retval = rpc_pack_type(desc, nr_tgids);
 	if (retval)
@@ -684,6 +695,7 @@ static int fill_next_remote_tgids(kerrighed_node_t node,
 				  loff_t offset)
 {
 	struct pid_namespace *ns = filp->f_dentry->d_sb->s_fs_info;
+	kerrighed_node_t host_node;
 	struct tgid_iter iter;
 	struct pid_list_msg msg;
 	struct rpc_desc *desc;
@@ -697,12 +709,17 @@ static int fill_next_remote_tgids(kerrighed_node_t node,
 
 	BUG_ON(!is_krg_pid_ns_root(ns));
 
+	host_node = pidmap_node(node);
+	if (host_node == KERRIGHED_NODE_ID_NONE)
+		return 0;
+
+	msg.node = node;
 	iter.tgid = filp->f_pos - offset;
 	if (iter.tgid < GLOBAL_PID_MASK)
 		iter.tgid = GLOBAL_PID_MASK;
 	msg.next_tgid = iter.tgid;
 
-	desc = rpc_begin(REQ_AVAILABLE_TGIDS, node);
+	desc = rpc_begin(REQ_AVAILABLE_TGIDS, host_node);
 	if (!desc)
 		goto out_unlock;
 
@@ -892,12 +909,13 @@ int krg_proc_pid_readdir(struct file *filp,
 		tgid = GLOBAL_PID_NODE(0, 0);
 		filp->f_pos = tgid + offset;
 	}
+	retval = pidmap_map_read_lock();
+	if (retval)
+		goto out;
 	node = ORIG_NODE(tgid);
 	for (; node < KERRIGHED_MAX_NODES;
 	     node++,
 	     filp->f_pos = GLOBAL_PID_NODE(0, node) + offset) {
-		if (node != kerrighed_node_id && !krgnode_online(node))
-			continue;
 #if defined(CONFIG_KRG_CAP) && !defined(CONFIG_KRG_EPM)
 		if (node != kerrighed_node_id
 		    && can_use_krg_cap(current, CAP_SEE_LOCAL_PROC_STAT))
@@ -908,6 +926,7 @@ int krg_proc_pid_readdir(struct file *filp,
 		if (retval)
 			break;
 	}
+	pidmap_map_read_unlock();
 
 out:
 	return retval;

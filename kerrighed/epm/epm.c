@@ -98,6 +98,7 @@ int init_epm(void)
 	epm_sighand_start();
 	epm_children_start();
 
+	epm_pidmap_start();
 	epm_pid_start();
 
 	epm_remote_clone_start();
@@ -125,6 +126,7 @@ void cleanup_epm(void)
 	epm_migration_exit();
 	epm_remote_clone_exit();
 	epm_pid_exit();
+	epm_pidmap_exit();
 	epm_children_exit();
 	epm_sighand_exit();
 	epm_signal_exit();

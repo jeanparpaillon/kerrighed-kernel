@@ -8,6 +8,8 @@
 #include <linux/threads.h>
 #include <linux/types.h>
 #include <kerrighed/sys/types.h>
+#include <kerrighed/krginit.h>
+#include <kerrighed/krgnodemask.h>
 
 /*
  * WARNING: procfs and futex need at least the 2 MSbits free (in procfs: 1 for
@@ -79,6 +81,10 @@ int krg_unset_pid_location(struct task_struct *task);
 kerrighed_node_t krg_lock_pid_location(pid_t pid);
 void krg_unlock_pid_location(pid_t pid);
 
+/* Global PID, foreign pidmap aware iterator */
+struct pid *krg_find_ge_pid(int nr, struct pid_namespace *pid_ns,
+			    struct pid_namespace *pidmap_ns);
+
 #else /* !CONFIG_KRG_PROC */
 
 static inline pid_t pid_knr(struct pid *pid)
@@ -139,6 +145,33 @@ void krg_pid_unlink_task(struct pid_kddm_object *obj);
 
 /* Pid reference tracking */
 void krg_put_pid(struct pid *pid);
+
+/* Foreign pidmaps */
+int pidmap_map_read_lock(void);
+void pidmap_map_read_unlock(void);
+kerrighed_node_t pidmap_node(kerrighed_node_t node);
+struct pid_namespace *node_pidmap(kerrighed_node_t node);
+
+#elif defined(CONFIG_KRG_PROC)
+
+static inline int pidmap_map_read_lock(void)
+{
+	return 0;
+}
+
+static inline void pidmap_map_read_unlock(void)
+{
+}
+
+static inline kerrighed_node_t pidmap_node(kerrighed_node_t node)
+{
+	return krgnode_online(node) ? node : KERRIGHED_NODE_ID_NONE;
+}
+
+static inline struct pid_namespace *node_pidmap(kerrighed_node_t node)
+{
+	return NULL;
+}
 
 #endif /* CONFIG_KRG_EPM */
 

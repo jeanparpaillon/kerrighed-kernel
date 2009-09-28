@@ -58,6 +58,9 @@ void epm_sighand_exit(void);
 void epm_children_start(void);
 void epm_children_exit(void);
 
+void epm_pidmap_start(void);
+void epm_pidmap_exit(void);
+
 void epm_pid_start(void);
 void epm_pid_exit(void);
 
