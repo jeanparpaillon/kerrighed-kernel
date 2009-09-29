@@ -8,6 +8,7 @@
 /** writen by David Margery (c) Inria 2004 */
 
 #include <linux/sched.h>
+#include <linux/nsproxy.h>
 #include <linux/cred.h>
 #include <linux/pid_namespace.h>
 #include <linux/rcupdate.h>
@@ -104,8 +105,18 @@ static int krg_set_cap(struct task_struct *tsk,
 {
 	kernel_krg_cap_t *caps = &tsk->krg_caps;
 	kernel_cap_t tmp_cap;
+	struct nsproxy *nsp;
 	int res;
 	int i;
+
+	res = 0;
+	rcu_read_lock();
+	nsp = rcu_dereference(tsk->nsproxy);
+	if (!nsp || !nsp->krg_ns)
+		res = -EPERM;
+	rcu_read_unlock();
+	if (res)
+		goto out;
 
 	res = -EINVAL;
 	if (!cap_issubset(requested_cap->effective, requested_cap->permitted)
