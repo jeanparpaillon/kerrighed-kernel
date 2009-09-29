@@ -2110,6 +2110,11 @@ gotten:
 	if (vma->vm_ops && vma->vm_ops->wppage) {
 		new_page = vma->vm_ops->wppage(vma, address & PAGE_MASK,
 					       old_page);
+		/* Check if we have called the regular SHM wppage code.
+		 * If we did so, continue with regular kernel code.
+		 */
+		if (new_page == ERR_PTR(EPERM))
+			goto continue_wppage;
 
 		if (!new_page)
 			goto oom;
@@ -2120,6 +2125,7 @@ gotten:
 		ret |= VM_FAULT_WRITE;
 		return ret;
 	}
+continue_wppage:
 #endif /* CONFIG_KRG_MM */
 
 	VM_BUG_ON(old_page == ZERO_PAGE(0));

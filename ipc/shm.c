@@ -271,6 +271,21 @@ static int shm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	return sfd->vm_ops->fault(vma, vmf);
 }
 
+#ifdef CONFIG_KRG_IPC
+static struct page *shm_wppage (struct vm_area_struct *vma,
+				unsigned long address,
+				struct page *old_page)
+{
+	struct file *file = vma->vm_file;
+	struct shm_file_data *sfd = shm_file_data(file);
+
+	if (sfd->vm_ops->wppage)
+		return sfd->vm_ops->wppage(vma, address, old_page);
+	else
+		return ERR_PTR(EPERM);
+}
+#endif
+
 #ifdef CONFIG_NUMA
 static int shm_set_policy(struct vm_area_struct *vma, struct mempolicy *new)
 {
@@ -378,6 +393,9 @@ struct vm_operations_struct shm_vm_ops = {
 	.open	= shm_open,	/* callback for a new vm-area open */
 	.close	= shm_close,	/* callback for when the vm-area is released */
 	.fault	= shm_fault,
+#ifdef CONFIG_KRG_IPC
+	.wppage	= shm_wppage,
+#endif
 #if defined(CONFIG_NUMA)
 	.set_policy = shm_set_policy,
 	.get_policy = shm_get_policy,
