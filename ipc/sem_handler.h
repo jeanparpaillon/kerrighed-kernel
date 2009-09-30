@@ -14,6 +14,14 @@ int create_semundo_proc_list(struct task_struct *tsk);
 void destroy_semundo_proc_list(struct task_struct *task,
 			       unique_id_t undo_list_id);
 
+struct kddm_set;
+
+struct kddm_set *krgipc_ops_undolist_set(struct krgipc_ops *ipcops);
+struct kddm_set *task_undolist_set(struct task_struct *task);
+
+struct semundo_list_object;
+int add_semundo_to_proc_list(struct semundo_list_object *undo_list, int semid);
+
 void sem_handler_init(void);
 void sem_handler_finalize(void);
 

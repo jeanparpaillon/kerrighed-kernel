@@ -182,6 +182,84 @@ void unimport_ipc_namespace(struct task_struct *task)
 }
 
 
+static int cr_export_semundos(ghost_t *ghost, struct task_struct *task)
+{
+	int r = 0;
+	struct semundo_list_object *undo_list;
+	struct kddm_set *undo_list_kddm_set;
+	struct semundo_id *undo_id;
+	long nb_semundo;
+
+	if (task->sysvsem.undo_list_id == UNIQUE_ID_NONE)
+		goto exit;
+
+	undo_list_kddm_set = task_undolist_set(task);
+	if (IS_ERR(undo_list_kddm_set)) {
+		r = PTR_ERR(undo_list_kddm_set);
+		goto exit;
+	}
+
+	/* get the list of semaphores for which we have a semundo */
+	undo_list = _kddm_grab_object_no_ft(undo_list_kddm_set,
+					    task->sysvsem.undo_list_id);
+	if (!undo_list) {
+		r = -ENOMEM;
+		goto exit_put;
+	}
+
+	nb_semundo = 0;
+	for (undo_id = undo_list->list; undo_id; undo_id = undo_id->next)
+		nb_semundo++;
+
+	r = ghost_write(ghost, &nb_semundo, sizeof(long));
+	if (r)
+		goto exit_put;
+
+	for (undo_id = undo_list->list; undo_id; undo_id = undo_id->next) {
+
+		struct ipc_namespace *ns = task_nsproxy(task)->ipc_ns;
+		struct sem_undo *undo;
+		struct sem_array *sma = sem_lock(ns, undo_id->semid);
+
+		if (IS_ERR(sma)) {
+			BUG();
+			r = PTR_ERR(sma);
+			goto exit_put;
+		}
+
+		list_for_each_entry(undo, &sma->list_id, list_id) {
+			if (undo->proc_list_id == task->sysvsem.undo_list_id) {
+				int size;
+
+				r = ghost_write(ghost,
+						&sma->sem_perm.id, sizeof(int));
+				if (r)
+					goto exit_put;
+
+				size = sizeof(struct sem_undo) +
+					sma->sem_nsems * sizeof(short);
+				r = ghost_write(ghost, &size, sizeof(int));
+				if (r)
+					goto exit_put;
+
+				r = ghost_write(ghost, undo, size);
+				if (r)
+					goto exit_put;
+
+				goto next_sma;
+			}
+		}
+		BUG();
+	next_sma:
+		sem_unlock(sma);
+	}
+
+exit_put:
+	 _kddm_put_object(undo_list_kddm_set, task->sysvsem.undo_list_id);
+exit:
+	return r;
+}
+
 static int cr_export_later_sysv_sem(struct epm_action *action,
 				    ghost_t *ghost,
 				    struct task_struct *task)
@@ -222,8 +300,8 @@ int export_sysv_sem(struct epm_action *action,
 
 	BUG_ON(task->sysvsem.undo_list);
 
-	if (action->type == EPM_CHECKPOINT &&
-	    action->checkpoint.shared == CR_SAVE_LATER) {
+	if (action->type == EPM_CHECKPOINT) {
+		BUG_ON(action->checkpoint.shared != CR_SAVE_LATER);
 		r = cr_export_later_sysv_sem(action, ghost, task);
 		return r;
 	}
@@ -238,13 +316,10 @@ int export_sysv_sem(struct epm_action *action,
 		r = create_semundo_proc_list(task);
 		if (r)
 			goto err;
-
-		undo_list_id = UNIQUE_ID_NONE;
 	}
 
 	/* does the remote process will use our undo_list ? */
 	if (action->type == EPM_MIGRATE
-	    || action->type == EPM_CHECKPOINT
 	    || (action->type == EPM_REMOTE_CLONE
 		&& (action->remote_clone.clone_flags & CLONE_SYSVSEM)))
 		undo_list_id = task->sysvsem.undo_list_id;
@@ -253,6 +328,107 @@ int export_sysv_sem(struct epm_action *action,
 
 err:
 	return r;
+}
+
+static int cr_import_one_semundo(ghost_t *ghost, struct task_struct *task,
+				 struct semundo_list_object *undo_list)
+{
+	int size, semid, r = 0;
+	struct sem_array *sma;
+	struct sem_undo *undo;
+
+	struct ipc_namespace *ns = task_nsproxy(task)->ipc_ns;
+
+	r = ghost_read(ghost, &semid, sizeof(int));
+	if (r)
+		goto end;
+
+	sma = sem_lock(ns, semid);
+	if (IS_ERR(sma)) {
+		r = PTR_ERR(sma);
+		goto end;
+	}
+
+	r = ghost_read(ghost, &size, sizeof(int));
+	if (r)
+		goto unlock_sma;
+
+	if (size != sizeof(struct sem_undo) + sma->sem_nsems * sizeof(short)) {
+		printk("This is not the good semaphore... no way to restart\n");
+		r = -EFAULT;
+		goto unlock_sma;
+	}
+
+	undo = kzalloc(size, GFP_KERNEL);
+	if (!undo)
+		goto unlock_sma;
+
+	r = ghost_read(ghost, undo, size);
+	if (r)
+		goto free_undo;
+
+	INIT_LIST_HEAD(&undo->list_proc); /* list_proc is useless!*/
+	undo->proc_list_id = undo_list->id; /* id may have changed */
+	undo->semadj = (short *) &undo[1];
+
+	r = add_semundo_to_proc_list(undo_list, sma->sem_perm.id);
+	if (r)
+		goto free_undo;
+
+	list_add(&undo->list_id, &sma->list_id);
+
+unlock_sma:
+	sem_unlock(sma);
+end:
+	return r;
+
+free_undo:
+	kfree(undo);
+	goto unlock_sma;
+}
+
+static int cr_import_semundos(ghost_t *ghost, struct task_struct *task)
+{
+	int r = 0;
+	struct kddm_set *undo_list_kddm_set;
+	struct semundo_list_object *undo_list;
+	long i, nb_semundo;
+
+	if (task->sysvsem.undo_list_id == UNIQUE_ID_NONE)
+		goto err;
+
+	undo_list_kddm_set = task_undolist_set(task);
+	if (IS_ERR(undo_list_kddm_set)) {
+		r = PTR_ERR(undo_list_kddm_set);
+		goto err;
+	}
+
+	/* get the list of semaphores for which we have a semundo */
+	undo_list = _kddm_grab_object_no_ft(undo_list_kddm_set,
+					    task->sysvsem.undo_list_id);
+	if (!undo_list) {
+		r = -ENOMEM;
+		goto exit_put;
+	}
+
+	r = ghost_read(ghost, &nb_semundo, sizeof(long));
+	if (r || !nb_semundo)
+		goto exit_put;
+
+	for (i = 0; i < nb_semundo; i++) {
+		r = cr_import_one_semundo(ghost, task, undo_list);
+		if (r)
+			goto unimport_semundos;
+	}
+
+exit_put:
+	_kddm_put_object(undo_list_kddm_set, task->sysvsem.undo_list_id);
+err:
+	return r;
+
+unimport_semundos:
+	destroy_semundo_proc_list(task, task->sysvsem.undo_list_id);
+	goto err;
 }
 
 static int cr_link_to_sysv_sem(struct epm_action *action,
@@ -287,10 +463,8 @@ int import_sysv_sem(struct epm_action *action,
 	int r;
 	unique_id_t undo_list_id;
 
-	task->sysvsem.undo_list = NULL; /* fake task_struct ... */
-
-	if (action->type == EPM_CHECKPOINT
-	    && action->restart.shared == CR_LINK_ONLY) {
+	if (action->type == EPM_CHECKPOINT) {
+		BUG_ON(action->restart.shared != CR_LINK_ONLY);
 		r = cr_link_to_sysv_sem(action, ghost, task);
 		return r;
 	}
@@ -302,13 +476,10 @@ int import_sysv_sem(struct epm_action *action,
 	if (r)
 		goto err;
 
-	if (undo_list_id != UNIQUE_ID_NONE) {
-		if (action->type == EPM_CHECKPOINT)
-			r = create_semundo_proc_list(task);
-		else
-			r = share_existing_semundo_proc_list(task,
-							     undo_list_id);
-	}
+	if (undo_list_id == UNIQUE_ID_NONE)
+		goto err;
+
+	r = share_existing_semundo_proc_list(task, undo_list_id);
 
 err:
 	return r;
@@ -324,7 +495,15 @@ static int cr_export_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 				  union export_args *args)
 {
 	int r;
-	r = export_sysv_sem(action, ghost, task);
+
+	unique_id_t undo_list_id = task->sysvsem.undo_list_id;
+
+	r = ghost_write(ghost, &undo_list_id, sizeof(unique_id_t));
+	if (r)
+		goto err;
+
+	r = cr_export_semundos(ghost, task);
+err:
 	return r;
 }
 
@@ -334,9 +513,25 @@ static int cr_import_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 				  void ** returned_data, size_t *data_size)
 {
 	int r;
+	unique_id_t undo_list_id;
+
 	BUG_ON(*returned_data != NULL);
 
-	r = import_sysv_sem(action, ghost, fake);
+	r = ghost_read(ghost, &undo_list_id, sizeof(unique_id_t));
+	if (r)
+		goto err;
+
+	if (undo_list_id == UNIQUE_ID_NONE)
+		goto err;
+
+	fake->sysvsem.undo_list = NULL; /* fake task_struct ... */
+	fake->sysvsem.undo_list_id = UNIQUE_ID_NONE;
+
+	r = create_semundo_proc_list(fake);
+	if (r)
+		goto err;
+
+	r = cr_import_semundos(ghost, fake);
 	if (r)
 		goto err;
 
@@ -350,6 +545,7 @@ static int cr_import_complete_sysv_sem(struct task_struct * fake,
 {
 	unique_id_t undo_list_id = (unique_id_t)_undo_list_id;
 
+	fake->sysvsem.undo_list = NULL;
 	fake->sysvsem.undo_list_id = undo_list_id;
 
 	exit_sem(fake);

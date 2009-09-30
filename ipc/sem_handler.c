@@ -30,7 +30,7 @@ struct semkrgops {
 	unique_id_root_t undo_list_unique_id_root;
 };
 
-static struct kddm_set *krgipc_ops_undolist_set(struct krgipc_ops *ipcops)
+struct kddm_set *krgipc_ops_undolist_set(struct krgipc_ops *ipcops)
 {
 	struct semkrgops *semops;
 
@@ -39,7 +39,7 @@ static struct kddm_set *krgipc_ops_undolist_set(struct krgipc_ops *ipcops)
 	return semops->undo_list_kddm_set;
 }
 
-static struct kddm_set *task_undolist_set(struct task_struct *task)
+struct kddm_set *task_undolist_set(struct task_struct *task)
 {
 	struct ipc_namespace *ns;
 
