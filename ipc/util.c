@@ -234,7 +234,7 @@ int ipc_get_maxid(struct ipc_ids *ids)
 
 #ifdef CONFIG_KRG_IPC
 	if (is_krg_ipc(ids))
-		return kh_ipc_get_maxid(ids);
+		return krg_ipc_get_maxid(ids);
 #endif
 
 	if (ids->in_use == 0)
@@ -280,7 +280,7 @@ static int krg_idr_get_new(struct ipc_ids *ids, struct kern_ipc_perm *new, int *
 	if (is_krg_ipc(ids)) {
 		int ipcid, lid;
 
-		ipcid = kh_ipc_get_new_id(ids);
+		ipcid = krg_ipc_get_new_id(ids);
 		if (ipcid == -1) {
 			err = -ENOMEM;
 			goto error;
@@ -354,7 +354,7 @@ static int ipc_reserveid(struct ipc_ids *ids, struct kern_ipc_perm *new,
 out_free_idr_id:
 	idr_remove(&ids->ipcs_idr, id);
 out_free_krg_id:
-	kh_ipc_rmid(ids, lid);
+	krg_ipc_rmid(ids, lid);
 out:
 	mutex_unlock(&new->mutex);
 	rcu_read_unlock();
@@ -1257,13 +1257,9 @@ static const struct file_operations sysvipc_proc_fops = {
 
 #ifdef CONFIG_KRG_IPC
 
-int (*kh_ipc_get_maxid)(struct ipc_ids* ids) = NULL;
-int (*kh_ipc_get_new_id)(struct ipc_ids* ids) = NULL;
-void (*kh_ipc_rmid)(struct ipc_ids* ids, int index) = NULL;
-
 int is_krg_ipc(struct ipc_ids *ids)
 {
-	if (kh_ipc_get_maxid && ids->krgops)
+	if (ids->krgops)
 		return 1;
 
 	return 0;

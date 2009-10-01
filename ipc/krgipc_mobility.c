@@ -1020,7 +1020,7 @@ out:
 	return r;
 
 out_freeque:
-	kh_ipc_msg_freeque(ns, &msq->q_perm);
+	krg_ipc_msg_freeque(ns, &msq->q_perm);
 	goto out_put_ns;
 }
 
@@ -1109,7 +1109,7 @@ out:
 	return r;
 
 out_freeary:
-	kh_ipc_sem_freeary(ns, &sma->sem_perm);
+	krg_ipc_sem_freeary(ns, &sma->sem_perm);
 	goto out_put_ns;
 }
 

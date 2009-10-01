@@ -26,7 +26,7 @@
 /*                                                                           */
 /*****************************************************************************/
 
-struct kern_ipc_perm *kcb_ipc_shm_lock(struct ipc_ids *ids, int id)
+static struct kern_ipc_perm *kcb_ipc_shm_lock(struct ipc_ids *ids, int id)
 {
 	shmid_object_t *shp_object;
 	struct shmid_kernel *shp;
@@ -61,7 +61,7 @@ error:
 	return ERR_PTR(-EINVAL);
 }
 
-void kcb_ipc_shm_unlock(struct kern_ipc_perm *ipcp)
+static void kcb_ipc_shm_unlock(struct kern_ipc_perm *ipcp)
 {
 	int index, deleted = 0;
 
@@ -78,7 +78,7 @@ void kcb_ipc_shm_unlock(struct kern_ipc_perm *ipcp)
 	rcu_read_unlock();
 }
 
-struct kern_ipc_perm *kcb_ipc_shm_findkey(struct ipc_ids *ids, key_t key)
+static struct kern_ipc_perm *kcb_ipc_shm_findkey(struct ipc_ids *ids, key_t key)
 {
 	long *key_index;
 	int id = -1;
@@ -185,7 +185,7 @@ void krg_ipc_shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
 	_kddm_remove_frozen_object(shm_ids(ns).krgops->data_kddm_set, index);
 	_destroy_kddm_set(mm_set);
 
-	kh_ipc_rmid(&shm_ids(ns), index);
+	krg_ipc_rmid(&shm_ids(ns), index);
 }
 
 /*****************************************************************************/

@@ -11,9 +11,9 @@
 #include <linux/ipc.h>
 #include <linux/ipc_namespace.h>
 
-extern int (*kh_ipc_get_maxid)(struct ipc_ids *ids);
-extern int (*kh_ipc_get_new_id)(struct ipc_ids *ids);
-extern void (*kh_ipc_rmid)(struct ipc_ids *ids, int index);
+int krg_ipc_get_maxid(struct ipc_ids *ids);
+int krg_ipc_get_new_id(struct ipc_ids *ids);
+void krg_ipc_rmid(struct ipc_ids *ids, int index);
 int krg_ipc_get_this_id(struct ipc_ids *ids, int id);
 
 struct ipc_namespace *find_get_krg_ipcns(void);

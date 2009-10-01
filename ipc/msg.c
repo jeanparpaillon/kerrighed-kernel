@@ -84,25 +84,6 @@ static int newque(struct ipc_namespace *, struct ipc_params *);
 static int sysvipc_msg_proc_show(struct seq_file *s, void *it);
 #endif
 
-
-#ifdef CONFIG_KRG_IPC
-int (*kh_ipc_msg_newque)(struct ipc_namespace *ns,
-			struct msg_queue *msq) = NULL;
-
-void (*kh_ipc_msg_freeque)(struct ipc_namespace *ns,
-			   struct kern_ipc_perm *ipcp);
-
-long (*kh_ipc_msg_rmid)(int msqid) = NULL;
-
-long (*kh_ipc_msgsnd)(int msqid, long mtype, void __user *mtext,
-		      size_t msgsz, int msgflg, struct ipc_namespace *ns,
-		      pid_t tgid) = NULL;
-
-long (*kh_ipc_msgrcv)(int msqid, long *pmtype, void __user *mtext,
-		      size_t msgsz, long msgtyp, int msgflg,
-		      struct ipc_namespace *ns, pid_t tgid) = NULL;
-#endif
-
 /*
  * Scale msgmni with the available lowmem size: the memory dedicated to msg
  * queues should occupy at most 1/MSG_MEM_SCALE of lowmem.
@@ -254,7 +235,7 @@ int newque(struct ipc_namespace *ns, struct ipc_params *params)
 
 #ifdef CONFIG_KRG_IPC
 	if (is_krg_ipc(&msg_ids(ns))) {
-		retval = kh_ipc_msg_newque(ns, msq) ;
+		retval = krg_ipc_msg_newque(ns, msq) ;
 		if (retval) {
 			/* release locks held by ipc_addid */
 			local_ipc_unlock(&msq->q_perm);
@@ -330,7 +311,7 @@ static void expunge_all(struct msg_queue *msq, int res)
 static void freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 {
 	if (is_krg_ipc(&msg_ids(ns)))
-		kh_ipc_msg_freeque(ns, ipcp);
+		krg_ipc_msg_freeque(ns, ipcp);
 	else
 		local_master_freeque(ns, ipcp);
 }
@@ -735,7 +716,7 @@ long do_msgsnd(int msqid, long mtype, void __user *mtext,
 		return -EINVAL;
 
 	if (is_krg_ipc(&msg_ids(ns)))
-		r = kh_ipc_msgsnd(msqid, mtype, mtext, msgsz, msgflg,
+		r = krg_ipc_msgsnd(msqid, mtype, mtext, msgsz, msgflg,
 				  ns, task_tgid_vnr(current));
 	else {
 		r = __do_msgsnd(msqid, mtype, mtext, msgsz, msgflg,
@@ -907,7 +888,7 @@ long do_msgrcv(int msqid, long *pmtype, void __user *mtext,
 	struct ipc_namespace *ns = current->nsproxy->ipc_ns;
 
 	if (is_krg_ipc(&msg_ids(ns)))
-		r = kh_ipc_msgrcv(msqid, pmtype, mtext, msgsz, msgtyp, msgflg,
+		r = krg_ipc_msgrcv(msqid, pmtype, mtext, msgsz, msgtyp, msgflg,
 				  ns, task_tgid_vnr(current));
 	else
 		r = __do_msgrcv(msqid, pmtype, mtext, msgsz, msgtyp, msgflg,

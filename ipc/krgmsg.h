@@ -12,19 +12,19 @@ struct msg_msgseg {
 
 /** Kerrighed Hooks **/
 
-extern int (*kh_ipc_msg_newque)(struct ipc_namespace *ns,
-				struct msg_queue *msq);
+int krg_ipc_msg_newque(struct ipc_namespace *ns,
+		       struct msg_queue *msq);
 
-extern void (*kh_ipc_msg_freeque)(struct ipc_namespace *ns,
-				  struct kern_ipc_perm *ipcp);
+void krg_ipc_msg_freeque(struct ipc_namespace *ns,
+			 struct kern_ipc_perm *ipcp);
 
-extern long (*kh_ipc_msgsnd)(int msqid, long mtype, void __user *mtext,
-			     size_t msgsz, int msgflg, struct ipc_namespace *ns,
-			     pid_t tgid);
+long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
+		    size_t msgsz, int msgflg, struct ipc_namespace *ns,
+		    pid_t tgid);
 
-extern long (*kh_ipc_msgrcv)(int msqid, long *pmtype, void __user *mtext,
-			     size_t msgsz, long msgtyp, int msgflg,
-			     struct ipc_namespace *ns, pid_t tgid);
+long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
+		    size_t msgsz, long msgtyp, int msgflg,
+		    struct ipc_namespace *ns, pid_t tgid);
 
 
 int newque(struct ipc_namespace *ns, struct ipc_params *params);

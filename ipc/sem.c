@@ -114,22 +114,6 @@ static int sysvipc_sem_proc_show(struct seq_file *s, void *it);
 #define SEMMSL_FAST	256 /* 512 bytes on stack */
 #define SEMOPM_FAST	64  /* ~ 372 bytes on stack */
 
-#ifdef CONFIG_KRG_IPC
-int (*kh_ipc_sem_newary)(struct ipc_namespace *ns, struct sem_array *sma) = NULL;
-
-void (*kh_ipc_sem_freeary)(struct ipc_namespace *ns,
-			   struct kern_ipc_perm *ipcp) = NULL;
-
-void (*kh_ipc_sem_wakeup_process)(struct sem_queue *q, int error) = NULL;
-
-int (*kh_ipc_sem_copy_semundo)(unsigned long clone_flags,
-			       struct task_struct *tsk) = NULL;
-
-struct sem_undo *(*kh_ipc_sem_find_undo)(struct sem_array* sma) = NULL;
-
-void (*kh_ipc_sem_exit_sem)(struct task_struct * tsk) = NULL;
-#endif
-
 /*
  * linked list protection:
  *	sem_undo.id_next,
@@ -322,7 +306,7 @@ int newary(struct ipc_namespace *ns, struct ipc_params *params)
 	INIT_LIST_HEAD(&sma->remote_sem_pending);
 
 	if (is_krg_ipc(&sem_ids(ns))) {
-		retval = kh_ipc_sem_newary(ns, sma);
+		retval = krg_ipc_sem_newary(ns, sma);
 		if (retval) {
 			security_sem_free(sma);
 			ipc_rcu_putref(sma);
@@ -527,7 +511,7 @@ begin:
 
 #ifdef CONFIG_KRG_IPC
 			if (remote)
-				kh_ipc_sem_wakeup_process(q, error);
+				krg_ipc_sem_wakeup_process(q, error);
 			else
 #endif
 			wake_up_process(q->sleeper);
@@ -635,7 +619,7 @@ static void free_un(struct rcu_head *head)
 static void freeary(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 {
 	if (is_krg_ipc(&sem_ids(ns)))
-		kh_ipc_sem_freeary(ns, ipcp);
+		krg_ipc_sem_freeary(ns, ipcp);
 	else
 		local_freeary(ns, ipcp);
 }
@@ -1430,7 +1414,7 @@ SYSCALL_DEFINE4(semtimedop, int, semid, struct sembuf __user *, tsops,
 
 #ifdef CONFIG_KRG_IPC
 	if (undos && sma->sem_perm.krgops) {
-		un = kh_ipc_sem_find_undo(sma);
+		un = krg_ipc_sem_find_undo(sma);
 		if (IS_ERR(un)) {
 			error = PTR_ERR(un);
 			goto out_unlock_free;
@@ -1546,7 +1530,7 @@ int copy_semundo(unsigned long clone_flags, struct task_struct *tsk)
 	ns = task_nsproxy(tsk)->ipc_ns;
 
 	if (is_krg_ipc(&sem_ids(ns)))
-		return kh_ipc_sem_copy_semundo(clone_flags, tsk);
+		return krg_ipc_sem_copy_semundo(clone_flags, tsk);
 
 	return __copy_semundo(clone_flags, tsk);
 }
@@ -1715,7 +1699,7 @@ void exit_sem(struct task_struct *tsk)
 
 	ns = task_nsproxy(tsk)->ipc_ns;
 	if (is_krg_ipc(&sem_ids(ns)))
-		kh_ipc_sem_exit_sem(tsk);
+		krg_ipc_sem_exit_sem(tsk);
 
 	/* let call __exit_sem in case process has been created
 	 * before the Kerrighed loading

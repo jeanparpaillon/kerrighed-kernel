@@ -54,7 +54,7 @@ error:
 /*                                                                           */
 /*****************************************************************************/
 
-static int kcb_ipc_get_maxid(struct ipc_ids* ids)
+int krg_ipc_get_maxid(struct ipc_ids* ids)
 {
 	ipcmap_object_t *ipc_map;
 	int max_id;
@@ -66,7 +66,7 @@ static int kcb_ipc_get_maxid(struct ipc_ids* ids)
 	return max_id;
 }
 
-static int kcb_ipc_get_new_id(struct ipc_ids* ids)
+int krg_ipc_get_new_id(struct ipc_ids* ids)
 {
 	ipcmap_object_t *ipc_map, *max_id;
 	int i = 1, id = -1, offset;
@@ -125,7 +125,7 @@ out_id_unavailable:
 	return ret;
 }
 
-static int kcb_ipc_rmid(struct ipc_ids* ids, int index)
+void krg_ipc_rmid(struct ipc_ids* ids, int index)
 {
 	ipcmap_object_t *ipc_map, *max_id;
 	int i, offset;
@@ -172,7 +172,7 @@ static int kcb_ipc_rmid(struct ipc_ids* ids, int index)
 done:
 	_kddm_put_object(ids->krgops->map_kddm_set, 0);
 
-	return 0;
+	return;
 }
 
 /*****************************************************************************/
@@ -285,11 +285,7 @@ int proc_shm_restart(void *arg)
 /*                                                                           */
 /*****************************************************************************/
 
-extern void hook_register(void *hk, void *f);
 
-extern int (*kh_ipc_get_maxid)(struct ipc_ids* ids);
-extern int (*kh_ipc_get_new_id)(struct ipc_ids* ids);
-extern void (*kh_ipc_rmid)(struct ipc_ids* ids, int index);
 
 static int ipc_procfs_start(void)
 {
@@ -348,10 +344,6 @@ void ipc_procfs_exit(void)
 
 void ipc_handler_init(void)
 {
-	hook_register(&kh_ipc_get_maxid, kcb_ipc_get_maxid);
-	hook_register(&kh_ipc_get_new_id, kcb_ipc_get_new_id);
-	hook_register(&kh_ipc_rmid, kcb_ipc_rmid);
-
 	ipc_procfs_start();
 }
 

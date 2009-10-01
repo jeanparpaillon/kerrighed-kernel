@@ -91,7 +91,7 @@ error:
 	return ERR_PTR(-EINVAL);
 }
 
-void kcb_ipc_sem_unlock(struct kern_ipc_perm *ipcp)
+static void kcb_ipc_sem_unlock(struct kern_ipc_perm *ipcp)
 {
 	int index, deleted = 0;
 
@@ -108,7 +108,7 @@ void kcb_ipc_sem_unlock(struct kern_ipc_perm *ipcp)
 	rcu_read_unlock();
 }
 
-struct kern_ipc_perm *kcb_ipc_sem_findkey(struct ipc_ids *ids, key_t key)
+static struct kern_ipc_perm *kcb_ipc_sem_findkey(struct ipc_ids *ids, key_t key)
 {
 	long *key_index;
 	int id = -1;
@@ -130,7 +130,7 @@ struct kern_ipc_perm *kcb_ipc_sem_findkey(struct ipc_ids *ids, key_t key)
  *
  *  @author Matthieu Fertré
  */
-int kcb_ipc_sem_newary(struct ipc_namespace *ns, struct sem_array *sma)
+int krg_ipc_sem_newary(struct ipc_namespace *ns, struct sem_array *sma)
 {
 	semarray_object_t *sem_object;
 	long *key_index;
@@ -215,12 +215,13 @@ exit:
 	_kddm_put_object(undo_list_set, proc_list_id);
 }
 
-void kcb_ipc_sem_freeary(struct ipc_namespace *ns, struct sem_array *sma, int id)
+void krg_ipc_sem_freeary(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 {
 	int index;
 	struct sem_undo* un, *tu;
+	struct sem_array *sma = container_of(ipcp, struct sem_array, sem_perm);
 
-	index = ipcid_to_idx(sma->sem_perm.id);
+	index = ipcid_to_idx(ipcp->id);
 
 	/* removing the related semundo from the list per process */
 	list_for_each_entry_safe(un, tu, &sma->list_id, list_id) {
@@ -229,17 +230,17 @@ void kcb_ipc_sem_freeary(struct ipc_namespace *ns, struct sem_array *sma, int id
 		kfree(un);
 	}
 
-	if (sma->sem_perm.key != IPC_PRIVATE) {
+	if (ipcp->key != IPC_PRIVATE) {
 		_kddm_grab_object(sem_ids(ns).krgops->key_kddm_set,
-				  sma->sem_perm.key);
+				  ipcp->key);
 		_kddm_remove_frozen_object(sem_ids(ns).krgops->key_kddm_set,
-					   sma->sem_perm.key);
+					   ipcp->key);
 	}
 
 	local_sem_unlock(sma);
 	_kddm_remove_frozen_object(sem_ids(ns).krgops->data_kddm_set, index);
 
-	kh_ipc_rmid(&sem_ids(ns), index);
+	krg_ipc_rmid(&sem_ids(ns), index);
 }
 
 struct ipcsem_wakeup_msg {
@@ -293,7 +294,7 @@ found:
 	put_ipc_ns(ns);
 }
 
-void kcb_ipc_sem_wakeup_process(struct sem_queue *q, int error)
+void krg_ipc_sem_wakeup_process(struct sem_queue *q, int error)
 {
 	struct ipcsem_wakeup_msg msg;
 	struct rpc_desc *desc;
@@ -442,7 +443,7 @@ exit:
 	return r;
 }
 
-int kcb_ipc_sem_copy_semundo(unsigned long clone_flags,
+int krg_ipc_sem_copy_semundo(unsigned long clone_flags,
 			     struct task_struct *tsk)
 {
 	int r = 0;
@@ -513,7 +514,7 @@ exit:
 	return r;
 }
 
-struct sem_undo * kcb_ipc_sem_find_undo(struct sem_array* sma)
+struct sem_undo * krg_ipc_sem_find_undo(struct sem_array* sma)
 {
 	struct sem_undo * undo;
 	int r = 0;
@@ -645,7 +646,7 @@ void destroy_semundo_proc_list(struct task_struct *task,
 }
 
 
-void kcb_ipc_sem_exit_sem(struct task_struct * task)
+void krg_ipc_sem_exit_sem(struct task_struct * task)
 {
 	struct kddm_set *undo_list_kddm_set;
 	unique_id_t undo_list_id;
@@ -796,13 +797,6 @@ void sem_handler_init (void)
 	register_io_linker(SEMARRAY_LINKER, &semarray_linker);
 	register_io_linker(SEMKEY_LINKER, &semkey_linker);
 	register_io_linker(SEMUNDO_LINKER, &semundo_linker);
-
-	hook_register(&kh_ipc_sem_newary, kcb_ipc_sem_newary);
-	hook_register(&kh_ipc_sem_freeary, kcb_ipc_sem_freeary);
-	hook_register(&kh_ipc_sem_wakeup_process, kcb_ipc_sem_wakeup_process);
-	hook_register(&kh_ipc_sem_copy_semundo, kcb_ipc_sem_copy_semundo);
-	hook_register(&kh_ipc_sem_find_undo, kcb_ipc_sem_find_undo);
-	hook_register(&kh_ipc_sem_exit_sem, kcb_ipc_sem_exit_sem);
 
 	rpc_register_void(IPC_SEM_WAKEUP, handle_ipcsem_wakeup_process, 0);
 }

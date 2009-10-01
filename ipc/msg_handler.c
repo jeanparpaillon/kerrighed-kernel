@@ -43,7 +43,7 @@ struct kddm_set *krgipc_ops_master_set(struct krgipc_ops *ipcops)
 /*                                                                           */
 /*****************************************************************************/
 
-struct kern_ipc_perm *kcb_ipc_msg_lock(struct ipc_ids *ids, int id)
+static struct kern_ipc_perm *kcb_ipc_msg_lock(struct ipc_ids *ids, int id)
 {
 	msq_object_t *msq_object;
 	struct msg_queue *msq;
@@ -78,7 +78,7 @@ error:
 	return ERR_PTR(-EINVAL);
 }
 
-void kcb_ipc_msg_unlock(struct kern_ipc_perm *ipcp)
+static void kcb_ipc_msg_unlock(struct kern_ipc_perm *ipcp)
 {
 	int index, deleted = 0;
 
@@ -95,7 +95,7 @@ void kcb_ipc_msg_unlock(struct kern_ipc_perm *ipcp)
 	rcu_read_unlock();
 }
 
-struct kern_ipc_perm *kcb_ipc_msg_findkey(struct ipc_ids *ids, key_t key)
+static struct kern_ipc_perm *kcb_ipc_msg_findkey(struct ipc_ids *ids, key_t key)
 {
 	long *key_index;
 	int id = -1;
@@ -117,7 +117,7 @@ struct kern_ipc_perm *kcb_ipc_msg_findkey(struct ipc_ids *ids, key_t key)
  *
  *  @author Matthieu Fertré
  */
-int kcb_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
+int krg_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 {
 	struct kddm_set *master_set;
 	msq_object_t *msq_object;
@@ -170,7 +170,7 @@ err_put:
 	return err;
 }
 
-void kcb_ipc_msg_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
+void krg_ipc_msg_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 {
 	int index;
 	key_t key;
@@ -194,7 +194,7 @@ void kcb_ipc_msg_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 
 	_kddm_remove_frozen_object(ipcp->krgops->data_kddm_set, index);
 
-	kh_ipc_rmid(&msg_ids(ns), index);
+	krg_ipc_rmid(&msg_ids(ns), index);
 }
 
 /*****************************************************************************/
@@ -208,7 +208,7 @@ struct msgsnd_msg
 	pid_t tgid;
 };
 
-long kcb_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
+long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 		    size_t msgsz, int msgflg, struct ipc_namespace *ns,
 		    pid_t tgid)
 {
@@ -317,7 +317,7 @@ struct msgrcv_msg
 	pid_t tgid;
 };
 
-long kcb_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
+long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 		    size_t msgsz, long msgtyp, int msgflg,
 		    struct ipc_namespace *ns, pid_t tgid)
 {
@@ -528,11 +528,6 @@ void msg_handler_init(void)
 	register_io_linker(MSG_LINKER, &msq_linker);
 	register_io_linker(MSGKEY_LINKER, &msqkey_linker);
 	register_io_linker(MSGMASTER_LINKER, &msqmaster_linker);
-
-	hook_register(&kh_ipc_msg_newque, kcb_ipc_msg_newque);
-	hook_register(&kh_ipc_msg_freeque, kcb_ipc_msg_freeque);
-	hook_register(&kh_ipc_msgsnd, kcb_ipc_msgsnd);
-	hook_register(&kh_ipc_msgrcv, kcb_ipc_msgrcv);
 
 	rpc_register_void(IPC_MSG_SEND, handle_do_msg_send, 0);
 	rpc_register_void(IPC_MSG_RCV, handle_do_msg_rcv, 0);
