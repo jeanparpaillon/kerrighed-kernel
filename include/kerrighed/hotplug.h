@@ -7,10 +7,9 @@ enum {
 	HOTPLUG_PRIO_MEMBERSHIP_PRESENT,
 	HOTPLUG_PRIO_RPC,
 	HOTPLUG_PRIO_KDDM,
-	HOTPLUG_PRIO_MEMBERSHIP_ONLINE,
 	HOTPLUG_PRIO_PROCFS,
 	HOTPLUG_PRIO_EPM,
-	HOTPLUG_PRIO_MEMBERSHIP_POSSIBLE, // should be done after distributed services management
+	HOTPLUG_PRIO_MEMBERSHIP_ONLINE, // should be done after distributed services management
 	HOTPLUG_PRIO_MAX // must be the last one
 };
 

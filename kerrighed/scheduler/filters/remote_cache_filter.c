@@ -139,7 +139,7 @@ static int try_get_remote_values(struct remote_cache_filter *f)
 			krgnode_set(current_node, f->available_values);
 		else
 			krgnode_clear(current_node, f->available_values);
-		current_node = krgnode_next_possible(current_node);
+		current_node = krgnode_next_online(current_node);
 		if (current_node == KERRIGHED_MAX_NODES)
 			current_node = KERRIGHED_NODE_ID_NONE;
 	}
@@ -156,7 +156,7 @@ static void get_remote_values(struct remote_cache_filter *rc_filter)
 	kerrighed_node_t first_node;
 
 	if (rc_filter->current_node == KERRIGHED_NODE_ID_NONE) {
-		first_node = nth_possible_krgnode(0);
+		first_node = nth_online_krgnode(0);
 		if (first_node != KERRIGHED_MAX_NODES) {
 			rc_filter->current_node = first_node;
 			try_get_remote_values(rc_filter);

@@ -50,7 +50,7 @@ static int tools_proc_node_id(void *arg)
 
 static int tools_proc_nodes_count(void *arg)
 {
-        int nb_nodes = num_possible_krgnodes();
+        int nb_nodes = num_online_krgnodes();
         int r = 0;
 
         if (copy_to_user((void *)arg, (void *)&nb_nodes, sizeof(int)))

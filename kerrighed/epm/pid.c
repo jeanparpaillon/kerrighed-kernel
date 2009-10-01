@@ -512,7 +512,7 @@ int reserve_pid(pid_t pid)
 	msg.requester = kerrighed_node_id;
 	msg.pid = pid;
 
-	if (krgnode_possible(ORIG_NODE(pid)))
+	if (krgnode_online(ORIG_NODE(pid)))
 		r = rpc_sync(PROC_RESERVE_PID, ORIG_NODE(pid), &msg, sizeof(msg));
 	else /* the node is not anymore in the cluster */
 		r = __reserve_pid(pid);
@@ -553,7 +553,7 @@ int cancel_pid_reservation(pid_t pid)
 	msg.requester = kerrighed_node_id;
 	msg.pid = pid;
 
-	if (krgnode_possible(ORIG_NODE(pid)))
+	if (krgnode_online(ORIG_NODE(pid)))
 		r = rpc_sync(PROC_CANCEL_PID_RESERVATION, ORIG_NODE(pid),
 			     &msg, sizeof(msg));
 	else /* the node is not anymore in the cluster */
@@ -642,7 +642,7 @@ int krg_pid_link_task(pid_t pid)
 	msg.pid = pid;
 
 	if (ORIG_NODE(pid) != kerrighed_node_id
-	    && krgnode_possible(ORIG_NODE(pid)))
+	    && krgnode_online(ORIG_NODE(pid)))
 		r = rpc_sync(PROC_PID_LINK_TASK, ORIG_NODE(pid),
 			     &msg, sizeof(msg));
 

@@ -145,7 +145,7 @@ static inline int __clean_node_set(krgnodemask_t *nodes)
 	krgnode_clear(kerrighed_node_id, *nodes);
 
 	__for_each_krgnode_mask(node, nodes){
-		if (!krgnode_possible(node)) {
+		if (!krgnode_online(node)) {
 			printk("Node %d is not in the cluster\n", node);
 			krgnode_clear(node, *nodes);
 		} else {

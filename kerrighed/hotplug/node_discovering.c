@@ -6,9 +6,9 @@
 #include <kerrighed/hotplug.h>
 
 krgnodemask_t krgnode_possible_map;
-EXPORT_SYMBOL(krgnode_possible_map);
-krgnodemask_t krgnode_online_map;
 krgnodemask_t krgnode_present_map;
+krgnodemask_t krgnode_online_map;
+EXPORT_SYMBOL(krgnode_online_map);
 
 struct universe_elem universe[KERRIGHED_MAX_NODES];
 
@@ -39,9 +39,9 @@ void init_node_discovering(void)
 {
 	int i;
 
-	krgnodes_clear(krgnode_possible_map);
-	krgnodes_clear(krgnode_online_map);
+	krgnodes_setall(krgnode_possible_map);
 	krgnodes_clear(krgnode_present_map);
+	krgnodes_clear(krgnode_online_map);
 	
 #ifdef CONFIG_KRG_HOTPLUG
 	for (i = 0; i < KERRIGHED_MAX_NODES; i++) {

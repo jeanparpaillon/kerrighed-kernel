@@ -39,7 +39,7 @@ kerrighed_node_t select_injection_node_ff(void)
        int shrink_caches = 0;
 
        if (last_chosen_node == KERRIGHED_NODE_ID_NONE)
-               start_node = krgnode_next_possible_in_ring (kerrighed_node_id);
+               start_node = krgnode_next_online_in_ring (kerrighed_node_id);
        else
                start_node = last_chosen_node;
 
@@ -52,9 +52,9 @@ retry:
 	       return node;
        }
 
-       node = krgnode_next_possible_in_ring (node);
+       node = krgnode_next_online_in_ring (node);
        if (node == kerrighed_node_id)
-	       node = krgnode_next_possible_in_ring (node);
+	       node = krgnode_next_online_in_ring (node);
        if (node != start_node)
                goto retry;
 
@@ -77,9 +77,9 @@ kerrighed_node_t select_injection_node_rr(void)
        else
                start_node = last_chosen_node;
 
-       node = krgnode_next_possible_in_ring (start_node);
+       node = krgnode_next_online_in_ring (start_node);
        if (node == kerrighed_node_id)
-	       node = krgnode_next_possible_in_ring (node);
+	       node = krgnode_next_online_in_ring (node);
 retry:
        if ( (node_mem_usage[node] == FREE_MEM) ||
 	    (shrink_caches && (node_mem_usage[node] == LOW_MEM))) {
@@ -87,9 +87,9 @@ retry:
 	       return node;
        }
 
-       node = krgnode_next_possible_in_ring (node);
+       node = krgnode_next_online_in_ring (node);
        if (node == kerrighed_node_id)
-	       node = krgnode_next_possible_in_ring (node);
+	       node = krgnode_next_online_in_ring (node);
        if (node != start_node)
                goto retry;
 

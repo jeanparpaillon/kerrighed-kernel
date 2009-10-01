@@ -361,9 +361,9 @@ __find_node_for_restart(kerrighed_node_t *first_avail_node,
 	int n;
 
 	/* looking for a node not involved in the application */
-	for (n = krgnode_next_possible(*first_avail_node) ;
+	for (n = krgnode_next_online(*first_avail_node);
 	     n < KERRIGHED_MAX_NODES;
-	     n = krgnode_next_possible(n)) {
+	     n = krgnode_next_online(n)) {
 
 		if (!krgnode_isset(n, obj->nodes)) {
 			krgnode_set(n, obj->nodes);
@@ -373,8 +373,8 @@ __find_node_for_restart(kerrighed_node_t *first_avail_node,
 
 	/* all nodes are implied in the application,
 	   selecting the first existing node... */
-	for (n = krgnode_next_possible(0); n < KERRIGHED_MAX_NODES;
-	     n = krgnode_next_possible(n)) {
+	for (n = krgnode_next_online(0); n < KERRIGHED_MAX_NODES;
+	     n = krgnode_next_online(n)) {
 		*first_avail_node = n+1;
 		*duplicate = 1;
 		goto out;
@@ -412,7 +412,7 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn,
 	krgnodes_clear(nodes);
 	krgnodes_clear(nodes_to_replace);
 	for_each_krgnode_mask(node, obj->nodes){
-		if (likely(krgnode_possible(node)))
+		if (likely(krgnode_online(node)))
 			krgnode_set(node, nodes);
 		else
 			krgnode_set(node, nodes_to_replace);

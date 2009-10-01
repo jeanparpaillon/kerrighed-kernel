@@ -1401,7 +1401,7 @@ static int krg_kill_pg_info(int sig, struct siginfo *info, pid_t pgid)
 	if (!(pgid & GLOBAL_PID_MASK))
 		goto out;
 
-	krgnodes_copy(nodes, krgnode_possible_map);
+	krgnodes_copy(nodes, krgnode_online_map);
 	krgnode_clear(kerrighed_node_id, nodes);
 	if (krgnodes_empty(nodes))
 		goto out;

@@ -904,7 +904,7 @@ static int kcb_proc_pid_readdir(struct file *filp,
 	for (; node < KERRIGHED_MAX_NODES;
 	     node++,
 	     filp->f_pos = GLOBAL_PID_NODE(0, node) + offset) {
-		if (!krgnode_possible(node))
+		if (!krgnode_online(node))
 			continue;
 #if defined(CONFIG_KRG_CAP) && !defined(CONFIG_KRG_EPM)
 		if (node != kerrighed_node_id

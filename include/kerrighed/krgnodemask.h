@@ -395,9 +395,9 @@ static inline int __krgnode_is_unique(kerrighed_node_t node,
 }
 
 /*
- * krgnode_possible_map: list of nodes available as object injection target
- * krgnode_online_map: list of nodes fully available for request
+ * krgnode_online_map: list of nodes available as object injection target
  * krgnode_present_map: list of nodes ready to be added in a cluster
+ * krgnode_possible_map: list of nodes that may join the cluster in the future
  */
 
 extern krgnodemask_t krgnode_possible_map;

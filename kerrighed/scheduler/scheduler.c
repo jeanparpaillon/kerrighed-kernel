@@ -379,7 +379,7 @@ ssize_t node_set_store(struct scheduler *s, const char *page, size_t count)
 	if (err) {
 		ret = err;
 	} else {
-		if (krgnodes_subset(new_set, krgnode_possible_map)) {
+		if (krgnodes_subset(new_set, krgnode_online_map)) {
 			err = do_update_node_set(s, &new_set);
 			ret = err ? err : count;
 		} else {
@@ -589,7 +589,7 @@ static struct config_group *schedulers_make_group(struct config_group *group,
 	if (err)
 		goto err_global_end;
 	spin_lock(&schedulers_list_lock);
-	krgnodes_andnot(s->node_set, krgnode_possible_map, exclusive_set);
+	krgnodes_andnot(s->node_set, krgnode_online_map, exclusive_set);
 	list_add(&s->list, &schedulers_head);
 	spin_unlock(&schedulers_list_lock);
 	__global_config_make_item_end(global_names);

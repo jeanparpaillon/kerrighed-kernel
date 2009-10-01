@@ -78,7 +78,7 @@ int krg_do_fork(unsigned long clone_flags,
 #else
 	if (distant_node < 0)
 		distant_node = kerrighed_node_id;
-	distant_node = krgnode_next_possible_in_ring(distant_node);
+	distant_node = krgnode_next_online_in_ring(distant_node);
 #endif
 	if (distant_node < 0 || distant_node == kerrighed_node_id)
 		goto out_action_stop;

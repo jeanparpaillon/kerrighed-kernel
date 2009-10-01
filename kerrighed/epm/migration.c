@@ -273,7 +273,7 @@ static int do_migrate_process(struct task_struct *task,
 	struct siginfo info;
 	int retval;
 
-	if (!krgnode_possible(destination_node_id))
+	if (!krgnode_online(destination_node_id))
 		return -ENONET;
 
 	if (destination_node_id == kerrighed_node_id)
@@ -405,7 +405,7 @@ int migrate_linux_threads(pid_t pid,
 
 	/* Check the destination node */
 	/* Just an optimization to avoid doing a useless remote request */
-	if (!krgnode_possible(dest_node))
+	if (!krgnode_online(dest_node))
 		return -ENONET;
 
 	rcu_read_lock();
@@ -457,8 +457,7 @@ int sys_migrate_thread(pid_t pid, kerrighed_node_t dest_node)
 void krg_syscall_exit(long syscall_nr)
 {
 	__migrate_linux_threads(current, MIGR_LOCAL_PROCESS,
-				next_krgnode_in_ring(kerrighed_node_id,
-						     krgnode_possible_map));
+				krgnode_next_online_in_ring(kerrighed_node_id));
 }
 #endif
 

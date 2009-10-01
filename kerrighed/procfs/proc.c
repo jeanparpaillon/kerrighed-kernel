@@ -82,7 +82,7 @@ static inline krgnodemask_t get_proc_nodes_vector(kerrighed_node_t nodeid)
 
 	if (nodeid == KERRIGHED_MAX_NODES) {
 		if (IS_KERRIGHED_NODE(KRGFLAGS_RUNNING))
-			krgnodes_copy(nodes, krgnode_possible_map);
+			krgnodes_copy(nodes, krgnode_online_map);
 		else
 			krgnode_set(kerrighed_node_id, nodes);
 	} else
@@ -159,7 +159,7 @@ static void init_cpu_info_seq_struct(struct cpu_info_seq_struct *seq_data)
 		// Init values to parse CPU.
 		if (req_node == KERRIGHED_MAX_NODES) {
 			// Cluster wide CPU info
-			seq_data->cur_node = nth_possible_krgnode(0);
+			seq_data->cur_node = nth_online_krgnode(0);
 			seq_data->last_node = KERRIGHED_MAX_NODES - 1;
 		} else {
 			// Node wide CPU info
@@ -185,7 +185,7 @@ static void go_to_selected_cpu(struct cpu_info_seq_struct *seq_data,
 		static_node_info = get_static_node_info(seq_data->cur_node);
 		if (seq_data->cpu_id >= static_node_info->nr_cpu) {
 			seq_data->cur_node =
-				krgnode_next_possible(seq_data->cur_node);
+				krgnode_next_online(seq_data->cur_node);
 			seq_data->cpu_id = 0;
 		}
 	}
@@ -787,12 +787,12 @@ static int krg_nrnodes_read_proc(char *buffer, char **start, off_t offset,
 
 	if (offset == 0)
 		len = snprintf(mybuffer, 40,
-			       "POSSIBLE:%d\n"
 			       "ONLINE:%d\n"
-			       "PRESENT:%d\n",
-			       num_possible_krgnodes(),
+			       "PRESENT:%d\n"
+			       "POSSIBLE:%d\n",
 			       num_online_krgnodes(),
-			       num_present_krgnodes());
+			       num_present_krgnodes(),
+			       num_possible_krgnodes());
 
 	if (offset + count >= len) {
 		count = len - offset;

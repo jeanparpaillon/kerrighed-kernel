@@ -144,7 +144,7 @@ static int start_pipe_get_remote_value(
 	size_t in_size = sink->type->get_value_types.in_type_size;
 	int err;
 
-	if (!krgnode_possible(node))
+	if (!krgnode_online(node))
 		return -EINVAL;
 	if (node == kerrighed_node_id)
 		return scheduler_source_get_value(local_pipe->source,

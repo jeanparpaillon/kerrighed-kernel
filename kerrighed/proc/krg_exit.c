@@ -369,7 +369,7 @@ int krg_wait_task_zombie(pid_t pid, kerrighed_node_t zombie_location,
 	 * change afterwards, but this will be needed to support hot removal of
 	 * nodes with zombie migration.
 	 */
-	BUG_ON(!krgnode_possible(zombie_location));
+	BUG_ON(!krgnode_online(zombie_location));
 
 	desc = rpc_begin(PROC_WAIT_TASK_ZOMBIE, zombie_location);
 	if (!desc)

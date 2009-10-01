@@ -20,7 +20,7 @@ static void epm_remove(krgnodemask_t *vector)
 	printk("epm_remove...\n");
 
 	/* Here we assume that all nodes of the cluster are not removed */
-	dest_node = krgnode_next_possible_in_ring(dest_node);
+	dest_node = krgnode_next_online_in_ring(dest_node);
 	BUG_ON(__krgnode_isset(dest_node, vector));
 
 	read_lock(&tasklist_lock);
@@ -40,7 +40,7 @@ static void epm_remove(krgnodemask_t *vector)
 			 * Here we assume that all nodes of the cluster are not
 			 * removed.
 			 */
-			dest_node = krgnode_next_possible_in_ring(dest_node);
+			dest_node = krgnode_next_online_in_ring(dest_node);
 			BUG_ON(__krgnode_isset(dest_node, vector));
 
 			continue;
