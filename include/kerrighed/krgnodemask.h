@@ -412,7 +412,6 @@ extern krgnodemask_t krgnode_present_map;
 #define krgnode_possible(node)	krgnode_isset((node), krgnode_possible_map)
 #define krgnode_present(node)	krgnode_isset((node), krgnode_present_map)
 
-int highest_possible_krgnode_id(void);
 #define any_online_krgnode(mask) __any_online_krgnode(&(mask))
 int __any_online_krgnode(const krgnodemask_t *mask);
 
@@ -425,7 +424,6 @@ int __any_online_krgnode(const krgnodemask_t *mask);
 #define krgnode_possible(node)	((node) == kerrighed_node_id)
 #define krgnode_present(node)	((node) == kerrighed_node_id)
 
-#define highest_possible_krgnode_id()	kerrighed_node_id
 #define any_online_krgnode(mask)		kerrighed_node_id
 #endif
 
