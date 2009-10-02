@@ -56,7 +56,8 @@ enum {
 
 static char clusters_status[KERRIGHED_MAX_CLUSTERS];
 
-struct cluster_start_msg {
+static krgnodemask_t cluster_start_nodes;
+static struct cluster_start_msg {
 	struct hotplug_node_set node_set;
 	unsigned long seq_id;
 } cluster_start_msg;
@@ -587,20 +588,19 @@ static void cluster_start_worker(struct work_struct *work)
 	if (!page)
 		goto out;
 
-	ret = krgnodelist_scnprintf(page, PAGE_SIZE, cluster_start_msg.node_set.v);
+	ret = krgnodelist_scnprintf(page, PAGE_SIZE, cluster_start_nodes);
 	BUG_ON(ret >= PAGE_SIZE);
-	printk("kerrighed: Cluster start with nodes %s ...\n",
-	       page);
+	printk("kerrighed: Cluster start on nodes %s ...\n", page);
 
 	free_page((unsigned long)page);
 
-	desc = rpc_begin_m(CLUSTER_START, &cluster_start_msg.node_set.v);
+	desc = rpc_begin_m(CLUSTER_START, &cluster_start_nodes);
 	if (!desc)
 		goto out;
 	err = rpc_pack_type(desc, cluster_start_msg);
 	if (err)
 		goto end;
-	for_each_krgnode_mask(node, cluster_start_msg.node_set.v) {
+	for_each_krgnode_mask(node, cluster_start_nodes) {
 		err = rpc_unpack_type_from(desc, node, ret);
 		if (err)
 			goto cancel;
@@ -636,8 +636,8 @@ cancel:
 
 static DECLARE_WORK(cluster_start_work, cluster_start_worker);
 
-static int do_cluster_start(const struct hotplug_node_set *node_set,
-			    struct krg_namespace *ns)
+int do_cluster_start(const struct hotplug_node_set *node_set,
+		     struct krg_namespace *ns)
 {
 	int r = -EALREADY;
 
@@ -653,8 +653,11 @@ static int do_cluster_start(const struct hotplug_node_set *node_set,
 				r = 0;
 				get_krg_ns(ns);
 				cluster_start_krg_ns = ns;
+				krgnodes_copy(cluster_start_nodes, node_set->v);
 				cluster_start_msg.seq_id++;
-				cluster_start_msg.node_set = *node_set;
+				krgnodes_or(cluster_start_msg.node_set.v,
+					    node_set->v,
+					    krgnode_online_map);
 				cluster_start_in_progress = 1;
 				queue_work(krg_wq, &cluster_start_work);
 			}

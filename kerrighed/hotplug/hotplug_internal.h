@@ -10,6 +10,11 @@ extern struct work_struct fail_work;
 int hooks_start(void);
 void hooks_stop(void);
 
+struct hotplug_node_set;
+struct krg_namespace;
+
+int do_cluster_start(const struct hotplug_node_set *node_set,
+		     struct krg_namespace *ns);
 int __nodes_add(struct hotplug_node_set *node_set);
 
 int repair_monitor(void);
