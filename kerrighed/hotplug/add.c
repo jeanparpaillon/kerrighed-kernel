@@ -84,26 +84,6 @@ static void handle_node_fwd_add(struct rpc_desc *desc, void *data, size_t size)
 	__fwd_add_cb(data);
 }
 
-inline int __clean_node_set(krgnodemask_t *nodes)
-{
-	kerrighed_node_t node;
-	int r = 0; /* false */
-
-	/* can't join a cluster by myself */
-	krgnode_clear(kerrighed_node_id, *nodes);
-
-	__for_each_krgnode_mask(node, nodes){
-		if (!krgnode_present(node)) {
-			printk("Node %d is not on the network\n", node);
-			krgnode_clear(node, *nodes);
-		} else {
-			/* there is at least one valid node */
-			r = 1;
-		}
-	}
-	return r;
-}
-
 static int nodes_add(void __user *arg)
 {
 	struct __hotplug_node_set __node_set;
@@ -118,8 +98,17 @@ static int nodes_add(void __user *arg)
 	if (err)
 		return err;
 
-	if (!__clean_node_set(&node_set.v))
+	if (!krgnodes_subset(node_set.v, krgnode_present_map))
 		return -ENONET;
+
+	if (krgnodes_intersects(node_set.v, krgnode_online_map))
+		return -EPERM;
+
+	/*
+	 * TODO: Remove this when krgnode_online(kerrighed_node_id) is required
+	 */
+	if (krgnode_isset(kerrighed_node_id, node_set.v))
+		return -EPERM;
 
 	__fwd_add_cb(&node_set);
 	return 0;

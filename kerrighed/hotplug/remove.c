@@ -135,26 +135,6 @@ static void handle_node_fwd_remove(struct rpc_desc *desc, void *data, size_t siz
 	__fwd_remove_cb(data);
 }
 
-static inline int __clean_node_set(krgnodemask_t *nodes)
-{
-	kerrighed_node_t node;
-	int r = 0; /* false */
-
-	/* can't leave a cluster by myself */
-	krgnode_clear(kerrighed_node_id, *nodes);
-
-	__for_each_krgnode_mask(node, nodes){
-		if (!krgnode_online(node)) {
-			printk("Node %d is not in the cluster\n", node);
-			krgnode_clear(node, *nodes);
-		} else {
-			/* there is at least one valid node */
-			r = 1;
-		}
-	}
-	return r;
-}
-
 static int nodes_remove(void __user *arg)
 {
 	struct __hotplug_node_set __node_set;
@@ -169,8 +149,15 @@ static int nodes_remove(void __user *arg)
 	if (err)
 		return err;
 
-	if (!__clean_node_set(&node_set.v))
+	if (!krgnodes_subset(node_set.v, krgnode_present_map))
 		return -ENONET;
+
+	if (!krgnodes_subset(node_set.v, krgnode_online_map))
+		return -EPERM;
+
+	/* TODO: Really required? */
+	if (krgnode_isset(kerrighed_node_id, node_set.v))
+		return -EPERM;
 
 	__fwd_remove_cb(&node_set);
 	return 0;
