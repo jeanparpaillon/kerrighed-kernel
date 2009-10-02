@@ -65,10 +65,18 @@ union export_args {
 	struct file_export_args file_args;
 };
 
+
+enum object_locality {
+	LOCAL_ONLY,
+	SHARED_ANY,
+	SHARED_MASTER,
+	SHARED_SLAVE
+};
+
 int add_to_shared_objects_list(struct app_struct *app,
 			       enum shared_obj_type type,
 			       unsigned long key,
-			       int is_local,
+			       enum object_locality locality,
 			       struct task_struct* exporting_task,
 			       union export_args *args);
 

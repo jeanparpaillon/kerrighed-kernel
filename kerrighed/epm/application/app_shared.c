@@ -200,12 +200,6 @@ static int insert_shared_index(struct rb_root *root, struct shared_index *idx)
 
 /*--------------------------------------------------------------------------*/
 
-enum locality {
-	LOCAL_ONLY,
-	SHARED_MASTER,
-	SHARED_SLAVE
-};
-
 struct shared_object {
 	struct shared_index index;
 	struct shared_object_operations *ops;
@@ -214,10 +208,12 @@ struct shared_object {
 		struct {
 			struct task_struct *exporting_task;
 			union export_args args;
-			int is_local;
+			enum object_locality locality;
 		} checkpoint;
 		struct {
-			enum locality locality;
+			/* SHARED_ANY must not be used at restart */
+			enum object_locality locality;
+
 			void *data;
 			size_t data_size;
 		} restart;
@@ -260,7 +256,7 @@ void * get_imported_shared_object(struct app_struct *app,
 int add_to_shared_objects_list(struct app_struct *app,
 			       enum shared_obj_type type,
 			       unsigned long key,
-			       int is_local,
+			       enum object_locality locality,
 			       struct task_struct *exporting_task,
 			       union export_args *args)
 {
@@ -293,7 +289,7 @@ int add_to_shared_objects_list(struct app_struct *app,
 		s->checkpoint.exporting_task = exporting_task;
 		if (args)
 			s->checkpoint.args = *args;
-		s->checkpoint.is_local = is_local;
+		s->checkpoint.locality = locality;
 	}
 
 	spin_unlock(&app->shared_objects.lock);
@@ -424,6 +420,7 @@ static int export_one_shared_object(ghost_t *ghost,
 				    struct shared_object *this)
 {
 	int r;
+	int is_local;
 
 	r = ghost_write(ghost, &this->index.type,
 			sizeof(enum shared_obj_type));
@@ -432,7 +429,12 @@ static int export_one_shared_object(ghost_t *ghost,
 	r = ghost_write(ghost, &this->index.key, sizeof(long));
 	if (r)
 		goto error;
-	r = ghost_write(ghost, &this->checkpoint.is_local, sizeof(int));
+
+	BUG_ON(this->checkpoint.locality != LOCAL_ONLY
+	       && this->checkpoint.locality != SHARED_MASTER);
+
+	r = ghost_write(ghost, &this->checkpoint.locality,
+			sizeof(enum object_locality));
 	if (r)
 		goto error;
 
@@ -545,12 +547,16 @@ static int send_dist_objects_list(struct rpc_desc *desc,
 		idx = container_of(node, struct shared_index, node);
 		this = container_of(idx, struct shared_object, index);
 
-		if (!this->checkpoint.is_local) {
+		if (this->checkpoint.locality != LOCAL_ONLY) {
 			r = rpc_pack_type(desc, idx->type);
 			if (r)
 				goto err_pack;
 
 			r = rpc_pack_type(desc, idx->key);
+			if (r)
+				goto err_pack;
+
+			r = rpc_pack_type(desc, this->checkpoint.locality);
 			if (r)
 				goto err_pack;
 		}
@@ -603,8 +609,13 @@ static int rcv_dist_objects_list_from(struct rpc_desc *desc,
 		struct dist_shared_index *s;
 		struct shared_index *idx;
 		unsigned long key;
+		enum object_locality locality = LOCAL_ONLY;
 
 		r = rpc_unpack_type_from(desc, node, key);
+		if (r)
+			goto error;
+
+		r = rpc_unpack_type_from(desc, node, locality);
 		if (r)
 			goto error;
 
@@ -616,7 +627,7 @@ static int rcv_dist_objects_list_from(struct rpc_desc *desc,
 
 		s->index.type = type;
 		s->index.key = key;
-		s->master_node = node;
+		s->master_node = KERRIGHED_NODE_ID_NONE;
 		krgnodes_clear(s->nodes);
 
 		idx = __insert_shared_index(dist_shared_indexes, &s->index);
@@ -624,6 +635,16 @@ static int rcv_dist_objects_list_from(struct rpc_desc *desc,
 			kfree(s);
 			s = container_of(idx, struct dist_shared_index, index);
 		}
+
+		BUG_ON(locality == LOCAL_ONLY);
+
+		if (s->master_node == KERRIGHED_NODE_ID_NONE) {
+			if (locality == SHARED_MASTER
+			    || locality == SHARED_ANY)
+				s->master_node = node;
+		} else
+			/* only one master per object */
+			BUG_ON(locality == SHARED_MASTER);
 
 		krgnode_set(node, s->nodes);
 
@@ -652,25 +673,33 @@ static int send_full_dist_objects_list(struct rpc_desc *desc,
 		idx = container_of(node, struct shared_index, node);
 		this = container_of(idx, struct dist_shared_index, index);
 
+		if (this->master_node == KERRIGHED_NODE_ID_NONE) {
+			/* the master node for this object is
+			 * not implied in the checkpoint
+			 */
+			r = -ENOSYS;
+			goto err;
+		}
+
 		r = rpc_pack_type(desc, idx->type);
 		if (r)
-			goto err_pack;
+			goto err;
 
 		r = rpc_pack_type(desc, idx->key);
 		if (r)
-			goto err_pack;
+			goto err;
 
 		r = rpc_pack_type(desc, this->master_node);
 		if (r)
-			goto err_pack;
+			goto err;
 
 		r = rpc_pack_type(desc, this->nodes);
 		if (r)
-			goto err_pack;
+			goto err;
 	}
 	r = rpc_pack_type(desc, end);
 
-err_pack:
+err:
 	return r;
 }
 
@@ -712,9 +741,9 @@ static int rcv_full_dist_objects_list(struct rpc_desc *desc,
 			obj = container_of(idx, struct shared_object, index);
 
 			if (krgnode_is_unique(kerrighed_node_id, s.nodes))
-				obj->checkpoint.is_local = 1;
+				obj->checkpoint.locality = LOCAL_ONLY;
 			else
-				obj->checkpoint.is_local = 0;
+				obj->checkpoint.locality = SHARED_MASTER;
 
 		} else if (node)
 			clear_one_shared_object(node, app);
@@ -788,6 +817,8 @@ int global_chkpt_shared(struct rpc_desc *desc,
 		goto err_clear_shared;
 
 	r = send_full_dist_objects_list(desc, &dist_shared_indexes);
+	if (r)
+		goto err_clear_shared;
 
 	/* waiting results from the nodes hosting the application */
 	r = app_wait_returns_from_nodes(desc, obj->nodes);
@@ -827,14 +858,17 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 	if (r)
 		goto err;
 
-	r = ghost_read(ghost, &is_local, sizeof(int));
+	r = ghost_read(ghost, &stmp.restart.locality,
+		       sizeof(enum object_locality));
 	if (r)
 		goto err;
 
-	if (is_local)
-		stmp.restart.locality = LOCAL_ONLY;
-	else
-		stmp.restart.locality = SHARED_MASTER;
+	if (stmp.restart.locality == LOCAL_ONLY)
+		is_local = 1;
+	else {
+		BUG_ON(stmp.restart.locality != SHARED_MASTER);
+		is_local = 0;
+	}
 
 	r = s_ops->import_now(action, ghost, fake, is_local,
 			      &stmp.restart.data,
@@ -927,6 +961,8 @@ static int __send_restored_objects(struct rpc_desc *desc,
 
 		idx = container_of(node, struct shared_index, node);
 		this = container_of(idx, struct shared_object, index);
+
+		BUG_ON(this->restart.locality == SHARED_ANY);
 
 		if (this->restart.locality == SHARED_MASTER &&
 		    (file_only ||
@@ -1190,6 +1226,8 @@ int local_restart_shared_complete(struct app_struct *app,
 
 		struct shared_object *this =
 			container_of(idx, struct shared_object, index);
+
+		BUG_ON(this->restart.locality == SHARED_ANY);
 
 		if (this->restart.locality == LOCAL_ONLY
 		    || this->restart.locality == SHARED_MASTER)

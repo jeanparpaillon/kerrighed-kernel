@@ -212,25 +212,27 @@ static int is_file_type_supported(const struct file *file)
 static int _cr_get_file_type_and_key(const struct file *file,
 				     enum shared_obj_type *type,
 				     long *key,
-				     int *is_local,
+				     enum object_locality *locality,
 				     int allow_unsupported)
 {
 	if (!is_file_type_supported(file)) {
 		if (allow_unsupported) {
 			*type = UNSUPPORTED_FILE;
 			*key = (long)file;
+			if (locality)
+				*locality = LOCAL_ONLY;
 		} else
 			return -ENOSYS;
 	} else if (file->f_objid) {
 		*type = REGULAR_DVFS_FILE;
 		*key = file->f_objid;
-		if (is_local)
-			*is_local = 0;
+		if (locality)
+			*locality = SHARED_ANY;
 	} else {
 		*type = REGULAR_FILE;
 		*key = (long)file;
-		if (is_local)
-			*is_local = 1;
+		if (locality)
+			*locality = LOCAL_ONLY;
 	}
 
 	return 0;
@@ -505,12 +507,13 @@ int cr_add_file_to_shared_table(struct task_struct *task,
 				int index, struct file *file,
 				int allow_unsupported)
 {
-	int r, is_local, tty;
+	int r, tty;
 	long key;
 	enum shared_obj_type type;
+	enum object_locality locality;
 	union export_args args;
 
-	r = _cr_get_file_type_and_key(file, &type, &key, &is_local,
+	r = _cr_get_file_type_and_key(file, &type, &key, &locality,
 				      allow_unsupported);
 	if (r)
 		goto error;
@@ -519,7 +522,7 @@ int cr_add_file_to_shared_table(struct task_struct *task,
 	args.file_args.file = file;
 
 	r = add_to_shared_objects_list(task->application,
-				       type, key, is_local, task,
+				       type, key, locality, task,
 				       &args);
 
 	if (r == -ENOKEY) /* the file was already in the list */
@@ -592,7 +595,7 @@ static int cr_export_later_files_struct(ghost_t *ghost,
 		goto err;
 
 	r = add_to_shared_objects_list(task->application,
-				       FILES_STRUCT, key, 1 /*is_local*/,
+				       FILES_STRUCT, key, LOCAL_ONLY,
 				       task, NULL);
 	if (r)
 		goto err_add;
@@ -726,7 +729,7 @@ static int cr_export_later_fs_struct(struct epm_action *action,
 		goto err;
 
 	r = add_to_shared_objects_list(task->application,
-				       FS_STRUCT, key, 1 /*is_local*/, task,
+				       FS_STRUCT, key, LOCAL_ONLY, task,
 				       NULL);
 
 	if (r == -ENOKEY) /* the fs_struct was already in the list */
