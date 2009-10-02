@@ -34,54 +34,33 @@ static void handle_node_add(struct rpc_desc *rpc_desc, void *data, size_t size)
 	__nodes_add(data);
 }
 
-inline void __fwd_add_cb(struct hotplug_node_set *node_set)
+static int do_nodes_add(const struct hotplug_node_set *node_set)
 {
-	if (node_set->subclusterid == kerrighed_subsession_id) {
-		kerrighed_node_t node;
-		struct hotplug_node_set node_set_tmp;
+	kerrighed_node_t node;
+	struct hotplug_node_set node_set_tmp;
 
-		node_set_tmp = *node_set;
+	node_set_tmp = *node_set;
 
-		// send request to all the members in the current cluster
-		for_each_online_krgnode(node){
+	/* Send request to all members of the current cluster */
+	for_each_online_krgnode(node){
 
-			krgnode_set(node, node_set_tmp.v);
+		krgnode_set(node, node_set_tmp.v);
 
-			printk("send a NODE_ADD to %d\n", node);
-			rpc_async(NODE_ADD, node,
-				  node_set, sizeof(*node_set));
+		printk("send a NODE_ADD to %d\n", node);
+		rpc_async(NODE_ADD, node,
+				node_set, sizeof(*node_set));
 
-		}
-
-		// send request to all new members
-		// Current limitation: only not-started nodes can be added to a
-		// running cluster (ie: a node can't move from a subcluster to another one)
-		rpc_async_m(CLUSTER_START, &node_set->v,
-			    &node_set_tmp, sizeof(node_set_tmp));
-
-	} else {
-		kerrighed_node_t node;
-
-		node = 0;
-		while ((universe[node].subid != node_set->subclusterid)
-		       && (node < KERRIGHED_MAX_NODES))
-			node++;
-
-		if (node == KERRIGHED_MAX_NODES) {
-			BUG();
-			printk
-			    ("WARNING: here we have no idea... may be the next one will be more luky!\n");
-			node = kerrighed_node_id + 1;
-		}
-
-		printk("send a NODE_FWD_ADD to %d\n", node);
-		rpc_async(NODE_FWD_ADD, node, node_set, sizeof(*node_set));
 	}
-}
 
-static void handle_node_fwd_add(struct rpc_desc *desc, void *data, size_t size)
-{
-	__fwd_add_cb(data);
+	/*
+	 * Send request to all new members
+	 * Current limitation: only not-started nodes can be added to a
+	 * running cluster (ie: a node can't move from a subcluster to another one)
+	 */
+	rpc_async_m(CLUSTER_START, &node_set->v,
+			&node_set_tmp, sizeof(node_set_tmp));
+
+	return 0;
 }
 
 static int nodes_add(void __user *arg)
@@ -98,26 +77,24 @@ static int nodes_add(void __user *arg)
 	if (err)
 		return err;
 
+	if (node_set.subclusterid != kerrighed_subsession_id)
+		return -EPERM;
+
+	if (!krgnode_online(kerrighed_node_id))
+		return -EPERM;
+
 	if (!krgnodes_subset(node_set.v, krgnode_present_map))
 		return -ENONET;
 
 	if (krgnodes_intersects(node_set.v, krgnode_online_map))
 		return -EPERM;
 
-	/*
-	 * TODO: Remove this when krgnode_online(kerrighed_node_id) is required
-	 */
-	if (krgnode_isset(kerrighed_node_id, node_set.v))
-		return -EPERM;
-
-	__fwd_add_cb(&node_set);
-	return 0;
+	return do_nodes_add(&node_set);
 }
 
 int hotplug_add_init(void)
 {
 	rpc_register_void(NODE_ADD, handle_node_add, 0);
-	rpc_register_void(NODE_FWD_ADD, handle_node_fwd_add, 0);
 
 	register_proc_service(KSYS_HOTPLUG_ADD, nodes_add);
 	return 0;
