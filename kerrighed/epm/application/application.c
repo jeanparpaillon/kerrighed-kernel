@@ -11,6 +11,7 @@
 #include <linux/hashtable.h>
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/pid.h>
+#include <kerrighed/libproc.h>
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
 #include <kerrighed/kerrighed_signal.h>
@@ -74,7 +75,8 @@ static struct iolinker_struct app_io_linker = {
 	.linker_name = "app ",
 	.linker_id = APP_LINKER,
 	.alloc_object = app_alloc_object,
-	.remove_object = app_remove_object
+	.remove_object = app_remove_object,
+	.default_owner = global_pid_default_owner,
 };
 
 /*--------------------------------------------------------------------------*/
@@ -960,7 +962,7 @@ void application_cr_server_init(void)
 	register_io_linker(APP_LINKER, &app_io_linker);
 
 	app_kddm_set = create_new_kddm_set(kddm_def_ns, APP_KDDM_ID,
-					   APP_LINKER, KDDM_RR_DEF_OWNER,
+					   APP_LINKER, KDDM_CUSTOM_DEF_OWNER,
 					   sizeof(struct app_kddm_object),
 					   KDDM_LOCAL_EXCLUSIVE);
 	if (IS_ERR(app_kddm_set))
