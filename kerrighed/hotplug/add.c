@@ -6,6 +6,7 @@
 
 #include <linux/spinlock.h>
 #include <linux/sched.h>
+#include <linux/nsproxy.h>
 #include <linux/hashtable.h>
 #include <linux/uaccess.h>
 #include <kerrighed/sys/types.h>
@@ -31,36 +32,59 @@ int __nodes_add(struct hotplug_node_set *nodes_set)
 
 static void handle_node_add(struct rpc_desc *rpc_desc, void *data, size_t size)
 {
-	__nodes_add(data);
+	struct hotplug_node_set *node_set = data;
+	char *page;
+	int ret;
+
+	__nodes_add(node_set);
+
+	page = (char *)__get_free_page(GFP_KERNEL);
+	if (page) {
+		ret = krgnodelist_scnprintf(page, PAGE_SIZE, krgnode_online_map);
+		BUG_ON(ret >= PAGE_SIZE);
+		printk("Kerrighed is running on %d nodes: %s\n",
+		       num_online_krgnodes(), page);
+		free_page((unsigned long)page);
+	} else {
+		printk("Kerrighed is running on %d nodes\n", num_online_krgnodes());
+	}
 }
 
 static int do_nodes_add(const struct hotplug_node_set *node_set)
 {
+	char *page;
 	kerrighed_node_t node;
-	struct hotplug_node_set node_set_tmp;
+	int ret;
 
-	node_set_tmp = *node_set;
+	page = (char *)__get_free_page(GFP_KERNEL);
+	if (!page)
+		return -ENOMEM;
 
-	/* Send request to all members of the current cluster */
-	for_each_online_krgnode(node){
+	ret = krgnodelist_scnprintf(page, PAGE_SIZE, node_set->v);
+	BUG_ON(ret >= PAGE_SIZE);
+	printk("kerrighed: Adding nodes %s ...\n", page);
 
-		krgnode_set(node, node_set_tmp.v);
-
-		printk("send a NODE_ADD to %d\n", node);
-		rpc_async(NODE_ADD, node,
-				node_set, sizeof(*node_set));
-
-	}
+	free_page((unsigned long)page);
 
 	/*
 	 * Send request to all new members
 	 * Current limitation: only not-started nodes can be added to a
 	 * running cluster (ie: a node can't move from a subcluster to another one)
 	 */
-	rpc_async_m(CLUSTER_START, &node_set->v,
-			&node_set_tmp, sizeof(node_set_tmp));
+	ret = do_cluster_start(node_set, current->nsproxy->krg_ns);
+	if (ret) {
+		printk(KERN_ERR "kerrighed: Adding nodes failed! err=%d\n",
+		       ret);
+		return ret;
+	}
 
-	return 0;
+	/* Send request to all members of the current cluster */
+	for_each_online_krgnode(node)
+		rpc_async(NODE_ADD, node, node_set, sizeof(*node_set));
+
+	printk("kerrighed: Adding nodes succeeded.\n");
+
+	return ret;
 }
 
 static int nodes_add(void __user *arg)
