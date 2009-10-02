@@ -72,19 +72,21 @@ static void handle_node_fail(struct rpc_desc *desc, void *data, size_t size)
 
 }
 
-static int nodes_fail(void *arg)
+static int nodes_fail(void __user *arg)
 {
 	struct __hotplug_node_set __node_set;
 	struct hotplug_node_set node_set;
 	int unused;
+	int err;
 	
 	if (copy_from_user(&node_set, arg, sizeof(__node_set)))
 		return -EFAULT;
 
 	node_set.subclusterid = __node_set.subclusterid;
 
-	if (krgnodemask_copy_from_user(&node_set.v, &__node_set.v))
-		return -EFAULT;
+	err = krgnodemask_copy_from_user(&node_set.v, &__node_set.v);
+	if (err)
+		return err;
 	
 	rpc_async_m(NODE_FAIL, &node_set.v,
 		    &unused, sizeof(unused));

@@ -682,9 +682,8 @@ static int cluster_start(void *arg)
 	} else {
 		node_set.subclusterid = __node_set.subclusterid;
 
-		if (krgnodemask_copy_from_user(&node_set.v, &__node_set.v)) {
-			r = -EFAULT;
-		} else {
+		r = krgnodemask_copy_from_user(&node_set.v, &__node_set.v);
+		if (!r) {
 			ns = current->nsproxy->krg_ns;
 			r = do_cluster_start(&node_set, ns);
 		}
@@ -824,11 +823,8 @@ int krgnodemask_copy_from_user(krgnodemask_t *dstp, __krgnodemask_t *srcp)
 	r = find_next_bit(srcp->bits, KERRIGHED_HARD_MAX_NODES,
 			  KERRIGHED_MAX_NODES);
 
-	if (r >= KERRIGHED_MAX_NODES && r < KERRIGHED_HARD_MAX_NODES) {
-		printk("Warning: there are some bits after KERRIGHED_MAX_NODES (%d/%d/%d)\n",
-		       r, KERRIGHED_MAX_NODES, KERRIGHED_HARD_MAX_NODES);
-		printk("Not all the requested nodes will be started\n");
-	}
+	if (r >= KERRIGHED_MAX_NODES && r < KERRIGHED_HARD_MAX_NODES)
+		return -EINVAL;
 
 	bitmap_copy(dstp->bits, srcp->bits, KERRIGHED_MAX_NODES);
 

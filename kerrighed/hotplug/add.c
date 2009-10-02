@@ -105,17 +105,19 @@ inline int __clean_node_set(krgnodemask_t *nodes)
 	return r;
 }
 
-static int nodes_add(void *arg)
+static int nodes_add(void __user *arg)
 {
 	struct __hotplug_node_set __node_set;
 	struct hotplug_node_set node_set;
+	int err;
 
 	if (copy_from_user(&__node_set, arg, sizeof(struct __hotplug_node_set)))
 		return -EFAULT;
 
 	node_set.subclusterid = __node_set.subclusterid;
-	if (krgnodemask_copy_from_user(&node_set.v, &__node_set.v))
-		return -ENONET;
+	err = krgnodemask_copy_from_user(&node_set.v, &__node_set.v);
+	if (err)
+		return err;
 
 	if (!__clean_node_set(&node_set.v))
 		return -ENONET;

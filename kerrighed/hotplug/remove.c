@@ -155,17 +155,19 @@ static inline int __clean_node_set(krgnodemask_t *nodes)
 	return r;
 }
 
-static int nodes_remove(void *arg)
+static int nodes_remove(void __user *arg)
 {
 	struct __hotplug_node_set __node_set;
 	struct hotplug_node_set node_set;
+	int err;
 
 	if (copy_from_user(&__node_set, arg, sizeof(struct __hotplug_node_set)))
 		return -EFAULT;
 
 	node_set.subclusterid = __node_set.subclusterid;
-	if (krgnodemask_copy_from_user(&node_set.v, &__node_set.v))
-		return -EFAULT;
+	err = krgnodemask_copy_from_user(&node_set.v, &__node_set.v);
+	if (err)
+		return err;
 
 	if (!__clean_node_set(&node_set.v))
 		return -ENONET;
@@ -190,19 +192,21 @@ static void handle_node_poweroff(struct rpc_desc *desc)
 
 }
 
-static int nodes_poweroff(void *arg)
+static int nodes_poweroff(void __user *arg)
 {
 	struct __hotplug_node_set __node_set;
 	struct hotplug_node_set node_set;
 	int unused;
+	int err;
 	
 	if (copy_from_user(&__node_set, arg, sizeof(__node_set)))
 		return -EFAULT;
 
 	node_set.subclusterid = __node_set.subclusterid;
 
-	if (krgnodemask_copy_from_user(&node_set.v, &__node_set.v))
-		return -EFAULT;
+	err = krgnodemask_copy_from_user(&node_set.v, &__node_set.v);
+	if (err)
+		return err;
 
 	rpc_async_m(NODE_POWEROFF, &node_set.v,
 		    &unused, sizeof(unused));
@@ -228,7 +232,7 @@ static void handle_node_reboot(struct rpc_desc *desc, void *data, size_t size)
 }
 */
 
-static int nodes_reboot(void *arg)
+static int nodes_reboot(void __user *arg)
 {
 	struct __hotplug_node_set __node_set;
 	struct hotplug_node_set node_set;
@@ -239,8 +243,9 @@ static int nodes_reboot(void *arg)
 
 	node_set.subclusterid = __node_set.subclusterid;
 	
-	if (krgnodemask_copy_from_user(&node_set.v, &__node_set.v))
-		return -EFAULT;
+	err = krgnodemask_copy_from_user(&node_set.v, &__node_set.v);
+	if (err)
+		return err;
 
 	rpc_async_m(NODE_REBOOT, &node_set.v,
 		    &unused, sizeof(unused));
