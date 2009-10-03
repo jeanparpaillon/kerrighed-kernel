@@ -7,8 +7,7 @@
 #include <linux/spinlock.h>
 #include <linux/sched.h>
 #include <linux/hashtable.h>
-#include <asm/uaccess.h>
-#include <asm/ioctl.h>
+#include <linux/uaccess.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/hotplug.h>
