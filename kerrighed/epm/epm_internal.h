@@ -46,6 +46,8 @@ static inline void free_thread_info(struct thread_info *ti)
 }
 #endif
 
+struct hotplug_context;
+
 int epm_hotplug_init(void);
 void epm_hotplug_cleanup(void);
 
@@ -60,6 +62,7 @@ void epm_children_exit(void);
 
 void epm_pidmap_start(void);
 void epm_pidmap_exit(void);
+int pidmap_map_add(struct hotplug_context *ctx);
 
 void epm_pid_start(void);
 void epm_pid_exit(void);

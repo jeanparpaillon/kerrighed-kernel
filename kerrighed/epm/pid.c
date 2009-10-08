@@ -169,8 +169,6 @@ static struct pid *no_pid(int nr)
 	struct pid_kddm_object *obj;
 	struct pid *pid;
 
-	BUG_ON(ORIG_NODE(nr) == kerrighed_node_id);
-
 	obj = _kddm_grab_object_no_ft(pid_kddm_set, nr);
 	if (IS_ERR(obj))
 		return NULL;
@@ -205,7 +203,7 @@ out_unlock:
 	return pid;
 }
 
-static struct pid *krg_get_pid(int nr)
+struct pid *krg_get_pid(int nr)
 {
 	struct pid_kddm_object *obj;
 	struct pid *pid;
@@ -693,27 +691,34 @@ static void __pid_link_task(struct pid *pid, struct task_kddm_object *task_obj)
 	}
 }
 
-static int handle_pid_link_task(struct rpc_desc *desc, void *_msg, size_t size)
+int __krg_pid_link_task(pid_t nr)
 {
-	struct pid_link_task_msg *msg = _msg;
 	struct pid *pid;
 	struct task_kddm_object *task_obj;
 	int r = 0;
 
-	pid = krg_get_pid(msg->pid);
+	pid = krg_get_pid(nr);
 	if (!pid) {
 		r = -ENOMEM;
 		goto out;
 	}
-	task_obj = krg_task_readlock(msg->pid);
+	task_obj = krg_task_readlock(nr);
 
 	__pid_link_task(pid, task_obj);
 
-	krg_task_unlock(msg->pid);
+	krg_task_unlock(nr);
 	krg_end_get_pid(pid);
 	krg_put_pid(pid);
+
 out:
 	return r;
+}
+
+static int handle_pid_link_task(struct rpc_desc *desc, void *_msg, size_t size)
+{
+	struct pid_link_task_msg *msg = _msg;
+
+	return __krg_pid_link_task(msg->pid);
 }
 
 /*--------------------------------------------------------------------------*

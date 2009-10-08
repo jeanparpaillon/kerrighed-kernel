@@ -7,13 +7,20 @@
 #include <linux/pid_namespace.h>
 #include <linux/pid.h>
 #include <linux/sched.h>
+#include <linux/gfp.h>
 #include <linux/rwsem.h>
 #include <kerrighed/pid.h>
 #include <kerrighed/namespace.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
+#include <kerrighed/hotplug.h>
 #include <net/krgrpc/rpc.h>
+#include <net/krgrpc/rpcid.h>
 #include <kddm/kddm.h>
+
+#include "pid.h"
+
+#define BITS_PER_PAGE (PAGE_SIZE * 8)
 
 struct pidmap_map {
 	kerrighed_node_t host[KERRIGHED_MAX_NODES];
@@ -47,8 +54,6 @@ static int pidmap_map_first_touch(struct kddm_obj *obj_entry,
 	map = obj_entry->object;
 	for (n = 0; n < KERRIGHED_MAX_NODES; n++)
 		map->host[n] = KERRIGHED_NODE_ID_NONE;
-	for_each_online_krgnode(n)
-		map->host[n] = n;
 
 out:
 	return 0;
@@ -223,6 +228,201 @@ void pidmap_map_cleanup(struct krg_namespace *krg_ns)
 	}
 }
 
+static int recv_pidmap(struct rpc_desc *desc,
+		       kerrighed_node_t node,
+		       struct pid_namespace *pidmap_ns)
+{
+	void *page;
+	struct pidmap *map;
+	int i, nr_pages, page_index;
+	int nr_free ;
+	int err;
+
+	page = (void *)__get_free_page(GFP_KERNEL);
+	if (!page)
+		return -ENOMEM;
+
+	err = rpc_unpack_type(desc, nr_pages);
+	if (err)
+		goto err;
+	BUG_ON(!nr_pages);
+
+	for (i = 0; i < nr_pages; i++) {
+		err = rpc_unpack_type(desc, page_index);
+		if (err)
+			goto err;
+		map = &pidmap_ns->pidmap[page_index];
+		if (!map->page) {
+			err = alloc_pidmap_page(map);
+			if (err)
+				goto err;
+		}
+		err = rpc_unpack(desc, 0, page, PAGE_SIZE);
+		if (err)
+			goto err;
+		err = rpc_unpack_type(desc, nr_free);
+		if (err)
+			goto err;
+		if (page_index == 0) {
+			/* Init's bit is set in map->page */
+			BUG_ON(!test_bit(1, map->page));
+			BUG_ON(atomic_read(&map->nr_free) != BITS_PER_PAGE - 2);
+			BUG_ON(!test_bit(0, page));
+			BUG_ON(!test_bit(1, page));
+		} else {
+			BUG_ON(atomic_read(&map->nr_free) != BITS_PER_PAGE);
+		}
+		memcpy(map->page, page, PAGE_SIZE);
+		atomic_set(&map->nr_free, nr_free);
+	}
+
+	i = 1;
+	while ((i = next_pidmap(pidmap_ns, i)) > 0) {
+		err = __krg_pid_link_task(GLOBAL_PID_NODE(i, node));
+		if (err)
+			goto err;
+	}
+
+	err = rpc_pack_type(desc, err);
+	if (err)
+		goto err;
+
+freepage:
+	free_page((unsigned long)page);
+
+	return err;
+
+err:
+	if (err > 0)
+		err = -EPIPE;
+	i = 1;
+	while ((i = next_pidmap(pidmap_ns, i)) > 0) {
+		struct upid upid = {
+			.nr = i,
+			.ns = pidmap_ns
+		};
+		__free_pidmap(&upid);
+	}
+	goto freepage;
+}
+
+static int send_pidmap(struct rpc_desc *desc, struct pid_namespace *pidmap_ns)
+{
+	struct pidmap *map;
+	int i, nr_pages;
+	int nr_free;
+	int err;
+
+	nr_pages = 0;
+	for (i = 0; i < PIDMAP_ENTRIES; i++)
+		if (atomic_read(&pidmap_ns->pidmap[i].nr_free) < BITS_PER_PAGE)
+			nr_pages++;
+	BUG_ON(!nr_pages);
+
+	err = rpc_pack_type(desc, nr_pages);
+	if (err)
+		goto out;
+
+	for (i = 0; i < PIDMAP_ENTRIES; i++) {
+		map = &pidmap_ns->pidmap[i];
+		nr_free = atomic_read(&map->nr_free);
+		if (nr_free == BITS_PER_PAGE)
+			continue;
+
+		err = rpc_pack_type(desc, i);
+		if (err)
+			goto out;
+		err = rpc_pack(desc, 0, map->page, PAGE_SIZE);
+		if (err)
+			goto out;
+		err = rpc_pack_type(desc, nr_free);
+		if (err)
+			goto out;
+	}
+
+	/* Make sure that the transfer went fine */
+	err = rpc_unpack_type(desc, err);
+	if (err > 0)
+		err = -EPIPE;
+
+out:
+	return err;
+}
+
+static void handle_pidmap_steal(struct rpc_desc *desc, void *_msg, size_t size)
+{
+	kerrighed_node_t node = *(kerrighed_node_t *)_msg;
+	struct pid_namespace *pidmap_ns = foreign_pidmap[node];
+
+	if (send_pidmap(desc, pidmap_ns)) {
+		rpc_cancel(desc);
+		return;
+	}
+
+	foreign_pidmap[node] = NULL;
+	put_pid_ns(pidmap_ns);
+}
+
+int pidmap_map_add(struct hotplug_context *ctx)
+{
+	struct pid_namespace *ns = ctx->ns->root_pid_ns;
+	kerrighed_node_t host_node;
+	struct rpc_desc *desc;
+	int err;
+
+	if (!krgnode_isset(kerrighed_node_id, ctx->node_set.v))
+		return 0;
+
+	err = pidmap_map_read_lock();
+	if (err)
+		return err;
+	host_node = pidmap_node(kerrighed_node_id);
+	pidmap_map_read_unlock();
+
+	if (host_node == kerrighed_node_id)
+		return 0;
+
+	err = pidmap_map_write_lock();
+	if (err)
+		return err;
+
+	host_node = pidmap_node(kerrighed_node_id);
+	if (host_node == KERRIGHED_NODE_ID_NONE) {
+		pidmap_map.host[kerrighed_node_id] = kerrighed_node_id;
+		goto unlock;
+	}
+	BUG_ON(host_node == kerrighed_node_id);
+
+	err = -ENOMEM;
+	desc = rpc_begin(EPM_PIDMAP_STEAL, host_node);
+	if (!desc)
+		goto unlock;
+
+	err = rpc_pack_type(desc, kerrighed_node_id);
+	if (err)
+		goto cancel;
+
+	err = recv_pidmap(desc, kerrighed_node_id, ns);
+	if (err)
+		goto cancel;
+
+	pidmap_map.host[kerrighed_node_id] = kerrighed_node_id;
+
+end:
+	rpc_end(desc, 0);
+
+unlock:
+	pidmap_map_write_unlock();
+
+	return err;
+
+cancel:
+	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
+	goto end;
+}
+
 void epm_pidmap_start(void)
 {
 	register_io_linker(PIDMAP_MAP_LINKER, &pidmap_map_io_linker);
@@ -233,6 +433,8 @@ void epm_pidmap_start(void)
 						  0, 0);
 	if (IS_ERR(pidmap_map_kddm_set))
 		OOM;
+
+	rpc_register_void(EPM_PIDMAP_STEAL, handle_pidmap_steal, 0);
 }
 
 void epm_pidmap_exit(void)
