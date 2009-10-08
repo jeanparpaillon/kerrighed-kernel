@@ -133,6 +133,8 @@ extern void free_pid(struct pid *pid);
 extern struct pid *__alloc_pid(struct pid_namespace *ns, const int *req_nr);
 extern int reserve_pidmap(struct pid_namespace *ns, int nr);
 extern void __free_pidmap(struct upid *upid);
+struct pidmap;
+extern int alloc_pidmap_page(struct pidmap *map);
 
 static inline struct pid *alloc_pid(struct pid_namespace *ns)
 {

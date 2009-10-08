@@ -10,9 +10,15 @@
 #include <kerrighed/pid.h>
 #include <kerrighed/hotplug.h>
 #include <kerrighed/migration.h>
+#include "pid.h"
+
+static int epm_add(struct hotplug_context *ctx)
+{
+	return pidmap_map_add(ctx);
+}
 
 /* migrate all processes that we can migrate */
-static void epm_remove(krgnodemask_t *vector)
+static int epm_remove(const krgnodemask_t *vector)
 {
 	struct task_struct *tsk;
 	kerrighed_node_t dest_node = kerrighed_node_id;
@@ -54,22 +60,33 @@ static void epm_remove(krgnodemask_t *vector)
 		}
 	}
 	read_unlock(&tasklist_lock);
+
+	return 0;
 }
 
 static int epm_notification(struct notifier_block *nb, hotplug_event_t event,
 			    void *data)
 {
+	struct hotplug_context *ctx;
 	struct hotplug_node_set *node_set;
+	int err;
 
 	switch(event){
+	case HOTPLUG_NOTIFY_ADD:
+		ctx = data;
+		err = epm_add(ctx);
+		break;
 	case HOTPLUG_NOTIFY_REMOVE:
 		node_set = data;
-		epm_remove(&node_set->v);
+		err = epm_remove(&node_set->v);
 		break;
 	default:
+		err = 0;
 		break;
 	}
 
+	if (err)
+		return notifier_from_errno(err);
 	return NOTIFY_OK;
 }
 

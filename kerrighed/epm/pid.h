@@ -7,10 +7,14 @@
 /* Used by checkpoint/restart */
 int reserve_pid(pid_t pid);
 int krg_pid_link_task(pid_t pid);
+int __krg_pid_link_task(pid_t pid);
 int cancel_pid_reservation(pid_t pid);
 
 void pid_wait_quiescent(void);
 
+struct hotplug_context;
+
 int pidmap_map_alloc(kerrighed_node_t node);
+int pidmap_map_add(struct hotplug_context *ctx);
 
 #endif /* __EPM_PID_H__ */

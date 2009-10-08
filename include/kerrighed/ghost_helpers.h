@@ -227,8 +227,6 @@ int import_pid(struct epm_action *action,
 	       ghost_t *ghost, struct pid_link *link);
 int import_pid_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *task);
-void krg_end_get_pid(struct pid *pid);
-
 void unimport_pid(struct pid_link *link);
 
 /* Misc */

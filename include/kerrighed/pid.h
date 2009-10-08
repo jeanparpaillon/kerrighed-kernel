@@ -144,6 +144,8 @@ struct task_kddm_object *krg_pid_task(struct pid *pid);
 void krg_pid_unlink_task(struct pid_kddm_object *obj);
 
 /* Pid reference tracking */
+struct pid *krg_get_pid(int nr);
+void krg_end_get_pid(struct pid *pid);
 void krg_put_pid(struct pid *pid);
 
 /* Foreign pidmaps */
