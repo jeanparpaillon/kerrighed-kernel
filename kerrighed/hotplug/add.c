@@ -12,6 +12,7 @@
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/hotplug.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/krgnodemask.h>
 
 #include <net/krgrpc/rpcid.h>
@@ -21,19 +22,31 @@
 
 #include "hotplug_internal.h"
 
-int __nodes_add(struct hotplug_node_set *nodes_set)
+int __nodes_add(struct hotplug_context *ctx)
 {
-	hotplug_add_notify(nodes_set, HOTPLUG_NOTIFY_ADD);
+	hotplug_add_notify(ctx, HOTPLUG_NOTIFY_ADD);
 	return 0;
 }
 
 static void handle_node_add(struct rpc_desc *rpc_desc, void *data, size_t size)
 {
-	struct hotplug_node_set *node_set = data;
+	struct hotplug_context *ctx;
+	struct krg_namespace *ns = find_get_krg_ns();
 	char *page;
 	int ret;
 
-	__nodes_add(node_set);
+	BUG_ON(!ns);
+	ctx = hotplug_ctx_alloc(ns);
+	put_krg_ns(ns);
+	if (!ctx) {
+		printk("kerrighed: Failed to add nodes!\n");
+		return;
+	}
+	ctx->node_set = *(struct hotplug_node_set *)data;
+
+	__nodes_add(ctx);
+
+	hotplug_ctx_put(ctx);
 
 	page = (char *)__get_free_page(GFP_KERNEL);
 	if (page) {
@@ -47,7 +60,7 @@ static void handle_node_add(struct rpc_desc *rpc_desc, void *data, size_t size)
 	}
 }
 
-static int do_nodes_add(const struct hotplug_node_set *node_set)
+static int do_nodes_add(struct hotplug_context *ctx)
 {
 	char *page;
 	kerrighed_node_t node;
@@ -57,7 +70,7 @@ static int do_nodes_add(const struct hotplug_node_set *node_set)
 	if (!page)
 		return -ENOMEM;
 
-	ret = krgnodelist_scnprintf(page, PAGE_SIZE, node_set->v);
+	ret = krgnodelist_scnprintf(page, PAGE_SIZE, ctx->node_set.v);
 	BUG_ON(ret >= PAGE_SIZE);
 	printk("kerrighed: Adding nodes %s ...\n", page);
 
@@ -68,7 +81,7 @@ static int do_nodes_add(const struct hotplug_node_set *node_set)
 	 * Current limitation: only not-started nodes can be added to a
 	 * running cluster (ie: a node can't move from a subcluster to another one)
 	 */
-	ret = do_cluster_start(node_set, current->nsproxy->krg_ns);
+	ret = do_cluster_start(ctx);
 	if (ret) {
 		printk(KERN_ERR "kerrighed: Adding nodes failed! err=%d\n",
 		       ret);
@@ -77,7 +90,7 @@ static int do_nodes_add(const struct hotplug_node_set *node_set)
 
 	/* Send request to all members of the current cluster */
 	for_each_online_krgnode(node)
-		rpc_async(NODE_ADD, node, node_set, sizeof(*node_set));
+		rpc_async(NODE_ADD, node, &ctx->node_set, sizeof(ctx->node_set));
 
 	printk("kerrighed: Adding nodes succeeded.\n");
 
@@ -87,30 +100,42 @@ static int do_nodes_add(const struct hotplug_node_set *node_set)
 static int nodes_add(void __user *arg)
 {
 	struct __hotplug_node_set __node_set;
-	struct hotplug_node_set node_set;
+	struct hotplug_context *ctx;
 	int err;
 
 	if (copy_from_user(&__node_set, arg, sizeof(struct __hotplug_node_set)))
 		return -EFAULT;
 
-	node_set.subclusterid = __node_set.subclusterid;
-	err = krgnodemask_copy_from_user(&node_set.v, &__node_set.v);
-	if (err)
-		return err;
+	ctx = hotplug_ctx_alloc(current->nsproxy->krg_ns);
+	if (!ctx)
+		return -ENOMEM;
 
-	if (node_set.subclusterid != kerrighed_subsession_id)
-		return -EPERM;
+	ctx->node_set.subclusterid = __node_set.subclusterid;
+	err = krgnodemask_copy_from_user(&ctx->node_set.v, &__node_set.v);
+	if (err)
+		goto out;
+
+	err = -EPERM;
+	if (ctx->node_set.subclusterid != kerrighed_subsession_id)
+		goto out;
 
 	if (!krgnode_online(kerrighed_node_id))
-		return -EPERM;
+		goto out;
 
-	if (!krgnodes_subset(node_set.v, krgnode_present_map))
-		return -ENONET;
+	err = -ENONET;
+	if (!krgnodes_subset(ctx->node_set.v, krgnode_present_map))
+		goto out;
 
-	if (krgnodes_intersects(node_set.v, krgnode_online_map))
-		return -EPERM;
+	err = -EPERM;
+	if (krgnodes_intersects(ctx->node_set.v, krgnode_online_map))
+		goto out;
 
-	return do_nodes_add(&node_set);
+	err = do_nodes_add(ctx);
+
+out:
+	hotplug_ctx_put(ctx);
+
+	return err;
 }
 
 int hotplug_add_init(void)

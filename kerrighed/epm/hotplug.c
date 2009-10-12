@@ -59,10 +59,11 @@ static void epm_remove(krgnodemask_t *vector)
 static int epm_notification(struct notifier_block *nb, hotplug_event_t event,
 			    void *data)
 {
-	struct hotplug_node_set *node_set = data;
+	struct hotplug_node_set *node_set;
 
 	switch(event){
 	case HOTPLUG_NOTIFY_REMOVE:
+		node_set = data;
 		epm_remove(&node_set->v);
 		break;
 	default:

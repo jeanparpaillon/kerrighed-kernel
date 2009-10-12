@@ -1,6 +1,7 @@
 #ifndef __HOTPLUG__
 #define __HOTPLUG__
 
+#include <linux/kref.h>
 #include <kerrighed/krgnodemask.h>
 
 enum {
@@ -29,14 +30,32 @@ struct hotplug_node_set {
 	krgnodemask_t v;
 };
 
+struct hotplug_context {
+	struct krg_namespace *ns;
+	struct hotplug_node_set node_set;
+	struct kref kref;
+};
+
 struct notifier_block;
+
+struct hotplug_context *hotplug_ctx_alloc(struct krg_namespace *ns);
+void hotplug_ctx_release(struct kref *kref);
+
+static inline void hotplug_ctx_get(struct hotplug_context *ctx)
+{
+	kref_get(&ctx->kref);
+}
+
+static inline void hotplug_ctx_put(struct hotplug_context *ctx)
+{
+	kref_put(&ctx->kref, hotplug_ctx_release);
+}
 
 int register_hotplug_notifier(int (*notifier_call)(struct notifier_block *, hotplug_event_t, void *),
 			      int priority);
 
 struct hotplug_node_set;
-int hotplug_add_notify(struct hotplug_node_set *nodes_set,
-		       hotplug_event_t event);
+int hotplug_add_notify(struct hotplug_context *ctx, hotplug_event_t event);
 int hotplug_remove_notify(struct hotplug_node_set *nodes_set,
 			  hotplug_event_t event);
 int hotplug_failure_notify(struct hotplug_node_set *nodes_set,

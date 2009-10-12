@@ -48,11 +48,9 @@ int register_hotplug_notifier(int (*notifier_call)(struct notifier_block *, hotp
 	return err;
 }
 
-int hotplug_add_notify(struct hotplug_node_set *nodes_set,
-		       hotplug_event_t event)
+int hotplug_add_notify(struct hotplug_context *ctx, hotplug_event_t event)
 {
-	return raw_notifier_call_chain(&hotplug_chain_add, event,
-				       nodes_set);
+	return raw_notifier_call_chain(&hotplug_chain_add, event, ctx);
 }
 
 int hotplug_remove_notify(struct hotplug_node_set *nodes_set,
