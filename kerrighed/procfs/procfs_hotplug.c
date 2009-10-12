@@ -42,14 +42,17 @@ void procfs_remove(krgnodemask_t * v){
 
 static int procfs_notification(struct notifier_block *nb, hotplug_event_t event,
 			    void *data){
-	struct hotplug_node_set *node_set = data;
+	struct hotplug_context *ctx;
+	struct hotplug_node_set *node_set;
 
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:
-		procfs_add(&node_set->v);
+		ctx = data;
+		procfs_add(&ctx->node_set.v);
 		break;
 
 	case HOTPLUG_NOTIFY_REMOVE_ADVERT:
+		node_set = data;
 		procfs_remove(&node_set->v);
 		break;
 	default:

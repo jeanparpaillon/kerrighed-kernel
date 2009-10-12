@@ -57,13 +57,16 @@ enum {
 
 static char clusters_status[KERRIGHED_MAX_CLUSTERS];
 
-static krgnodemask_t cluster_start_nodes;
+static struct hotplug_context __cluster_autostart_ctx = {
+	.kref = { ATOMIC_INIT(1) },
+};
+static struct hotplug_context *cluster_autostart_ctx;
+
+static struct hotplug_context *cluster_start_ctx;
 static struct cluster_start_msg {
 	struct hotplug_node_set node_set;
 	unsigned long seq_id;
 } cluster_start_msg;
-static int cluster_start_in_progress;
-static struct krg_namespace *cluster_start_krg_ns;
 static DEFINE_SPINLOCK(cluster_start_lock);
 static DEFINE_MUTEX(cluster_start_mutex);
 static DECLARE_COMPLETION(cluster_started);
@@ -506,7 +509,7 @@ struct krg_namespace *create_krg_container(struct krg_namespace *ns)
 static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 {
 	struct cluster_start_msg *msg = data;
-	struct krg_namespace *ns = find_get_krg_ns();
+	struct hotplug_context *ctx = NULL;
 	int master = rpc_desc_get_client(desc) == kerrighed_node_id;
 	char *page;
 	int ret = 0;
@@ -517,10 +520,14 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 	if (master) {
 		err = -EPIPE;
 		spin_lock(&cluster_start_lock);
-		if (cluster_start_in_progress
-		    && msg->seq_id == cluster_start_msg.seq_id
-		    && ns == cluster_start_krg_ns)
+		if (cluster_start_ctx
+		    && msg->seq_id == cluster_start_msg.seq_id) {
+			BUG_ON(!krgnodes_equal(msg->node_set.v,
+					       cluster_start_ctx->node_set.v));
+			hotplug_ctx_get(cluster_start_ctx);
+			ctx = cluster_start_ctx;
 			err = 0;
+		}
 		spin_unlock(&cluster_start_lock);
 		if (err)
 			goto cancel;
@@ -533,10 +540,18 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 	}
 
 	if (!master) {
+		struct krg_namespace *ns;
+
 		init_completion(&krg_container_continue);
-		ns = create_krg_container(ns);
+		ns = create_krg_container(find_get_krg_ns());
 		if (!ns)
 			goto cancel;
+
+		ctx = hotplug_ctx_alloc(ns);
+		put_krg_ns(ns);
+		if (!ctx)
+			goto cancel;
+		ctx->node_set = msg->node_set;
 	}
 
 	err = rpc_pack_type(desc, ret);
@@ -546,8 +561,8 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 	if (err)
 		goto cancel;
 
-	kerrighed_subsession_id = msg->node_set.subclusterid;
-	__nodes_add(&msg->node_set);
+	kerrighed_subsession_id = ctx->node_set.subclusterid;
+	__nodes_add(ctx);
 
 	down_write(&kerrighed_init_sem);
 	hooks_start();
@@ -561,10 +576,10 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 
 	page = (char *)__get_free_page(GFP_KERNEL);
 	if (page) {
-		ret = krgnodelist_scnprintf(page, PAGE_SIZE, msg->node_set.v);
+		ret = krgnodelist_scnprintf(page, PAGE_SIZE, ctx->node_set.v);
 		BUG_ON(ret >= PAGE_SIZE);
 		printk("Kerrighed is running on %d nodes: %s\n",
-		       krgnodes_weight(msg->node_set.v), page);
+		       krgnodes_weight(ctx->node_set.v), page);
 		free_page((unsigned long)page);
 	} else {
 		printk("Kerrighed is running on %d nodes\n", num_online_krgnodes());
@@ -579,8 +594,8 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 
 out:
 	mutex_unlock(&cluster_start_mutex);
-	if (ns)
-		put_krg_ns(ns);
+	if (ctx)
+		hotplug_ctx_put(ctx);
 	return;
 
 cancel:
@@ -600,19 +615,20 @@ static void cluster_start_worker(struct work_struct *work)
 	if (!page)
 		goto out;
 
-	ret = krgnodelist_scnprintf(page, PAGE_SIZE, cluster_start_nodes);
+	ret = krgnodelist_scnprintf(page, PAGE_SIZE,
+				    cluster_start_ctx->node_set.v);
 	BUG_ON(ret >= PAGE_SIZE);
 	printk("kerrighed: Cluster start on nodes %s ...\n", page);
 
 	free_page((unsigned long)page);
 
-	desc = rpc_begin_m(CLUSTER_START, &cluster_start_nodes);
+	desc = rpc_begin_m(CLUSTER_START, &cluster_start_ctx->node_set.v);
 	if (!desc)
 		goto out;
 	err = rpc_pack_type(desc, cluster_start_msg);
 	if (err)
 		goto end;
-	for_each_krgnode_mask(node, cluster_start_nodes) {
+	for_each_krgnode_mask(node, cluster_start_ctx->node_set.v) {
 		err = rpc_unpack_type_from(desc, node, ret);
 		if (err)
 			goto cancel;
@@ -635,8 +651,8 @@ out:
 	else
 		printk("kerrighed: Cluster start succeeded.\n");
 	spin_lock(&cluster_start_lock);
-	cluster_start_in_progress = 0;
-	put_krg_ns(cluster_start_krg_ns);
+	hotplug_ctx_put(cluster_start_ctx);
+	cluster_start_ctx = NULL;
 	spin_unlock(&cluster_start_lock);
 	return;
 cancel:
@@ -648,31 +664,26 @@ cancel:
 
 static DECLARE_WORK(cluster_start_work, cluster_start_worker);
 
-int do_cluster_start(const struct hotplug_node_set *node_set,
-		     struct krg_namespace *ns)
+int do_cluster_start(struct hotplug_context *ctx)
 {
 	int r = -EALREADY;
 
 	spin_lock(&cluster_start_lock);
-	if (!cluster_start_in_progress) {
+	if (!cluster_start_ctx) {
 		r = -EPERM;
-		if (ns) {
-			if (cluster_start_msg.seq_id == ULONG_MAX) {
-				printk(KERN_WARNING "kerrighed: "
-				       "Max number of cluster start attempts "
-				       "reached! You should reboot host.\n");
-			} else {
-				r = 0;
-				get_krg_ns(ns);
-				cluster_start_krg_ns = ns;
-				krgnodes_copy(cluster_start_nodes, node_set->v);
-				cluster_start_msg.seq_id++;
-				krgnodes_or(cluster_start_msg.node_set.v,
-					    node_set->v,
-					    krgnode_online_map);
-				cluster_start_in_progress = 1;
-				queue_work(krg_wq, &cluster_start_work);
-			}
+		if (cluster_start_msg.seq_id == ULONG_MAX) {
+			printk(KERN_WARNING "kerrighed: "
+					"Max number of cluster start attempts "
+					"reached! You should reboot host.\n");
+		} else {
+			r = 0;
+			hotplug_ctx_get(ctx);
+			cluster_start_ctx = ctx;
+			cluster_start_msg.seq_id++;
+			krgnodes_or(cluster_start_msg.node_set.v,
+					ctx->node_set.v,
+					krgnode_online_map);
+			queue_work(krg_wq, &cluster_start_work);
 		}
 	}
 	spin_unlock(&cluster_start_lock);
@@ -689,41 +700,56 @@ static int cluster_start(void *arg)
 {
 	int r = 0;
 	struct __hotplug_node_set __node_set;
-	struct hotplug_node_set node_set;
-	struct krg_namespace *ns;
+	struct hotplug_context *ctx;
 
-	if (copy_from_user(&__node_set, arg, sizeof(__node_set))) {
-		r = -EFAULT;
-	} else {
-		node_set.subclusterid = __node_set.subclusterid;
+	if (copy_from_user(&__node_set, arg, sizeof(__node_set)))
+		return -EFAULT;
 
-		r = krgnodemask_copy_from_user(&node_set.v, &__node_set.v);
-		if (!r) {
-			ns = current->nsproxy->krg_ns;
-			r = do_cluster_start(&node_set, ns);
-		}
-	}
+	if (!current->nsproxy->krg_ns)
+		return -EPERM;
+
+	ctx = hotplug_ctx_alloc(current->nsproxy->krg_ns);
+	ctx->node_set.subclusterid = __node_set.subclusterid;
+	r = krgnodemask_copy_from_user(&ctx->node_set.v, &__node_set.v);
+	if (r)
+		goto out;
+
+	r = do_cluster_start(ctx);
 	if (!r)
 		do_cluster_wait_for_start();
 
+out:
+	hotplug_ctx_put(ctx);
 	return r;
 }
 
 void krg_cluster_autostart(void)
 {
-	struct hotplug_node_set node_set;
-	static int already_start = 0;
 	struct krg_namespace *ns;
+	static int already_start = 0;
 	int i, nb;
 
 	if (likely(already_start)
 	   || kerrighed_nb_nodes_min < 0)
 		return;
 
-	node_set.subclusterid = 0;
+	ns = find_get_krg_ns();
+	if (!ns)
+		return;
+
+	spin_lock(&cluster_start_lock);
+	if (cluster_autostart_ctx) {
+		spin_unlock(&cluster_start_lock);
+		goto out;
+	}
+	cluster_autostart_ctx = &__cluster_autostart_ctx;
+	spin_unlock(&cluster_start_lock);
+
+	cluster_autostart_ctx->ns = ns;
+	cluster_autostart_ctx->node_set.subclusterid = 0;
 	nb = 0;
 
-	krgnodes_clear(node_set.v);
+	krgnodes_clear(cluster_autostart_ctx->node_set.v);
 	for (i=0; i<KERRIGHED_MAX_NODES; i++) {
 		if ((universe[i].state == 0
 		    && i != kerrighed_node_id)
@@ -731,19 +757,23 @@ void krg_cluster_autostart(void)
 			continue;
 
 		if (i < kerrighed_node_id)
-			return;
+			goto abort;
 
 		nb++;
-		krgnode_set(i, node_set.v);
+		krgnode_set(i, cluster_autostart_ctx->node_set.v);
 	}
 
 	if (nb >= kerrighed_nb_nodes_min) {
 		already_start = 1;
-		ns = find_get_krg_ns();
-		do_cluster_start(&node_set, ns);
-		if (ns)
-			put_krg_ns(ns);
+		do_cluster_start(cluster_autostart_ctx);
 	}
+
+abort:
+	spin_lock(&cluster_start_lock);
+	cluster_autostart_ctx = NULL;
+	spin_unlock(&cluster_start_lock);
+out:
+	put_krg_ns(ns);
 }
 
 static int cluster_wait_for_start(void __user *arg)

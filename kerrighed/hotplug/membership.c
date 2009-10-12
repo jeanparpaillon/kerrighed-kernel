@@ -36,8 +36,8 @@ int membership_online_notification(struct notifier_block *nb,
 	
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:{
-		struct hotplug_node_set *node_set = data;
-		membership_online_add(&node_set->v);
+		struct hotplug_context *ctx = data;
+		membership_online_add(&ctx->node_set.v);
 		break;
 	}
 
