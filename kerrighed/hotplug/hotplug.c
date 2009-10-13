@@ -4,10 +4,10 @@
 
 #include <linux/workqueue.h>
 
+#include <kerrighed/hotplug.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 
-#include "hotplug.h"
 #include "hotplug_internal.h"
 
 struct workqueue_struct *krg_ha_wq;

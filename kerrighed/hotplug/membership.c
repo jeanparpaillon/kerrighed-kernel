@@ -1,9 +1,8 @@
 #include <linux/notifier.h>
+#include <kerrighed/hotplug.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
-
-#include "hotplug.h"
 
 static void membership_online_add(krgnodemask_t *vector)
 {

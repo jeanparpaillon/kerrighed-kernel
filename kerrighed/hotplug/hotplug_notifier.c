@@ -6,9 +6,8 @@
 #include <linux/notifier.h>
 #include <linux/slab.h>
 
+#include <kerrighed/hotplug.h>
 #include <kerrighed/krgnodemask.h>
-
-#include "hotplug.h"
 
 static RAW_NOTIFIER_HEAD(hotplug_chain_add);
 static RAW_NOTIFIER_HEAD(hotplug_chain_remove);

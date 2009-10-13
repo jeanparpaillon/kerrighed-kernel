@@ -24,7 +24,6 @@
 #include <tools/krg_services.h>
 #include <rpc/rpc.h>
 
-#include "hotplug.h"
 #include "hotplug_internal.h"
 
 inline

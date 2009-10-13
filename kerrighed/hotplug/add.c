@@ -19,7 +19,6 @@
 #include <kerrighed/krg_syscalls.h>
 #include <kerrighed/krg_services.h>
 
-#include "hotplug.h"
 #include "hotplug_internal.h"
 
 int __nodes_add(struct hotplug_node_set *nodes_set)

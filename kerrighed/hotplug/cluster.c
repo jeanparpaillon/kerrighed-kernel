@@ -44,7 +44,6 @@
 #include <kerrighed/scheduler/info.h>
 #endif
 
-#include "hotplug.h"
 #include "hotplug_internal.h"
 
 #define ADVERTISE_PERIOD (2*HZ)

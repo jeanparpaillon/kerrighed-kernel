@@ -9,6 +9,7 @@
 #include <linux/workqueue.h>
 #include <linux/sched.h>
 #include <linux/irqflags.h>
+#include <kerrighed/hotplug.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
@@ -19,7 +20,6 @@
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 
-#include "hotplug.h"
 #include "hotplug_internal.h"
 
 krgnodemask_t failure_vector;
