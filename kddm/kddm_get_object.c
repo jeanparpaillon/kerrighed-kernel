@@ -145,6 +145,28 @@ EXPORT_SYMBOL(kddm_get_object);
 
 
 
+void *_fkddm_get_object(struct kddm_set *set, objid_t objid, int flags)
+{
+	return generic_kddm_get_object(set, objid, flags);
+}
+EXPORT_SYMBOL(_fkddm_get_object);
+
+void *fkddm_get_object(struct kddm_ns *ns, kddm_set_id_t set_id,
+			objid_t objid, int flags)
+{
+	struct kddm_set *set;
+	void *obj;
+
+	set = _find_get_kddm_set (ns, set_id);
+	obj = generic_kddm_get_object(set, objid, flags);
+	put_kddm_set(set);
+
+	return obj;
+}
+EXPORT_SYMBOL(fkddm_get_object);
+
+
+
 void *_async_kddm_get_object(struct kddm_set *set, objid_t objid)
 {
 	return generic_kddm_get_object(set, objid, KDDM_ASYNC_REQ);

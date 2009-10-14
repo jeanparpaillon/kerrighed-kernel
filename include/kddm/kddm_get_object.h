@@ -56,4 +56,10 @@ void *kddm_get_object_no_lock(struct kddm_ns *ns, kddm_set_id_t set_id,
 
 void *_kddm_get_object_no_lock(struct kddm_set *set, objid_t objid);
 
+/** Generic get functions with free use of KDDM flags */
+void *fkddm_get_object(struct kddm_ns *ns, kddm_set_id_t set_id,
+		       objid_t objid, int flags);
+
+void *_fkddm_get_object(struct kddm_set *set, objid_t objid, int flags);
+
 #endif
