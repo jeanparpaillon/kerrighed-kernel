@@ -112,7 +112,7 @@ int export_thread_struct(struct epm_action *action,
 	savesegment(ds, tsk->thread.ds);
 
 #else /* CONFIG_X86_32 */
-	lazy_save_gs(tsk, tsk->thread.gs);
+	lazy_save_gs(tsk->thread.gs);
 
 	WARN_ON(tsk->thread.vm86_info);
 #endif /* CONFIG_X86_32 */
