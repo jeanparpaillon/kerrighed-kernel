@@ -197,7 +197,7 @@ extern int __get_user_bad(void);
 		     "  movl $8,(%%esp)\n"				\
 		     "	pushl %%edx\n"					\
 		     "	pushl %%eax\n"					\
-		     "	lea %2,%%eax\n"					\
+		     "	movl %2,%%eax\n"					\
 		     "	call ruaccess_put_user_asm\n"			\
 		     "	testl %%eax,%%eax\n"				\
 		     "	popl %%eax\n"					\
@@ -210,7 +210,7 @@ extern int __get_user_bad(void);
 		     _ASM_EXTABLE(1b, 4b)				\
 		     _ASM_EXTABLE(2b, 5b)				\
 		     : "=r" (err)					\
-		     : "A" (x), "r" (addr), "i" (errret), "0" (err)
+		     : "A" (x), "r" (addr), "i" (errret), "0" (err))
 
 #else /* !CONFIG_KRG_FAF */
 
