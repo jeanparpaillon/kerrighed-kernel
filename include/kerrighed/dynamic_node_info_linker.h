@@ -11,6 +11,7 @@
 #include <linux/procfs_internal.h>
 #include <kerrighed/sys/types.h>
 #include <kddm/kddm.h>
+#include <kddm/object_server.h>
 #include <asm/kerrighed/meminfo.h>
 
 /*--------------------------------------------------------------------------*
@@ -102,7 +103,8 @@ int dynamic_node_info_init(void);
 static inline
 krg_dynamic_node_info_t *get_dynamic_node_info(kerrighed_node_t nodeid)
 {
-	return _kddm_get_object_no_lock(dynamic_node_info_kddm_set, nodeid);
+	return _fkddm_get_object(dynamic_node_info_kddm_set, nodeid,
+				 KDDM_NO_FREEZE|KDDM_NO_FT_REQ);
 }
 
 #endif /* DYNAMIC_NODE_INFO_LINKER_H */

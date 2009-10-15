@@ -8,6 +8,7 @@
 #define STATIC_NODE_INFO_LINKER_H
 
 #include <kddm/kddm.h>
+#include <kddm/object_server.h>
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -48,7 +49,8 @@ int static_node_info_init(void);
  */
 static inline krg_static_node_info_t *get_static_node_info(int node_id)
 {
-	return _kddm_get_object_no_lock(static_node_info_kddm_set, node_id);
+	return _fkddm_get_object(static_node_info_kddm_set, node_id,
+				 KDDM_NO_FREEZE|KDDM_NO_FT_REQ);
 }
 
 kerrighed_node_t node_info_default_owner(struct kddm_set *set,

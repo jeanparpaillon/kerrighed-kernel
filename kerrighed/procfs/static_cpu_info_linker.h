@@ -9,6 +9,7 @@
 
 #include <kerrighed/cpu_id.h>
 #include <kddm/kddm.h>
+#include <kddm/object_server.h>
 #include <asm/kerrighed/cpuinfo.h>
 
 /*--------------------------------------------------------------------------*
@@ -50,8 +51,9 @@ int static_cpu_info_init(void);
 static inline krg_static_cpu_info_t *get_static_cpu_info(int node_id,
 							 int cpu_id)
 {
-	return _kddm_get_object_no_lock(static_cpu_info_kddm_set,
-					__krg_cpu_id(node_id, cpu_id));
+	return _fkddm_get_object(static_cpu_info_kddm_set,
+				 __krg_cpu_id(node_id, cpu_id),
+				 KDDM_NO_FREEZE|KDDM_NO_FT_REQ);
 }
 
 kerrighed_node_t cpu_info_default_owner(struct kddm_set *set,

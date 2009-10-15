@@ -11,6 +11,7 @@
 #include <linux/kernel_stat.h>
 #include <kerrighed/cpu_id.h>
 #include <kddm/kddm.h>
+#include <kddm/object_server.h>
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -55,8 +56,9 @@ int dynamic_cpu_info_init(void);
 static inline krg_dynamic_cpu_info_t *get_dynamic_cpu_info(int node_id,
 							   int cpu_id)
 {
-	return _kddm_get_object_no_lock(dynamic_cpu_info_kddm_set,
-					__krg_cpu_id(node_id, cpu_id));
+	return _fkddm_get_object(dynamic_cpu_info_kddm_set,
+				 __krg_cpu_id(node_id, cpu_id),
+				 KDDM_NO_FREEZE|KDDM_NO_FT_REQ);
 }
 
 static inline
