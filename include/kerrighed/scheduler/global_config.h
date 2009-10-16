@@ -28,6 +28,7 @@ struct global_config_item {
 	/* operations associated to the global config item */
 	const struct global_config_drop_operations *drop_ops;
 	const char *path;
+	const char *target_path;
 };
 
 /**

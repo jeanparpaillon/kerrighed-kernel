@@ -547,6 +547,7 @@ void global_config_item_init(
 	INIT_DELAYED_WORK(&item->drop_work, delayed_drop_work);
 	item->drop_ops = ops;
 	item->path = NULL;
+	item->target_path = NULL;
 }
 
 /**
@@ -599,11 +600,13 @@ err_lock:
 	goto out;
 }
 
-static void local_commit(struct global_config_item *item, const char *path)
+static void local_commit(struct global_config_item *item,
+			 const char *path, const char *target_path)
 {
 	/* See smp_wmb() in local_drop() */
 	smp_read_barrier_depends();
 	item->path = path;
+	item->target_path = target_path;
 }
 
 /*
@@ -627,7 +630,7 @@ static int __create_commit(enum config_op op,
 		goto out;
 
 	if (!list) {
-		local_commit(item, path);
+		local_commit(item, path, old_name);
 		return 0;
 	}
 
@@ -639,7 +642,7 @@ static int __create_commit(enum config_op op,
 	if (err)
 		goto err_dir_op;
 
-	local_commit(item, path);
+	local_commit(item, path, old_name);
 
 out:
 	return err;
@@ -818,7 +821,8 @@ int __global_config_allow_link_commit(struct string_list_object *list,
 	if (!path)
 		return -ENOMEM;
 	err = __create_commit(CO_SYMLINK, list, parent, item, name, path);
-	put_path(path);
+	if (err)
+		put_path(path);
 
 	return err;
 }
@@ -901,6 +905,7 @@ static void local_drop(struct global_config_item *item)
 {
 	const char *path = item->path;
 
+	put_path(item->target_path);
 	item->path = NULL;
 	/*
 	 * Ensure that all conditions in item's create function that may become
