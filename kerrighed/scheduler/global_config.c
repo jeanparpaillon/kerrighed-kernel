@@ -33,6 +33,7 @@
 #include <linux/mutex.h>
 #include <linux/string.h>
 #include <linux/workqueue.h>
+#include <linux/list.h>
 #include <linux/jiffies.h>
 #include <linux/errno.h>
 #include <linux/err.h>
@@ -57,6 +58,7 @@
 #include "global_lock.h"
 
 static struct kddm_set *global_items_set;
+static LIST_HEAD(items_head);
 
 static struct vfsmount *scheduler_fs_mount; /* vfsmount attached to configfs */
 static int mount_count;
@@ -607,6 +609,7 @@ static void local_commit(struct global_config_item *item,
 	smp_read_barrier_depends();
 	item->path = path;
 	item->target_path = target_path;
+	list_add_tail(&item->list, &items_head);
 }
 
 /*
@@ -904,6 +907,8 @@ static void delay_drop(struct global_config_item *item)
 static void local_drop(struct global_config_item *item)
 {
 	const char *path = item->path;
+
+	list_del(&item->list);
 
 	put_path(item->target_path);
 	item->path = NULL;

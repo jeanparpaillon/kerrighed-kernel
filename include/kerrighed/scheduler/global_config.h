@@ -2,6 +2,7 @@
 #define __KRG_SCHEDULER_GLOBAL_CONFIG_H__
 
 #include <linux/workqueue.h>
+#include <linux/list.h>
 #include <kerrighed/ghost_types.h>
 
 struct global_config_item;
@@ -24,6 +25,7 @@ struct global_config_drop_operations {
  * Should not be accessed directly.
  */
 struct global_config_item {
+	struct list_head list;
 	struct delayed_work drop_work;
 	/* operations associated to the global config item */
 	const struct global_config_drop_operations *drop_ops;
