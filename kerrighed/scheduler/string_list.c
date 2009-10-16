@@ -20,6 +20,8 @@ struct string_list_object {
 
 struct string_list_element {
 	struct list_head list;
+	const void *data;
+	size_t size;
 	char string[];
 };
 
@@ -45,17 +47,33 @@ out:
 	return retval;
 }
 
-static struct string_list_element *element_alloc(size_t string_length)
+static struct string_list_element *element_alloc(size_t string_length,
+						 size_t data_size)
 {
 	struct string_list_element *elt;
 	size_t size = offsetof(typeof(*elt), string) + string_length + 1;
 
 	elt = kmalloc(size, GFP_KERNEL);
+	if (!elt)
+		goto out;
+
+	elt->size = data_size;
+	if (data_size) {
+		elt->data = kmalloc(data_size, GFP_KERNEL);
+		if (!elt->data) {
+			kfree(elt);
+			elt = NULL;
+		}
+	}
+
+out:
 	return elt;
 }
 
 static void element_free(struct string_list_element *element)
 {
+	if (element->size)
+		kfree(element->data);
 	kfree(element);
 }
 
@@ -75,7 +93,7 @@ static int string_list_import_object(struct kddm_obj *obj_entry,
 	struct string_list_object *obj = obj_entry->object;
 	struct string_list_element *elt;
 	int nr_elt;
-	size_t len;
+	size_t data_size, len;
 	int err;
 
 	string_list_make_empty(obj);
@@ -88,21 +106,36 @@ static int string_list_import_object(struct kddm_obj *obj_entry,
 		err = rpc_unpack_type(desc, len);
 		if (err)
 			break;
-		elt = element_alloc(len);
+		err = rpc_unpack_type(desc, data_size);
+		if (err)
+			break;
+
+		elt = element_alloc(len, data_size);
 		if (!elt) {
 			err = -ENOMEM;
 			break;
 		}
+
 		err = rpc_unpack(desc, 0, elt->string, len + 1);
-		if (err) {
-			element_free(elt);
-			break;
-		}
+		if (err)
+			goto err_free;
+
+		if (data_size)
+			err = rpc_unpack(desc, 0, (void *)elt->data, data_size);
+		else
+			err = rpc_unpack_type(desc, elt->data);
+		if (err)
+			goto err_free;
+
 		list_add_tail(&elt->list, &obj->head);
 	}
 
 out:
 	return err;
+
+err_free:
+	element_free(elt);
+	goto out;
 }
 
 static int string_list_export_object(struct rpc_desc *desc,
@@ -125,7 +158,18 @@ static int string_list_export_object(struct rpc_desc *desc,
 		err = rpc_pack_type(desc, len);
 		if (err)
 			break;
+		err = rpc_pack_type(desc, elt->size);
+		if (err)
+			break;
+
 		err = rpc_pack(desc, 0, elt->string, len + 1);
+		if (err)
+			break;
+
+		if (elt->size)
+			err = rpc_pack(desc, 0, elt->data, elt->size);
+		else
+			err = rpc_pack_type(desc, elt->data);
 		if (err)
 			break;
 	}
@@ -177,14 +221,19 @@ void string_list_unlock_and_destroy(struct kddm_set *kddm_set,
 }
 
 int string_list_add_element(struct string_list_object *object,
-			    const char *element)
+			    const char *element,
+			    const void *data, size_t size)
 {
 	struct string_list_element *elt;
 
-	elt = element_alloc(strlen(element));
+	elt = element_alloc(strlen(element), size);
 	if (!elt)
 		return -ENOMEM;
 	strcpy(elt->string, element);
+	if (size)
+		memcpy(elt->data, data, size);
+	else
+		elt->data = data;
 	list_add_tail(&elt->list, &object->head);
 	return 0;
 }
@@ -214,6 +263,50 @@ int string_list_remove_element(struct string_list_object *object,
 	}
 
 	return -ENOENT;
+}
+
+int string_list_element_get_data(struct string_list_object *object,
+				 const char *element,
+				 const void **data, size_t *size)
+{
+	struct string_list_element *elt;
+
+	elt = string_list_find_element(object, element);
+	if (!elt)
+		return -ENOENT;
+
+	*data = element->data;
+	if (size)
+		*size = element->size;
+	return 0;
+}
+
+int string_list_element_set_data(struct string_list_object *object,
+				 const char *element,
+				 const void *data, size_t size)
+{
+	struct string_list_element *elt;
+	const void *new_data;
+
+	elt = string_list_find_element(object, element);
+	if (!elt)
+		return -ENOENT;
+
+	if (size) {
+		new_data = kmalloc(size, GFP_KERNEL);
+		if (!new_data)
+			return -ENOMEM;
+		memcpy((void *)new_data, data, size);
+	} else {
+		new_data = data;
+	}
+
+	if (elt->size)
+		kfree(elt->data);
+	elt->data = new_data;
+	elt->size = size;
+
+	return 0;
 }
 
 int string_list_is_element(struct string_list_object *object,

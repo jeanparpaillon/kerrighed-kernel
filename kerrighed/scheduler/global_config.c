@@ -625,7 +625,7 @@ static int __create_commit(enum config_op op,
 		return 0;
 	}
 
-	err = string_list_add_element(list, path);
+	err = string_list_add_element(list, path, NULL, 0);
 	if (err)
 		goto err_list_add;
 

@@ -16,9 +16,16 @@ void string_list_unlock_and_destroy(struct kddm_set *kddm_set,
 				    struct string_list_object *object);
 
 int string_list_add_element(struct string_list_object *object,
-			    const char *element);
+			    const char *element,
+			    const void *data, size_t size);
 int string_list_remove_element(struct string_list_object *object,
 			       const char *element);
+int string_list_element_get_data(struct string_list_object *object,
+				 const char *element,
+				 const void **data, size_t *size);
+int string_list_element_set_data(struct string_list_object *object,
+				 const char *element,
+				 const void *data, size_t size);
 int string_list_is_element(struct string_list_object *object,
 			   const char *element);
 int string_list_empty(struct string_list_object *object);
