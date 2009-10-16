@@ -27,7 +27,7 @@ struct global_config_item {
 	struct delayed_work drop_work;
 	/* operations associated to the global config item */
 	const struct global_config_drop_operations *drop_ops;
-	char *path;
+	const char *path;
 };
 
 /**

@@ -134,7 +134,7 @@ static char *get_full_path(struct config_item *parent, const char *name)
 	return path;
 }
 
-static void put_path(char *path)
+static void put_path(const char *path)
 {
 	kfree(path);
 }
@@ -599,6 +599,13 @@ err_lock:
 	goto out;
 }
 
+static void local_commit(struct global_config_item *item, const char *path)
+{
+	/* See smp_wmb() in local_drop() */
+	smp_read_barrier_depends();
+	item->path = path;
+}
+
 /*
  * Same as create_end() below, except that concurrent operations are kept
  * disabled.
@@ -620,8 +627,7 @@ static int __create_commit(enum config_op op,
 		goto out;
 
 	if (!list) {
-		smp_read_barrier_depends();
-		item->path = path;
+		local_commit(item, path);
 		return 0;
 	}
 
@@ -633,7 +639,7 @@ static int __create_commit(enum config_op op,
 	if (err)
 		goto err_dir_op;
 
-	item->path = path;
+	local_commit(item, path);
 
 out:
 	return err;
@@ -891,9 +897,10 @@ static void delay_drop(struct global_config_item *item)
 			   timespec_to_jiffies(&drop_delay));
 }
 
-static void put_item_path(struct global_config_item *item)
+static void local_drop(struct global_config_item *item)
 {
-	char *path = item->path;
+	const char *path = item->path;
+
 	item->path = NULL;
 	/*
 	 * Ensure that all conditions in item's create function that may become
@@ -903,13 +910,15 @@ static void put_item_path(struct global_config_item *item)
 	 * deleted it, because the local node takes no lock in both cases.
 	 */
 	smp_wmb();
-	kfree(path);
+	put_path(path);
+
+	item->drop_ops->drop_func(item);
 }
 
-static void drop(struct global_config_item *item)
+static void global_drop(struct global_config_item *item)
 {
 	const struct global_config_drop_operations *drop_ops = item->drop_ops;
-	char *name = item->path;
+	const char *name = item->path;
 	struct string_list_object *list;
 	int err;
 
@@ -929,9 +938,8 @@ static void drop(struct global_config_item *item)
 		global_config_dir_op(CO_UNLINK, name, NULL);
 	else
 		global_config_dir_op(CO_RMDIR, name, NULL);
-	put_item_path(item);
 
-	drop_ops->drop_func(item);
+	local_drop(item);
 
 	hashed_string_list_unlock_hash(global_items_set, list);
 
@@ -951,7 +959,7 @@ static void delayed_drop_work(struct work_struct *work)
 			     struct global_config_item,
 			     drop_work.work);
 
-	drop(item);
+	global_drop(item);
 }
 
 /**
@@ -963,13 +971,9 @@ static void delayed_drop_work(struct work_struct *work)
 void global_config_drop(struct global_config_item *item)
 {
 	if (!(current->flags & PF_KTHREAD))
-		/* Global drop */
-		drop(item);
-	else {
-		/* Local drop */
-		put_item_path(item);
-		item->drop_ops->drop_func(item);
-	}
+		global_drop(item);
+	else
+		local_drop(item);
 }
 
 /**
