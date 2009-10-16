@@ -898,7 +898,7 @@ static void put_item_path(struct global_config_item *item)
 	/*
 	 * Ensure that all conditions in item's create function that may become
 	 * true after drop function see that assignment before setting another
-	 * path (in create_end)
+	 * path (in __create_commit())
 	 * This is needed when another node re-creates the item after having
 	 * deleted it, because the local node takes no lock in both cases.
 	 */
