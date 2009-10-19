@@ -535,6 +535,14 @@ static void scheduler_free(struct scheduler *scheduler)
 	kfree(scheduler);
 }
 
+static void scheduler_deactivate(struct scheduler *scheduler)
+{
+	spin_lock(&scheduler->lock);
+	process_set_drop(scheduler->processes);
+	scheduler->processes = NULL;
+	spin_unlock(&scheduler->lock);
+}
+
 /* Global_config callback when the scheduler directory is globally removed */
 static void scheduler_drop(struct global_config_item *item)
 {
@@ -606,6 +614,7 @@ err_scheduler:
 
 err_global_end:
 	__global_config_make_item_end(global_names);
+	scheduler_deactivate(s);
 	config_group_put(&s->group);
 	ret = ERR_PTR(err);
 	goto out;
@@ -624,10 +633,8 @@ static void schedulers_drop_item(struct config_group *group,
 				 struct config_item *item)
 {
 	struct scheduler *s = to_scheduler(item);
-	spin_lock(&s->lock);
-	process_set_drop(s->processes);
-	s->processes = NULL;
-	spin_unlock(&s->lock);
+
+	scheduler_deactivate(s);
 	global_config_drop(&s->global_item);
 }
 
