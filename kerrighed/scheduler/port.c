@@ -333,13 +333,21 @@ static int scheduler_port_drop_link(struct config_item *src,
 
 static void scheduler_port_release(struct config_item *item);
 
-static struct configfs_item_operations port_item_ops = {
-	.release = scheduler_port_release,
-	.show_attribute = scheduler_port_attribute_show,
-	.store_attribute = scheduler_port_attribute_store,
-	.allow_link = scheduler_port_allow_link,
-	.allow_drop_link = scheduler_port_allow_drop_link,
-	.drop_link = scheduler_port_drop_link,
+static struct global_config_attrs *port_global_attrs(struct config_item *item)
+{
+	return &to_scheduler_port(item)->global_attrs;
+}
+
+struct global_config_item_operations port_global_item_ops = {
+	.config = {
+		.release = scheduler_port_release,
+		.show_attribute = scheduler_port_attribute_show,
+		.store_attribute = scheduler_port_attribute_store,
+		.allow_link = scheduler_port_allow_link,
+		.allow_drop_link = scheduler_port_allow_drop_link,
+		.drop_link = scheduler_port_drop_link,
+	},
+	.global_attrs = port_global_attrs,
 };
 
 static struct global_config_drop_operations scheduler_port_item_drop_ops = {
@@ -409,6 +417,7 @@ scheduler_port_make_group(struct config_group *group, const char *name)
 	if (!peer_port)
 		goto err_port;
 
+	global_config_attrs_init_r(config_group_of(peer_port));
 	config_group_get(group); /* To make sure a reference remains until drop
 				  * is finished. */
 	global_config_item_init(global_item_of(port),
@@ -419,6 +428,7 @@ scheduler_port_make_group(struct config_group *group, const char *name)
 					  name);
 	if (err) {
 		config_group_put(group);
+		global_config_attrs_cleanup_r(config_group_of(peer_port));
 		peer_type->destroy(peer_port);
 		module_put(peer_owner);
 		return ERR_PTR(err);
@@ -454,6 +464,7 @@ static void scheduler_port_drop_item(struct config_group *group,
 {
 	struct scheduler_port *port = to_scheduler_port(&group->cg_item);
 
+	global_config_attrs_cleanup_r(to_config_group(item));
 	scheduler_port_drop_peer_source(port);
 	config_item_put(item);
 }
@@ -523,7 +534,7 @@ int scheduler_port_type_init(struct scheduler_port_type *type,
 	/* Fixup type */
 	type->pipe_type = (struct scheduler_pipe_type)
 		SCHEDULER_PIPE_TYPE_INIT(owner,
-					 &port_item_ops,
+					 &port_global_item_ops.config,
 					 &port_group_ops,
 					 source_type,
 					 &type->sink_type);
@@ -595,7 +606,7 @@ int scheduler_port_get_remote_value(struct scheduler_port *port,
 		 * get_remote_value() method is defined or a source not being a
 		 * port is reached.
 		 */
-		if (peer_type->item_type.ct_item_ops == &port_item_ops) {
+		if (peer_type->item_type.ct_item_ops == &port_global_item_ops.config) {
 			struct scheduler_port *peer_port =
 				container_of(peer_pipe,
 					     typeof(*peer_port), pipe);

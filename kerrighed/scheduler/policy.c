@@ -109,14 +109,22 @@ static ssize_t scheduler_policy_attribute_store(struct config_item *item,
 
 static void scheduler_policy_release(struct config_item *);
 
+static struct global_config_attrs *policy_global_attrs(struct config_item *item)
+{
+	return &to_scheduler_policy(item)->global_attrs;
+}
+
 /**
  * This struct is ConfigFS-specific. See ConfigFS documentation for its
  * explanation.
  */
-static struct configfs_item_operations policy_item_ops = {
-	.release = scheduler_policy_release,
-	.show_attribute = scheduler_policy_attribute_show,
-	.store_attribute = scheduler_policy_attribute_store,
+struct global_config_item_operations policy_global_item_ops = {
+	.config = {
+		.release = scheduler_policy_release,
+		.show_attribute = scheduler_policy_attribute_show,
+		.store_attribute = scheduler_policy_attribute_store,
+	},
+	.global_attrs = policy_global_attrs,
 };
 
 /**
@@ -247,7 +255,7 @@ int scheduler_policy_type_register(struct scheduler_policy_type *type)
 	int ret = 0;
 
 	/* Fixup type */
-	type->item_type.ct_item_ops = &policy_item_ops;
+	type->item_type.ct_item_ops = &policy_global_item_ops.config;
 
 	num_attrs = scheduler_policy_attribute_array_length(type->attrs);
 	if (num_attrs) {

@@ -44,6 +44,7 @@ struct process_subset {
 struct process_set {
 	struct config_group group; /** representation of process set in
 				     * configfs. */
+	struct global_config_attrs global_attrs;
 
 	int handle_all;		/** if true, process set contains all processes. */
 	struct list_head handle_all_list;

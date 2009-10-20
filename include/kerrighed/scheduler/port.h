@@ -95,6 +95,7 @@ struct scheduler_port {
 	struct scheduler_pipe *peer_pipe;
 	struct global_config_item global_item;	/** global config item referring
 						  * to the connected source */
+	struct global_config_attrs global_attrs;
 };
 
 struct scheduler_port_attribute;

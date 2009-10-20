@@ -10,6 +10,20 @@ struct hotplug_context;
 
 extern struct configfs_subsystem krg_scheduler_subsys;
 
+struct global_config_attrs;
+
+struct global_config_item_operations {
+	struct configfs_item_operations config;
+	struct global_config_attrs *(*global_attrs)(struct config_item *item);
+};
+
+extern struct global_config_item_operations probe_source_global_item_ops;
+extern struct global_config_item_operations probe_global_item_ops;
+extern struct global_config_item_operations port_global_item_ops;
+extern struct global_config_item_operations policy_global_item_ops;
+extern struct global_config_item_operations process_set_global_item_ops;
+extern struct global_config_item_operations scheduler_global_item_ops;
+
 /**
  * Checks that item is a probe source subdir of a probe.
  * @author Louis Rilling, Marko Novak

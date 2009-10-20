@@ -49,6 +49,7 @@ struct scheduler_probe {
 
 	struct global_config_item global_item; /** Used by global config
 						* subsystem */
+	struct global_config_attrs global_attrs;
 };
 
 static
@@ -178,9 +179,17 @@ static ssize_t scheduler_probe_attribute_store(struct config_item *item,
 	return ret;
 }
 
-static struct configfs_item_operations scheduler_probe_item_ops = {
-	.show_attribute = scheduler_probe_attribute_show,
-	.store_attribute = scheduler_probe_attribute_store,
+static struct global_config_attrs *probe_global_attrs(struct config_item *item)
+{
+	return &to_scheduler_probe(item)->global_attrs;
+}
+
+struct global_config_item_operations probe_global_item_ops = {
+	.config = {
+		.show_attribute = scheduler_probe_attribute_show,
+		.store_attribute = scheduler_probe_attribute_store,
+	},
+	.global_attrs = probe_global_attrs,
 };
 
 /**
@@ -399,9 +408,18 @@ ssize_t scheduler_probe_source_attribute_store(struct config_item *item,
         return ret;
 }
 
-static struct configfs_item_operations scheduler_probe_source_item_ops = {
-	.show_attribute = scheduler_probe_source_attribute_show,
-	.store_attribute = scheduler_probe_source_attribute_store,
+static
+struct global_config_attrs *probe_source_global_attrs(struct config_item *item)
+{
+	return &to_scheduler_probe_source(item)->global_attrs;
+}
+
+struct global_config_item_operations probe_source_global_item_ops = {
+	.config = {
+		.show_attribute = scheduler_probe_source_attribute_show,
+		.store_attribute = scheduler_probe_source_attribute_store,
+	},
+	.global_attrs = probe_source_global_attrs,
 };
 
 static int probe_source_attribute_array_length(
@@ -438,7 +456,8 @@ scheduler_probe_source_create(struct scheduler_probe_source_type *type,
 	/* fixup type */
 	type->pipe_type = (struct scheduler_pipe_type)
 		SCHEDULER_PIPE_TYPE_INIT(owner,
-					 &scheduler_probe_source_item_ops, NULL,
+					 &probe_source_global_item_ops.config,
+					 NULL,
 					 &type->source_type, NULL);
 
 	nr_attrs = probe_source_attribute_array_length(type->attrs);
@@ -502,7 +521,7 @@ int is_scheduler_probe_source(struct config_item *item)
 {
 	return item->ci_type
 		&& item->ci_type->ct_item_ops ==
-			&scheduler_probe_source_item_ops;
+			&probe_source_global_item_ops.config;
 }
 
 static void scheduler_probe_drop(struct global_config_item *);
@@ -585,7 +604,7 @@ scheduler_probe_create(struct scheduler_probe_type *type,
 	tmp_def[num_sources + nr_groups] = NULL;
 
 	/* initialize probe type. */
-	type->item_type.ct_item_ops = &scheduler_probe_item_ops;
+	type->item_type.ct_item_ops = &probe_global_item_ops.config;
 	type->item_type.ct_attrs = tmp_attrs;
 
 	/* initialize probe. */
@@ -764,11 +783,13 @@ static struct config_group *probes_make_group(struct config_group *group,
 		goto err_module;
 	spin_unlock(&probes_lock);
 
+	global_config_attrs_init_r(&tmp_probe->group);
 	err = global_config_make_item_end(global_probes,
 					  &group->cg_item,
 					  &tmp_probe->global_item,
 					  name);
 	if (err) {
+		global_config_attrs_cleanup_r(&tmp_probe->group);
 		module_put(tmp_probe->group.cg_item.ci_type->ct_owner);
 		goto err;
 	}
@@ -809,6 +830,7 @@ static void scheduler_probe_drop(struct global_config_item *item)
 						 struct scheduler_probe,
 						 global_item);
 
+	global_config_attrs_cleanup_r(&p->group);
 	config_group_put(&p->group);
 	module_put(p->group.cg_item.ci_type->ct_owner);
 }

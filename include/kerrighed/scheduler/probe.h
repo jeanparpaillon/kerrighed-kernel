@@ -5,6 +5,7 @@
 #include <linux/errno.h>
 #include <linux/module.h>
 #include <kerrighed/scheduler/pipe.h>
+#include <kerrighed/scheduler/global_config.h>
 
 /** default probing period is 1 second (1000 miliseconds). */
 #define SCHEDULER_PROBE_DEFAULT_PERIOD 1000
@@ -201,6 +202,7 @@ struct scheduler_probe_source_type {
 struct scheduler_probe_source {
 	struct scheduler_source source;
 	struct scheduler_pipe pipe;
+	struct global_config_attrs global_attrs;
 	struct scheduler_probe *parent; /** pointer to a scheduler_probe which
 					 *  contains this scheduler_probe_source
 					 */
