@@ -258,6 +258,28 @@ struct config_op_message {
 	enum config_op op;
 };
 
+static struct rpc_desc *__global_config_op_begin(krgnodemask_t *nodes,
+						 enum config_op op)
+{
+	struct config_op_message msg = {
+		.op = op
+	};
+	struct rpc_desc *desc;
+	int err;
+
+	desc = rpc_begin_m(GLOBAL_CONFIG_OP, nodes);
+	if (!desc)
+		return ERR_PTR(-ENOMEM);
+
+	err = rpc_pack_type(desc, msg);
+	if (err) {
+		rpc_cancel(desc);
+		rpc_end(desc, 0);
+		return ERR_PTR(err);
+	} else {
+		return desc;
+	}
+}
 
 /**
  * Prepare to broadcast a global config operation to all *other* nodes.
@@ -272,27 +294,14 @@ struct config_op_message {
 static struct rpc_desc *global_config_op_begin(enum config_op op,
 					       krgnodemask_t *nodes)
 {
-	struct config_op_message msg = {
-		.op = op
-	};
-	struct rpc_desc *desc;
 	krgnodemask_t _nodes = krgnode_online_map;
-	int err;
+	struct rpc_desc *desc;
 
 	krgnode_clear(kerrighed_node_id, _nodes);
-	desc = rpc_begin_m(GLOBAL_CONFIG_OP, &_nodes);
-	if (!desc)
-		return ERR_PTR(-ENOMEM);
-
-	err = rpc_pack_type(desc, msg);
-	if (err) {
-		rpc_cancel(desc);
-		rpc_end(desc, 0);
-		return ERR_PTR(err);
-	} else {
+	desc = __global_config_op_begin(&_nodes, op);
+	if (!IS_ERR(desc))
 		*nodes = _nodes;
-		return desc;
-	}
+	return desc;
 }
 
 /**
@@ -406,6 +415,34 @@ static void put_string(char *string)
 	kfree(string);
 }
 
+static int do_global_config_dir_op(struct rpc_desc *desc, krgnodemask_t *nodes,
+				   enum config_op op,
+				   const char *name, const char *old_name)
+{
+	int err;
+
+	err = pack_string(desc, name);
+	if (err)
+		goto err_cancel;
+	if (!old_name) {
+		BUG_ON(op == CO_SYMLINK);
+		goto out_end;
+	}
+	BUG_ON(op != CO_SYMLINK);
+	err = pack_string(desc, old_name);
+	if (err)
+		goto err_cancel;
+out_end:
+	err = global_config_op_end(desc, nodes);
+out:
+	return err;
+
+err_cancel:
+	rpc_cancel(desc);
+	rpc_end(desc, 0);
+	goto out;
+}
+
 /**
  * Generic function to broadcast a global directory operation
  * (mkdir, rmdir, symlink, unlink)
@@ -429,26 +466,11 @@ static int global_config_dir_op(enum config_op op,
 		err = PTR_ERR(desc);
 		goto out;
 	}
-	err = pack_string(desc, name);
-	if (err)
-		goto err_cancel;
-	if (!old_name) {
-		BUG_ON(op == CO_SYMLINK);
-		goto out_end;
-	}
-	BUG_ON(op != CO_SYMLINK);
-	err = pack_string(desc, old_name);
-	if (err)
-		goto err_cancel;
-out_end:
-	err = global_config_op_end(desc, &nodes);
+
+	err = do_global_config_dir_op(desc, &nodes, op, name, old_name);
+
 out:
 	return err;
-
-err_cancel:
-	rpc_cancel(desc);
-	rpc_end(desc, 0);
-	goto out;
 }
 
 static int handle_global_config_symlink(struct inode *dir,
