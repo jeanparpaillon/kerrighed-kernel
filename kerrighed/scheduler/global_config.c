@@ -489,6 +489,19 @@ static int global_config_write(struct config_item *item,
 	return do_global_config_write(desc, &nodes, item, attr, page, count);
 }
 
+static int __global_config_write(krgnodemask_t *nodes,
+				 struct config_item *item,
+				 struct configfs_attribute *attr,
+				 const char *page, size_t count)
+{
+	struct rpc_desc *desc;
+
+	desc = __global_config_op_begin(nodes, CO_WRITE);
+	if (IS_ERR(desc))
+		return PTR_ERR(desc);
+	return do_global_config_write(desc, nodes, item, attr, page, count);
+}
+
 /**
  * RPC handler for global attribute store
  */
@@ -1518,6 +1531,7 @@ static int replicate_config(kerrighed_node_t node)
 {
 	krgnodemask_t nodes = krgnodemask_of_node(node);
 	struct global_config_item *item;
+	struct global_config_attr *attr;
 	enum config_op op;
 	int err = 0;
 
@@ -1527,6 +1541,14 @@ static int replicate_config(kerrighed_node_t node)
 		else
 			op = CO_MKDIR;
 		err = __global_config_dir_op(&nodes, op, item->path, item->target_path);
+		if (err)
+			goto cleanup;
+	}
+
+	list_for_each_entry(attr, &attrs_head, global_list) {
+		err = __global_config_write(&nodes,
+					    attr->item, attr->attr,
+					    attr->value, attr->size);
 		if (err)
 			goto cleanup;
 	}
@@ -1561,6 +1583,8 @@ int global_config_add(struct hotplug_context *ctx)
 			goto out;
 	}
 
+	down_write(&attrs_rwsem);
+
 	rpc_enable(GLOBAL_CONFIG_OP);
 
 	err = cluster_barrier(global_config_barrier, &nodes, master);
@@ -1584,6 +1608,7 @@ out_check:
 	if (err) {
 		if (krgnode_isset(kerrighed_node_id, ctx->node_set.v))
 			rpc_disable(GLOBAL_CONFIG_OP);
+		up_write(&attrs_rwsem);
 		if (master == kerrighed_node_id)
 			global_config_thaw();
 	}
@@ -1594,6 +1619,7 @@ out:
 int global_config_post_add(struct hotplug_context *ctx)
 {
 	BUG_ON(!krgnodes_subset(ctx->node_set.v, krgnode_online_map));
+	up_write(&attrs_rwsem);
 	if (first_krgnode(krgnode_online_map) == kerrighed_node_id)
 		global_config_thaw();
 
