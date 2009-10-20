@@ -419,6 +419,116 @@ static void put_string(char *string)
 	kfree(string);
 }
 
+static
+int
+do_global_config_write(struct rpc_desc *desc, krgnodemask_t *nodes,
+		       struct config_item *item,
+		       struct configfs_attribute *attr,
+		       const char *page, size_t count)
+{
+	char *path;
+	int err;
+
+	err = -ENOMEM;
+	path = get_full_path(item, attr->ca_name);
+	if (!path)
+		goto err_cancel;
+	err = pack_string(desc, path);
+	put_path(path);
+	if (err)
+		goto err_cancel;
+
+	err = rpc_pack_type(desc, count);
+	if (err)
+		goto err_cancel;
+	err = rpc_pack(desc, 0, page, count);
+	if (err)
+		goto err_cancel;
+
+	return global_config_op_end(desc, nodes);
+
+err_cancel:
+	rpc_cancel(desc);
+	rpc_end(desc, 0);
+	return err;
+}
+
+static int global_config_write(struct config_item *item,
+			       struct configfs_attribute *attr,
+			       const char *page, size_t count)
+{
+	struct rpc_desc *desc;
+	krgnodemask_t nodes;
+
+	desc = global_config_op_begin(CO_WRITE, &nodes);
+	if (IS_ERR(desc))
+		return PTR_ERR(desc);
+	return do_global_config_write(desc, &nodes, item, attr, page, count);
+}
+
+/**
+ * RPC handler for global attribute store
+ */
+static void handle_global_config_write(struct rpc_desc *desc,
+				       void *_msg, size_t size)
+{
+	struct path old_root;
+	struct file *file;
+	loff_t pos = 0;
+	char *path;
+	void *buf;
+	size_t count;
+	ssize_t ret;
+	int err;
+
+	path = unpack_get_string(desc);
+	if (IS_ERR(path))
+		goto err_path;
+	err = rpc_unpack_type(desc, count);
+	if (err)
+		goto err_count;
+	buf = kmalloc(count, GFP_KERNEL);
+	if (!buf)
+		goto err_count;
+	err = rpc_unpack(desc, 0, buf, count);
+	if (err)
+		goto err_buf;
+
+	chroot_to_scheduler_subsystem(&old_root);
+
+	file = filp_open(path, O_WRONLY, 0);
+	if (IS_ERR(file)) {
+		err = PTR_ERR(file);
+		goto chroot_restore;
+	}
+	ret = vfs_write(file, buf, count, &pos);
+	err = filp_close(file, NULL);
+
+	if (ret != count) {
+		if (ret >= 0)
+			err = -ENOSPC;
+		else
+			err = ret;
+	}
+chroot_restore:
+	chroot_restore(&old_root);
+
+	rpc_pack_type(desc, err);
+
+	kfree(buf);
+	put_string(path);
+out:
+	return;
+
+err_buf:
+	kfree(buf);
+err_count:
+	put_string(path);
+err_path:
+	rpc_cancel(desc);
+	goto out;
+}
+
 static int do_global_config_dir_op(struct rpc_desc *desc, krgnodemask_t *nodes,
 				   enum config_op op,
 				   const char *name, const char *old_name)
@@ -1075,9 +1185,6 @@ ssize_t global_config_attr_store_end(struct string_list_object *list,
 				     struct configfs_attribute *attr,
 				     const char *page, size_t count)
 {
-	struct rpc_desc *desc;
-	krgnodemask_t nodes;
-	char *path;
 	ssize_t err = 0;
 
 	if (!list)
@@ -1086,104 +1193,13 @@ ssize_t global_config_attr_store_end(struct string_list_object *list,
 	if (!count)
 		goto out_unlock;
 
-	err = -ENOMEM;
-	path = get_full_path(item, attr->ca_name);
-	if (!path)
-		goto out_unlock;
-
-	desc = global_config_op_begin(CO_WRITE, &nodes);
-	if (IS_ERR(desc)) {
-		err = PTR_ERR(desc);
-		goto out_free;
-	}
-
-	err = pack_string(desc, path);
-	if (err)
-		goto err_cancel;
-	err = rpc_pack_type(desc, count);
-	if (err)
-		goto err_cancel;
-	err = rpc_pack(desc, 0, page, count);
-	if (err)
-		goto err_cancel;
-
-	err = global_config_op_end(desc, &nodes);
+	err = global_config_write(item, attr, page, count);
 	if (!err)
 		err = count;
 
-out_free:
-	put_path(path);
 out_unlock:
 	hashed_string_list_unlock_hash(global_items_set, list);
 	return err;
-
-err_cancel:
-	rpc_cancel(desc);
-	rpc_end(desc, 0);
-	goto out_free;
-}
-
-/**
- * RPC handler for global attribute store
- */
-static void handle_global_config_write(struct rpc_desc *desc,
-				       void *_msg, size_t size)
-{
-	struct path old_root;
-	struct file *file;
-	loff_t pos = 0;
-	char *path;
-	void *buf;
-	size_t count;
-	ssize_t ret;
-	int err;
-
-	path = unpack_get_string(desc);
-	if (IS_ERR(path))
-		goto err_path;
-	err = rpc_unpack_type(desc, count);
-	if (err)
-		goto err_count;
-	buf = kmalloc(count, GFP_KERNEL);
-	if (!buf)
-		goto err_count;
-	err = rpc_unpack(desc, 0, buf, count);
-	if (err)
-		goto err_buf;
-
-	chroot_to_scheduler_subsystem(&old_root);
-
-	file = filp_open(path, O_WRONLY, 0);
-	if (IS_ERR(file)) {
-		err = PTR_ERR(file);
-		goto chroot_restore;
-	}
-	ret = vfs_write(file, buf, count, &pos);
-	err = filp_close(file, NULL);
-
-	if (ret != count) {
-		if (ret >= 0)
-			err = -ENOSPC;
-		else
-			err = ret;
-	}
-chroot_restore:
-	chroot_restore(&old_root);
-
-	rpc_pack_type(desc, err);
-
-	kfree(buf);
-	put_string(path);
-out:
-	return;
-
-err_buf:
-	kfree(buf);
-err_count:
-	put_string(path);
-err_path:
-	rpc_cancel(desc);
-	goto out;
 }
 
 /**
