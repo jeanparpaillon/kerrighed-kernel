@@ -1201,8 +1201,10 @@ int export_full_sysv_shm(ghost_t *ghost, int shmid)
 		goto out_shm_unlock;
 
 	flag = shp->shm_perm.mode;
+#ifdef CONFIG_HUGETLB_PAGE
 	if (shp->shm_file->f_op == &hugetlbfs_file_operations)
 		flag |= SHM_HUGETLB;
+#endif
 	/* SHM_NORESERVE not handled */
 
 	r = ghost_write(ghost, &flag, sizeof(int));
