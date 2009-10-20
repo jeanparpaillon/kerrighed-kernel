@@ -269,9 +269,6 @@ static void __krg_sighand_alloc(struct task_struct *task,
 {
 	struct sighand_struct_kddm_object *obj;
 
-	if (!task->nsproxy->krg_ns)
-		return;
-
 	/*
 	 * Exclude kernel threads and local pids from using sighand_struct kddm
 	 * objects.
@@ -282,7 +279,8 @@ static void __krg_sighand_alloc(struct task_struct *task,
 	 * is being allocated, but we only need to know whether it is NULL or
 	 * not, which will be the same after copy_mm.
 	 */
-	if (!(task_pid_knr(task) & GLOBAL_PID_MASK)
+	if (!task->nsproxy->krg_ns
+	    || !(task_pid_knr(task) & GLOBAL_PID_MASK)
 	    || (task->flags & PF_KTHREAD)) {
 		BUG_ON(krg_current);
 		sig->krg_objid = 0;
