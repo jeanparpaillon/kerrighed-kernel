@@ -148,6 +148,8 @@ void global_config_allow_link_error(struct string_list_object *list,
 
 struct configfs_attribute;
 
+struct configfs_attribute;
+
 /**
  * Prepare a global store operation on an attribute.
  *
