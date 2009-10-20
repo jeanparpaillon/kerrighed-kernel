@@ -567,15 +567,24 @@ static ssize_t pset_attribute_store(struct config_item *item,
 
 static void process_set_release(struct config_item *item);
 
-static struct configfs_item_operations pset_item_ops = {
-	.release = process_set_release,
-	.show_attribute = pset_attribute_show,
-	.store_attribute = pset_attribute_store,
+static
+struct global_config_attrs *process_set_global_attrs(struct config_item *item)
+{
+	return &to_process_set(item)->global_attrs;
+}
+
+struct global_config_item_operations process_set_global_item_ops = {
+	.config = {
+		.release = process_set_release,
+		.show_attribute = pset_attribute_show,
+		.store_attribute = pset_attribute_store,
+	},
+	.global_attrs = process_set_global_attrs,
 };
 
 static struct config_item_type pset_type = {
         .ct_owner = THIS_MODULE,
-	.ct_item_ops = &pset_item_ops,
+	.ct_item_ops = &process_set_global_item_ops.config,
 	.ct_attrs = pset_attributes,
 };
 

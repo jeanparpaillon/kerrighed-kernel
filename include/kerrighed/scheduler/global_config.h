@@ -149,7 +149,15 @@ void global_config_allow_link_error(struct string_list_object *list,
 					 const char *name,
 					 struct config_item *target_name);
 
-struct configfs_attribute;
+struct global_config_attrs {
+	struct list_head head;
+	int valid;
+};
+
+struct config_group;
+
+void global_config_attrs_init_r(struct config_group *group);
+void global_config_attrs_cleanup_r(struct config_group *group);
 
 struct configfs_attribute;
 

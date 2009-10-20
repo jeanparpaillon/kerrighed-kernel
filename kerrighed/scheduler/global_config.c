@@ -32,6 +32,8 @@
 #include <linux/gfp.h>
 #include <linux/cluster_barrier.h>
 #include <linux/mutex.h>
+#include <linux/rwsem.h>
+#include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/workqueue.h>
 #include <linux/list.h>
@@ -59,8 +61,29 @@
 #include "string_list.h"
 #include "global_lock.h"
 
+struct global_config_attr {
+	struct list_head list;
+	struct list_head global_list;
+	struct config_item *item;
+	struct configfs_attribute *attr;
+	void *value;
+	size_t size;
+};
+
 static struct kddm_set *global_items_set;
 static LIST_HEAD(items_head);
+
+static struct global_config_item_operations *global_item_ops[] = {
+	&probe_source_global_item_ops,
+	&probe_global_item_ops,
+	&port_global_item_ops,
+	&policy_global_item_ops,
+	&process_set_global_item_ops,
+	&scheduler_global_item_ops,
+};
+static LIST_HEAD(attrs_head);
+static DEFINE_SPINLOCK(attrs_lock);
+static DECLARE_RWSEM(attrs_rwsem);
 
 static struct cluster_barrier *global_config_barrier;
 
@@ -1140,6 +1163,78 @@ void global_config_drop(struct global_config_item *item)
 		local_drop(item);
 }
 
+static void global_config_attrs_init(struct global_config_attrs *attrs)
+{
+	INIT_LIST_HEAD(&attrs->head);
+	attrs->valid = 1;
+}
+
+static void global_config_attrs_cleanup(struct global_config_attrs *attrs)
+{
+	struct global_config_attr *attr, *tmp;
+
+	down_read(&attrs_rwsem);
+
+	spin_lock(&attrs_lock);
+	attrs->valid = 0;
+	spin_unlock(&attrs_lock);
+
+	list_for_each_entry_safe(attr, tmp, &attrs->head, list) {
+		list_del(&attr->list);
+		list_del(&attr->global_list);
+		kfree(attr->value);
+		kfree(attr);
+	}
+
+	up_read(&attrs_rwsem);
+}
+
+static
+inline
+struct global_config_item_operations *
+to_global_config_item_ops(struct configfs_item_operations *ops)
+{
+	return container_of(ops, struct global_config_item_operations, config);
+}
+
+void global_config_attrs_init_r(struct config_group *group)
+{
+	struct config_item *item = &group->cg_item;
+	struct global_config_item_operations *ops;
+	struct config_group **pos;
+	int i;
+
+	pos = group->default_groups;
+	if (pos)
+		for (; *pos; pos++)
+			global_config_attrs_init_r(*pos);
+
+	for (i = 0; i < ARRAY_SIZE(global_item_ops); i++) {
+		ops = global_item_ops[i];
+		if (item->ci_type->ct_item_ops == &ops->config)
+			global_config_attrs_init(ops->global_attrs(item));
+	}
+}
+
+void global_config_attrs_cleanup_r(struct config_group *group)
+{
+	struct config_item *item = &group->cg_item;
+	struct global_config_item_operations *ops;
+	struct config_group **pos;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(global_item_ops); i++) {
+		ops = global_item_ops[i];
+		if (item->ci_type->ct_item_ops == &ops->config)
+			global_config_attrs_cleanup(ops->global_attrs(item));
+	}
+
+	pos = group->default_groups;
+	if (pos)
+		for (; *pos; pos++)
+			global_config_attrs_cleanup_r(*pos);
+}
+
 /**
  * Prepare a global store operation on an attribute.
  *
@@ -1161,11 +1256,77 @@ global_config_attr_store_begin(struct config_item *item)
 	path = get_full_path(item, NULL);
 	if (!path)
 		return ERR_PTR(-ENOMEM);
+
+	down_read(&attrs_rwsem);
+
 	list = hashed_string_list_lock_hash(global_items_set, path);
 	BUG_ON(!list);
 	put_path(path);
+	if (IS_ERR(list))
+		up_read(&attrs_rwsem);
 
 	return list;
+}
+
+static ssize_t attr_store_record(struct config_item *item,
+				 struct configfs_attribute *attr,
+				 const char *page, size_t count)
+{
+	struct global_config_attrs *attrs;
+	struct global_config_attr *a;
+	void *value;
+	int err;
+
+	value = kmalloc(count, GFP_KERNEL);
+	if (!value)
+		return -ENOMEM;
+	memcpy(value, page, count);
+
+	attrs = to_global_config_item_ops(item->ci_type->ct_item_ops)->global_attrs(item);
+
+	err = -ENOENT;
+	spin_lock(&attrs_lock);
+	if (!attrs->valid)
+		goto out_unlock;
+
+	list_for_each_entry(a, &attrs->head, list) {
+		if (a->attr == attr) {
+			kfree(a->value);
+			a->value = value;
+			a->size = count;
+			list_move_tail(&a->global_list, &attrs_head);
+			err = 0;
+			goto out_unlock;
+		}
+	}
+	spin_unlock(&attrs_lock);
+
+	err = -ENOMEM;
+	a = kmalloc(sizeof(*a), GFP_KERNEL);
+	if (!a)
+		goto out;
+	a->item = item;
+	a->attr = attr;
+	a->value = value;
+	a->size = count;
+
+	err = -ENOENT;
+	spin_lock(&attrs_lock);
+	if (attrs->valid) {
+		list_add(&a->list, &attrs->head);
+		list_add_tail(&a->global_list, &attrs_head);
+		err = 0;
+	} else {
+		kfree(a);
+	}
+out_unlock:
+	spin_unlock(&attrs_lock);
+
+out:
+	if (err)
+		kfree(value);
+
+	return err ? : count;
 }
 
 /**
@@ -1188,7 +1349,7 @@ ssize_t global_config_attr_store_end(struct string_list_object *list,
 	ssize_t err = 0;
 
 	if (!list)
-		return count;
+		return attr_store_record(item, attr, page, count);
 
 	if (!count)
 		goto out_unlock;
@@ -1198,7 +1359,12 @@ ssize_t global_config_attr_store_end(struct string_list_object *list,
 		err = count;
 
 out_unlock:
+	if (err >= 0)
+		err = attr_store_record(item, attr, page, count);
+
 	hashed_string_list_unlock_hash(global_items_set, list);
+	up_read(&attrs_rwsem);
+
 	return err;
 }
 
@@ -1212,8 +1378,10 @@ out_unlock:
 void global_config_attr_store_error(struct string_list_object *list,
 				    struct config_item *item)
 {
-	if (list)
+	if (list) {
 		hashed_string_list_unlock_hash(global_items_set, list);
+		up_read(&attrs_rwsem);
+	}
 }
 
 int global_config_pack_item(struct rpc_desc *desc, struct config_item *item)

@@ -36,6 +36,7 @@ struct scheduler {
 					  * scheduler */
 	struct config_group *default_groups[2]; /** default subdirs */
 	struct global_config_item global_item; /** global_config subsystem */
+	struct global_config_attrs global_attrs;
 
 	krgnodemask_t node_set;
 	unsigned node_set_exclusive:1;
@@ -222,10 +223,19 @@ static void scheduler_release(struct config_item *item)
 	scheduler_free(s);
 }
 
-struct configfs_item_operations scheduler_item_ops = {
-	.show_attribute = scheduler_show_attribute,
-	.store_attribute = scheduler_store_attribute,
-	.release = scheduler_release,
+static
+struct global_config_attrs *scheduler_global_attrs(struct config_item *item)
+{
+	return &to_scheduler(item)->global_attrs;
+}
+
+struct global_config_item_operations scheduler_global_item_ops = {
+	.config = {
+		.show_attribute = scheduler_show_attribute,
+		.store_attribute = scheduler_store_attribute,
+		.release = scheduler_release,
+	},
+	.global_attrs = scheduler_global_attrs,
 };
 
 /**
@@ -236,6 +246,7 @@ static void policy_global_drop(struct global_config_item *item)
 {
 	struct scheduler_policy *policy =
 		container_of(item, struct scheduler_policy, global_item);
+	global_config_attrs_cleanup_r(&policy->group);
 	scheduler_policy_drop(policy);
 }
 
@@ -280,6 +291,7 @@ static struct config_group *scheduler_make_group(struct config_group *group,
 		err = PTR_ERR(policy);
 		goto err_policy;
 	}
+	global_config_attrs_init_r(&policy->group);
 	global_config_item_init(&policy->global_item,
 				&policy_global_drop_ops);
 	err = global_config_make_item_end(global_policies,
@@ -303,6 +315,7 @@ err_policy:
 	goto out;
 
 err_global_end:
+	global_config_attrs_cleanup_r(&policy->group);
 	scheduler_policy_drop(policy);
 	ret = ERR_PTR(err);
 	goto out;
@@ -598,7 +611,7 @@ static struct configfs_attribute *scheduler_attrs[] = {
  */
 static struct config_item_type scheduler_type = {
 	.ct_owner = THIS_MODULE,
-	.ct_item_ops = &scheduler_item_ops,
+	.ct_item_ops = &scheduler_global_item_ops.config,
 	.ct_group_ops = &scheduler_group_ops,
 	.ct_attrs = scheduler_attrs
 };
@@ -655,12 +668,16 @@ static void scheduler_drop(struct global_config_item *item)
 {
 	struct scheduler *scheduler =
 		container_of(item, struct scheduler, global_item);
+
+	global_config_attrs_cleanup_r(&scheduler->group);
+
 	mutex_lock(&schedulers_list_mutex);
 	spin_lock(&schedulers_list_lock);
 	list_del(&scheduler->list);
 	make_node_set_not_exclusive(scheduler);
 	spin_unlock(&schedulers_list_lock);
 	mutex_unlock(&schedulers_list_mutex);
+
 	config_group_put(&scheduler->group);
 }
 
@@ -704,6 +721,7 @@ static struct config_group *schedulers_make_group(struct config_group *group,
 	s = scheduler_create(name);
 	if (!s)
 		goto err_scheduler;
+	global_config_attrs_init_r(&s->group);
 	global_config_item_init(&s->global_item, &scheduler_drop_ops);
 	err = __global_config_make_item_commit(global_names,
 					       &group->cg_item,
@@ -730,6 +748,7 @@ err_scheduler:
 
 err_global_end:
 	__global_config_make_item_end(global_names);
+	global_config_attrs_cleanup_r(&s->group);
 	scheduler_deactivate(s);
 	config_group_put(&s->group);
 	ret = ERR_PTR(err);

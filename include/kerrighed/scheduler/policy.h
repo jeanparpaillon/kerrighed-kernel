@@ -22,6 +22,7 @@ struct scheduler_policy {
 				     ConfigFS. */
 	spinlock_t lock; /** lock for synchronizing scheduling policy access. */
 	struct global_config_item global_item; /** global_config subsystem */
+	struct global_config_attrs global_attrs;
 };
 
 /** struct which contains each policy's operations. */
