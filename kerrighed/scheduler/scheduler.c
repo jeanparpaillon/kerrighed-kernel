@@ -75,7 +75,6 @@ static DEFINE_SPINLOCK(schedulers_list_lock);
 static DEFINE_MUTEX(schedulers_list_mutex);
 
 static krgnodemask_t shared_set;
-static bool shared_set_initialized;
 
 void scheduler_get(struct scheduler *scheduler)
 {
@@ -706,11 +705,6 @@ static struct config_group *schedulers_make_group(struct config_group *group,
 	    && !IS_KERRIGHED_NODE(KRGFLAGS_RUNNING))
 		goto out;
 
-	if (!shared_set_initialized) {
-		krgnodes_copy(shared_set, krgnode_online_map);
-		shared_set_initialized = true;
-	}
-
 	global_names = global_config_make_item_begin(&group->cg_item, name);
 	if (IS_ERR(global_names)) {
 		ret = (void *)global_names;
@@ -794,6 +788,34 @@ static struct config_group schedulers_group = {
 		.ci_type = &schedulers_type,
 	},
 };
+
+int scheduler_post_add(struct hotplug_context *ctx)
+{
+	const krgnodemask_t *added = &ctx->node_set.v;
+	krgnodemask_t removed = KRGNODE_MASK_NONE;
+	struct scheduler *s;
+
+	mutex_lock(&schedulers_list_mutex);
+
+	list_for_each_entry(s, &schedulers_head, list)
+		if (s->node_set_exclusive && s->node_set_max_fit) {
+			policy_update_node_set(s, &removed, added);
+			goto unlock;
+		}
+
+	spin_lock(&schedulers_list_lock);
+	krgnodes_or(shared_set, shared_set, *added);
+	spin_unlock(&schedulers_list_lock);
+
+	list_for_each_entry(s, &schedulers_head, list)
+		if (s->node_set_max_fit)
+			policy_update_node_set(s, &removed, added);
+
+unlock:
+	mutex_unlock(&schedulers_list_mutex);
+
+	return 0;
+}
 
 /**
  * Initializes the "schedulers" subsystem directory.
