@@ -16,6 +16,7 @@
 #include <linux/err.h>
 #include <kerrighed/krgflags.h>
 #include <kerrighed/krgnodemask.h>
+#include <kerrighed/hotplug.h>
 #include <kerrighed/scheduler/policy.h>
 #include <kerrighed/scheduler/process_set.h>
 #include <kerrighed/scheduler/global_config.h>
@@ -71,7 +72,8 @@ to_scheduler_attribute(struct configfs_attribute *attr)
 static LIST_HEAD(schedulers_head);
 static DEFINE_SPINLOCK(schedulers_list_lock);
 
-static krgnodemask_t exclusive_set;
+static krgnodemask_t shared_set;
+static bool shared_set_initialized;
 
 void scheduler_get(struct scheduler *scheduler)
 {
@@ -334,19 +336,20 @@ static int do_update_node_set(struct scheduler *s, const krgnodemask_t *new_set)
 
 	mutex_lock(&s->node_set_mutex);
 	spin_lock(&schedulers_list_lock);
-	if (s->node_set_exclusive) {
-		if (!node_set_may_be_exclusive(s, new_set))
-			goto unlock;
-		krgnodes_andnot(exclusive_set, exclusive_set, s->node_set);
-		krgnodes_or(exclusive_set, exclusive_set, *new_set);
-	} else {
-		if (krgnodes_intersects(exclusive_set, *new_set))
-			goto unlock;
-	}
-	err = 0;
 
 	krgnodes_andnot(removed_set, s->node_set, *new_set);
 	krgnodes_andnot(added_set, *new_set, s->node_set);
+
+	if (s->node_set_exclusive) {
+		if (!node_set_may_be_exclusive(s, new_set))
+			goto unlock;
+		krgnodes_andnot(shared_set, shared_set, added_set);
+		krgnodes_or(shared_set, shared_set, removed_set);
+	} else {
+		if (!krgnodes_subset(*new_set, shared_set))
+			goto unlock;
+	}
+	err = 0;
 
 	spin_lock(&s->lock);
 	__krgnodes_copy(&s->node_set, new_set);
@@ -427,7 +430,7 @@ static int make_node_set_exclusive(struct scheduler *s)
 		goto out;
 	}
 
-	krgnodes_or(exclusive_set, exclusive_set, s->node_set);
+	krgnodes_andnot(shared_set, shared_set, s->node_set);
 	s->node_set_exclusive = 1;
 
 out:
@@ -437,9 +440,7 @@ out:
 static void make_node_set_not_exclusive(struct scheduler *s)
 {
 	if (s->node_set_exclusive) {
-		krgnodes_andnot(exclusive_set,
-				exclusive_set,
-				s->node_set);
+		krgnodes_or(shared_set, shared_set, s->node_set);
 		s->node_set_exclusive = 0;
 	}
 }
@@ -579,6 +580,11 @@ static struct config_group *schedulers_make_group(struct config_group *group,
 	if (!IS_KERRIGHED_NODE(KRGFLAGS_RUNNING))
 		goto out;
 
+	if (!shared_set_initialized) {
+		krgnodes_copy(shared_set, krgnode_online_map);
+		shared_set_initialized = true;
+	}
+
 	global_names = global_config_make_item_begin(&group->cg_item, name);
 	if (IS_ERR(global_names)) {
 		ret = (void *)global_names;
@@ -597,7 +603,7 @@ static struct config_group *schedulers_make_group(struct config_group *group,
 	if (err)
 		goto err_global_end;
 	spin_lock(&schedulers_list_lock);
-	krgnodes_andnot(s->node_set, krgnode_online_map, exclusive_set);
+	krgnodes_copy(s->node_set, shared_set);
 	list_add(&s->list, &schedulers_head);
 	spin_unlock(&schedulers_list_lock);
 	__global_config_make_item_end(global_names);
