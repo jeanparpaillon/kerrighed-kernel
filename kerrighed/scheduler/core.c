@@ -55,6 +55,11 @@ static int hotplug_notifier(struct notifier_block *nb,
 
 static int post_add(struct hotplug_context *ctx)
 {
+	int err;
+
+	err = scheduler_post_add(ctx);
+	if (err)
+		return err;
 	return global_config_post_add(ctx);
 }
 
