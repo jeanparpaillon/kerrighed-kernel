@@ -38,7 +38,8 @@ struct scheduler {
 	struct global_config_item global_item; /** global_config subsystem */
 
 	krgnodemask_t node_set;
-	int node_set_exclusive;
+	unsigned node_set_exclusive:1;
+	unsigned node_set_max_fit:1;
 
 	struct list_head list;
 
@@ -138,10 +139,33 @@ struct process_set *scheduler_get_process_set(struct scheduler *scheduler)
 }
 EXPORT_SYMBOL(scheduler_get_process_set);
 
+static inline const krgnodemask_t *get_node_set(struct scheduler *scheduler)
+{
+	if (scheduler->node_set_max_fit) {
+		if (scheduler->node_set_exclusive)
+			return &krgnode_online_map;
+		else
+			return &shared_set;
+	} else {
+		return &scheduler->node_set;
+	}
+}
+
+static
+inline void set_node_set(struct scheduler *scheduler, const krgnodemask_t *set)
+{
+	BUG_ON(scheduler->node_set_max_fit);
+	__krgnodes_copy(&scheduler->node_set, set);
+}
+
 void scheduler_get_node_set(struct scheduler *scheduler,
 			    krgnodemask_t *node_set)
 {
-	__krgnodes_copy(node_set, &scheduler->node_set);
+	spin_lock(&schedulers_list_lock);
+	spin_lock(&scheduler->lock);
+	__krgnodes_copy(node_set, get_node_set(scheduler));
+	spin_unlock(&scheduler->lock);
+	spin_unlock(&schedulers_list_lock);
 }
 EXPORT_SYMBOL(scheduler_get_node_set);
 
@@ -322,7 +346,10 @@ static struct configfs_group_operations scheduler_group_ops = {
 
 static ssize_t node_set_show(struct scheduler *s, char *page)
 {
-	return krgnodelist_scnprintf(page, SCHEDULER_ATTR_SIZE, s->node_set);
+	krgnodemask_t set;
+
+	scheduler_get_node_set(s, &set);
+	return krgnodelist_scnprintf(page, SCHEDULER_ATTR_SIZE, set);
 }
 
 static int node_set_may_be_exclusive(const struct scheduler *s,
@@ -337,24 +364,37 @@ static void policy_update_node_set(struct scheduler *scheduler,
 	policy = scheduler_get_scheduler_policy(scheduler);
 	if (policy) {
 		scheduler_policy_update_node_set(policy,
-						 &scheduler->node_set,
+						 get_node_set(scheduler),
 						 removed_set,
 						 added_set);
 		scheduler_policy_put(policy);
 	}
 }
 
-static int do_update_node_set(struct scheduler *s, const krgnodemask_t *new_set)
+static int do_update_node_set(struct scheduler *s,
+			      const krgnodemask_t *new_set,
+			      bool max_fit)
 {
 	krgnodemask_t removed_set, added_set;
+	const krgnodemask_t *old_set;
 	struct scheduler_policy *policy = NULL;
 	int err = -EBUSY;
 
 	mutex_lock(&schedulers_list_mutex);
 	spin_lock(&schedulers_list_lock);
 
-	krgnodes_andnot(removed_set, s->node_set, *new_set);
-	krgnodes_andnot(added_set, *new_set, s->node_set);
+	if (max_fit) {
+		if (s->node_set_exclusive)
+			new_set = &krgnode_online_map;
+		else
+			new_set = &shared_set;
+	} else if (!new_set) {
+		new_set = get_node_set(s);
+	}
+
+	old_set = get_node_set(s);
+	krgnodes_andnot(removed_set, *old_set, *new_set);
+	krgnodes_andnot(added_set, *new_set, *old_set);
 
 	if (s->node_set_exclusive) {
 		if (!node_set_may_be_exclusive(s, new_set))
@@ -368,7 +408,9 @@ static int do_update_node_set(struct scheduler *s, const krgnodemask_t *new_set)
 	err = 0;
 
 	spin_lock(&s->lock);
-	__krgnodes_copy(&s->node_set, new_set);
+	s->node_set_max_fit = max_fit;
+	if (!max_fit)
+		set_node_set(s, new_set);
 	policy = s->policy;
 	scheduler_policy_get(policy);
 	spin_unlock(&s->lock);
@@ -394,7 +436,7 @@ ssize_t node_set_store(struct scheduler *s, const char *page, size_t count)
 		ret = err;
 	} else {
 		if (krgnodes_subset(new_set, krgnode_online_map)) {
-			err = do_update_node_set(s, &new_set);
+			err = do_update_node_set(s, &new_set, false);
 			ret = err ? err : count;
 		} else {
 			ret = -EINVAL;
@@ -415,7 +457,7 @@ static struct scheduler_attribute node_set = {
 
 static ssize_t node_set_exclusive_show(struct scheduler *s, char *page)
 {
-	return sprintf(page, "%d", s->node_set_exclusive);
+	return sprintf(page, "%u", s->node_set_exclusive);
 }
 
 static int node_set_may_be_exclusive(const struct scheduler *s,
@@ -424,24 +466,27 @@ static int node_set_may_be_exclusive(const struct scheduler *s,
 	struct scheduler *pos;
 
 	list_for_each_entry(pos, &schedulers_head, list)
-		if (pos != s && krgnodes_intersects(*node_set, pos->node_set))
+		if (pos != s
+		    && (pos->node_set_exclusive || !pos->node_set_max_fit)
+		    && krgnodes_intersects(*node_set, *get_node_set(pos)))
 			return 0;
 	return 1;
 }
 
 static int make_node_set_exclusive(struct scheduler *s)
 {
+	const krgnodemask_t *set = get_node_set(s);
 	int err = 0;
 
 	if (s->node_set_exclusive)
 		goto out;
 
-	if (!node_set_may_be_exclusive(s, &s->node_set)) {
+	if (!node_set_may_be_exclusive(s, set)) {
 		err = -EBUSY;
 		goto out;
 	}
 
-	krgnodes_andnot(shared_set, shared_set, s->node_set);
+	krgnodes_andnot(shared_set, shared_set, *set);
 	s->node_set_exclusive = 1;
 
 out:
@@ -451,7 +496,7 @@ out:
 static void make_node_set_not_exclusive(struct scheduler *s)
 {
 	if (s->node_set_exclusive) {
-		krgnodes_or(shared_set, shared_set, s->node_set);
+		krgnodes_or(shared_set, shared_set, *get_node_set(s));
 		s->node_set_exclusive = 0;
 	}
 }
@@ -462,6 +507,8 @@ node_set_exclusive_store(struct scheduler *s, const char *page, size_t count)
 {
 	int new_state;
 	char *last_read;
+	krgnodemask_t added, removed;
+	bool changed;
 	int err;
 
 	new_state = simple_strtoul(page, &last_read, 0);
@@ -472,12 +519,25 @@ node_set_exclusive_store(struct scheduler *s, const char *page, size_t count)
 	mutex_lock(&schedulers_list_mutex);
 	spin_lock(&schedulers_list_lock);
 	if (new_state) {
+		krgnodes_clear(added);
+		krgnodes_copy(removed, *get_node_set(s));
+		changed = !s->node_set_exclusive;
 		err = make_node_set_exclusive(s);
+		changed = changed && !err;
 	} else {
+		krgnodes_copy(added, *get_node_set(s));
+		krgnodes_clear(removed);
+		changed = s->node_set_exclusive;
 		make_node_set_not_exclusive(s);
 		err = 0;
 	}
 	spin_unlock(&schedulers_list_lock);
+
+	if (changed) {
+		list_for_each_entry(s, &schedulers_head, list)
+			if (s->node_set_max_fit)
+				policy_update_node_set(s, &removed, &added);
+	}
 	mutex_unlock(&schedulers_list_mutex);
 
 	return err ? err : count;
@@ -493,9 +553,42 @@ static struct scheduler_attribute node_set_exclusive = {
 	.store = node_set_exclusive_store
 };
 
+static ssize_t node_set_max_fit_show(struct scheduler *s, char *page)
+{
+	return sprintf(page, "%u", s->node_set_max_fit);
+}
+
+static
+ssize_t
+node_set_max_fit_store(struct scheduler *s, const char *page, size_t count)
+{
+	int new_state;
+	char *last_read;
+	int err;
+
+	new_state = simple_strtoul(page, &last_read, 0);
+	if (last_read - page + 1 < count
+	    || (last_read[1] != '\0' && last_read[1] != '\n'))
+		return -EINVAL;
+
+	err = do_update_node_set(s, NULL, new_state);
+	return err ? err : count;
+}
+
+static struct scheduler_attribute node_set_max_fit = {
+	.config = {
+		.ca_name = "node_set_max_fit",
+		.ca_owner = THIS_MODULE,
+		.ca_mode = S_IRUGO | S_IWUSR,
+	},
+	.show = node_set_max_fit_show,
+	.store = node_set_max_fit_store
+};
+
 static struct configfs_attribute *scheduler_attrs[] = {
 	&node_set.config,
 	&node_set_exclusive.config,
+	&node_set_max_fit.config,
 	NULL
 };
 
@@ -533,6 +626,7 @@ static struct scheduler *scheduler_create(const char *name)
 		return NULL;
 	}
 	s->node_set_exclusive = 0;
+	s->node_set_max_fit = 1;
 	s->default_groups[0] = &s->processes->group;
 	s->default_groups[1] = NULL;
 	s->group.default_groups = s->default_groups;
@@ -618,7 +712,6 @@ static struct config_group *schedulers_make_group(struct config_group *group,
 		goto err_global_end;
 	mutex_lock(&schedulers_list_mutex);
 	spin_lock(&schedulers_list_lock);
-	krgnodes_copy(s->node_set, shared_set);
 	list_add(&s->list, &schedulers_head);
 	spin_unlock(&schedulers_list_lock);
 	mutex_unlock(&schedulers_list_mutex);
