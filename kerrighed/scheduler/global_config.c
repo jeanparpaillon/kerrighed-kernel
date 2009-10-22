@@ -1536,11 +1536,16 @@ static int replicate_config(kerrighed_node_t node)
 	int err = 0;
 
 	list_for_each_entry(item, &items_head, list) {
-		if (item->drop_ops->is_symlink)
+		if (item->drop_ops->is_symlink) {
 			op = CO_SYMLINK;
-		else
+			printk("replicate_config: symlink %s -> %s\n",
+			       item->path, item->target_path);
+		} else {
 			op = CO_MKDIR;
+			printk("replicate_config: mkdir %s\n", item->path);
+		}
 		err = __global_config_dir_op(&nodes, op, item->path, item->target_path);
+		printk("replicate_config: %d\n", err);
 		if (err)
 			goto cleanup;
 	}
@@ -1549,6 +1554,10 @@ static int replicate_config(kerrighed_node_t node)
 		err = __global_config_write(&nodes,
 					    attr->item, attr->attr,
 					    attr->value, attr->size);
+		printk("replicate_config: write %s/%s <- %.*s(%zu): %d\n",
+		       attr->item->ci_name, attr->attr->ca_name,
+		       (int)attr->size, (char *)attr->value, attr->size,
+		       err);
 		if (err)
 			goto cleanup;
 	}
@@ -1577,6 +1586,8 @@ int global_config_add(struct hotplug_context *ctx)
 	krgnodes_or(nodes, ctx->node_set.v, krgnode_online_map);
 	master = first_krgnode(nodes);
 
+	printk("global_config_add: enter\n");
+
 	if (master == kerrighed_node_id) {
 		err = global_config_freeze();
 		if (err)
@@ -1587,9 +1598,13 @@ int global_config_add(struct hotplug_context *ctx)
 
 	rpc_enable(GLOBAL_CONFIG_OP);
 
+	printk("global_config_add: first barrier enter\n");
+
 	err = cluster_barrier(global_config_barrier, &nodes, master);
 	if (err)
 		goto out_check;
+
+	printk("global_config_add: first barrier done\n");
 
 	/* There is no config to replicate at cluster start. */
 	if (first_krgnode(krgnode_online_map) == kerrighed_node_id) {
@@ -1601,7 +1616,11 @@ int global_config_add(struct hotplug_context *ctx)
 		}
 	}
 
+	printk("global_config_add: second barrier enter %d\n", err);
+
 	err2 = cluster_barrier(global_config_barrier, &nodes, master);
+
+	printk("global_config_add: second barrier done %d\n", err2);
 
 out_check:
 	err = err ? : err2;
@@ -1613,6 +1632,7 @@ out_check:
 			global_config_thaw();
 	}
 out:
+	printk("global_config_add: done %d\n", err);
 	return err;
 }
 
