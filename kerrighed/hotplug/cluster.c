@@ -376,6 +376,11 @@ static bool krg_container_may_conflict(struct krg_namespace *ns)
 	return conflict;
 }
 
+static int krg_container_cleanup(struct krg_namespace *ns)
+{
+	return 0;
+}
+
 static void krg_container_run(void)
 {
 	complete(&cluster_init_helper_ready);
@@ -749,6 +754,8 @@ static int node_ready(void __user *arg)
 		return -EPERM;
 
 	if (krg_container_may_conflict(ns))
+		return -EBUSY;
+	if (krg_container_cleanup(ns))
 		return -EBUSY;
 
 	krg_container_run();
