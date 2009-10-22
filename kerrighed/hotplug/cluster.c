@@ -536,8 +536,9 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 	if (err)
 		goto cancel;
 
-	down_write(&kerrighed_init_sem);
 	__nodes_add(&msg->node_set);
+
+	down_write(&kerrighed_init_sem);
 	hooks_start();
 	up_write(&kerrighed_init_sem);
 
