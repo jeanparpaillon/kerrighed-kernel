@@ -197,11 +197,6 @@ static int is_file_type_supported(const struct file *file)
 		if (S_ISSOCK(file->f_dentry->d_inode->i_mode)) {
 			printk("Checkpoint of socket file is not supported\n");
 			return 0;
-		} else if (S_ISFIFO(file->f_dentry->d_inode->i_mode)
-			   && (file->f_flags & O_FAF_CLT
-			       || file->f_flags & O_FAF_SRV)) {
-			printk("Checkpoint of faffed fifo file is not supported\n");
-			return 0;
 		}
 	} else if (file->f_flags & O_KRG_NO_CHKPT) {
 		printk("Checkpoint of special file is not supported\n");

@@ -71,9 +71,8 @@ void fill_faf_file_krg_desc(faf_client_data_t *data, struct file *file)
 	    || file->f_op == &hung_up_tty_fops)
 		flags |= O_FAF_TTY;
 
-	/* socket and fifo file can not be checkpointed */
-	else if (S_ISSOCK(file->f_dentry->d_inode->i_mode)
-		 || S_ISFIFO(file->f_dentry->d_inode->i_mode))
+	/* socket file can not be checkpointed */
+	else if (S_ISSOCK(file->f_dentry->d_inode->i_mode))
 		flags |= O_KRG_NO_CHKPT;
 
 	data->f_flags = flags;
