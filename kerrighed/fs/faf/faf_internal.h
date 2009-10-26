@@ -30,9 +30,9 @@ struct dvfs_file_struct;
 typedef struct faf_client_data {
 	kerrighed_node_t server_id;
 	int server_fd;
-	unsigned int flags;
-	mode_t mode;
-	loff_t pos;
+	unsigned long f_flags;
+	fmode_t f_mode;
+	loff_t f_pos;
 	wait_queue_head_t poll_wq;
 	unsigned int poll_revents;
 } faf_client_data_t;

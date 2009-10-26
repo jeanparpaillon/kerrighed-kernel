@@ -54,9 +54,9 @@ struct file *create_faf_file_from_krg_desc (struct task_struct *task,
 
 	file->f_dentry = NULL;
 	file->f_op = &faf_file_ops;
-	file->f_flags = desc->flags | O_FAF_CLT;
-	file->f_mode = desc->mode;
-	file->f_pos = desc->pos;
+	file->f_flags = desc->f_flags | O_FAF_CLT;
+	file->f_mode = desc->f_mode;
+	file->f_pos = desc->f_pos;
 	file->private_data = data;
 
 exit:
@@ -76,9 +76,9 @@ void fill_faf_file_krg_desc(faf_client_data_t *data, struct file *file)
 		 || S_ISFIFO(file->f_dentry->d_inode->i_mode))
 		flags |= O_KRG_NO_CHKPT;
 
-	data->flags = flags;
-	data->mode = file->f_mode;
-	data->pos = file->f_pos;
+	data->f_flags = flags;
+	data->f_mode = file->f_mode;
+	data->f_pos = file->f_pos;
 	data->server_id = kerrighed_node_id;
 	data->server_fd = file->f_faf_srv_index;
 }
