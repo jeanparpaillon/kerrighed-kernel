@@ -28,6 +28,20 @@
 #include <kerrighed/physical_fs.h>
 #include "mobility.h"
 
+int is_pipe(const struct file *file)
+{
+	umode_t i_mode;
+
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT)
+		i_mode = ((struct faf_client_data*)file->private_data)->i_mode;
+	else
+#endif
+		i_mode = file->f_dentry->d_inode->i_mode;
+
+	return S_ISFIFO(i_mode);
+}
+
 /*****************************************************************************/
 /*                                                                           */
 /*                             REGULAR FILES CREATION                        */

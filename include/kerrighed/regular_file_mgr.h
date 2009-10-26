@@ -90,4 +90,6 @@ int get_pipe_file_krg_desc(struct file *file, void **desc, int *desc_size);
 struct file *reopen_pipe_file_entry_from_krg_desc(struct task_struct *task,
 						  void *_desc);
 
+int is_pipe(const struct file *file);
+
 #endif // __REGULAR_FILE_MGR__
