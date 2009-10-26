@@ -35,6 +35,7 @@ typedef struct faf_client_data {
 	loff_t f_pos;
 	wait_queue_head_t poll_wq;
 	unsigned int poll_revents;
+	umode_t i_mode;
 } faf_client_data_t;
 
 /*--------------------------------------------------------------------------*

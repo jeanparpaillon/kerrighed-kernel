@@ -81,6 +81,7 @@ void fill_faf_file_krg_desc(faf_client_data_t *data, struct file *file)
 	data->f_pos = file->f_pos;
 	data->server_id = kerrighed_node_id;
 	data->server_fd = file->f_faf_srv_index;
+	data->i_mode = file->f_dentry->d_inode->i_mode;
 }
 
 
