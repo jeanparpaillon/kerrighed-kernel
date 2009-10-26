@@ -420,7 +420,6 @@ static int export_one_shared_object(ghost_t *ghost,
 				    struct shared_object *this)
 {
 	int r;
-	int is_local;
 
 	r = ghost_write(ghost, &this->index.type,
 			sizeof(enum shared_obj_type));
@@ -446,9 +445,9 @@ error:
 	return r;
 }
 
-static int __export_shared_objects(ghost_t *ghost,
-				   struct app_struct *app,
-				   int file)
+static int export_shared_objects(ghost_t *ghost, struct app_struct *app,
+				 enum shared_obj_type from,
+				 enum shared_obj_type to)
 {
 	int r = 0;
 	enum shared_obj_type end = NO_OBJ;
@@ -468,7 +467,10 @@ static int __export_shared_objects(ghost_t *ghost,
 		idx = container_of(node, struct shared_index, node);
 		this = container_of(idx, struct shared_object, index);
 
-		if (file && idx->type == FILES_STRUCT)
+		if (idx->type < from)
+			goto next_node;
+
+		if (idx->type > to)
 			goto exit_write_end;
 
 		r = export_one_shared_object(ghost, &action, this);
@@ -477,6 +479,7 @@ static int __export_shared_objects(ghost_t *ghost,
 		if (r)
 			goto error;
 
+	next_node:
 		node = next_node;
 	}
 
@@ -485,17 +488,6 @@ exit_write_end:
 			sizeof(enum shared_obj_type));
 error:
 	return r;
-}
-
-static int export_shared_files(ghost_t *ghost, struct app_struct *app)
-{
-	return __export_shared_objects(ghost, app, 1);
-}
-
-static int export_shared_objects_but_files(ghost_t *ghost,
-					   struct app_struct *app)
-{
-	return __export_shared_objects(ghost, app, 0);
 }
 
 static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
@@ -515,11 +507,11 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 		goto exit_unset_fs;
 	}
 
-	r = export_shared_files(ghost, app);
+	r = export_shared_objects(ghost, app, PIPE_INODE, UNSUPPORTED_FILE);
 	if (r)
 		goto exit_close_ghost;
 
-	r = export_shared_objects_but_files(ghost, app);
+	r = export_shared_objects(ghost, app, FILES_STRUCT, SIGNAL_STRUCT);
 
 exit_close_ghost:
 	/* End of the really interesting part */
@@ -899,8 +891,8 @@ err:
 	return r;
 }
 
-static int __import_shared_objects(ghost_t *ghost, struct app_struct *app,
-				   struct task_struct *fake)
+static int import_shared_objects(ghost_t *ghost, struct app_struct *app,
+				 struct task_struct *fake)
 {
 	int r;
 	struct epm_action action;
@@ -931,23 +923,9 @@ error:
 	return r;
 }
 
-static int import_shared_files(ghost_t *ghost, struct app_struct *app,
-			       struct task_struct *fake)
-{
-	return __import_shared_objects(ghost, app, fake);
-}
-
-static int import_shared_objects_but_files(ghost_t *ghost,
-					   struct app_struct *app,
-					   struct task_struct *fake)
-{
-	return __import_shared_objects(ghost, app, fake);
-}
-
-
-static int __send_restored_objects(struct rpc_desc *desc,
-				   struct app_struct *app,
-				   int file_only)
+static int send_restored_objects(struct rpc_desc *desc, struct app_struct *app,
+				 enum shared_obj_type from,
+				 enum shared_obj_type to)
 {
 	enum shared_obj_type end = NO_OBJ;
 	struct rb_node *node;
@@ -965,9 +943,7 @@ static int __send_restored_objects(struct rpc_desc *desc,
 		BUG_ON(this->restart.locality == SHARED_ANY);
 
 		if (this->restart.locality == SHARED_MASTER &&
-		    (file_only ||
-		     (idx->type != REGULAR_FILE &&
-		      idx->type != REGULAR_DVFS_FILE))) {
+		    (idx->type >= from && idx->type <= to)) {
 			r = rpc_pack_type(desc, idx->type);
 			if (r)
 				goto err_pack;
@@ -994,19 +970,6 @@ static int __send_restored_objects(struct rpc_desc *desc,
 err_pack:
 	return r;
 }
-
-static int send_restored_files(struct rpc_desc *desc,
-			       struct app_struct *app)
-{
-	return __send_restored_objects(desc, app, 1);
-}
-
-static int send_restored_objects_but_files(struct rpc_desc *desc,
-					   struct app_struct *app)
-{
-	return __send_restored_objects(desc, app, 0);
-}
-
 
 struct restored_dist_shared_index {
 	struct shared_index index;
@@ -1240,6 +1203,38 @@ int local_restart_shared_complete(struct app_struct *app,
 	return 0;
 }
 
+static int local_restart_shared_objects(ghost_t *ghost,
+					struct rpc_desc *desc,
+					struct app_struct *app,
+					struct task_struct *fake,
+					enum shared_obj_type from,
+					enum shared_obj_type to)
+{
+	int r;
+
+	/* 1) restore objects for which we are master */
+	r = import_shared_objects(ghost, app, fake);
+
+	r = send_result(desc, r);
+	if (r)
+		goto err;
+
+	/* 2) send list of restored objects that are shared with other nodes */
+	r = send_restored_objects(desc, app, from, to);
+
+	r = send_result(desc, r);
+	if (r)
+		goto err;
+
+	/* 3) receive objects information from other nodes */
+	r = rcv_full_restored_objects(desc, app);
+	if (r)
+		goto err;
+
+err:
+	return r;
+}
+
 int local_restart_shared(struct rpc_desc *desc,
 			 struct app_struct *app,
 			 struct task_struct *fake,
@@ -1260,57 +1255,68 @@ int local_restart_shared(struct rpc_desc *desc,
 		goto err_create_ghost;
 	}
 
-	/* 1) restore shared files */
-	r = import_shared_files(ghost, app, fake);
-
-	r = send_result(desc, r);
+	/* 1) restore pipes and files */
+	r = local_restart_shared_objects(ghost, desc, app, fake,
+					 PIPE_INODE, UNSUPPORTED_FILE);
 	if (r)
 		goto err_ghost;
 
-	/* 2) send list of restored "distributed" shared files */
-	r = send_restored_files(desc, app);
-
-	r = send_result(desc, r);
+	/* 2) restore other objects */
+	r = local_restart_shared_objects(ghost, desc, app, fake,
+					 FILES_STRUCT, SIGNAL_STRUCT);
 	if (r)
 		goto err_ghost;
-
-	/* 3) receive updated information about shared files */
-	r = rcv_full_restored_objects(desc, app);
-	if (r)
-		goto err_ghost;
-
-	/* 4) restore shared objects */
-	r = import_shared_objects_but_files(ghost, app, fake);
-
-	ghost_close(ghost);
-	unset_ghost_fs(&oldfs);
-
-	r = send_result(desc, r);
-	if (r)
-		goto error;
-
-	/* 5) send list of restored "distributed" shared objects */
-	r = send_restored_objects_but_files(desc, app);
-
-	r = send_result(desc, r);
-	if (r)
-		goto error;
-
-	/* 6) receive updated information about shared objects */
-	r = rcv_full_restored_objects(desc, app);
-
-	r = send_result(desc, r);
-	if (r)
-		goto error;
-error:
-	return r;
 
 err_ghost:
 	ghost_close(ghost);
-
 err_create_ghost:
 	unset_ghost_fs(&oldfs);
+	return r;
+}
 
+static int global_restart_shared_objects(struct rpc_desc *desc,
+					 struct app_kddm_object *obj)
+{
+	int r = 0;
+	int err_rpc = 0;
+	kerrighed_node_t node;
+	struct rb_root dist_shared_indexes = RB_ROOT;
+
+	/* 1) waiting nodes to have restored objects they are master for */
+	r = app_wait_returns_from_nodes(desc, obj->nodes);
+	if (r)
+		goto error;
+
+	/* 2) request the list of restored distributed objects */
+	err_rpc = rpc_pack_type(desc, r);
+	if (err_rpc)
+		goto err_rpc;
+
+	for_each_krgnode_mask(node, obj->nodes) {
+		r = rcv_restored_dist_objects_list_from(desc,
+							&dist_shared_indexes,
+							node);
+		if (r)
+			goto error;
+	}
+	r = app_wait_returns_from_nodes(desc, obj->nodes);
+	if (r)
+		goto error;
+
+	/* 3) Send the list to every node
+	 * this is not optimized but otherwise, we need to open
+	 * a new RPC desc to each node */
+	err_rpc = rpc_pack_type(desc, r);
+	if (err_rpc)
+		goto err_rpc;
+
+	r = send_full_restored_dist_objects_list(desc, &dist_shared_indexes);
+
+error:
+	clear_restored_dist_shared_indexes(&dist_shared_indexes);
+	return r;
+err_rpc:
+	r = err_rpc;
 	goto error;
 }
 
@@ -1318,92 +1324,18 @@ int global_restart_shared(struct rpc_desc *desc,
 			  struct app_kddm_object *obj)
 {
 	int r = 0;
-	int err_rpc = 0;
-	kerrighed_node_t node;
-	struct rb_root dist_shared_indexes = RB_ROOT;
 
-	/* 1) request the nodes to restore their files */
-
-        /* waiting results from the nodes hosting the application */
-	r = app_wait_returns_from_nodes(desc, obj->nodes);
+	/* manage shared pipes and files */
+	r = global_restart_shared_objects(desc, obj);
 	if (r)
 		goto error;
 
-	/* 2) request the list of restored distributed files */
-	err_rpc = rpc_pack_type(desc, r);
-	if (err_rpc)
-		goto err_rpc;
-
-	for_each_krgnode_mask(node, obj->nodes) {
-		r = rcv_restored_dist_objects_list_from(desc,
-							&dist_shared_indexes,
-							node);
-		if (r)
-			goto err_clear_shared;
-	}
-	r = app_wait_returns_from_nodes(desc, obj->nodes);
-	if (r)
-		goto err_clear_shared;
-
-	/* 3) Send the list to every node
-	 * this is not optimized but otherwise, we need to open
-	 * a new RPC desc to each node */
-	err_rpc = rpc_pack_type(desc, r);
-	if (err_rpc)
-		goto err_rpc_clear_shared;
-
-	r = send_full_restored_dist_objects_list(desc, &dist_shared_indexes);
-
-	clear_restored_dist_shared_indexes(&dist_shared_indexes);
-
-	/* 4) request the nodes to restore their objects */
-
-        /* waiting results from the nodes hosting the application */
-	r = app_wait_returns_from_nodes(desc, obj->nodes);
+	/* manage shared objects */
+	r = global_restart_shared_objects(desc, obj);
 	if (r)
 		goto error;
-
-	/* 5) request the list of restored distributed objects */
-	err_rpc = rpc_pack_type(desc, r);
-	if (err_rpc)
-		goto err_rpc;
-
-	for_each_krgnode_mask(node, obj->nodes) {
-		r = rcv_restored_dist_objects_list_from(desc,
-							&dist_shared_indexes,
-							node);
-		if (r)
-			goto err_clear_shared;
-	}
-	r = app_wait_returns_from_nodes(desc, obj->nodes);
-	if (r)
-		goto err_clear_shared;
-
-	/* 6) Send the list to every node
-	 * this is not optimized but otherwise, we need to open
-	 * a new RPC desc to each node */
-	err_rpc = rpc_pack_type(desc, r);
-	if (err_rpc)
-		goto err_rpc_clear_shared;
-
-	r = send_full_restored_dist_objects_list(desc, &dist_shared_indexes);
-	if (r)
-		goto err_clear_shared;
-
-	r = app_wait_returns_from_nodes(desc, obj->nodes);
-
-err_clear_shared:
-	clear_restored_dist_shared_indexes(&dist_shared_indexes);
 
 error:
 	return r;
-
-err_rpc_clear_shared:
-	r = err_rpc;
-	goto err_clear_shared;
-
-err_rpc:
-	r = err_rpc;
-	goto error;
 }
 
