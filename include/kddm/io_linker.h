@@ -129,10 +129,6 @@ struct iolinker_struct {
 
 
 
-kerrighed_node_t unique_id_default_owner (struct kddm_set *set, objid_t objid,
-					  const krgnodemask_t *nodes,
-					  int nr_nodes);
-
 /** Initialize IO linkers.
  *  @author Renaud Lottiaux
  */

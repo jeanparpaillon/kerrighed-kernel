@@ -193,7 +193,6 @@ static struct iolinker_struct sighand_struct_io_linker = {
 	.export_object = sighand_struct_export_object,
 	.import_object = sighand_struct_import_object,
 	.remove_object = sighand_struct_remove_object,
-	.default_owner = unique_id_default_owner,
 };
 
 /*
@@ -614,7 +613,7 @@ int epm_sighand_start(void)
 		create_new_kddm_set(kddm_def_ns,
 				    SIGHAND_STRUCT_KDDM_ID,
 				    SIGHAND_STRUCT_LINKER,
-				    KDDM_CUSTOM_DEF_OWNER,
+				    KDDM_UNIQUE_ID_DEF_OWNER,
 				    0, 0);
 	if (IS_ERR(sighand_struct_kddm_set))
 		OOM;

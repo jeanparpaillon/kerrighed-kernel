@@ -57,11 +57,14 @@ enum
 /* Kddm set with round robin distributed default owner */
 #define KDDM_RR_DEF_OWNER ((kerrighed_node_t)(KERRIGHED_MAX_NODES + 1))
 
+/* Kddm set with default owner based on unique ID */
+#define KDDM_UNIQUE_ID_DEF_OWNER ((kerrighed_node_t)(KERRIGHED_MAX_NODES + 2))
+
 /* Kddm set with a custom default owner policy */
-#define KDDM_CUSTOM_DEF_OWNER ((kerrighed_node_t)(KERRIGHED_MAX_NODES + 2))
+#define KDDM_CUSTOM_DEF_OWNER ((kerrighed_node_t)(KERRIGHED_MAX_NODES + 3))
 
 /* MUST ALWAYS BE THE LAST ONE and equal to the highest possible value */
-#define KDDM_MAX_DEF_OWNER ((kerrighed_node_t)(KERRIGHED_MAX_NODES + 2))
+#define KDDM_MAX_DEF_OWNER ((kerrighed_node_t)(KERRIGHED_MAX_NODES + 4))
 
 /* Kddm set id reserved for internal system usage (sys_kddm_ns name space). */
 enum

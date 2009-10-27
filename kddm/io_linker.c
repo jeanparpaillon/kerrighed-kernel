@@ -23,25 +23,6 @@ struct iolinker_struct *iolinker_list[MAX_IO_LINKER];
 
 
 
-/** return the default owner of an object named with an unique id.
- *  @author Renaud Lottiaux
- *
- *  @param obj_entry  Entry of the object to set the state.
- *  @param state      State to set the object with.
- */
-kerrighed_node_t unique_id_default_owner (struct kddm_set * set, objid_t objid,
-					  const krgnodemask_t *nodes,
-					  int nr_nodes)
-{
-	kerrighed_node_t nodeid;
-
-	nodeid = objid >> UNIQUE_ID_NODE_SHIFT;
-
-	return nodeid;
-}
-
-
-
 /*****************************************************************************/
 /*                                                                           */
 /*                     INSTANTIATE/UNINSTANTIATE FUNCTIONS                   */
@@ -433,6 +414,9 @@ kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
 			  return __nth_krgnode(objid % nr_nodes, nodes);
 		  else
 			  return kerrighed_node_id;
+
+	  case KDDM_UNIQUE_ID_DEF_OWNER:
+		  return objid >> UNIQUE_ID_NODE_SHIFT;
 
 	  case KDDM_CUSTOM_DEF_OWNER:
 		  return set->iolinker->default_owner (set, objid,
