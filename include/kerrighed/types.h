@@ -9,12 +9,6 @@
 
 #define KRGFCT(p) if(p!=NULL) p
 
-#ifdef CONFIG_KERRIGHED
-#define krgstatic
-#else
-#define krgstatic static
-#endif
-
 #if defined(CONFIG_KERRIGHED) || defined(CONFIG_KRGRPC)
 
 typedef unsigned char kerrighed_session_t;
