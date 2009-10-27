@@ -37,9 +37,6 @@
 /** Type for node id           */
 typedef short kerrighed_node_t;
 
-/** Boolean type */
-typedef unsigned int bool_t;
-
 /** Event counter type */
 typedef unsigned long event_counter_t;
 
