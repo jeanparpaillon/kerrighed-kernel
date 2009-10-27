@@ -23,6 +23,7 @@
 #include <asm/ioctls.h>
 
 #ifdef CONFIG_KRG_EPM
+#include <linux/splice.h>
 #include <kerrighed/app_shared.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/regular_file_mgr.h>
@@ -1105,6 +1106,52 @@ int do_pipe_flags(int *fd, int flags)
 
 #ifdef CONFIG_KRG_EPM
 
+/* largely inspired from code from Oren Laadan */
+static int cr_export_pipe_buffer(ghost_t *ghost, struct inode *inode)
+{
+	struct pipe_inode_info *pipe;
+	struct file *ghost_file;
+	loff_t f_pos;
+	int len, ret = -ENOMEM;
+
+	pipe = alloc_pipe_info(NULL);
+	if (!pipe)
+		goto out;
+
+	pipe->readers = 1;	/* bluff link_pipe() below */
+	len = link_pipe(inode->i_pipe, pipe, INT_MAX, SPLICE_F_NONBLOCK);
+	if (len == -EAGAIN)
+		len = 0;
+	if (len < 0) {
+		ret = len;
+		goto out_free_pipe;
+	}
+
+	ret = ghost_write(ghost, &len, sizeof(int));
+	if (ret < 0)
+		goto out_free_pipe;
+
+	ghost_file = ((struct file_ghost_data*)(ghost->data))->file;
+	f_pos = ghost_file->f_pos;
+	if (f_pos & ~PAGE_CACHE_MASK)
+		f_pos = (f_pos + PAGE_CACHE_SIZE) & PAGE_CACHE_MASK;
+
+	ret = do_splice_from(pipe, ghost_file, &f_pos, len, 0);
+	ghost_file->f_pos = f_pos;
+
+	if (ret < 0)
+		goto out_free_pipe;
+	if (ret != len)
+		ret = -EPIPE;  /* can occur due to an error in target file */
+	else
+		ret = 0;
+
+out_free_pipe:
+	__free_pipe_info(pipe);
+out:
+	return ret;
+}
+
 int cr_export_now_pipe_inode(struct epm_action *action, ghost_t *ghost,
 			     struct task_struct *task,
 			     union export_args *args)
@@ -1122,10 +1169,42 @@ int cr_export_now_pipe_inode(struct epm_action *action, ghost_t *ghost,
 	if (r)
 		goto err;
 
-	/* TODO: save pipe buffer (inode->i_pipe) */
+	r = cr_export_pipe_buffer(ghost, inode);
 
 err:
 	return r;
+}
+
+/* largely inspired from code from Oren Laadan */
+static int cr_import_pipe_buffer(ghost_t *ghost, struct inode *inode)
+{
+	struct pipe_inode_info *pipe;
+	struct file *ghost_file;
+	loff_t f_pos;
+	int len, ret;
+
+	ret = ghost_read(ghost, &len, sizeof(int));
+	if (ret)
+		goto err;
+
+	ghost_file = ((struct file_ghost_data*)(ghost->data))->file;
+	f_pos = ghost_file->f_pos;
+	if (f_pos & ~PAGE_CACHE_MASK)
+		f_pos = (f_pos + PAGE_CACHE_SIZE) & PAGE_CACHE_MASK;
+
+	pipe = inode->i_pipe;
+	ret = do_splice_to(ghost_file, &f_pos, pipe, len, 0);
+	ghost_file->f_pos = f_pos;
+
+	if (ret >= 0) {
+		if (ret != len)
+			ret = -EPIPE;  /* can occur due to an error in source file */
+		else
+			ret = 0;
+	}
+
+err:
+	return ret;
 }
 
 static int cr_import_now_pipe_inode(struct epm_action *action,
@@ -1159,7 +1238,9 @@ static int cr_import_now_pipe_inode(struct epm_action *action,
 	if (r)
 		goto err_inode;
 
-	/* TODO: restore pipe buffer (inode->i_pipe) */
+	r = cr_import_pipe_buffer(ghost, inode);
+	if (r)
+		goto err_inode;
 
 	*returned_data = dentry;
 	data_size = 0;
