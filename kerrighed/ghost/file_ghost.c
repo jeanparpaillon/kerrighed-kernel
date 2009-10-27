@@ -342,7 +342,7 @@ ghost_t *create_file_ghost(int access,
 	}
 
 	if (access & GHOST_WRITE)/* fail if already exists */
-		file = filp_open(file_name, O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
+		file = filp_open(file_name, O_CREAT|O_EXCL|O_WRONLY, S_IRUSR|S_IWUSR);
 	else
 		file = filp_open(file_name, O_RDONLY, S_IRWXU);
 
