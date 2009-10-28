@@ -73,9 +73,12 @@ static inline struct kddm_set *alloc_kddm_set_struct (struct kddm_ns *ns,
 	kddm_set->state = init_state;
 	kddm_set->id = set_id;
 	kddm_set->ns = ns;
+	kddm_set->flags = 0;
 	init_waitqueue_head (&kddm_set->create_wq);
 	spin_lock_init(&kddm_set->lock);
 	atomic_set(&kddm_set->count, 1);
+	INIT_LIST_HEAD(&kddm_set->event_list);
+	spin_lock_init(&kddm_set->event_lock);
 
 err:
 	return kddm_set;
@@ -107,7 +110,7 @@ int init_kddm_set (struct kddm_set *set,
 
 	set->id = set_id;
 	set->obj_size = obj_size;
-	set->flags = flags;
+	set->flags |= flags;
 	set->def_owner = def_owner;
 	set->ra_window_size = DEFAULT_READAHEAD_WINDOW_SIZE;
 	set->state = KDDM_SET_LOCKED;
@@ -120,8 +123,6 @@ int init_kddm_set (struct kddm_set *set,
 	set->remove_object_counter = 0;
 	set->flush_object_counter = 0;
 	set->private = NULL;
-	INIT_LIST_HEAD(&set->event_list);
-	spin_lock_init(&set->event_lock);
 
 	set->obj_set = set->ops->obj_set_alloc(set, tree_init_data);
 	if (!set->obj_set)
