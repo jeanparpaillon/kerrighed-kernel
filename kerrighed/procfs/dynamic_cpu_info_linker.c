@@ -15,6 +15,7 @@
 #include <asm/cputime.h>
 
 #include "dynamic_cpu_info_linker.h"
+#include "static_cpu_info_linker.h"
 
 #include <kerrighed/debug.h>
 
@@ -31,6 +32,7 @@ struct kddm_set *dynamic_cpu_info_kddm_set;
 /* Init the dynamic cpu info IO linker */
 
 static struct iolinker_struct dynamic_cpu_info_io_linker = {
+	.default_owner = cpu_info_default_owner,
 	.linker_name = "dyn_cpu_nfo",
 	.linker_id = DYNAMIC_CPU_INFO_LINKER,
 };
@@ -90,7 +92,7 @@ int dynamic_cpu_info_init(void)
 		create_new_kddm_set(kddm_def_ns,
 				    DYNAMIC_CPU_INFO_KDDM_ID,
 				    DYNAMIC_CPU_INFO_LINKER,
-				    KDDM_RR_DEF_OWNER,
+				    KDDM_CUSTOM_DEF_OWNER,
 				    sizeof(krg_dynamic_cpu_info_t),
 				    0);
 	if (IS_ERR(dynamic_cpu_info_kddm_set))

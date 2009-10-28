@@ -15,15 +15,24 @@ struct kddm_set *static_node_info_kddm_set;
 
 /*****************************************************************************/
 /*                                                                           */
-/*                   STATIC NODE INFO KDDM IO FUNCTIONS                 */
+/*                     STATIC NODE INFO KDDM IO FUNCTIONS                    */
 /*                                                                           */
 /*****************************************************************************/
+
+kerrighed_node_t node_info_default_owner(struct kddm_set *set,
+					 objid_t objid,
+					 const krgnodemask_t *nodes,
+					 int nr_nodes)
+{
+	return objid;
+}
 
 /****************************************************************************/
 
 /* Init the static node info IO linker */
 
 static struct iolinker_struct static_node_info_io_linker = {
+	.default_owner = node_info_default_owner,
 	.linker_name = "stat_node_nfo",
 	.linker_id = STATIC_NODE_INFO_LINKER,
 };
@@ -41,7 +50,7 @@ int static_node_info_init()
 		create_new_kddm_set(kddm_def_ns,
 				    STATIC_NODE_INFO_KDDM_ID,
 				    STATIC_NODE_INFO_LINKER,
-				    KDDM_RR_DEF_OWNER,
+				    KDDM_CUSTOM_DEF_OWNER,
 				    sizeof(krg_static_node_info_t),
 				    0);
 	if (IS_ERR(static_node_info_kddm_set))

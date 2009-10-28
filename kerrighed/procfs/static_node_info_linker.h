@@ -51,4 +51,9 @@ static inline krg_static_node_info_t *get_static_node_info(int node_id)
 	return _kddm_get_object_no_lock(static_node_info_kddm_set, node_id);
 }
 
+kerrighed_node_t node_info_default_owner(struct kddm_set *set,
+					 objid_t objid,
+					 const krgnodemask_t *nodes,
+					 int nr_nodes);
+
 #endif /* STATIC_NODE_INFO_LINKER_H */

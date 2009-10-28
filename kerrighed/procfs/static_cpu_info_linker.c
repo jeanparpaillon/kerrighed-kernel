@@ -23,10 +23,10 @@ struct kddm_set *static_cpu_info_kddm_set;
 /*                                                                           */
 /*****************************************************************************/
 
-static kerrighed_node_t cpu_info_default_owner(struct kddm_set *set,
-					       objid_t objid,
-					       const krgnodemask_t *nodes,
-					       int nr_nodes)
+kerrighed_node_t cpu_info_default_owner(struct kddm_set *set,
+					objid_t objid,
+					const krgnodemask_t *nodes,
+					int nr_nodes)
 {
 	return krg_cpu_node(objid);
 }

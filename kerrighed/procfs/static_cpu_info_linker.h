@@ -54,4 +54,9 @@ static inline krg_static_cpu_info_t *get_static_cpu_info(int node_id,
 					__krg_cpu_id(node_id, cpu_id));
 }
 
+kerrighed_node_t cpu_info_default_owner(struct kddm_set *set,
+					objid_t objid,
+					const krgnodemask_t *nodes,
+					int nr_nodes);
+
 #endif /* STATIC_CPU_INFO LINKER_H */

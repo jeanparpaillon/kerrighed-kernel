@@ -204,7 +204,7 @@ int dvfs_file_init(void)
 		kddm_def_ns,
 		DVFS_FILE_STRUCT_KDDM_ID,
 		DVFS_FILE_STRUCT_LINKER,
-		KDDM_RR_DEF_OWNER,
+		KDDM_UNIQUE_ID_DEF_OWNER,
 		sizeof (struct dvfs_file_struct),
 		KDDM_LOCAL_EXCLUSIVE);
 

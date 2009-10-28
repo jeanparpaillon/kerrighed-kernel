@@ -105,11 +105,11 @@ int file_import_object (struct kddm_obj *obj_entry,
 /* Init the file_struct IO linker */
 
 struct iolinker_struct dvfs_file_struct_io_linker = {
-	alloc_object:      file_alloc_object,
-	first_touch:       file_first_touch,
-	export_object:     file_export_object,
-	import_object:     file_import_object,
-	remove_object:     file_remove_object,
-	linker_name:       "DVFS ",
-	linker_id:         DVFS_FILE_STRUCT_LINKER,
+	alloc_object:	file_alloc_object,
+	first_touch:	file_first_touch,
+	export_object:	file_export_object,
+	import_object:	file_import_object,
+	remove_object:	file_remove_object,
+	linker_name:	"DVFS ",
+	linker_id:	DVFS_FILE_STRUCT_LINKER,
 };

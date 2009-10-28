@@ -20,6 +20,7 @@
 #include <kddm/kddm.h>
 
 #include <kerrighed/dynamic_node_info_linker.h>
+#include "static_node_info_linker.h"
 
 #include <kerrighed/debug.h>
 
@@ -37,6 +38,7 @@ struct kddm_set *dynamic_node_info_kddm_set;
 /* Init the dynamic node info IO linker */
 
 static struct iolinker_struct dynamic_node_info_io_linker = {
+	.default_owner = node_info_default_owner,
 	.linker_name = "dyn_node_nfo",
 	.linker_id = DYNAMIC_NODE_INFO_LINKER,
 };
@@ -178,7 +180,7 @@ int dynamic_node_info_init(void)
 	dynamic_node_info_kddm_set =
 		create_new_kddm_set(kddm_def_ns, DYNAMIC_NODE_INFO_KDDM_ID,
 				    DYNAMIC_NODE_INFO_LINKER,
-				    KDDM_RR_DEF_OWNER,
+				    KDDM_CUSTOM_DEF_OWNER,
 				    sizeof(krg_dynamic_node_info_t), 0);
 	if (IS_ERR(dynamic_node_info_kddm_set))
 		OOM;
