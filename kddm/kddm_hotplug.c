@@ -16,8 +16,6 @@
 #include <kddm/kddm.h>
 #include "protocol_action.h"
 
-static void kddm_set_failure_cb(void *_set, void *_data);
-
 /**
  *
  * Tools related part
@@ -264,6 +262,8 @@ static void set_remove(krgnodemask_t * vector)
  * Failure related part
  *
  **/
+
+#if 0
 
 extern krgnodemask_t failure_vector;
 
@@ -708,6 +708,8 @@ static void set_failure(krgnodemask_t * vector)
 
 };
 
+#endif
+
 /**
  *
  * Notifier related part
@@ -726,7 +728,7 @@ static int kddm_notification(struct notifier_block *nb, hotplug_event_t event,
 		set_remove(&node_set->v);
 		break;
 	case HOTPLUG_NOTIFY_FAIL:
-		set_failure(&node_set->v);
+//		set_failure(&node_set->v);
 		break;
 	default:
 		break;
@@ -737,8 +739,8 @@ static int kddm_notification(struct notifier_block *nb, hotplug_event_t event,
 
 int kddm_hotplug_init(void){
 	rpc_register(KDDM_ADVERTISE_OWNER, handle_set_advertise_owner, 0);
-	rpc_register(KDDM_COPYSET, handle_set_copyset, 0);
-	rpc_register(KDDM_SELECT_OWNER, handle_select_owner, 0);
+//	rpc_register(KDDM_COPYSET, handle_set_copyset, 0);
+//	rpc_register(KDDM_SELECT_OWNER, handle_select_owner, 0);
 
 	register_hotplug_notifier(kddm_notification, HOTPLUG_PRIO_KDDM);
 	return 0;
