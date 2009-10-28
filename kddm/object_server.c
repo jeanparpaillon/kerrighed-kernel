@@ -941,7 +941,7 @@ regular_case:
 			  break;
 		  }
 
-		  if (!kddm_ft_linked (set, msg->objid))
+		  if (!kddm_ft_linked (set))
 			  /* The object can be created on the faulting node */
 			  send_back_object_first_touch (set, obj_entry,
 							msg->objid,

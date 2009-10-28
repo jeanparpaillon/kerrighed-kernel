@@ -516,7 +516,7 @@ static int browse_failure(unsigned long objid, void *_obj_entry,
 	if(TEST_FAILURE_FLAG(obj_entry))
 		goto exit;
 
-	if (kddm_ft_linked(set, objid)) {
+	if (kddm_ft_linked(set)) {
 		if (!krgnode_online(get_prob_owner(obj_entry))){
 			printk("browse_failure: TODO: set %ld is FT Linked\n",
 			       set->id);

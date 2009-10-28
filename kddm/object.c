@@ -481,7 +481,7 @@ int check_sleep_on_local_exclusive (struct kddm_set * set,
 	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	if (object_frozen(obj_entry, set) &&
-	    (set->flags & KDDM_LOCAL_EXCLUSIVE)) {
+	    (kddm_local_exclusive(set))) {
 		sleep_on_kddm_obj(set, obj_entry, objid, flags);
 		res = 1;
 	}

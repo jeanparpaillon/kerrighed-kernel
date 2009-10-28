@@ -197,7 +197,7 @@ sleep:
 
 	if (object_frozen(obj_entry, set) &&
 	    (flags & KDDM_TRY_GRAB) &&
-	    (set->flags & KDDM_LOCAL_EXCLUSIVE))
+	    (kddm_local_exclusive (set)))
 		goto exit_try_failed;
 
 	if (check_sleep_on_local_exclusive(set, obj_entry, objid, flags))

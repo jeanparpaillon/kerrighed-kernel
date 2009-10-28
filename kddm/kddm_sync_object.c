@@ -28,7 +28,7 @@ int _kddm_sync_frozen_object(struct kddm_set *set,
 	struct kddm_obj *obj_entry;
 	int res = -1;
 
-	BUG_ON(!kddm_ft_linked(set, objid));
+	BUG_ON(!kddm_ft_linked(set));
 
 	obj_entry = __get_kddm_obj_entry(set, objid);
 	if (obj_entry == NULL)

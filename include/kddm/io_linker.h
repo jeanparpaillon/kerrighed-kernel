@@ -308,13 +308,6 @@ kerrighed_node_t kddm_io_default_owner (struct kddm_set * set, objid_t objid)
 					kerrighed_nb_nodes);
 }
 
-static inline int kddm_ft_linked(struct kddm_set *set, objid_t objid)
-{
-	return (set->flags & KDDM_FT_LINKED);
-}
-
-
-
 /** Request an IO linker to allocate an object.
  *  @author Renaud Lottiaux
  *

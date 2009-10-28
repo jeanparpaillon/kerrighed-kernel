@@ -150,8 +150,19 @@ typedef struct kddm_obj {
  *--------------------------------------------------------------------------*/
 
 /** KDDM set flags */
-#define KDDM_LOCAL_EXCLUSIVE  0x00000001
-#define KDDM_FT_LINKED        0x00000002
+#define _KDDM_LOCAL_EXCLUSIVE  0
+#define _KDDM_FT_LINKED        1
+
+#define KDDM_LOCAL_EXCLUSIVE  (1<<_KDDM_LOCAL_EXCLUSIVE)
+#define KDDM_FT_LINKED        (1<<_KDDM_FT_LINKED)
+
+#define kddm_local_exclusive(kddm) test_bit(_KDDM_LOCAL_EXCLUSIVE, &kddm->flags)
+#define set_kddm_local_exclusive(kddm) set_bit(_KDDM_LOCAL_EXCLUSIVE, &kddm->flags);
+#define clear_kddm_local_exclusive(kddm) clear_bit(_KDDM_LOCAL_EXCLUSIVE, &kddm->flags);
+
+#define kddm_ft_linked(kddm) test_bit(_KDDM_FT_LINKED, &kddm->flags)
+#define set_kddm_ft_linked(kddm) set_bit(_KDDM_FT_LINKED, &kddm->flags);
+#define clear_kddm_ft_linked(kddm) clear_bit(_KDDM_FT_LINKED, &kddm->flags);
 
 #define KDDM_BREAK_COW_COPY 1
 #define KDDM_BREAK_COW_INV 2

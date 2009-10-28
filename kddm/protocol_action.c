@@ -658,7 +658,7 @@ int object_first_touch(struct kddm_set * set,
 {
 	int res;
 
-	BUG_ON(kddm_ft_linked(set, objid) && !I_AM_DEFAULT_OWNER(set, objid));
+	BUG_ON(kddm_ft_linked(set) && !I_AM_DEFAULT_OWNER(set, objid));
 
 	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
