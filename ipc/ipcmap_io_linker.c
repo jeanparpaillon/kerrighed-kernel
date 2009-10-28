@@ -1,4 +1,4 @@
-/** Container IPC allocation bitmap Linker.
+/** KDDM IPC allocation bitmap Linker.
  *  @file ipcmap_io_linker.c
  *
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
@@ -12,7 +12,7 @@ struct kmem_cache *ipcmap_object_cachep;
 
 /*****************************************************************************/
 /*                                                                           */
-/*                       SHMID CONTAINER IO FUNCTIONS                        */
+/*                           SHMID KDDM IO FUNCTIONS                         */
 /*                                                                           */
 /*****************************************************************************/
 
@@ -34,11 +34,11 @@ int ipcmap_remove_object (void *object,
 	return 0;
 }
 
-/** First touch a container ipcmap object.
+/** First touch a kddm ipcmap object.
  *  @author Renaud Lottiaux
  *
  *  @param  obj_entr  Descriptor of the object to invalidate.
- *  @param  ctnr      Container descriptor
+ *  @param  set       KDDM descriptor
  *  @param  objid     Id of the object to invalidate
  */
 int ipcmap_first_touch_object (struct kddm_obj * obj_entry,
@@ -58,12 +58,12 @@ int ipcmap_first_touch_object (struct kddm_obj * obj_entry,
 	return 0;
 }
 
-/** Invalidate a container ipcmap object.
+/** Invalidate a KDDM ipcmap object.
  *  @author Renaud Lottiaux
  *
  *  @param  obj_entry  Descriptor of the object to invalidate.
- *  @param  set      Container descriptor
- *  @param  objid     Id of the object to invalidate
+ *  @param  set        KDDM descriptor
+ *  @param  objid      Id of the object to invalidate
  */
 int ipcmap_invalidate_object (struct kddm_obj * obj_entry,
 			      struct kddm_set * set,

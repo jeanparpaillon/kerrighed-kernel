@@ -103,7 +103,7 @@ static struct kern_ipc_perm *kcb_ipc_shm_findkey(struct ipc_ids *ids, key_t key)
 int krg_ipc_shm_newseg (struct ipc_namespace *ns, struct shmid_kernel *shp)
 {
 	shmid_object_t *shp_object;
-	struct kddm_set *ctnr;
+	struct kddm_set *kddm;
 	long *key_index;
 	int index, err;
 
@@ -122,20 +122,20 @@ int krg_ipc_shm_newseg (struct ipc_namespace *ns, struct shmid_kernel *shp)
 		goto err_put;
 	}
 
-	/* Create a container to host segment pages */
-	ctnr = _create_new_kddm_set (kddm_def_ns, 0, SHM_MEMORY_LINKER,
+	/* Create a KDDM set to host segment pages */
+	kddm = _create_new_kddm_set (kddm_def_ns, 0, SHM_MEMORY_LINKER,
 				     kerrighed_node_id, PAGE_SIZE,
 				     &shp->shm_perm.id, sizeof(int), 0);
 
-	if (IS_ERR(ctnr)) {
-		err = PTR_ERR(ctnr);
+	if (IS_ERR(kddm)) {
+		err = PTR_ERR(kddm);
 		goto err_put;
 	}
 
-	shp->shm_file->f_dentry->d_inode->i_mapping->kddm_set = ctnr;
+	shp->shm_file->f_dentry->d_inode->i_mapping->kddm_set = kddm;
 	shp->shm_file->f_op = &krg_shm_file_operations;
 
-	shp_object->set_id = ctnr->id;
+	shp_object->set_id = kddm->id;
 
 	shp_object->local_shp = shp;
 

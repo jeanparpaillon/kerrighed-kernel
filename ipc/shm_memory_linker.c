@@ -1,4 +1,4 @@
-/** Container Shared memory linker.
+/** KDDM shared memory linker.
  *  @file shm_memory_linker.c
  *
  *  Copyright (C) 2001-2006, INRIA, Universite de Rennes 1, EDF.
@@ -25,13 +25,13 @@
 extern int memory_first_touch (struct kddm_obj * obj_entry,
 			       struct kddm_set * set, objid_t objid,int flags);
 
-void memory_change_state (struct kddm_obj * objEntry, struct kddm_set * ctnr,
+void memory_change_state (struct kddm_obj * objEntry, struct kddm_set * kddm,
 			  objid_t objid, kddm_obj_state_t state);
 
 extern int memory_remove_page (void *object,
-			       struct kddm_set * ctnr, objid_t objid);
+			       struct kddm_set * kddm, objid_t objid);
 extern int memory_alloc_object (struct kddm_obj * objEntry,
-				struct kddm_set * ctnr, objid_t objid);
+				struct kddm_set * kddm, objid_t objid);
 
 extern int memory_import_object (struct kddm_obj *objEntry,
 				 struct rpc_desc *desc);
@@ -43,7 +43,7 @@ extern void map_kddm_page (struct vm_area_struct *vma, unsigned long address,
 
 /*****************************************************************************/
 /*                                                                           */
-/*                        SHM CONTAINER IO FUNCTIONS                         */
+/*                            SHM KDDM IO FUNCTIONS                          */
 /*                                                                           */
 /*****************************************************************************/
 
@@ -53,10 +53,10 @@ extern void map_kddm_page (struct vm_area_struct *vma, unsigned long address,
  *  @author Renaud Lottiaux
  *
  *  @param  objEntry  Descriptor of the page to insert.
- *  @param  ctnr      Container descriptor
+ *  @param  kddm      KDDM descriptor
  *  @param  padeid    Id of the page to insert.
  */
-int shm_memory_insert_page(struct kddm_obj *objEntry, struct kddm_set *ctnr,
+int shm_memory_insert_page(struct kddm_obj *objEntry, struct kddm_set *kddm,
 			   objid_t objid)
 {
 	struct page *page;
@@ -68,7 +68,7 @@ int shm_memory_insert_page(struct kddm_obj *objEntry, struct kddm_set *ctnr,
 	ns = find_get_krg_ipcns();
 	BUG_ON(!ns);
 
-	shm_id = *(int *) ctnr->private_data;
+	shm_id = *(int *) kddm->private_data;
 
 	shp = local_shm_lock(ns, shm_id);
 
@@ -99,14 +99,14 @@ error:
 
 
 
-/** Invalidate a container memory page.
+/** Invalidate a KDDM memory page.
  *  @author Renaud Lottiaux
  *
- *  @param  ctnr      Container descriptor
+ *  @param  kddm     KDDM descriptor
  *  @param  objid    Id of the page to invalidate
  */
 int shm_memory_invalidate_page (struct kddm_obj * objEntry,
-				struct kddm_set * ctnr,
+				struct kddm_set * kddm,
 				objid_t objid)
 {
 	int res ;
@@ -144,14 +144,14 @@ int shm_memory_invalidate_page (struct kddm_obj * objEntry,
 
 		if ((page_count (page) != objEntry->countx + extra_count)) {
 			WARNING ("Hum... page %p (%ld;%ld) has count %d;%d "
-				 "(against %d)\n", page, ctnr->id, objid,
+				 "(against %d)\n", page, kddm->id, objid,
 				 page_count (page), page_mapcount(page),
 				 objEntry->countx + extra_count);
 		}
 
 		if (PageActive(page)) {
 			WARNING ("Hum. page %p (%ld;%ld) has Active bit set\n",
-				 page, ctnr->id, objid);
+				 page, kddm->id, objid);
 			while (1)
 				schedule();
 		}
@@ -218,22 +218,22 @@ int shmem_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct inode *inode = vma->vm_file->f_dentry->d_inode;
 	struct page *page;
-	struct kddm_set *ctnr;
+	struct kddm_set *kddm;
 	unsigned long address;
 	objid_t objid;
 	int write_access = vmf->flags & FAULT_FLAG_WRITE;
 
 	address = (unsigned long)(vmf->virtual_address) & PAGE_MASK;
 
-	ctnr = inode->i_mapping->kddm_set;
+	kddm = inode->i_mapping->kddm_set;
 
-	BUG_ON(!ctnr);
+	BUG_ON(!kddm);
 	objid = vma->vm_pgoff + (address - vma->vm_start) / PAGE_SIZE;
 
 	if (write_access)
-		page = kddm_grab_object(kddm_def_ns, ctnr->id, objid);
+		page = kddm_grab_object(kddm_def_ns, kddm->id, objid);
 	else
-		page = kddm_get_object(kddm_def_ns, ctnr->id, objid);
+		page = kddm_get_object(kddm_def_ns, kddm->id, objid);
 
 	page_cache_get(page);
 
@@ -247,13 +247,13 @@ int shmem_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	inc_mm_counter(vma->vm_mm, file_rss);
 	page_add_file_rmap(page);
 
-	kddm_put_object (kddm_def_ns, ctnr->id, objid);
+	kddm_put_object (kddm_def_ns, kddm->id, objid);
 
 	vmf->page = page;
 	return 0;
 }
 
-/** Handle a wppage fault on a memory container.
+/** Handle a wppage fault on a memory KDDM set.
  *  @author Renaud Lottiaux
  *
  *  @param  vma       vm_area of the faulting address area
@@ -266,17 +266,17 @@ struct page *shmem_memory_wppage (struct vm_area_struct *vma,
 {
 	struct inode *inode = vma->vm_file->f_dentry->d_inode;
 	struct page *page;
-	struct kddm_set *ctnr;
+	struct kddm_set *kddm;
 	objid_t objid;
 
 	BUG_ON(!vma);
 
-	ctnr = inode->i_mapping->kddm_set;
+	kddm = inode->i_mapping->kddm_set;
 
-	BUG_ON(!ctnr);
+	BUG_ON(!kddm);
 	objid = vma->vm_pgoff + (address - vma->vm_start) / PAGE_SIZE;
 
-	page = kddm_grab_object (kddm_def_ns, ctnr->id, objid);
+	page = kddm_grab_object (kddm_def_ns, kddm->id, objid);
 
 	if (!page->mapping)
 		page->mapping = inode->i_mapping;
@@ -288,7 +288,7 @@ struct page *shmem_memory_wppage (struct vm_area_struct *vma,
 		page_cache_get(page);
 	}
 
-	kddm_put_object (kddm_def_ns, ctnr->id, objid);
+	kddm_put_object (kddm_def_ns, kddm->id, objid);
 
 	return page;
 }

@@ -1,7 +1,7 @@
-/** Container IPC MSG id Linker.
+/** KDDM IPC MSG id Linker.
  *  @file msgid_io_linker.h
  *
- *  Link containers and Linux IPC msg id mechanisms.
+ *  Link KDDM and Linux IPC msg id mechanisms.
  *  @author Matthieu Fertré
  */
 

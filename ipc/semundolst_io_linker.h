@@ -1,7 +1,7 @@
-/** Container SEM_UNDO proc_list Linker.
+/** KDDM SEM_UNDO proc_list Linker.
  *  @file semundolst_io_linker.h
  *
- *  Link containers and Linux SEM_UNDO proc list mechanisms.
+ *  Link KDDM and Linux SEM_UNDO proc list mechanisms.
  *  @author Matthieu Fertré
  */
 

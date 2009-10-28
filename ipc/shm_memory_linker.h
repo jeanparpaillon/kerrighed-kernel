@@ -1,7 +1,7 @@
-/** Container SHM Memory Linker.
+/** KDDM SHM Memory Linker.
  *  @file shm_memory_linker.h
  *
- *  Link containers and Linux SHM memory system.
+ *  Link KDDM and Linux SHM memory system.
  *  @author Renaud Lottiaux
  */
 

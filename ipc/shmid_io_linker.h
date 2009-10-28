@@ -1,7 +1,7 @@
-/** Container SHM id Linker.
+/** KDDM SHM id Linker.
  *  @file shmid_io_linker.h
  *
- *  Link containers and Linux SHM id mechanisms.
+ *  Link KDDM and Linux SHM id mechanisms.
  *  @author Renaud Lottiaux
  */
 

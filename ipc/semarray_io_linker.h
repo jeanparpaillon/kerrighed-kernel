@@ -1,7 +1,7 @@
-/** Container SEM Array Linker.
+/** KDDM SEM Array Linker.
  *  @file semarray_io_linker.h
  *
- *  Link containers and Linux SEM Array mechanisms.
+ *  Link KDDM and Linux SEM Array mechanisms.
  *  @author Matthieu Fertré
  */
 
