@@ -107,7 +107,6 @@ try_again:
 
 	case INV_OWNER:
 	case INV_COPY:
-	case INV_NO_COPY:
 	case WAIT_ACK_WRITE:
 	case WAIT_CHG_OWN_ACK:
 	case WAIT_OBJ_READ:

@@ -40,7 +40,6 @@ void *_kddm_find_object (struct kddm_set *set,
 	switch (OBJ_STATE(obj_entry)) {
 	case INV_OWNER:
 	case INV_COPY:
-	case INV_NO_COPY:
 	case INV_FILLING:
 		/* No object... */
 		break;

@@ -76,7 +76,6 @@ try_again:
 		}
 
 	case INV_COPY:
-	case INV_NO_COPY:
 		request_object_on_write(set, obj_entry, objid, flags);
 		CLEAR_SET(COPYSET(obj_entry));
 		kddm_change_obj_state(set, obj_entry, objid, WAIT_OBJ_WRITE);
@@ -105,10 +104,14 @@ sleep_on_wait_page:
 		}
 
 		if (flags & KDDM_NO_FT_REQ) {
-			if ((OBJ_STATE(obj_entry) == INV_OWNER) ||
-			    ((OBJ_STATE(obj_entry) == INV_NO_COPY) &&
-			     !(flags & KDDM_SEND_OWNERSHIP)))
+			if (OBJ_STATE(obj_entry) == INV_OWNER)
 				break;
+
+			if (OBJ_STATE(obj_entry) == INV_COPY) {
+				if (!(flags & KDDM_SEND_OWNERSHIP))
+					break;
+				BUG();
+			}
 		}
 
 		if (flags & KDDM_TRY_GRAB)

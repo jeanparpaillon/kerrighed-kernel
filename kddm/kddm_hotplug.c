@@ -110,7 +110,6 @@ static int browse_add_not_linked(unsigned long objid, void *_obj_entry,
 	case READ_COPY:
 	case INV_OWNER:
 	case INV_COPY:
-	case INV_NO_COPY:
 		if (get_prob_owner(obj_entry) == kerrighed_node_id)
 			change_prob_owner(obj_entry, newDefaultProbOwner);
 		break;
@@ -225,7 +224,6 @@ static int browse_remove(unsigned long objid, void *_obj_entry,
 
 	case INV_OWNER:
 	case INV_COPY:
-	case INV_NO_COPY:
 		break;
 
 	case WAIT_OBJ_RM_DONE:
@@ -586,7 +584,6 @@ static int browse_failure(unsigned long objid, void *_obj_entry,
 	};
 
 	case INV_COPY:
-	case INV_NO_COPY:
 		break;
 
 	case WAIT_ACK_INV:

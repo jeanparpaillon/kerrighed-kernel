@@ -49,7 +49,6 @@ void *generic_kddm_get_object(struct kddm_set *set,
 
 try_again:
 	switch (OBJ_STATE(obj_entry)) {
-	case INV_NO_COPY:
 	case INV_COPY:
 		request_object_on_read(set, obj_entry, objid, flags);
 		kddm_change_obj_state(set, obj_entry, objid, WAIT_OBJ_READ);
@@ -65,7 +64,7 @@ try_again:
 		sleep_on_kddm_obj(set, obj_entry, objid, flags);
 
 		if ((flags & KDDM_NO_FT_REQ) &&
-		    ((OBJ_STATE(obj_entry) == INV_NO_COPY) ||
+		    ((OBJ_STATE(obj_entry) == INV_COPY) ||
 		     (OBJ_STATE(obj_entry) == INV_OWNER)))
 			goto exit;
 

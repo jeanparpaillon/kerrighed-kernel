@@ -74,7 +74,6 @@ try_again:
 		/* Fall through */
 
 	case INV_COPY:
-	case INV_NO_COPY:
 		kddm_change_obj_state(set, obj_entry, objid, WAIT_OBJ_RM_DONE);
 
 		request_objects_remove_to_mgr(set, obj_entry, objid);

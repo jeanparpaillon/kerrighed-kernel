@@ -84,7 +84,6 @@ static inline int __handle_invalidation_ack (kerrighed_node_t sender,
 			  goto handle_ack;
 		  /* else fall through */
 	  case INV_COPY:
-	  case INV_NO_COPY:
 	  case READ_COPY:
 	  case WAIT_OBJ_READ:
 		  forward_object_server_msg (obj_entry, set, INVALIDATION_ACK,
@@ -352,7 +351,6 @@ int __handle_object_invalidation (kerrighed_node_t sender,
 
 	switch (OBJ_STATE(obj_entry)) {
 	  case INV_COPY:
-	  case INV_NO_COPY:
 		  /* Nothing to do... */
 		  break;
 
@@ -438,7 +436,6 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 
 	switch (OBJ_STATE(obj_entry)) {
 	  case INV_COPY:
-	  case INV_NO_COPY:
 	  case READ_COPY:
 		  if (flag) {
 			  kddm_change_obj_state (set, obj_entry, msg->objid,
@@ -513,7 +510,6 @@ static inline int __handle_send_ownership_req (kerrighed_node_t sender,
 
 	switch (OBJ_STATE(obj_entry)) {
 	  case INV_COPY:
-	  case INV_NO_COPY:
 		  /* Nothing to do */
 		  break;
 
@@ -619,7 +615,6 @@ void handle_object_receive (struct rpc_desc* desc,
 
 	switch (OBJ_STATE(obj_entry)) {
 	  case INV_COPY:
-	  case INV_NO_COPY:
 		  if (msg->flags & KDDM_SYNC_OBJECT)
 			  obj_state = READ_COPY;
 		  else {
@@ -743,7 +738,7 @@ int __handle_no_object (kerrighed_node_t sender,
 						 INV_OWNER);
 		  else
 			  kddm_change_obj_state (set, obj_entry, msg->objid,
-						 INV_NO_COPY);
+						 INV_COPY);
 
 		  wake_up_on_wait_object (obj_entry, set);
 
@@ -899,7 +894,6 @@ static inline int __handle_object_copy_req (kerrighed_node_t sender,
 		  break;
 
 	  case INV_COPY:
-	  case INV_NO_COPY:
 	  case READ_COPY:
 	  case READ_OWNER:
 	  case WRITE_OWNER:
@@ -931,7 +925,6 @@ regular_case:
 	switch (OBJ_STATE(obj_entry)) {
 	  case WAIT_OBJ_READ:
 	  case INV_COPY:
-	  case INV_NO_COPY:
 	  case READ_COPY:
 		  /* Shorten the prob owner chain on a write request */
 /*		  if (request_type == KDDM_OBJ_COPY_ON_WRITE) */
@@ -1098,7 +1091,6 @@ int __handle_object_remove_to_mgr_req (kerrighed_node_t sender,
 
 	switch (OBJ_STATE(obj_entry)) {
 	  case INV_COPY:
-	  case INV_NO_COPY:
 	  case READ_COPY:
 	  case WAIT_OBJ_READ:
 	  case WAIT_OBJ_WRITE:
