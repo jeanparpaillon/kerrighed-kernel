@@ -349,9 +349,9 @@ static struct kddm_obj *kddm_tree_lookup_obj_entry (struct kddm_set *set,
 {
 	struct kddm_obj *obj_entry;
 
-	spin_lock_bh (&set->table_lock);
+	spin_lock (&set->table_lock);
 	obj_entry = kddm_tree_lookup(set->obj_set, objid);
-	spin_unlock_bh (&set->table_lock);
+	spin_unlock (&set->table_lock);
 
 	return obj_entry;
 }
@@ -364,7 +364,7 @@ static struct kddm_obj *kddm_tree_get_obj_entry (struct kddm_set *set,
 {
 	struct kddm_obj **obj_ptr, *obj_entry;
 
-	spin_lock_bh (&set->table_lock);
+	spin_lock (&set->table_lock);
 
 	obj_ptr = (struct kddm_obj **)kddm_tree_lookup_slot(set->obj_set,
 					    objid, KDDM_TREE_ADD_ENTRY);
@@ -373,7 +373,7 @@ static struct kddm_obj *kddm_tree_get_obj_entry (struct kddm_set *set,
 		*obj_ptr = new_obj;
 
 	obj_entry = *obj_ptr;
-	spin_unlock_bh (&set->table_lock);
+	spin_unlock (&set->table_lock);
 	return obj_entry;
 }
 
@@ -382,9 +382,9 @@ static struct kddm_obj *kddm_tree_get_obj_entry (struct kddm_set *set,
 static void kddm_tree_remove_obj_entry (struct kddm_set *set,
 					objid_t objid)
 {
-	spin_lock_bh (&set->table_lock);
+	spin_lock (&set->table_lock);
 	kddm_tree_remove (set->obj_set, objid);
-	spin_unlock_bh (&set->table_lock);
+	spin_unlock (&set->table_lock);
 }
 
 
@@ -393,9 +393,9 @@ static void kddm_tree_for_each_obj_entry(struct kddm_set *set,
 					 int(*f)(unsigned long, void *, void*),
 					 void *data)
 {
-	spin_lock_bh (&set->table_lock);
+	spin_lock (&set->table_lock);
 	kddm_tree_for_each(set->obj_set, f, data);
-	spin_unlock_bh (&set->table_lock);
+	spin_unlock (&set->table_lock);
 }
 
 

@@ -694,7 +694,7 @@ static void set_failure(krgnodemask_t * vector)
 	int sync = kerrighed_node_id;
 	krgnodemask_t v;
 
-	hashtable_lock_bh(kddm_def_ns->kddm_set_table);
+	hashtable_lock(kddm_def_ns->kddm_set_table);
 
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
 				 kddm_set_clean_failure_cb, vector);
@@ -706,7 +706,7 @@ static void set_failure(krgnodemask_t * vector)
 
 	printk("TODO: we MUST lock creation/destruction of kddm_set during"
 	       "the recovery step and we should use read/write lock\n");
-	hashtable_unlock_bh(kddm_def_ns->kddm_set_table);
+	hashtable_unlock(kddm_def_ns->kddm_set_table);
 
 	desc = rpc_begin(KDDM_SELECT_OWNER,
 			 krgnode_next_online_in_ring(kerrighed_node_id));

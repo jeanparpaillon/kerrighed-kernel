@@ -619,9 +619,9 @@ static void kddm_pt_for_each_obj_entry(struct kddm_set *set,
 
 	BUG_ON(!f);
 
-	spin_lock_bh(&mm->page_table_lock);
+	spin_lock(&mm->page_table_lock);
 	kddm_pt_for_each(set, mm, 0, PAGE_OFFSET, f, data);
-	spin_unlock_bh(&mm->page_table_lock);
+	spin_unlock(&mm->page_table_lock);
 }
 
 
