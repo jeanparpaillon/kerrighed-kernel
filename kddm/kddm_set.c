@@ -203,7 +203,8 @@ struct kddm_set *_generic_local_get_kddm_set(struct kddm_ns *ns,
 {
 	struct kddm_set *kddm_set;
 
-	down (&ns->table_sem);
+	if (!(flags & KDDM_LOCK_FREE))
+		down (&ns->table_sem);
 	kddm_set = __hashtable_find (ns->kddm_set_table, set_id);
 
 	if ( (kddm_set != NULL) && (flags & KDDM_CHECK_UNIQUE)) {
@@ -220,7 +221,8 @@ struct kddm_set *_generic_local_get_kddm_set(struct kddm_ns *ns,
 		atomic_inc(&kddm_set->count);
 
 found:
-	up (&ns->table_sem);
+	if (!(flags & KDDM_LOCK_FREE))
+		up (&ns->table_sem);
 
 	return kddm_set;
 }
@@ -338,12 +340,15 @@ check_err:
 
 /** Return a pointer to the given kddm_set. */
 
-struct kddm_set *_find_get_kddm_set(struct kddm_ns *ns,
-				    kddm_set_id_t set_id)
+struct kddm_set *__find_get_kddm_set(struct kddm_ns *ns,
+				     kddm_set_id_t set_id,
+				     int flags)
 {
 	struct kddm_set *kddm_set;
 
-	kddm_set = _local_get_alloc_kddm_set(ns, set_id, KDDM_SET_NEED_LOOKUP);
+	flags |= KDDM_ALLOC_STRUCT;
+	kddm_set = _generic_local_get_kddm_set(ns, set_id,
+					       KDDM_SET_NEED_LOOKUP, flags);
 	if (unlikely(IS_ERR(kddm_set)))
 		return kddm_set;
 

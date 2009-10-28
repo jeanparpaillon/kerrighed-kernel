@@ -41,6 +41,7 @@ enum
 
 #define KDDM_ALLOC_STRUCT 1
 #define KDDM_CHECK_UNIQUE 2
+#define KDDM_LOCK_FREE 4
 
 
 /** Return the manager id of the given kddm set */
@@ -191,8 +192,15 @@ static inline struct kddm_set *create_new_kddm_set(struct kddm_ns *ns,
 int _destroy_kddm_set(struct kddm_set * kddm_set);
 int destroy_kddm_set(struct kddm_ns *ns, kddm_set_id_t set_id);
 
-struct kddm_set *_find_get_kddm_set(struct kddm_ns *ns,
-				    kddm_set_id_t kddm_set_id);
+struct kddm_set *__find_get_kddm_set(struct kddm_ns *ns,
+				     kddm_set_id_t kddm_set_id,
+				     int flags);
+
+static inline struct kddm_set *_find_get_kddm_set(struct kddm_ns *ns,
+						  kddm_set_id_t kddm_set_id)
+{
+	return __find_get_kddm_set(ns, kddm_set_id, 0);
+}
 
 struct kddm_set *find_get_kddm_set(int ns_id,
 				   kddm_set_id_t set_id);
