@@ -33,17 +33,17 @@ static void handle_set_advertise_owner(struct rpc_desc* desc)
 
 	rpc_unpack_type(desc, set_id);
 
-	hashtable_lock(kddm_def_ns->kddm_set_table);
+	down (&kddm_def_ns->table_sem);
 	set = __hashtable_find(kddm_def_ns->kddm_set_table,
 			       set_id);
 
 	if(!set){
-		hashtable_unlock(kddm_def_ns->kddm_set_table);
+		up (&kddm_def_ns->table_sem);
 		return;
 	};
 
 	atomic_inc(&set->count);
-	hashtable_unlock(kddm_def_ns->kddm_set_table);
+	up (&kddm_def_ns->table_sem);
 
 	rpc_unpack_type(desc, objid);
 
@@ -167,10 +167,10 @@ static void kddm_set_add_cb(void *_set, void *_data)
 
 static void set_add(krgnodemask_t * vector)
 {
-	hashtable_lock(kddm_def_ns->kddm_set_table);
+	down (&kddm_def_ns->table_sem);
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
 				 kddm_set_add_cb, vector);
-	hashtable_unlock(kddm_def_ns->kddm_set_table);
+	up (&kddm_def_ns->table_sem);
 };
 
 /**
@@ -188,10 +188,10 @@ static int browse_remove(unsigned long objid, void *_obj_entry,
 	might_sleep();
 	switch (OBJ_STATE(obj_entry)) {
 	case READ_OWNER:
-		hashtable_unlock(kddm_def_ns->kddm_set_table);
+		up (&kddm_def_ns->table_sem);
 		_kddm_flush_object(kddm_set, objid,
 				   krgnode_next_online_in_ring(kerrighed_node_id));
-		hashtable_lock(kddm_def_ns->kddm_set_table);
+		down (&kddm_def_ns->table_sem);
 		return -1;
 		break;
 
@@ -253,11 +253,10 @@ static void set_remove(krgnodemask_t * vector)
 	printk("set_remove...\n");
 	return;
 
-	hashtable_lock(kddm_def_ns->kddm_set_table);
+	down (&kddm_def_ns->table_sem);
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
 				 kddm_set_remove_cb, vector);
-	hashtable_unlock(kddm_def_ns->kddm_set_table);
-
+	up (&kddm_def_ns->table_sem);
 };
 
 /**
@@ -440,12 +439,11 @@ static void handle_select_owner(struct rpc_desc *desc)
 			return;
 		} else {
 			// We received all the sync... we can continue the recovery mechanism
-			hashtable_lock(kddm_def_ns->kddm_set_table);
+			down (&kddm_def_ns->table_sem);
 			__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
 						 kddm_set_failure_cb,
 						 &failure_vector);
-
-			hashtable_unlock(kddm_def_ns->kddm_set_table);
+			up (&kddm_def_ns->table_sem);
 
 			return;
 		};
@@ -685,7 +683,7 @@ static void set_failure(krgnodemask_t * vector)
 	int sync = kerrighed_node_id;
 	krgnodemask_t v;
 
-	hashtable_lock(kddm_def_ns->kddm_set_table);
+	down (&kddm_def_ns->table_sem);
 
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
 				 kddm_set_clean_failure_cb, vector);
@@ -697,7 +695,7 @@ static void set_failure(krgnodemask_t * vector)
 
 	printk("TODO: we MUST lock creation/destruction of kddm_set during"
 	       "the recovery step and we should use read/write lock\n");
-	hashtable_unlock(kddm_def_ns->kddm_set_table);
+	up (&kddm_def_ns->table_sem);
 
 	desc = rpc_begin(KDDM_SELECT_OWNER,
 			 krgnode_next_online_in_ring(kerrighed_node_id));

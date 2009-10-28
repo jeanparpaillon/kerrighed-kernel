@@ -203,7 +203,7 @@ struct kddm_set *_generic_local_get_kddm_set(struct kddm_ns *ns,
 {
 	struct kddm_set *kddm_set;
 
-	hashtable_lock (ns->kddm_set_table);
+	down (&ns->table_sem);
 	kddm_set = __hashtable_find (ns->kddm_set_table, set_id);
 
 	if ( (kddm_set != NULL) && (flags & KDDM_CHECK_UNIQUE)) {
@@ -220,7 +220,7 @@ struct kddm_set *_generic_local_get_kddm_set(struct kddm_ns *ns,
 		atomic_inc(&kddm_set->count);
 
 found:
-	hashtable_unlock (ns->kddm_set_table);
+	up (&ns->table_sem);
 
 	return kddm_set;
 }
@@ -573,7 +573,9 @@ int __handle_req_kddm_set_destroy(kerrighed_node_t sender,
 	if (ns == NULL)
 		return -EINVAL;
 
-	kddm_set = hashtable_remove(ns->kddm_set_table, kddm_id.set_id);
+	down (&ns->table_sem);
+	kddm_set = __hashtable_remove(ns->kddm_set_table, kddm_id.set_id);
+	up (&ns->table_sem);
 
 	kddm_ns_put (ns);
 

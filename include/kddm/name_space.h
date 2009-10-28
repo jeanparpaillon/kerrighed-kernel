@@ -31,6 +31,7 @@ typedef struct kddm_ns_ops {
 
 typedef struct kddm_ns {
 	atomic_t count;
+	struct semaphore table_sem;
 	hashtable_t *kddm_set_table;
 	unique_id_root_t kddm_set_unique_id_root;
 	struct kddm_ns_ops *ops;

@@ -114,9 +114,11 @@ static void *s_start(struct seq_file *m, loff_t *pos)
 		seq_printf (m, "       Set ID           nr entries       nr objects     obj size      Set size     \n");
 
 	/* Assumption: KDDM set id 0 is never used. */
-	set = hashtable_find_next (kddm_def_ns->kddm_set_table, *pos,
-				   &found);
 
+	down (&kddm_def_ns->table_sem);
+	set = __hashtable_find_next (kddm_def_ns->kddm_set_table, *pos,
+				     &found);
+	up (&kddm_def_ns->table_sem);
 	*pos = found;
 	return set;
 }
