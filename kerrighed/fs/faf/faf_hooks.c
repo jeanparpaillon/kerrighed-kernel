@@ -31,6 +31,16 @@
 
 static DEFINE_MUTEX(faf_poll_mutex);
 
+static int unpack_res_prepare(struct rpc_desc *desc)
+{
+	int dummy, err;
+
+	err = rpc_unpack_type(desc, dummy);
+	if (err > 0)
+		err = -EPIPE;
+	return err;
+}
+
 /** Unpack the result value from a distant FAF operation with respect to
  *  distant signals.
  *  @author Renaud Lottiaux
@@ -160,6 +170,10 @@ ssize_t krg_faf_read (struct file * file,
 	/* Send read request */
 	rpc_pack_type(desc, msg);
 
+	nr = unpack_res_prepare(desc);
+	if (nr)
+		goto err;
+
 	/* Get number of bytes to receive */
 	nr = unpack_res(desc);
 	while (nr > 0) {
@@ -197,7 +211,7 @@ ssize_t krg_faf_write (struct file * file,
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_rw_msg msg;
-	ssize_t buf_size = PAGE_SIZE, r = 0;
+	ssize_t buf_size = PAGE_SIZE, r;
 	long offset = 0;
 	long to_send = count;
 	char *kbuff;
@@ -216,6 +230,10 @@ ssize_t krg_faf_write (struct file * file,
 	/* Send write request */
 	rpc_pack_type(desc, msg);
 
+	r = unpack_res_prepare(desc);
+	if (r)
+		goto err;
+
 	while (to_send > 0) {
 		if (to_send < PAGE_SIZE)
 			buf_size = to_send;
@@ -231,11 +249,11 @@ ssize_t krg_faf_write (struct file * file,
 		offset += buf_size;
 	}
 	r = unpack_res(desc);
-err:
-	rpc_end(desc, 0);
-
 	if (r == -EPIPE)
 		send_sig(SIGPIPE, current, 0);
+
+err:
+	rpc_end(desc, 0);
 
 	kfree (kbuff);
 

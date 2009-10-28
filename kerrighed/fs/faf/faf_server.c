@@ -76,11 +76,19 @@ void handle_faf_read (struct rpc_desc* desc,
 		      void *msgIn, size_t size)
 {
 	struct faf_rw_msg *msg = msgIn;
-	char *buf;
+	char *buf = NULL;
 	long buf_size = PAGE_SIZE;
-	ssize_t to_read, r = -ENOMEM;
-	sigset_t sigset, oldsigset;
+	ssize_t to_read, r;
+	int dummy = 0;
 
+	current->sighand->action[SIGINT - 1].sa.sa_handler = SIG_DFL;
+	r = rpc_pack_type(desc, dummy);
+	if (r) {
+		rpc_cancel(desc);
+		goto ignore;
+	}
+
+	r = -ENOMEM;
 	buf = kmalloc (PAGE_SIZE, GFP_KERNEL);
 	if (buf == NULL)
 		goto exit;
@@ -90,13 +98,7 @@ void handle_faf_read (struct rpc_desc* desc,
 		if (to_read < PAGE_SIZE)
 			buf_size = to_read;
 
-		sigfillset(&sigset);
-		sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
-
 		r = sys_read (msg->server_fd, buf, buf_size);
-
-		sigprocmask(SIG_SETMASK, &oldsigset, NULL);
-		flush_signals(current);
 
 		if (r > 0) {
 			rpc_pack_type(desc, r);
@@ -116,6 +118,9 @@ exit:
 	rpc_pack_type(desc, r);
 	if (buf)
 		kfree (buf);
+
+ignore:
+	ignore_signals(current);
 }
 
 /** Handler for writing in a FAF open file.
@@ -129,10 +134,15 @@ void handle_faf_write (struct rpc_desc* desc,
 {
 	struct faf_rw_msg *msg = msgIn;
 	long to_recv;
-	char *buf;
+	char *buf = NULL;
 	ssize_t buf_size = PAGE_SIZE;
 	ssize_t r, nr_received = -ENOMEM;
-	sigset_t sigset, oldsigset;
+	int dummy = 0;
+
+	current->sighand->action[SIGINT - 1].sa.sa_handler = SIG_DFL;
+	r = rpc_pack_type(desc, dummy);
+	if (r)
+		goto cancel;
 
 	buf = kmalloc (PAGE_SIZE, GFP_KERNEL);
 	if (buf == NULL)
@@ -147,13 +157,8 @@ void handle_faf_write (struct rpc_desc* desc,
 			nr_received = -EPIPE;
 			goto err;
 		}
-		sigfillset(&sigset);
-		sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
 
 		r = sys_write (msg->server_fd, buf, buf_size);
-
-		sigprocmask(SIG_SETMASK, &oldsigset, NULL);
-		flush_signals(current);
 
 		/* The last write failed. Break the write sequence */
 		if (r < 0) {
@@ -166,9 +171,12 @@ void handle_faf_write (struct rpc_desc* desc,
 err:
 	rpc_pack_type(desc, nr_received);
 	if (nr_received < 0)
+cancel:
 		rpc_cancel(desc);
 	if (buf)
 		kfree (buf);
+
+	ignore_signals(current);
 
 	return;
 }
