@@ -177,7 +177,6 @@ sleep_on_wait_page:
 	case WAIT_OBJ_RM_ACK:
 	case WAIT_OBJ_RM_ACK2:
 	case WAIT_CHG_OWN_ACK:
-	case WAIT_RECEIVED_ACK:
 sleep:
 		if (flags & KDDM_ASYNC_REQ)
 			goto exit_no_freeze;

@@ -86,7 +86,6 @@ try_again:
 	case WAIT_OBJ_RM_DONE:
 	case WAIT_OBJ_RM_ACK:
 	case WAIT_OBJ_RM_ACK2:
-	case WAIT_RECEIVED_ACK:
 		sleep_on_kddm_obj(set, obj_entry, objid, flags);
 		goto try_again;
 

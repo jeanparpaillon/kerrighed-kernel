@@ -47,7 +47,6 @@ void *_kddm_find_object (struct kddm_set *set,
 
 	case WAIT_ACK_INV:
 	case WAIT_CHG_OWN_ACK:
-	case WAIT_RECEIVED_ACK:
 		break;
 
 	case WAIT_OBJ_RM_DONE:

@@ -87,7 +87,6 @@ static inline int __handle_invalidation_ack (kerrighed_node_t sender,
 	  case INV_NO_COPY:
 	  case READ_COPY:
 	  case WAIT_OBJ_READ:
-	  case WAIT_RECEIVED_ACK:
 		  forward_object_server_msg (obj_entry, set, INVALIDATION_ACK,
 					     msg);
 		  break;
@@ -913,7 +912,6 @@ static inline int __handle_object_copy_req (kerrighed_node_t sender,
 	  case WAIT_ACK_WRITE:
 	  case INV_OWNER:
 	  case INV_FILLING:
-	  case WAIT_RECEIVED_ACK:
 		  /* Here, we receive a copy request following a flush on the
 		   * sending node. Our copy request has been served by the
 		   * flush. We can ignore this message.
@@ -935,7 +933,6 @@ regular_case:
 	  case INV_COPY:
 	  case INV_NO_COPY:
 	  case READ_COPY:
-	  case WAIT_RECEIVED_ACK:
 		  /* Shorten the prob owner chain on a write request */
 /*		  if (request_type == KDDM_OBJ_COPY_ON_WRITE) */
 /*			  change_prob_owner(obj_entry, msg->new_owner); */
@@ -1105,7 +1102,6 @@ int __handle_object_remove_to_mgr_req (kerrighed_node_t sender,
 	  case READ_COPY:
 	  case WAIT_OBJ_READ:
 	  case WAIT_OBJ_WRITE:
-	  case WAIT_RECEIVED_ACK:
 		  forward_object_server_msg (obj_entry, set,
 					     REQ_OBJECT_REMOVE_TO_MGR, msg);
 		  break;

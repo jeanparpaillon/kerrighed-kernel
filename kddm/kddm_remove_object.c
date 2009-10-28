@@ -90,7 +90,6 @@ try_again:
 	case WAIT_ACK_WRITE:
 	case WAIT_OBJ_WRITE:
 	case WAIT_CHG_OWN_ACK:
-	case WAIT_RECEIVED_ACK:
 	case WAIT_ACK_INV:
 	case INV_FILLING:
 		__sleep_on_kddm_obj(set, obj_entry, objid, 0);

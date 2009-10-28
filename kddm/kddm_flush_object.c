@@ -110,7 +110,6 @@ try_again:
 	case INV_NO_COPY:
 	case WAIT_ACK_WRITE:
 	case WAIT_CHG_OWN_ACK:
-	case WAIT_RECEIVED_ACK:
 	case WAIT_OBJ_READ:
 	case WAIT_OBJ_WRITE:
 	case INV_FILLING:

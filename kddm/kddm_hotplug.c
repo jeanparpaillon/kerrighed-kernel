@@ -117,7 +117,6 @@ static int browse_add_not_linked(unsigned long objid, void *_obj_entry,
 
 	case WAIT_OBJ_RM_DONE:
 	case WAIT_OBJ_RM_ACK:
-	case WAIT_RECEIVED_ACK:
 		PANIC ("Case not yet managed\n");
 
 	default:
@@ -230,7 +229,6 @@ static int browse_remove(unsigned long objid, void *_obj_entry,
 		break;
 
 	case WAIT_OBJ_RM_DONE:
-	case WAIT_RECEIVED_ACK:
 		PANIC ("Case not yet managed\n");
 
 	default:
@@ -603,10 +601,6 @@ static int browse_failure(unsigned long objid, void *_obj_entry,
 
 	case WAIT_OBJ_RM_ACK2:
 		printk("kddm_set_failure_cb: WAIT_OBJ_RM_ACK2: todo\n");
-		break;
-
-	case WAIT_RECEIVED_ACK:
-		printk("kddm_set_failure_cb: WAIT_RECEIVED_ACK: todo\n");
 		break;
 
 	case WAIT_ACK_WRITE:
