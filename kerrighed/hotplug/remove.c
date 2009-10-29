@@ -27,25 +27,24 @@
 
 static void do_local_node_remove(struct hotplug_context *ctx)
 {
-	kerrighed_node_t node;
+	krgnodemask_t new_online;
 
 	SET_KERRIGHED_NODE_FLAGS(KRGFLAGS_STOPPING);
 	printk("do_local_node_remove\n");
 
 	printk("...notify local\n");
 	hotplug_remove_notify(ctx, HOTPLUG_NOTIFY_REMOVE_LOCAL);
+
+	krgnodes_copy(new_online, krgnode_online_map);
+
 	printk("...notify_distant\n");
 	hotplug_remove_notify(ctx, HOTPLUG_NOTIFY_REMOVE_DISTANT);
 
 	printk("...confirm\n");
-	rpc_sync_m(NODE_REMOVE_CONFIRM, &krgnode_online_map,
+	rpc_sync_m(NODE_REMOVE_CONFIRM, &new_online,
 		   &ctx->node_set, sizeof(ctx->node_set));
 
 	CLEAR_KERRIGHED_NODE_FLAGS(KRGFLAGS_RUNNING);
-
-	for_each_online_krgnode(node)
-		if(node != kerrighed_node_id)
-			clear_krgnode_online(node);
 
 	hooks_stop();
 	SET_KERRIGHED_NODE_FLAGS(KRGFLAGS_STOPPED);
@@ -108,9 +107,7 @@ static void handle_node_remove(struct rpc_desc *desc, void *data, size_t size)
 /* cluster receive the confirmation about the remove operation */
 static int handle_node_remove_confirm(struct rpc_desc *desc, void *data, size_t size)
 {
-	if(desc->client==kerrighed_node_id)
-		return 0;
-
+	BUG_ON(desc->client == kerrighed_node_id);
 	hotplug_remove_notify((void*)&desc->client, HOTPLUG_NOTIFY_REMOVE_ACK);
 	printk("Kerrighed: node %d removed\n", desc->client);
 	return 0;
