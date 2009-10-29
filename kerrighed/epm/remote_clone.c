@@ -86,7 +86,7 @@ int krg_do_fork(unsigned long clone_flags,
 	retval = -ENOMEM;
 	desc = rpc_begin(RPC_EPM_REMOTE_CLONE, distant_node);
 	if (!desc)
-		goto out;
+		goto out_action_stop;
 
 	remote_clone.type = EPM_REMOTE_CLONE;
 	remote_clone.remote_clone.target = distant_node;
