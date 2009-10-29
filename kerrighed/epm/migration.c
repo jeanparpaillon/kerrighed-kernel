@@ -163,9 +163,17 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	if (!migration_implemented(tsk))
 		return -ENOSYS;
 
+	membership_online_hold();
+	if (!krgnode_online(target)) {
+		membership_online_release();
+		return -ENONET;
+	}
+
 	desc = rpc_begin(RPC_EPM_MIGRATE, target);
-	if (!desc)
+	if (!desc) {
+		membership_online_release();
 		return -ENOMEM;
+	}
 
 	migration.type = EPM_MIGRATE;
 	migration.migrate.pid = task_pid_knr(tsk);
@@ -220,6 +228,8 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 		/* Do not notify a task having done vfork() */
 		cleanup_vfork_done(tsk);
 	}
+
+	membership_online_release();
 
 	return remote_pid > 0 ? 0 : remote_pid;
 }

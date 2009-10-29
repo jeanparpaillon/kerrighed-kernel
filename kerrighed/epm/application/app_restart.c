@@ -18,6 +18,7 @@
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/physical_fs.h>
+#include <kerrighed/hotplug.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
@@ -1190,6 +1191,8 @@ int app_restart(struct restart_request *req,
 	int r = 0;
 	int one_terminal;
 
+	membership_online_hold();
+
 	obj = kddm_grab_object(kddm_def_ns, APP_KDDM_ID, req->app_id);
 
 	if (obj->app_id == req->app_id) {
@@ -1234,6 +1237,8 @@ exit:
 	else
 exit_app_busy:
 		kddm_put_object(kddm_def_ns, APP_KDDM_ID, req->app_id);
+
+	membership_online_release();
 
 	return r;
 }
