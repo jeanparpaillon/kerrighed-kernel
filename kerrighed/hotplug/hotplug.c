@@ -47,7 +47,7 @@ int init_hotplug(void)
 	hotplug_hooks_init();
 
 	hotplug_add_init();
-#ifdef CONFIG_KRG_HOTPLUG_ADD
+#ifdef CONFIG_KRG_HOTPLUG_DEL
 	hotplug_remove_init();
 #endif
 	hotplug_failure_init();

@@ -5,29 +5,25 @@
 #define MODULE_NAME "Hotplug"
 
 #include <linux/kernel.h>
-#include <linux/spinlock.h>
 #include <linux/sched.h>
 #include <linux/fs.h>
 #include <linux/reboot.h>
 #include <linux/workqueue.h>
+#include <linux/uaccess.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/krginit.h>
-#include <kerrighed/hashtable.h>
 #include <kerrighed/hotplug.h>
 #include <kerrighed/krgflags.h>
-#include <asm/uaccess.h>
-#include <asm/ioctl.h>
-
-#include <tools/workqueue.h>
-#include <tools/krg_syscalls.h>
-#include <tools/krg_services.h>
-#include <rpc/rpc.h>
+#include <kerrighed/workqueue.h>
+#include <kerrighed/krg_syscalls.h>
+#include <kerrighed/krg_services.h>
+#include <net/krgrpc/rpc.h>
+#include <net/krgrpc/rpcid.h>
 
 #include "hotplug_internal.h"
 
-inline
-void do_local_node_remove(struct hotplug_node_set *node_set)
+static void do_local_node_remove(struct hotplug_node_set *node_set)
 {
 	kerrighed_node_t node;
 
@@ -61,12 +57,11 @@ void do_local_node_remove(struct hotplug_node_set *node_set)
 #endif
 }
 
-inline
-void do_other_node_remove(struct hotplug_node_set *node_set)
+static void do_other_node_remove(struct hotplug_node_set *node_set)
 {
 	printk("do_other_node_remove\n");
 	hotplug_remove_notify(node_set, HOTPLUG_NOTIFY_REMOVE_ADVERT);
-	rpc_async_m(NODE_REMOVE_ACK, &node_set->v, NULL, 0);				
+	rpc_async_m(NODE_REMOVE_ACK, &node_set->v, NULL, 0);
 }
 
 static void handle_node_remove(struct rpc_desc *desc, void *data, size_t size)
@@ -95,7 +90,7 @@ static int handle_node_remove_confirm(struct rpc_desc *desc, void *data, size_t 
 {
 	if(desc->client==kerrighed_node_id)
 		return 0;
-	
+
 	hotplug_remove_notify((void*)&desc->client, HOTPLUG_NOTIFY_REMOVE_ACK);
 	printk("Kerrighed: node %d removed\n", desc->client);
 	return 0;
@@ -107,7 +102,7 @@ inline void __fwd_remove_cb(struct hotplug_node_set *node_set)
 	if (node_set->subclusterid == kerrighed_subsession_id) {
 
 		rpc_async_m(NODE_REMOVE, &krgnode_online_map, node_set, sizeof(*node_set));
-		
+
 	} else {
 		kerrighed_node_t node;
 
@@ -176,7 +171,6 @@ static void handle_node_poweroff(struct rpc_desc *desc)
 
 	// should never be reached
 	BUG();
-
 }
 
 static int nodes_poweroff(void __user *arg)
@@ -185,7 +179,7 @@ static int nodes_poweroff(void __user *arg)
 	struct hotplug_node_set node_set;
 	int unused;
 	int err;
-	
+
 	if (copy_from_user(&__node_set, arg, sizeof(__node_set)))
 		return -EFAULT;
 
@@ -195,9 +189,8 @@ static int nodes_poweroff(void __user *arg)
 	if (err)
 		return err;
 
-	rpc_async_m(NODE_POWEROFF, &node_set.v,
-		    &unused, sizeof(unused));
-	
+	rpc_async_m(NODE_POWEROFF, &node_set.v, &unused, sizeof(unused));
+
 	return 0;
 }
 
@@ -215,9 +208,7 @@ static void handle_node_reboot(struct rpc_desc *desc, void *data, size_t size)
 
 	// should never be reached
 	BUG();
-
 }
-*/
 
 static int nodes_reboot(void __user *arg)
 {
@@ -239,7 +230,7 @@ static int nodes_reboot(void __user *arg)
 	
 	return 0;
 }
-
+*/
 
 int hotplug_remove_init(void)
 {
@@ -248,10 +239,10 @@ int hotplug_remove_init(void)
 	rpc_register_void(NODE_REMOVE_ACK, handle_node_remove_ack, 0);
 	rpc_register_void(NODE_FWD_REMOVE, handle_node_fwd_remove, 0);
 	rpc_register_int(NODE_REMOVE_CONFIRM, handle_node_remove_confirm, 0);
-	
+
 	register_proc_service(KSYS_HOTPLUG_REMOVE, nodes_remove);
 	register_proc_service(KSYS_HOTPLUG_POWEROFF, nodes_poweroff);
-	register_proc_service(KSYS_HOTPLUG_REBOOT, nodes_reboot);
+	/* register_proc_service(KSYS_HOTPLUG_REBOOT, nodes_reboot); */
 
 	return 0;
 }
