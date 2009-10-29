@@ -8,6 +8,8 @@ obj-$(CONFIG_KRG_HOTPLUG) += add.o cluster.o failure.o hooks.o hotplug.o hotplug
 obj-$(CONFIG_KRG_HOTPLUG_DEL) += remove.o
 obj-$(CONFIG_KRG_HOTPLUG_XCH) += replace.o
 
+obj-$(CONFIG_KRG_DEBUG) += debug_tools2.o
+
 EXTRA_CFLAGS += -I$(M) -Wall -Werror
 
 # end of file
