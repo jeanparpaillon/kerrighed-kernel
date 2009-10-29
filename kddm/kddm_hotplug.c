@@ -735,8 +735,8 @@ static int kddm_notification(struct notifier_block *nb, hotplug_event_t event,
 		set_add(&ctx->node_set.v);
 		break;
 	case HOTPLUG_NOTIFY_REMOVE:
-		node_set = data;
-		set_remove(&node_set->v);
+		ctx = data;
+		set_remove(&ctx->node_set.v);
 		break;
 	case HOTPLUG_NOTIFY_FAIL:
 		node_set = data;

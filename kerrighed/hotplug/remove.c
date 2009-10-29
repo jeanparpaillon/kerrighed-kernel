@@ -10,6 +10,8 @@
 #include <linux/reboot.h>
 #include <linux/workqueue.h>
 #include <linux/uaccess.h>
+#include <linux/nsproxy.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/krginit.h>
@@ -23,7 +25,7 @@
 
 #include "hotplug_internal.h"
 
-static void do_local_node_remove(struct hotplug_node_set *node_set)
+static void do_local_node_remove(struct hotplug_context *ctx)
 {
 	kerrighed_node_t node;
 
@@ -31,12 +33,13 @@ static void do_local_node_remove(struct hotplug_node_set *node_set)
 	printk("do_local_node_remove\n");
 
 	printk("...notify local\n");
-	hotplug_remove_notify(node_set, HOTPLUG_NOTIFY_REMOVE_LOCAL);
+	hotplug_remove_notify(ctx, HOTPLUG_NOTIFY_REMOVE_LOCAL);
 	printk("...notify_distant\n");
-	hotplug_remove_notify(node_set, HOTPLUG_NOTIFY_REMOVE_DISTANT);
+	hotplug_remove_notify(ctx, HOTPLUG_NOTIFY_REMOVE_DISTANT);
 
 	printk("...confirm\n");
-	rpc_sync_m(NODE_REMOVE_CONFIRM, &krgnode_online_map, node_set, sizeof(*node_set));
+	rpc_sync_m(NODE_REMOVE_CONFIRM, &krgnode_online_map,
+		   &ctx->node_set, sizeof(ctx->node_set));
 
 	CLEAR_KERRIGHED_NODE_FLAGS(KRGFLAGS_RUNNING);
 
@@ -57,25 +60,49 @@ static void do_local_node_remove(struct hotplug_node_set *node_set)
 #endif
 }
 
-static void do_other_node_remove(struct hotplug_node_set *node_set)
+static void do_other_node_remove(struct hotplug_context *ctx)
 {
 	printk("do_other_node_remove\n");
-	hotplug_remove_notify(node_set, HOTPLUG_NOTIFY_REMOVE_ADVERT);
+	hotplug_remove_notify(ctx, HOTPLUG_NOTIFY_REMOVE_ADVERT);
 }
 
 static void handle_node_remove(struct rpc_desc *desc, void *data, size_t size)
 {
-	struct hotplug_node_set *node_set;
+	struct hotplug_context *ctx;
+	struct krg_namespace *ns = find_get_krg_ns();
+	char *page;
+	int ret;
 
-	printk("handle_node_remove\n");
-	node_set = data;
+	BUG_ON(!ns);
+	ctx = hotplug_ctx_alloc(ns);
+	put_krg_ns(ns);
+	if (!ctx) {
+		printk("kerrighed: Failed to remove nodes!\n");
+		return;
+	}
+	ctx->node_set = *(struct hotplug_node_set *)data;
 
-	if(!krgnode_isset(kerrighed_node_id, node_set->v)){
-		do_other_node_remove(node_set);
+	if (krgnode_isset(kerrighed_node_id, ctx->node_set.v)) {
+		do_local_node_remove(ctx);
+		hotplug_ctx_put(ctx);
+
+		printk("kerrighed: Node removed\n");
 		return;
 	}
 
-	do_local_node_remove(node_set);
+	do_other_node_remove(ctx);
+	hotplug_ctx_put(ctx);
+
+	page = (char *)__get_free_page(GFP_KERNEL);
+	if (page) {
+		ret = krgnodelist_scnprintf(page, PAGE_SIZE, krgnode_online_map);
+		BUG_ON(ret >= PAGE_SIZE);
+		printk("Kerrighed is running on %d nodes: %s\n",
+		       num_online_krgnodes(), page);
+		free_page((unsigned long)page);
+	} else {
+		printk("Kerrighed is running on %d nodes\n", num_online_krgnodes());
+	}
 }
 
 /* cluster receive the confirmation about the remove operation */
@@ -89,43 +116,75 @@ static int handle_node_remove_confirm(struct rpc_desc *desc, void *data, size_t 
 	return 0;
 }
 
-static int do_nodes_remove(struct hotplug_node_set *node_set)
+static int do_nodes_remove(struct hotplug_context *ctx)
 {
-	return rpc_async_m(NODE_REMOVE, &krgnode_online_map,
-			   node_set, sizeof(*node_set));
+	char *page;
+	int ret;
+
+	page = (char *)__get_free_page(GFP_KERNEL);
+	if (!page)
+		return -ENOMEM;
+
+	ret = krgnodelist_scnprintf(page, PAGE_SIZE, ctx->node_set.v);
+	BUG_ON(ret >= PAGE_SIZE);
+	printk("kerrighed: Removing nodes %s ...\n", page);
+
+	free_page((unsigned long)page);
+
+	ret = rpc_async_m(NODE_REMOVE, &krgnode_online_map,
+			  &ctx->node_set, sizeof(ctx->node_set));
+	if (ret)
+		printk(KERN_ERR "kerrighed: Removing nodes failed! err=%d\n",
+		       ret);
+	else
+		printk("kerrighed: Removing nodes succeeded.\n");
+
+	return ret;
 }
 
 static int nodes_remove(void __user *arg)
 {
 	struct __hotplug_node_set __node_set;
-	struct hotplug_node_set node_set;
+	struct hotplug_context *ctx;
 	int err;
 
 	if (copy_from_user(&__node_set, arg, sizeof(struct __hotplug_node_set)))
 		return -EFAULT;
 
-	node_set.subclusterid = __node_set.subclusterid;
-	err = krgnodemask_copy_from_user(&node_set.v, &__node_set.v);
-	if (err)
-		return err;
+	ctx = hotplug_ctx_alloc(current->nsproxy->krg_ns);
+	if (!ctx)
+		return -ENOMEM;
 
-	if (node_set.subclusterid != kerrighed_subsession_id)
-		return -EPERM;
+	ctx->node_set.subclusterid = __node_set.subclusterid;
+	err = krgnodemask_copy_from_user(&ctx->node_set.v, &__node_set.v);
+	if (err)
+		goto out;
+
+	err = -EPERM;
+	if (ctx->node_set.subclusterid != kerrighed_subsession_id)
+		goto out;
 
 	if (!krgnode_online(kerrighed_node_id))
-		return -EPERM;
+		goto out;
 
-	if (!krgnodes_subset(node_set.v, krgnode_present_map))
-		return -ENONET;
+	err = -ENONET;
+	if (!krgnodes_subset(ctx->node_set.v, krgnode_present_map))
+		goto out;
 
-	if (!krgnodes_subset(node_set.v, krgnode_online_map))
-		return -EPERM;
+	err = -EPERM;
+	if (!krgnodes_subset(ctx->node_set.v, krgnode_online_map))
+		goto out;
 
 	/* TODO: Really required? */
-	if (krgnode_isset(kerrighed_node_id, node_set.v))
-		return -EPERM;
+	if (krgnode_isset(kerrighed_node_id, ctx->node_set.v))
+		goto out;
 
-	return do_nodes_remove(&node_set);
+	err = do_nodes_remove(ctx);
+
+out:
+	hotplug_ctx_put(ctx);
+
+	return err;
 }
 
 static void handle_node_poweroff(struct rpc_desc *desc)
