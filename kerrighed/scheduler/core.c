@@ -35,12 +35,11 @@ static int hotplug_notifier(struct notifier_block *nb,
 			    hotplug_event_t event,
 			    void *data)
 {
-	struct hotplug_context *ctx;
+	struct hotplug_context *ctx = data;
 	int err;
 
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:
-		ctx = data;
 		err = add(ctx);
 		break;
 	default:
@@ -67,12 +66,11 @@ static int post_hotplug_notifier(struct notifier_block *nb,
 				 hotplug_event_t event,
 				 void *data)
 {
-	struct hotplug_context *ctx;
+	struct hotplug_context *ctx = data;
 	int err;
 
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:
-		ctx = data;
 		err = post_add(ctx);
 		break;
 	default:

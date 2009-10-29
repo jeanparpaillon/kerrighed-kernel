@@ -65,8 +65,7 @@ int register_hotplug_notifier(int (*notifier_call)(struct notifier_block *, hotp
 
 struct hotplug_node_set;
 int hotplug_add_notify(struct hotplug_context *ctx, hotplug_event_t event);
-int hotplug_remove_notify(struct hotplug_node_set *nodes_set,
-			  hotplug_event_t event);
+int hotplug_remove_notify(struct hotplug_context *ctx, hotplug_event_t event);
 int hotplug_failure_notify(struct hotplug_node_set *nodes_set,
 			   hotplug_event_t event);
 

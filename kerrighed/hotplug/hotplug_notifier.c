@@ -53,11 +53,9 @@ int hotplug_add_notify(struct hotplug_context *ctx, hotplug_event_t event)
 	return raw_notifier_call_chain(&hotplug_chain_add, event, ctx);
 }
 
-int hotplug_remove_notify(struct hotplug_node_set *nodes_set,
-			  hotplug_event_t event)
+int hotplug_remove_notify(struct hotplug_context *ctx, hotplug_event_t event)
 {
-	return raw_notifier_call_chain(&hotplug_chain_remove, event,
-				       nodes_set);
+	return raw_notifier_call_chain(&hotplug_chain_remove, event, ctx);
 }
 
 int hotplug_failure_notify(struct hotplug_node_set *nodes_set,
