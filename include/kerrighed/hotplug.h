@@ -84,4 +84,8 @@ extern void (*kh_node_unreachable)(kerrighed_node_t nodeid);
 void krg_node_arrival(kerrighed_node_t nodeid);
 void krg_node_departure(kerrighed_node_t nodeid);
 
+void membership_online_hold(void);
+int membership_online_try_hold(void);
+void membership_online_release(void);
+
 #endif
