@@ -67,18 +67,15 @@ static int epm_remove(const krgnodemask_t *vector)
 static int epm_notification(struct notifier_block *nb, hotplug_event_t event,
 			    void *data)
 {
-	struct hotplug_context *ctx;
-	struct hotplug_node_set *node_set;
+	struct hotplug_context *ctx = data;
 	int err;
 
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:
-		ctx = data;
 		err = epm_add(ctx);
 		break;
 	case HOTPLUG_NOTIFY_REMOVE:
-		node_set = data;
-		err = epm_remove(&node_set->v);
+		err = epm_remove(&ctx->node_set.v);
 		break;
 	default:
 		err = 0;
