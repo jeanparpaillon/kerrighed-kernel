@@ -20,6 +20,14 @@ static void membership_online_remove(krgnodemask_t *vector)
 	kerrighed_nb_nodes -= krgnodes_weight(*vector);
 }
 
+static void membership_online_clear(krgnodemask_t *vector)
+{
+	BUG_ON(!krgnode_isset(kerrighed_node_id, *vector));
+
+	krgnodes_clear(krgnode_online_map);
+	kerrighed_nb_nodes = 0;
+}
+
 static
 int membership_online_notification(struct notifier_block *nb,
 				   hotplug_event_t event,
@@ -32,15 +40,13 @@ int membership_online_notification(struct notifier_block *nb,
 		membership_online_add(&ctx->node_set.v);
 		break;
 
-	case HOTPLUG_NOTIFY_REMOVE_LOCAL:{
-		kerrighed_node_t node;
-		for_each_online_krgnode(node)
-			if(node != kerrighed_node_id)
-				clear_krgnode_online(node);
-	}
-
+	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
 	case HOTPLUG_NOTIFY_REMOVE_ADVERT:
 		membership_online_remove(&ctx->node_set.v);
+		break;
+
+	case HOTPLUG_NOTIFY_REMOVE_DISTANT:
+		membership_online_clear(&ctx->node_set.v);
 		break;
 
 	default:
