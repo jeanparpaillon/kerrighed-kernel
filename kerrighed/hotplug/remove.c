@@ -96,38 +96,10 @@ static int handle_node_remove_confirm(struct rpc_desc *desc, void *data, size_t 
 	return 0;
 }
 
-inline void __fwd_remove_cb(struct hotplug_node_set *node_set)
+static int do_nodes_remove(struct hotplug_node_set *node_set)
 {
-	printk("__fwd_remove_cb: begin (%d / %d)\n", node_set->subclusterid, kerrighed_subsession_id);
-	if (node_set->subclusterid == kerrighed_subsession_id) {
-
-		rpc_async_m(NODE_REMOVE, &krgnode_online_map, node_set, sizeof(*node_set));
-
-	} else {
-		kerrighed_node_t node;
-
-		printk("__fwd_remove_cb: m1\n");
-		node = 0;
-		while ((universe[node].subid != node_set->subclusterid)
-		       && (node < KERRIGHED_MAX_NODES))
-			node++;
-		printk("__fwd_remove_cb: m2 (%d/%d)\n", node, KERRIGHED_MAX_NODES);
-
-		if (node == KERRIGHED_MAX_NODES) {
-			BUG();
-			printk
-			    ("WARNING: here we have no idea... may be the next one will be more luky!\n");
-			node = kerrighed_node_id + 1;
-		}
-
-		printk("send a NODE_FWD_REMOVE to %d\n", node);
-		rpc_async(NODE_FWD_REMOVE, node, node_set, sizeof(*node_set));
-	}
-}
-
-static void handle_node_fwd_remove(struct rpc_desc *desc, void *data, size_t size)
-{
-	__fwd_remove_cb(data);
+	return rpc_async_m(NODE_REMOVE, &krgnode_online_map,
+			   node_set, sizeof(*node_set));
 }
 
 static int nodes_remove(void __user *arg)
@@ -144,6 +116,12 @@ static int nodes_remove(void __user *arg)
 	if (err)
 		return err;
 
+	if (node_set.subclusterid != kerrighed_subsession_id)
+		return -EPERM;
+
+	if (!krgnode_online(kerrighed_node_id))
+		return -EPERM;
+
 	if (!krgnodes_subset(node_set.v, krgnode_present_map))
 		return -ENONET;
 
@@ -154,8 +132,7 @@ static int nodes_remove(void __user *arg)
 	if (krgnode_isset(kerrighed_node_id, node_set.v))
 		return -EPERM;
 
-	__fwd_remove_cb(&node_set);
-	return 0;
+	return do_nodes_remove(&node_set);
 }
 
 static void handle_node_poweroff(struct rpc_desc *desc)
@@ -237,7 +214,6 @@ int hotplug_remove_init(void)
 	rpc_register(NODE_POWEROFF, handle_node_poweroff, 0);
 	rpc_register_void(NODE_REMOVE, handle_node_remove, 0);
 	rpc_register_void(NODE_REMOVE_ACK, handle_node_remove_ack, 0);
-	rpc_register_void(NODE_FWD_REMOVE, handle_node_fwd_remove, 0);
 	rpc_register_int(NODE_REMOVE_CONFIRM, handle_node_remove_confirm, 0);
 
 	register_proc_service(KSYS_HOTPLUG_REMOVE, nodes_remove);
