@@ -33,13 +33,12 @@ int membership_online_notification(struct notifier_block *nb,
 				   hotplug_event_t event,
 				   void *data)
 {
-	
+	struct hotplug_context *ctx = data;
+
 	switch(event){
-	case HOTPLUG_NOTIFY_ADD:{
-		struct hotplug_context *ctx = data;
+	case HOTPLUG_NOTIFY_ADD:
 		membership_online_add(&ctx->node_set.v);
 		break;
-	}
 
 	case HOTPLUG_NOTIFY_REMOVE_LOCAL:{
 		kerrighed_node_t node;
@@ -47,18 +46,16 @@ int membership_online_notification(struct notifier_block *nb,
 			if(node != kerrighed_node_id)
 				clear_krgnode_online(node);
 	}
-		
-	case HOTPLUG_NOTIFY_REMOVE_ADVERT:{
-		struct hotplug_node_set *node_set = data;
-		membership_online_remove(&node_set->v);
+
+	case HOTPLUG_NOTIFY_REMOVE_ADVERT:
+		membership_online_remove(&ctx->node_set.v);
 		break;
-	}
 
 	default:
 		break;
 
 	} /* switch */
-	
+
 	return NOTIFY_OK;
 }
 

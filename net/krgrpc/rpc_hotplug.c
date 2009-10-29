@@ -26,16 +26,16 @@ static void rpc_remove(krgnodemask_t * vector)
 #ifdef CONFIG_KERRIGHED
 static int rpc_notification(struct notifier_block *nb, hotplug_event_t event,
 			    void *data){
-	struct hotplug_node_set *node_set = data;
-	
+	struct hotplug_context *ctx = data;
+
 	switch(event){
 	case HOTPLUG_NOTIFY_REMOVE:
-		rpc_remove(&node_set->v);
+		rpc_remove(&ctx->node_set.v);
 		break;
 	default:
 		break;
 	}
-	
+
 	return NOTIFY_OK;
 };
 #endif
