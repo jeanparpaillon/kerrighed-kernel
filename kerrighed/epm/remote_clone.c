@@ -83,10 +83,15 @@ int krg_do_fork(unsigned long clone_flags,
 	if (distant_node < 0 || distant_node == kerrighed_node_id)
 		goto out_action_stop;
 
+	membership_online_hold();
+	retval = -ENONET;
+	if (!krgnode_online(distant_node))
+		goto err_release;
+
 	retval = -ENOMEM;
 	desc = rpc_begin(RPC_EPM_REMOTE_CLONE, distant_node);
 	if (!desc)
-		goto out_action_stop;
+		goto err_release;
 
 	remote_clone.type = EPM_REMOTE_CLONE;
 	remote_clone.remote_clone.target = distant_node;
@@ -108,6 +113,8 @@ int krg_do_fork(unsigned long clone_flags,
 		rpc_cancel_sync(desc);
 	rpc_end(desc, 0);
 
+	membership_online_release();
+
 	if (remote_pid > 0 && (clone_flags & CLONE_VFORK)) {
 		freezer_do_not_count();
 		wait_for_completion(&vfork);
@@ -119,6 +126,10 @@ out_action_stop:
 
 out:
 	return remote_pid;
+
+err_release:
+	membership_online_release();
+	goto out_action_stop;
 }
 
 static void handle_remote_clone(struct rpc_desc *desc, void *msg, size_t size)
