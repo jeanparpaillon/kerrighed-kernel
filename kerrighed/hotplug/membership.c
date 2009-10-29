@@ -6,26 +6,18 @@
 
 static void membership_online_add(krgnodemask_t *vector)
 {
-	kerrighed_node_t i;
+	BUG_ON(krgnodes_intersects(*vector, krgnode_online_map));
 
-	__for_each_krgnode_mask(i, vector){
-		if(krgnode_online(i))
-			continue;
-		set_krgnode_online(i);
-		kerrighed_nb_nodes++;
-	}
+	krgnodes_or(krgnode_online_map, krgnode_online_map, *vector);
+	kerrighed_nb_nodes += krgnodes_weight(*vector);
 }
 
 static void membership_online_remove(krgnodemask_t *vector)
 {
-	kerrighed_node_t i;
+	BUG_ON(!krgnodes_subset(*vector, krgnode_online_map));
 
-	__for_each_krgnode_mask(i, vector){
-		if(!krgnode_online(i))
-			continue;
-		clear_krgnode_online(i);
-		kerrighed_nb_nodes--;
-	}
+	krgnodes_andnot(krgnode_online_map, krgnode_online_map, *vector);
+	kerrighed_nb_nodes -= krgnodes_weight(*vector);
 }
 
 static
