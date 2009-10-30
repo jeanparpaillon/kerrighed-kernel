@@ -38,7 +38,6 @@ struct scheduler {
 	struct global_config_item global_item; /** global_config subsystem */
 
 	krgnodemask_t node_set;
-	struct mutex node_set_mutex;
 	int node_set_exclusive;
 
 	struct list_head list;
@@ -336,7 +335,6 @@ static int do_update_node_set(struct scheduler *s, const krgnodemask_t *new_set)
 	int err = -EBUSY;
 
 	mutex_lock(&schedulers_list_mutex);
-	mutex_lock(&s->node_set_mutex);
 	spin_lock(&schedulers_list_lock);
 
 	krgnodes_andnot(removed_set, s->node_set, *new_set);
@@ -368,7 +366,6 @@ unlock:
 						 &added_set);
 		scheduler_policy_put(policy);
 	}
-	mutex_unlock(&s->node_set_mutex);
 	mutex_unlock(&schedulers_list_mutex);
 
 	return err;
@@ -524,7 +521,6 @@ static struct scheduler *scheduler_create(const char *name)
 		config_group_put(&s->group);
 		return NULL;
 	}
-	mutex_init(&s->node_set_mutex);
 	s->node_set_exclusive = 0;
 	s->default_groups[0] = &s->processes->group;
 	s->default_groups[1] = NULL;
