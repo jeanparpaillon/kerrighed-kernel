@@ -60,6 +60,7 @@ int global_config_start(void);
 void global_config_exit(void);
 int global_config_add(struct hotplug_context *ctx);
 int global_config_post_add(struct hotplug_context *ctx);
+int global_config_remove(struct hotplug_context *ctx);
 
 int remote_pipe_start(void);
 void remote_pipe_exit(void);
