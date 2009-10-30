@@ -70,5 +70,6 @@ void scheduler_probe_exit(void);
 struct config_group *scheduler_start(void);
 void scheduler_exit(void);
 int scheduler_post_add(struct hotplug_context *ctx);
+int scheduler_remove(struct hotplug_context *ctx);
 
 #endif /* __SCHEDULER_INTERNAL_H__ */
