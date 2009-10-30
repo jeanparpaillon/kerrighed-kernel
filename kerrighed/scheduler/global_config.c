@@ -762,6 +762,11 @@ struct string_list_object *create_begin(struct config_item *parent,
 	if (current->flags & PF_KTHREAD)
 		return NULL;
 
+	membership_online_hold();
+	err = -EPERM;
+	if (!krgnode_online(kerrighed_node_id))
+		goto err_online;
+
 	err = global_lock_try_writelock(0);
 	if (err)
 		goto err_lock;
@@ -788,6 +793,8 @@ err_list:
 err_path:
 	global_lock_unlock(0);
 err_lock:
+err_online:
+	membership_online_release();
 	list = ERR_PTR(err);
 	goto out;
 }
@@ -858,6 +865,7 @@ static void __create_end(struct string_list_object *list)
 	if (list) {
 		hashed_string_list_unlock_hash(global_items_set, list);
 		global_lock_unlock(0);
+		membership_online_release();
 	}
 }
 
@@ -902,6 +910,7 @@ static void create_error(struct string_list_object *list,
 	if (list) {
 		hashed_string_list_unlock_hash(global_items_set, list);
 		global_lock_unlock(0);
+		membership_online_release();
 	}
 }
 
@@ -1262,23 +1271,37 @@ global_config_attr_store_begin(struct config_item *item)
 {
 	struct string_list_object *list;
 	char *path;
+	int err;
 
 	if (current->flags & PF_KTHREAD)
 		return NULL;
 
+	membership_online_hold();
+	err = -EPERM;
+	if (!krgnode_online(kerrighed_node_id))
+		goto err;
+
+	err = -ENOMEM;
 	path = get_full_path(item, NULL);
 	if (!path)
-		return ERR_PTR(-ENOMEM);
+		goto err;
 
 	down_read(&attrs_rwsem);
 
 	list = hashed_string_list_lock_hash(global_items_set, path);
 	BUG_ON(!list);
 	put_path(path);
-	if (IS_ERR(list))
+	if (IS_ERR(list)) {
 		up_read(&attrs_rwsem);
+		err = PTR_ERR(list);
+		goto err;
+	}
 
 	return list;
+
+err:
+	membership_online_release();
+	return ERR_PTR(err);
 }
 
 static ssize_t attr_store_record(struct config_item *item,
@@ -1377,6 +1400,7 @@ out_unlock:
 
 	hashed_string_list_unlock_hash(global_items_set, list);
 	up_read(&attrs_rwsem);
+	membership_online_release();
 
 	return err;
 }
@@ -1394,6 +1418,7 @@ void global_config_attr_store_error(struct string_list_object *list,
 	if (list) {
 		hashed_string_list_unlock_hash(global_items_set, list);
 		up_read(&attrs_rwsem);
+		membership_online_release();
 	}
 }
 
