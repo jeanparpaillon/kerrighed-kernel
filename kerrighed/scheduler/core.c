@@ -31,6 +31,16 @@ static int add(struct hotplug_context *ctx)
 	return global_config_add(ctx);
 }
 
+static int remove_local(struct hotplug_context *ctx)
+{
+	return scheduler_remove(ctx);
+}
+
+static int remove_advert(struct hotplug_context *ctx)
+{
+	return scheduler_remove(ctx);
+}
+
 static int hotplug_notifier(struct notifier_block *nb,
 			    hotplug_event_t event,
 			    void *data)
@@ -41,6 +51,12 @@ static int hotplug_notifier(struct notifier_block *nb,
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:
 		err = add(ctx);
+		break;
+	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
+		err = remove_local(ctx);
+		break;
+	case HOTPLUG_NOTIFY_REMOVE_ADVERT:
+		err = remove_advert(ctx);
 		break;
 	default:
 		err = 0;
