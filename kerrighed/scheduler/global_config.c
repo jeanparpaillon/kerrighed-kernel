@@ -1651,6 +1651,29 @@ int global_config_post_add(struct hotplug_context *ctx)
 	return 0;
 }
 
+int global_config_remove(struct hotplug_context *ctx)
+{
+	krgnodemask_t nodes = krgnodemask_of_node(kerrighed_node_id);
+	struct global_config_item *item, *tmp;
+	enum config_op op;
+	int err = 0;
+
+	list_for_each_entry_safe_reverse(item, tmp, &items_head, list) {
+		if (item->drop_ops->is_symlink)
+			op = CO_UNLINK;
+		else
+			op = CO_RMDIR;
+		err = __global_config_dir_op(&nodes, op, item->path, NULL);
+		if (err)
+			goto out;
+	}
+
+	rpc_disable(GLOBAL_CONFIG_OP);
+
+out:
+	return err;
+}
+
 /**
  * Initialize the global config subsystem
  */

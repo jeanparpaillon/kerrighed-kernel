@@ -36,6 +36,11 @@ static int remove_local(struct hotplug_context *ctx)
 	return scheduler_remove(ctx);
 }
 
+static int remove_distant(struct hotplug_context *ctx)
+{
+	return global_config_remove(ctx);
+}
+
 static int remove_advert(struct hotplug_context *ctx)
 {
 	return scheduler_remove(ctx);
@@ -54,6 +59,9 @@ static int hotplug_notifier(struct notifier_block *nb,
 		break;
 	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
 		err = remove_local(ctx);
+		break;
+	case HOTPLUG_NOTIFY_REMOVE_DISTANT:
+		err = remove_distant(ctx);
 		break;
 	case HOTPLUG_NOTIFY_REMOVE_ADVERT:
 		err = remove_advert(ctx);
