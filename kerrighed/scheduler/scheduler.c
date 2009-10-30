@@ -328,6 +328,22 @@ static ssize_t node_set_show(struct scheduler *s, char *page)
 static int node_set_may_be_exclusive(const struct scheduler *s,
 				     const krgnodemask_t *node_set);
 
+static void policy_update_node_set(struct scheduler *scheduler,
+				   const krgnodemask_t *removed_set,
+				   const krgnodemask_t *added_set)
+{
+	struct scheduler_policy *policy;
+
+	policy = scheduler_get_scheduler_policy(scheduler);
+	if (policy) {
+		scheduler_policy_update_node_set(policy,
+						 &scheduler->node_set,
+						 removed_set,
+						 added_set);
+		scheduler_policy_put(policy);
+	}
+}
+
 static int do_update_node_set(struct scheduler *s, const krgnodemask_t *new_set)
 {
 	krgnodemask_t removed_set, added_set;
@@ -359,13 +375,8 @@ static int do_update_node_set(struct scheduler *s, const krgnodemask_t *new_set)
 unlock:
 	spin_unlock(&schedulers_list_lock);
 
-	if (policy) {
-		scheduler_policy_update_node_set(policy,
-						 new_set,
-						 &removed_set,
-						 &added_set);
-		scheduler_policy_put(policy);
-	}
+	if (!err)
+		policy_update_node_set(s, &removed_set, &added_set);
 	mutex_unlock(&schedulers_list_mutex);
 
 	return err;
