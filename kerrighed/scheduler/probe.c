@@ -17,6 +17,7 @@
 #include <kerrighed/krgflags.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
+#include <kerrighed/hotplug.h>
 #include <kerrighed/scheduler/pipe.h>
 #include <kerrighed/scheduler/global_config.h>
 #include <kerrighed/scheduler/probe.h>
@@ -473,14 +474,18 @@ ssize_t scheduler_probe_source_attribute_show_remote(struct config_item *item,
 	pipe = to_node_pipe(item);
 	node = pipe->node;
 
+	membership_online_hold();
+
+	r = -ENOENT;
 	if (!krgnode_online(node))
-		return -ENOENT;
+		goto out;
 
 	target = &pipe->probe_source->pipe.config.cg_item;
 
+	r = -ENOMEM;
 	desc = rpc_begin(SCHED_PIPE_SHOW_REMOTE_VALUE, node);
 	if (!desc)
-		return -ENOMEM;
+		goto out;
 
 	err = rpc_pack(desc, 0, NULL, 0); /* needed as trick */
 	if (err) { /* No other error than ENOMEM might arise at this time */
@@ -518,6 +523,9 @@ ssize_t scheduler_probe_source_attribute_show_remote(struct config_item *item,
 
 out_end:
 	rpc_end(desc, 0);
+
+out:
+	membership_online_release();
 
 	return r;
 
