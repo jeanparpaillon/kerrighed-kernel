@@ -71,6 +71,7 @@ to_scheduler_attribute(struct configfs_attribute *attr)
 
 static LIST_HEAD(schedulers_head);
 static DEFINE_SPINLOCK(schedulers_list_lock);
+static DEFINE_MUTEX(schedulers_list_mutex);
 
 static krgnodemask_t shared_set;
 static bool shared_set_initialized;
@@ -334,6 +335,7 @@ static int do_update_node_set(struct scheduler *s, const krgnodemask_t *new_set)
 	struct scheduler_policy *policy = NULL;
 	int err = -EBUSY;
 
+	mutex_lock(&schedulers_list_mutex);
 	mutex_lock(&s->node_set_mutex);
 	spin_lock(&schedulers_list_lock);
 
@@ -367,6 +369,7 @@ unlock:
 		scheduler_policy_put(policy);
 	}
 	mutex_unlock(&s->node_set_mutex);
+	mutex_unlock(&schedulers_list_mutex);
 
 	return err;
 }
@@ -458,6 +461,7 @@ node_set_exclusive_store(struct scheduler *s, const char *page, size_t count)
 	    || (last_read[1] != '\0' && last_read[1] != '\n'))
 		return -EINVAL;
 
+	mutex_lock(&schedulers_list_mutex);
 	spin_lock(&schedulers_list_lock);
 	if (new_state) {
 		err = make_node_set_exclusive(s);
@@ -466,6 +470,7 @@ node_set_exclusive_store(struct scheduler *s, const char *page, size_t count)
 		err = 0;
 	}
 	spin_unlock(&schedulers_list_lock);
+	mutex_unlock(&schedulers_list_mutex);
 
 	return err ? err : count;
 }
@@ -549,10 +554,12 @@ static void scheduler_drop(struct global_config_item *item)
 {
 	struct scheduler *scheduler =
 		container_of(item, struct scheduler, global_item);
+	mutex_lock(&schedulers_list_mutex);
 	spin_lock(&schedulers_list_lock);
 	list_del(&scheduler->list);
 	make_node_set_not_exclusive(scheduler);
 	spin_unlock(&schedulers_list_lock);
+	mutex_unlock(&schedulers_list_mutex);
 	config_group_put(&scheduler->group);
 }
 
@@ -602,10 +609,12 @@ static struct config_group *schedulers_make_group(struct config_group *group,
 					       name);
 	if (err)
 		goto err_global_end;
+	mutex_lock(&schedulers_list_mutex);
 	spin_lock(&schedulers_list_lock);
 	krgnodes_copy(s->node_set, shared_set);
 	list_add(&s->list, &schedulers_head);
 	spin_unlock(&schedulers_list_lock);
+	mutex_unlock(&schedulers_list_mutex);
 	__global_config_make_item_end(global_names);
 
 	ret = &s->group;
