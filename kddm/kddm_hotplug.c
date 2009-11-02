@@ -9,12 +9,15 @@
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/krginit.h>
 #include <linux/hashtable.h>
+#include <linux/cluster_barrier.h>
 
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/hotplug.h>
 #include <kddm/kddm.h>
 #include "protocol_action.h"
+
+struct cluster_barrier *kddm_barrier;
 
 /**
  *
@@ -165,10 +168,22 @@ static void kddm_set_add_cb(void *_set, void *_data)
 
 static void set_add(krgnodemask_t * vector)
 {
-	down (&kddm_def_ns->table_sem);
+	krgnodemask_t nodes;
+
+	krgnodes_copy(nodes, krgnode_online_map);
+
+	__krgnodes_or (&nodes, &nodes, vector, KERRIGHED_MAX_NODES);
+
+	freeze_kddm();
+
+	cluster_barrier(kddm_barrier, nodes, __first_krgnode(nodes));
+
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
 				 kddm_set_add_cb, vector);
-	up (&kddm_def_ns->table_sem);
+
+	cluster_barrier(kddm_barrier, nodes, __first_krgnode(nodes));
+
+	unfreeze_kddm();
 };
 
 /**
@@ -738,6 +753,9 @@ static int kddm_notification(struct notifier_block *nb, hotplug_event_t event,
 };
 
 int kddm_hotplug_init(void){
+	kddm_barrier = alloc_cluster_barrier(KDDM_HOTPLUG_BARRIER);
+	BUG_ON (IS_ERR(kddm_barrier));
+
 	rpc_register(KDDM_ADVERTISE_OWNER, handle_set_advertise_owner, 0);
 //	rpc_register(KDDM_COPYSET, handle_set_copyset, 0);
 //	rpc_register(KDDM_SELECT_OWNER, handle_select_owner, 0);

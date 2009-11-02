@@ -10,6 +10,7 @@
 
 enum static_cluster_barrier_id {
 	CLUSTER_BARRIER_NONE = 0,
+	KDDM_HOTPLUG_BARRIER,
 	CLUSTER_BARRIER_MAX,
 };
 
