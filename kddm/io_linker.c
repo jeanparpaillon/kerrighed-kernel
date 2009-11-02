@@ -21,6 +21,8 @@
 
 struct iolinker_struct *iolinker_list[MAX_IO_LINKER];
 
+krgnodemask_t krgnode_kddm_map;
+kerrighed_node_t kddm_nb_nodes;
 
 
 /*****************************************************************************/
@@ -401,8 +403,6 @@ int kddm_io_export_object (struct kddm_set * set,
 	return res;
 }
 
-
-
 kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
 					  objid_t objid,
 					  const krgnodemask_t *nodes,
@@ -425,6 +425,13 @@ kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
 	  default:
 		  return set->def_owner;
 	}
+}
+
+kerrighed_node_t kddm_io_default_owner (struct kddm_set * set, objid_t objid)
+{
+	return __kddm_io_default_owner (set, objid,
+					&krgnode_kddm_map,
+					kddm_nb_nodes);
 }
 
 
@@ -460,6 +467,9 @@ int register_io_linker (int linker_id,
 void io_linker_init (void)
 {
 	int i;
+
+	kddm_nb_nodes = kerrighed_nb_nodes;
+	krgnodes_copy(krgnode_kddm_map, krgnode_online_map);
 
 	for (i = 0; i < MAX_IO_LINKER; i++)
 		iolinker_list[i] = NULL;

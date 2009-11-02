@@ -19,6 +19,12 @@
 
 struct cluster_barrier *kddm_barrier;
 
+extern krgnodemask_t krgnode_kddm_map;
+extern kerrighed_node_t kddm_nb_nodes;
+extern kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
+						 objid_t objid,
+						 const krgnodemask_t *nodes,
+						 int nr_nodes);
 
 
 /*--------------------------------------------------------------------------*
@@ -148,6 +154,9 @@ static void set_add(krgnodemask_t * vector)
 
 	cluster_barrier(kddm_barrier, &param.new_nodes_map,
 			__first_krgnode(&param.new_nodes_map));
+
+	kddm_nb_nodes = param.new_nb_nodes;
+	krgnodes_copy(krgnode_kddm_map, param.new_nodes_map);
 
 	unfreeze_kddm();
 

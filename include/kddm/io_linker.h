@@ -283,27 +283,7 @@ int kddm_io_export_object (struct kddm_set * set,
 			   struct rpc_desc *desc,
                            struct kddm_obj *obj_entry);
 
-
-
-/** Return the default owner of the given object.
- *  @author Renaud Lottiaux
- *
- *  @param set          Kddm Set the object belong to.
- *  @param objid        Id of the object.
- *  @param nodes        Nodes assumed online to compute the default owner.
- *  @param nr_nodes     Number of nodes set in @nodes.
- */
-kerrighed_node_t __kddm_io_default_owner (struct kddm_set * set, objid_t objid,
-					  const krgnodemask_t * nodes,
-					  int nr_nodes);
-static
-inline
-kerrighed_node_t kddm_io_default_owner (struct kddm_set * set, objid_t objid)
-{
-	return __kddm_io_default_owner (set, objid,
-					&krgnode_online_map,
-					kerrighed_nb_nodes);
-}
+kerrighed_node_t kddm_io_default_owner (struct kddm_set * set, objid_t objid);
 
 /** Request an IO linker to allocate an object.
  *  @author Renaud Lottiaux
