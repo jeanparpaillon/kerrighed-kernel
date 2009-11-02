@@ -12,6 +12,7 @@
 #include <kerrighed/types.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/krgflags.h>
+#include <linux/cluster_barrier.h>
 #include <linux/unique_id.h>
 #include <net/krgrpc/rpc.h>
 #ifdef CONFIG_KRG_PROC
@@ -579,6 +580,8 @@ void __init kerrighed_init(void){
 
 	if (init_kerrighed_communication_system())
 		return;
+
+	init_cluster_barrier();
 
 #ifdef CONFIG_KERRIGHED
 	if (init_kerrighed_upper_layers())
