@@ -118,6 +118,8 @@ struct ipc_namespace;
 bool ipc_used(struct ipc_namespace *ns);
 #endif
 
+void cleanup_ipc_objects (void);
+
 #endif /* __KERNEL__ */
 
 #endif /* _LINUX_IPC_H */

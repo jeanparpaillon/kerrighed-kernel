@@ -14,6 +14,7 @@
 #include <linux/syscalls.h>
 #include <linux/sysfs.h>
 #include <linux/kobject.h>
+#include <linux/ipc.h>
 #include <asm/uaccess.h>
 #include <asm/ioctl.h>
 #include <kerrighed/sys/types.h>
@@ -378,6 +379,10 @@ static bool krg_container_may_conflict(struct krg_namespace *ns)
 
 static int krg_container_cleanup(struct krg_namespace *ns)
 {
+#ifdef CONFIG_KRG_IPC
+	cleanup_ipc_objects ();
+#endif
+
 	return 0;
 }
 

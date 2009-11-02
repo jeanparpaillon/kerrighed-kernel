@@ -279,6 +279,32 @@ int proc_shm_restart(void *arg)
 	return r;
 }
 
+
+static void do_cleanup_ipc_objects (unique_id_t set_id)
+{
+	ipcmap_object_t *ipc_map;
+
+	ipc_map = kddm_grab_object_no_ft(kddm_def_ns, set_id, 0);
+	if (ipc_map) {
+		BUG_ON (ipc_map->alloc_map != 0);
+		kddm_remove_frozen_object(kddm_def_ns, set_id, 0);
+	}
+	else
+		kddm_put_object(kddm_def_ns, set_id, 0);
+}
+
+
+
+/* Get rid of possible conflicting objects before node addition.
+ */
+void cleanup_ipc_objects ()
+{
+	do_cleanup_ipc_objects (MSGMAP_KDDM_ID);
+	do_cleanup_ipc_objects (SEMMAP_KDDM_ID);
+	do_cleanup_ipc_objects (SHMMAP_KDDM_ID);
+}
+
+
 /*****************************************************************************/
 /*                                                                           */
 /*                              INITIALIZATION                               */
