@@ -19,44 +19,6 @@
 
 struct cluster_barrier *kddm_barrier;
 
-/**
- *
- * Tools related part
- *
- **/
-
-static void handle_set_advertise_owner(struct rpc_desc* desc)
-{
-	struct kddm_obj *obj_entry;
-	struct kddm_set *set;
-	kddm_set_id_t set_id;
-	objid_t objid;
-
-	rpc_unpack_type(desc, set_id);
-
-	down (&kddm_def_ns->table_sem);
-	set = __hashtable_find(kddm_def_ns->kddm_set_table,
-			       set_id);
-
-	if(!set){
-		up (&kddm_def_ns->table_sem);
-		return;
-	};
-
-	atomic_inc(&set->count);
-	up (&kddm_def_ns->table_sem);
-
-	rpc_unpack_type(desc, objid);
-
-	obj_entry = __get_alloc_kddm_obj_entry(set, objid);
-
-	change_prob_owner(obj_entry, rpc_desc_get_client(desc));
-
-	if(OBJ_STATE(obj_entry) == INV_OWNER)
-		kddm_change_obj_state(set, obj_entry, objid, INV_COPY);
-
-	put_kddm_obj_entry(set, obj_entry, objid);
-};
 
 
 /*--------------------------------------------------------------------------*
@@ -778,7 +740,6 @@ int kddm_hotplug_init(void){
 	kddm_barrier = alloc_cluster_barrier(KDDM_HOTPLUG_BARRIER);
 	BUG_ON (IS_ERR(kddm_barrier));
 
-	rpc_register(KDDM_ADVERTISE_OWNER, handle_set_advertise_owner, 0);
 //	rpc_register(KDDM_COPYSET, handle_set_copyset, 0);
 //	rpc_register(KDDM_SELECT_OWNER, handle_select_owner, 0);
 
