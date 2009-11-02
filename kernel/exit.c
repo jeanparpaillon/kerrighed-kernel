@@ -1125,13 +1125,11 @@ NORET_TYPE void do_exit(long code)
 	exit_irq_thread();
 
 #ifdef CONFIG_KRG_HOTPLUG
-	if (tsk->nsproxy->krg_ns && tsk == tsk->nsproxy->krg_ns->root_task) {
-		krg_ns_root_exit(tsk);
-		printk(KERN_WARNING
-		       "kerrighed: Root task exiting! Leaking zombies.\n");
-		set_current_state(TASK_UNINTERRUPTIBLE);
-		schedule();
-	}
+	group_dead = atomic_dec_and_test(&tsk->signal->live);
+	if (tsk->nsproxy->krg_ns
+	    && same_thread_group(tsk, tsk->nsproxy->krg_ns->root_task)
+	    && group_dead)
+		krg_ns_root_exit(tsk->nsproxy->krg_ns);
 #endif
 
 #ifdef CONFIG_KRG_PROC
@@ -1152,7 +1150,9 @@ NORET_TYPE void do_exit(long code)
 
 	acct_update_integrals(tsk);
 
+#ifndef CONFIG_KRG_HOTPLUG
 	group_dead = atomic_dec_and_test(&tsk->signal->live);
+#endif
 	if (group_dead) {
 		hrtimer_cancel(&tsk->signal->real_timer);
 		exit_itimers(tsk->signal);
