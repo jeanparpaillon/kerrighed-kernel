@@ -572,6 +572,8 @@ struct shared_object_operations cr_shared_semundo_ops = {
 
 /******************************************************************************/
 
+static const int CR_MSG_MAGIC = 0x33333311;
+
 /* mostly copy/paste from store_msg */
 static int export_full_one_msg(ghost_t *ghost, struct msg_msg *msg)
 {
@@ -654,6 +656,10 @@ static int export_full_local_sysv_msgq(ghost_t *ghost, int msgid)
 		r = -EPERM;
 		goto out_unlock;
 	}
+
+	r = ghost_write(ghost, &CR_MSG_MAGIC, sizeof(int));
+	if (r)
+		goto out_unlock;
 
 	r = ghost_write(ghost, msq, sizeof(struct msg_queue));
 	if (r)
@@ -968,10 +974,19 @@ out:
 
 int import_full_sysv_msgq(ghost_t *ghost)
 {
-	int r;
+	int r, magic;
 	struct ipc_namespace *ns;
 	struct msg_queue copy_msq, *msq;
 	struct ipc_params params;
+
+	r = ghost_read(ghost, &magic, sizeof(int));
+	if (r)
+		goto out;
+
+	if (magic != CR_MSG_MAGIC) {
+		r = -EINVAL;
+		goto out;
+	}
 
 	r = ghost_read(ghost, &copy_msq, sizeof(struct msg_queue));
 	if (r)
