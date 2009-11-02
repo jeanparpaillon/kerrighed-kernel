@@ -323,9 +323,19 @@ void krg_ns_root_exit(struct krg_namespace *ns)
 	if (ns == cluster_init_helper_ns)
 		krg_container_abort(-EAGAIN);
 
+#ifdef CONFIG_KRG_HOTPLUG_DEL
+	/* TODO: Make it race-free */
+	if (!IS_KERRIGHED_NODE(KRGFLAGS_STOPPING)
+	    && IS_KERRIGHED_NODE(KRGFLAGS_RUNNING))
+		if (self_remove(ns))
+			printk("kerrighed: "
+			       "Failed to automatically remove the node! "
+			       "Please retry manually.\n");
+#else
 	printk(KERN_WARNING "kerrighed: Root task exiting! Leaking zombies.\n");
 	set_current_state(TASK_UNINTERRUPTIBLE);
 	schedule();
+#endif
 }
 
 /* ns->root_task must be blocked and alive to get a reliable result */
