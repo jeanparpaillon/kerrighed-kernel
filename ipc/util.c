@@ -197,8 +197,12 @@ static struct kern_ipc_perm *ipc_findkey(struct ipc_ids *ids, key_t key)
 	int total;
 
 #ifdef CONFIG_KRG_IPC
-	if (is_krg_ipc(ids))
-		return ids->krgops->ipc_findkey(ids, key);
+	if (is_krg_ipc(ids)) {
+		ipc = ids->krgops->ipc_findkey(ids, key);
+		if (IS_ERR(ipc))
+			ipc = NULL;
+		return ipc;
+	}
 #endif
 
 	for (total = 0, next_id = 0; total < ids->in_use; next_id++) {
