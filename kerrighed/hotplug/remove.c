@@ -149,6 +149,24 @@ static int do_nodes_remove(struct hotplug_context *ctx)
 	return ret;
 }
 
+int self_remove(struct krg_namespace *ns)
+{
+	struct hotplug_context *ctx;
+	int err;
+
+	ctx = hotplug_ctx_alloc(ns);
+	if (!ctx)
+		return -ENOMEM;
+	ctx->node_set.subclusterid = kerrighed_subsession_id;
+	ctx->node_set.v = krgnodemask_of_node(kerrighed_node_id);
+
+	err = do_nodes_remove(ctx);
+
+	hotplug_ctx_put(ctx);
+
+	return err;
+}
+
 static int nodes_remove(void __user *arg)
 {
 	struct __hotplug_node_set __node_set;
