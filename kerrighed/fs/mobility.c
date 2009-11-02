@@ -24,6 +24,7 @@
 #include <kddm/kddm.h>
 #include <kerrighed/namespace.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/action.h>
 #include <kerrighed/app_shared.h>
 #include <kerrighed/app_terminal.h>
@@ -223,8 +224,15 @@ static int _cr_get_file_type_and_key(const struct file *file,
 	} else if (file->f_objid) {
 		*type = REGULAR_DVFS_FILE;
 		*key = file->f_objid;
-		if (locality)
-			*locality = SHARED_ANY;
+		if (locality) {
+			if (is_pipe(file)) {
+				if (file->f_flags & O_FAF_CLT)
+					*locality = SHARED_SLAVE;
+				else
+					*locality = SHARED_MASTER;
+			} else
+				*locality = SHARED_ANY;
+		}
 	} else {
 		*type = REGULAR_FILE;
 		*key = (long)file;
@@ -501,11 +509,11 @@ exit:
 	return r;
 }
 
-int cr_add_file_to_shared_table(struct task_struct *task,
-				int index, struct file *file,
-				int allow_unsupported)
+int _cr_add_file_to_shared_table(struct task_struct *task,
+				 int index, struct file *file,
+				 int allow_unsupported)
 {
-	int r, tty, fifo;
+	int r;
 	long key;
 	enum shared_obj_type type;
 	enum object_locality locality;
@@ -526,34 +534,35 @@ int cr_add_file_to_shared_table(struct task_struct *task,
 	if (r == -ENOKEY) /* the file was already in the list */
                r = 0;
 
+error:
+	return r;
+}
+
+int cr_add_file_to_shared_table(struct task_struct *task,
+				int index, struct file *file,
+				int allow_unsupported)
+{
+	int r, tty;
+
+	r = _cr_add_file_to_shared_table(task, index, file,
+					 allow_unsupported);
 	if (r)
 		goto error;
 
 	tty = is_tty(file);
-	if (tty < 0) {
-		r = tty;
-		goto error;
-	}
-
-	fifo = S_ISFIFO(file->f_dentry->d_inode->i_mode);
-
-	if (fifo) {
-		union export_args args;
-		long key = (long)(file->f_dentry->d_inode);
-
-		args.file_args.index = -1;
-		args.file_args.file = file;
-
-		r = add_to_shared_objects_list(task->application,
-					       PIPE_INODE, key, 1 /*is_local*/,
-					       task, &args);
-
-		if (r == -ENOKEY) /* the inode was already in the list */
-			r = 0;
-	}
-
-	if (tty)
+	if (tty) {
+		if (tty < 0) {
+			r = tty;
+			goto error;
+		}
 		app_set_checkpoint_terminal(task->application, file);
+	}
+
+	if (!(file->f_flags & O_FAF_CLT) && is_pipe(file)) {
+		r = cr_add_pipe_inode_to_shared_table(task, file);
+		if (r)
+			goto error;
+	}
 
 error:
 	return r;

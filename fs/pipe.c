@@ -26,6 +26,7 @@
 #include <linux/splice.h>
 #include <kerrighed/app_shared.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/regular_file_mgr.h>
 #endif
 
@@ -854,6 +855,10 @@ struct pipe_inode_info * alloc_pipe_info(struct inode *inode)
 		init_waitqueue_head(&pipe->wait);
 		pipe->r_counter = pipe->w_counter = 1;
 		pipe->inode = inode;
+#ifdef CONFIG_KRG_EPM
+		pipe->fread = NULL;
+		pipe->fwrite = NULL;
+#endif
 	}
 
 	return pipe;
@@ -982,6 +987,9 @@ struct file *__create_write_pipe(struct dentry *dentry, int flags)
 {
 	struct file *f;
 	int err = -ENFILE;
+#ifdef CONFIG_KRG_EPM
+	struct pipe_inode_info *pipe;
+#endif
 
 	f = alloc_file(pipe_mnt, dentry, FMODE_WRITE, &write_pipefifo_fops);
 	if (!f)
@@ -990,6 +998,10 @@ struct file *__create_write_pipe(struct dentry *dentry, int flags)
 
 	f->f_flags = O_WRONLY | (flags & O_NONBLOCK);
 	f->f_version = 0;
+#ifdef CONFIG_KRG_EPM
+	pipe = dentry->d_inode->i_pipe;
+	pipe->fwrite = f;
+#endif
 
 	return f;
 
@@ -1035,6 +1047,9 @@ void free_write_pipe(struct file *f)
 
 struct file *__create_read_pipe(struct dentry *dentry, int flags)
 {
+#ifdef CONFIG_KRG_EPM
+	struct pipe_inode_info *pipe;
+#endif
 	struct file *f = get_empty_filp();
 	if (!f)
 		return ERR_PTR(-ENFILE);
@@ -1050,6 +1065,10 @@ struct file *__create_read_pipe(struct dentry *dentry, int flags)
 	f->f_op = &read_pipefifo_fops;
 	f->f_mode = FMODE_READ;
 	f->f_version = 0;
+#ifdef CONFIG_KRG_EPM
+	pipe = dentry->d_inode->i_pipe;
+	pipe->fread = f;
+#endif
 
 	return f;
 }
@@ -1105,6 +1124,46 @@ int do_pipe_flags(int *fd, int flags)
 }
 
 #ifdef CONFIG_KRG_EPM
+
+int cr_add_pipe_inode_to_shared_table(struct task_struct *task,
+				      struct file *file)
+{
+	int r;
+	long key;
+	struct pipe_inode_info *pipe;
+	struct file *other_end;
+	union export_args args;
+
+	args.file_args.index = -1;
+	args.file_args.file = file;
+
+	key = (long)file->f_path.dentry->d_inode;
+
+	r = add_to_shared_objects_list(task->application, PIPE_INODE, key,
+				       LOCAL_ONLY, task, &args);
+	if (r == -ENOKEY) /* the inode was already in the list */
+		r = 0;
+
+	if (r)
+		goto error;
+
+	/* add the other end of the pipe */
+	pipe = file->f_path.dentry->d_inode->i_pipe;
+
+	BUG_ON(!pipe->fread || !pipe->fwrite);
+	if (file == pipe->fread)
+		other_end = pipe->fwrite;
+	else {
+		BUG_ON(file != pipe->fwrite);
+		other_end = pipe->fread;
+	}
+
+	if (other_end->f_flags & O_FAF_SRV)
+		r = _cr_add_file_to_shared_table(task, -1, other_end, false);
+
+error:
+	return r;
+}
 
 /* largely inspired from code from Oren Laadan */
 static int cr_export_pipe_buffer(ghost_t *ghost, struct inode *inode)
@@ -1257,7 +1316,7 @@ err_inode:
 int cr_import_complete_pipe_inode(struct task_struct *fake,
 				  void *_pipe_dentry)
 {
-	struct dentry *dentry = _pipe_dentry;
+	/* struct dentry *dentry = _pipe_dentry; */
 
 	/* dput(dentry); */
 
@@ -1308,7 +1367,7 @@ int get_pipe_file_krg_desc(struct file *file, void **desc, int *desc_size)
 
 	data->type = PIPE;
 	data->pipe.f_flags = file->f_flags;
-	data->pipe.key = (long)(file->f_path.dentry->d_inode);
+	data->pipe.key = (long)file->f_path.dentry->d_inode;
 	*desc = data;
 	*desc_size = size;
 

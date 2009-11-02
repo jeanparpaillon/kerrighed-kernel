@@ -55,6 +55,10 @@ struct pipe_inode_info {
 	struct fasync_struct *fasync_writers;
 	struct inode *inode;
 	struct pipe_buffer bufs[PIPE_BUFFERS];
+#ifdef CONFIG_KRG_EPM
+	struct file *fread;
+	struct file *fwrite;
+#endif
 };
 
 /*

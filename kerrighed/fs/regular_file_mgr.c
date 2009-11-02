@@ -186,7 +186,7 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 		goto exit;
 	}
 #endif
-	if (S_ISFIFO(file->f_dentry->d_inode->i_mode)) {
+	if (is_pipe(file)) {
 		r = get_pipe_file_krg_desc(file, desc, desc_size);
 		goto exit;
 	}
