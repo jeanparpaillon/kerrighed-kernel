@@ -343,7 +343,7 @@ static int cr_import_one_semundo(ghost_t *ghost, struct task_struct *task,
 	if (r)
 		goto end;
 
-	sma = sem_lock(ns, semid);
+	sma = sem_lock_check(ns, semid);
 	if (IS_ERR(sma)) {
 		r = PTR_ERR(sma);
 		goto end;
