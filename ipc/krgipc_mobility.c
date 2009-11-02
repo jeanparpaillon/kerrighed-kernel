@@ -1115,6 +1115,8 @@ out_freeary:
 
 /******************************************************************************/
 
+static const int CR_SHM_MAGIC = 0x33333333;
+
 static int export_full_one_shm_page(ghost_t * ghost, struct kddm_set *kset,
 				    unsigned long pageid, unsigned long size)
 {
@@ -1195,6 +1197,10 @@ int export_full_sysv_shm(ghost_t *ghost, int shmid)
 		r = PTR_ERR(shp);
 		goto out;
 	}
+
+	r = ghost_write(ghost, &CR_SHM_MAGIC, sizeof(int));
+	if (r)
+		goto out_shm_unlock;
 
 	r = ghost_write(ghost, shp, sizeof(struct shmid_kernel));
 	if (r)
@@ -1294,10 +1300,19 @@ error:
 
 int import_full_sysv_shm(ghost_t *ghost)
 {
-	int r, flag;
+	int r, flag, magic;
 	struct ipc_namespace *ns;
 	struct shmid_kernel copy_shp, *shp;
 	struct ipc_params params;
+
+	r = ghost_read(ghost, &magic, sizeof(int));
+	if (r)
+		goto out;
+
+	if (magic != CR_SHM_MAGIC) {
+		r = -EINVAL;
+		goto out;
+	}
 
 	r = ghost_read(ghost, &copy_shp, sizeof(struct shmid_kernel));
 	if (r)
