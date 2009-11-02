@@ -127,12 +127,6 @@ static int browse_add_not_linked(unsigned long objid, void *_obj_entry,
 	return 0;
 };
 
-static void kddm_set_add_linked(struct kddm_set * set,
-				struct browse_add_param *param)
-{
-	set->def_owner = nth_krgnode(set->id % param->nb, param->v);
-}
-
 static void kddm_set_add_cb(void *_set, void *_data)
 {
 	struct kddm_set *set = _set;
@@ -143,13 +137,13 @@ static void kddm_set_add_cb(void *_set, void *_data)
 	BUG_ON(set->def_owner < 0);
 	BUG_ON(set->def_owner > KDDM_MAX_DEF_OWNER);
 
-	krgnodes_copy(param.v, krgnode_online_map);
+	krgnodes_copy(param.new_nodes_map, krgnode_online_map);
 
-	param.nb = kerrighed_nb_nodes;
+	param.new_nb_nodes = kerrighed_nb_nodes;
 	__for_each_krgnode_mask(node, vector_add){
 		if (!krgnode_online(node)) {
 			param.nb++;
-			krgnode_set(node, param.v);
+			krgnode_set(node, param.new_nodes_map);
 		};
 	};
 
@@ -160,8 +154,14 @@ static void kddm_set_add_cb(void *_set, void *_data)
 		__for_each_kddm_object(set, browse_add_not_linked, &param);
 		break;
 
+	case KDDM_UNIQUE_ID_DEF_OWNER:
+		/* The unique_id default owners are hard-coded depending on
+		 * object ids. Adding a node doesn't change anything. */
 	default:
-		kddm_set_add_linked(set, &param);
+		/* The default owner is hard coded to a given node.
+		 * Adding a node doesn't change anything for these cases.
+		 */
+		break;
 	};
 
 };
