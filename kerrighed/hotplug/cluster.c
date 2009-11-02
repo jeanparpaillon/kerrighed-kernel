@@ -314,11 +314,14 @@ static void krg_container_abort(int err)
 	complete(&cluster_init_helper_ready);
 }
 
-void krg_ns_root_exit(struct task_struct *task)
+void krg_ns_root_exit(struct krg_namespace *ns)
 {
-	if (cluster_init_helper_ns
-	    && task->nsproxy->krg_ns == cluster_init_helper_ns)
+	if (ns == cluster_init_helper_ns)
 		krg_container_abort(-EAGAIN);
+
+	printk(KERN_WARNING "kerrighed: Root task exiting! Leaking zombies.\n");
+	set_current_state(TASK_UNINTERRUPTIBLE);
+	schedule();
 }
 
 /* ns->root_task must be blocked and alive to get a reliable result */
