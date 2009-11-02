@@ -1026,6 +1026,8 @@ out_freeque:
 
 /******************************************************************************/
 
+static const int CR_SEM_MAGIC = 0x33333322;
+
 int export_full_sysv_sem(ghost_t *ghost, int semid)
 {
 	int r;
@@ -1041,6 +1043,10 @@ int export_full_sysv_sem(ghost_t *ghost, int semid)
 		r = PTR_ERR(sma);
 		goto out;
 	}
+
+	r = ghost_write(ghost, &CR_SEM_MAGIC, sizeof(int));
+	if (r)
+		goto out;
 
 	r = ghost_write(ghost, sma, sizeof(struct sem_array));
 	if (r)
@@ -1059,10 +1065,19 @@ out:
 
 int import_full_sysv_sem(ghost_t *ghost)
 {
-	int r;
+	int r, magic;
 	struct ipc_namespace *ns;
 	struct sem_array copy_sma, *sma;
 	struct ipc_params params;
+
+	r = ghost_read(ghost, &magic, sizeof(int));
+	if (r)
+		goto out;
+
+	if (magic != CR_SEM_MAGIC) {
+		r = -EINVAL;
+		goto out;
+	}
 
 	r = ghost_read(ghost, &copy_sma, sizeof(struct sem_array));
 	if (r)
