@@ -851,6 +851,27 @@ void flush_kddm_event(struct kddm_set *set,
 	spin_unlock(&set->event_lock);
 }
 
+void freeze_kddm_event(struct kddm_set *set)
+{
+	struct kddm_delayed_action *action;
+
+	spin_lock(&set->event_lock);
+	list_for_each_entry(action, &set->event_list, list)
+		cancel_delayed_work (&action->work);
+	spin_unlock(&set->event_lock);
+}
+
+void unfreeze_kddm_event(struct kddm_set *set)
+{
+	struct kddm_delayed_action *action;
+	int delay = 1;
+
+	spin_lock(&set->event_lock);
+	list_for_each_entry(action, &set->event_list, list)
+		queue_delayed_work(kddm_wq, &action->work, delay);
+	spin_unlock(&set->event_lock);
+}
+
 void queue_event(queue_event_handler_t fn,
 		 kerrighed_node_t sender,
 		 struct kddm_set *set,

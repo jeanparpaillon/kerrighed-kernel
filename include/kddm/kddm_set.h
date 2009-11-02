@@ -258,4 +258,12 @@ static inline struct kddm_set *_local_get_alloc_unique_kddm_set(
 
 void put_kddm_set(struct kddm_set *set);
 
+static inline int kddm_set_frozen(struct kddm_set *set)
+{
+	return (set->flags & KDDM_FROZEN);
+}
+
+void freeze_kddm(void);
+void unfreeze_kddm(void);
+
 #endif // __KDDM_NS__

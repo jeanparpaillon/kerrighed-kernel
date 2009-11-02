@@ -152,9 +152,11 @@ typedef struct kddm_obj {
 /** KDDM set flags */
 #define _KDDM_LOCAL_EXCLUSIVE  0
 #define _KDDM_FT_LINKED        1
+#define _KDDM_FROZEN           2
 
 #define KDDM_LOCAL_EXCLUSIVE  (1<<_KDDM_LOCAL_EXCLUSIVE)
 #define KDDM_FT_LINKED        (1<<_KDDM_FT_LINKED)
+#define KDDM_FROZEN           (1<<_KDDM_FROZEN)
 
 #define kddm_local_exclusive(kddm) test_bit(_KDDM_LOCAL_EXCLUSIVE, &kddm->flags)
 #define set_kddm_local_exclusive(kddm) set_bit(_KDDM_LOCAL_EXCLUSIVE, &kddm->flags);
@@ -163,6 +165,10 @@ typedef struct kddm_obj {
 #define kddm_ft_linked(kddm) test_bit(_KDDM_FT_LINKED, &kddm->flags)
 #define set_kddm_ft_linked(kddm) set_bit(_KDDM_FT_LINKED, &kddm->flags);
 #define clear_kddm_ft_linked(kddm) clear_bit(_KDDM_FT_LINKED, &kddm->flags);
+
+#define kddm_frozen(kddm) test_bit(_KDDM_FROZEN, &kddm->flags)
+#define set_kddm_frozen(kddm) set_bit(_KDDM_FROZEN, &kddm->flags);
+#define clear_kddm_frozen(kddm) clear_bit(_KDDM_FROZEN, &kddm->flags);
 
 #define KDDM_BREAK_COW_COPY 1
 #define KDDM_BREAK_COW_INV 2
@@ -214,6 +220,7 @@ typedef struct kddm_set {
 	unsigned long flags;         /**< Kddm set flags */
 	int state;                   /**< State of the set (locked, ...) */
 	wait_queue_head_t create_wq; /**< Process waiting for set creation */
+	wait_queue_head_t frozen_wq; /**< Process waiting on a frozen KDDM */
 	atomic_t count;
 	unsigned int last_ra_start;  /**< Start of the last readahead window */
 	int ra_window_size;          /**< Size of the readahead window */

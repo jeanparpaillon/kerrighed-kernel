@@ -25,6 +25,7 @@
 #include <kddm/kddm_set.h>
 #include <kddm/name_space.h>
 #include <kddm/kddm_tree.h>
+#include "protocol_action.h"
 #include "procfs.h"
 
 struct kmem_cache *kddm_set_cachep;
@@ -75,6 +76,7 @@ static inline struct kddm_set *alloc_kddm_set_struct (struct kddm_ns *ns,
 	kddm_set->ns = ns;
 	kddm_set->flags = 0;
 	init_waitqueue_head (&kddm_set->create_wq);
+	init_waitqueue_head (&kddm_set->frozen_wq);
 	spin_lock_init(&kddm_set->lock);
 	atomic_set(&kddm_set->count, 1);
 	INIT_LIST_HEAD(&kddm_set->event_list);
@@ -352,10 +354,6 @@ struct kddm_set *__find_get_kddm_set(struct kddm_ns *ns,
 	if (unlikely(IS_ERR(kddm_set)))
 		return kddm_set;
 
-	/* Fasten the common case */
-	if (likely(kddm_set->state == KDDM_SET_READY))
-		goto done;
-
 	/* If the kddm set has been found INVALID earlier, we have to check if
 	 * it is still invalid... So, we force a new remote kddm set lookup.
 	 */
@@ -370,6 +368,16 @@ recheck_state:
 	spin_lock(&kddm_set->lock);
 
 check_no_lock:
+	/* If KDDM frozen, sleep until it is no more frozen */
+	if (!(flags & KDDM_LOCK_FREE) && kddm_frozen(kddm_set)) {
+		spin_unlock(&kddm_set->lock);
+		wait_event (kddm_set->frozen_wq, (!kddm_frozen(kddm_set)));
+		goto recheck_state;
+	}
+	/* Make sure we only use bypass_frozen when KDDM are frozen (i.e.
+	   hotplug cases) */
+	BUG_ON ((flags & KDDM_LOCK_FREE) && !kddm_frozen(kddm_set));
+
 	switch (kddm_set->state) {
 	  case KDDM_SET_READY:
 		  spin_unlock(&kddm_set->lock);
@@ -399,7 +407,6 @@ check_no_lock:
 		  BUG();
 	}
 
-done:
 	return kddm_set;
 }
 EXPORT_SYMBOL(_find_get_kddm_set);
@@ -492,6 +499,49 @@ exit:
 }
 EXPORT_SYMBOL(__create_new_kddm_set);
 
+
+static void do_freeze_kddm_set(void *_set, void *_data)
+{
+	struct kddm_set *set = _set;
+
+	spin_lock(&set->lock);
+
+	BUG_ON (kddm_frozen(set));
+	set_kddm_frozen(set);
+	freeze_kddm_event(set);
+
+	spin_unlock(&set->lock);
+}
+
+static void do_unfreeze_kddm_set(void *_set, void *_data)
+{
+	struct kddm_set *set = _set;
+
+	spin_lock(&set->lock);
+
+	BUG_ON (!kddm_frozen(set));
+
+	unfreeze_kddm_event(set);
+	clear_kddm_frozen(set);
+
+	wake_up(&set->frozen_wq);
+
+	spin_unlock(&set->lock);
+}
+
+void freeze_kddm(void)
+{
+	down (&kddm_def_ns->table_sem);
+	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
+				 do_freeze_kddm_set, NULL);
+}
+
+void unfreeze_kddm(void)
+{
+	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
+				 do_unfreeze_kddm_set, NULL);
+	up (&kddm_def_ns->table_sem);
+}
 
 
 /*****************************************************************************/
