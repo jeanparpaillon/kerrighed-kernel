@@ -428,51 +428,6 @@ kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
 }
 
 
-
-/** Freeze an object.
- *  @author Renaud Lottiaux
- *
- *  @param obj_entry     Object entry to freeze.
- */
-void kddm_io_freeze_object (struct kddm_obj * obj_entry,
-                            struct kddm_set * set)
-{
-	if (set->iolinker && set->iolinker->freeze_object)
-		return set->iolinker->freeze_object (obj_entry);
-}
-
-
-
-/** Warm an object.
- *  @author Renaud Lottiaux
- *
- *  @param obj_entry     Object entry to warm.
- */
-void kddm_io_warm_object (struct kddm_obj * obj_entry,
-                          struct kddm_set * set)
-{
-	if (set->iolinker && set->iolinker->warm_object)
-		return set->iolinker->warm_object (obj_entry);
-}
-
-
-
-/** Test if an object is frozen.
- *  @author Renaud Lottiaux
- *
- *  @param obj_entry     Object entry to warm.
- */
-int kddm_io_is_frozen (struct kddm_obj * obj_entry,
-                       struct kddm_set * set)
-{
-	if (set->iolinker && set->iolinker->is_frozen && obj_entry->object)
-		return set->iolinker->is_frozen (obj_entry);
-	else
-		return 0;
-}
-
-
-
 /*****************************************************************************/
 /*                                                                           */
 /*                           IO LINKER INIT FUNCTIONS                        */

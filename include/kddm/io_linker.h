@@ -112,9 +112,6 @@ struct iolinker_struct {
   int (*export_object) (struct rpc_desc *desc, struct kddm_obj *obj_entry);
   kerrighed_node_t (*default_owner) (struct kddm_set * set, objid_t objid,
                                      const krgnodemask_t * nodes, int nr_nodes);
-  void (*freeze_object) (struct kddm_obj * obj_entry);
-  void (*warm_object) (struct kddm_obj * obj_entry);
-  int (*is_frozen) (struct kddm_obj * obj_entry);
   char linker_name[16];
   iolinker_id_t linker_id;
 };
@@ -316,9 +313,5 @@ kerrighed_node_t kddm_io_default_owner (struct kddm_set * set, objid_t objid)
  */
 int kddm_io_alloc_object (struct kddm_obj * obj_entry, struct kddm_set * set,
 			  objid_t objid);
-
-void kddm_io_freeze_object (struct kddm_obj * obj_entry, struct kddm_set * set);
-void kddm_io_warm_object (struct kddm_obj * obj_entry, struct kddm_set * set);
-int kddm_io_is_frozen (struct kddm_obj * obj_entry, struct kddm_set * set);
 
 #endif // __IO_LINKER__

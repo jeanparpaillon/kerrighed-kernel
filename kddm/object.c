@@ -498,8 +498,7 @@ int check_sleep_on_local_exclusive (struct kddm_set * set,
 int object_frozen(struct kddm_obj * obj_entry,
 		  struct kddm_set * set)
 {
-	return ((atomic_read(&obj_entry->frozen_count) != 0) ||
-		kddm_io_is_frozen(obj_entry, set));
+	return (atomic_read(&obj_entry->frozen_count) != 0);
 }
 
 
@@ -513,7 +512,6 @@ int object_frozen_or_pinned(struct kddm_obj * obj_entry,
 			    struct kddm_set * set)
 {
 	return ((atomic_read(&obj_entry->frozen_count) != 0) ||
-		kddm_io_is_frozen(obj_entry, set) ||
 		TEST_OBJECT_PINNED(obj_entry));
 }
 
@@ -528,8 +526,6 @@ void set_object_frozen(struct kddm_obj * obj_entry,
 		       struct kddm_set * set)
 {
 	atomic_inc(&obj_entry->frozen_count);
-	if (obj_entry->object)
-		kddm_io_freeze_object(obj_entry, set);
 }
 
 
@@ -543,9 +539,6 @@ void object_clear_frozen(struct kddm_obj * obj_entry,
 			 struct kddm_set * set)
 {
 	atomic_dec(&obj_entry->frozen_count);
-
-	if (obj_entry->object && (atomic_read(&obj_entry->frozen_count) == 0))
-		kddm_io_warm_object(obj_entry, set);
 
 	BUG_ON(atomic_read(&obj_entry->frozen_count) < 0);
 
