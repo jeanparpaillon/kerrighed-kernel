@@ -58,100 +58,92 @@ static void handle_set_advertise_owner(struct rpc_desc* desc)
 	put_kddm_obj_entry(set, obj_entry, objid);
 };
 
-/**
- *
- * Addition related part
- *
- **/
+
+/*--------------------------------------------------------------------------*
+ *                                                                          *
+ *                                NODE ADDITION                             *
+ *                                                                          *
+ *--------------------------------------------------------------------------*/
 
 struct browse_add_param {
-	kerrighed_node_t nb;
 	struct kddm_set *set;
-	krgnodemask_t v;
+	krgnodemask_t new_nodes_map;
+	kerrighed_node_t new_nb_nodes;
 };
 
-static int browse_add_not_linked(unsigned long objid, void *_obj_entry,
-				 void *_data)
+static int add_browse_objects(unsigned long objid,
+			      void *_obj_entry,
+			      void *_data)
 {
-	kerrighed_node_t newDefaultProbOwner;
-	struct browse_add_param *param = _data;
 	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
+	kerrighed_node_t old_def_owner, new_def_owner;
+	struct browse_add_param *param = _data;
+	struct kddm_set *set = param->set;
 
-	newDefaultProbOwner = __kddm_io_default_owner(param->set, objid,
-						      &param->v, param->nb);
+	old_def_owner = kddm_io_default_owner (set, objid);
+	new_def_owner = __kddm_io_default_owner(set, objid,
+						&param->new_nodes_map,
+						param->new_nb_nodes);
+
+	if (new_def_owner == old_def_owner)
+		goto done;
 
 	switch (OBJ_STATE(obj_entry)) {
 	case READ_OWNER:
 	case WRITE_GHOST:
 	case WRITE_OWNER:
-		// we have to advertise the new default owner
-
-		if (newDefaultProbOwner != kerrighed_node_id){
-			struct rpc_desc *desc;
-			desc = rpc_begin(KDDM_ADVERTISE_OWNER,
-					 newDefaultProbOwner);
-			rpc_pack_type(desc, param->set->id);
-			rpc_pack_type(desc, objid);
-			rpc_end(desc, 0);
-		};
-		break;
-
 	case WAIT_ACK_INV:
 	case WAIT_ACK_WRITE:
 	case WAIT_CHG_OWN_ACK:
-	case WAIT_OBJ_READ:
-	case WAIT_OBJ_WRITE:
-		// here we have to check if there are some pending process...
-		// and may be we kill them (may be we just have to resend the rq)
-		if (waitqueue_active(&obj_entry->waiting_tsk))
-			printk("we have some pending process in %lu %s (%x)\n",
-			       objid, STATE_NAME(OBJ_STATE(obj_entry)),
-			       OBJ_STATE(obj_entry));
-
-	case READ_COPY:
-	case INV_OWNER:
-	case INV_COPY:
-		if (get_prob_owner(obj_entry) == kerrighed_node_id)
-			change_prob_owner(obj_entry, newDefaultProbOwner);
+		BUG_ON (get_prob_owner(obj_entry) != kerrighed_node_id);
+		if (new_def_owner == kerrighed_node_id)
+			break;
+		/* Inform the new owner a copy already exist */
+		request_change_prob_owner(set, objid, new_def_owner,
+					  kerrighed_node_id);
 		break;
 
+	case INV_OWNER:
+		/* Update the local default owner to the new one */
+		change_prob_owner(obj_entry, new_def_owner);
+		break;
+
+	case INV_COPY:
+	case READ_COPY:
+	case WAIT_OBJ_READ:
+	case WAIT_OBJ_WRITE:
 	case WAIT_OBJ_RM_DONE:
+		BUG_ON(get_prob_owner(obj_entry) == kerrighed_node_id);
+		break;
+
 	case WAIT_OBJ_RM_ACK:
 		PANIC ("Case not yet managed\n");
 
+	case INV_FILLING:
+		BUG();
+
 	default:
-		STATE_MACHINE_ERROR (param->set->id, objid, obj_entry);
+		STATE_MACHINE_ERROR (set->id, objid, obj_entry);
 		break;
 	}
 
+done:
 	return 0;
 };
 
-static void kddm_set_add_cb(void *_set, void *_data)
+static void add_browse_sets(void *_set, void *_data)
 {
+	struct browse_add_param *param = _data;
 	struct kddm_set *set = _set;
-	krgnodemask_t *vector_add = _data;
-	kerrighed_node_t node;
-	struct browse_add_param param;
 
 	BUG_ON(set->def_owner < 0);
 	BUG_ON(set->def_owner > KDDM_MAX_DEF_OWNER);
 
-	krgnodes_copy(param.new_nodes_map, krgnode_online_map);
-
-	param.new_nb_nodes = kerrighed_nb_nodes;
-	__for_each_krgnode_mask(node, vector_add){
-		if (!krgnode_online(node)) {
-			param.nb++;
-			krgnode_set(node, param.new_nodes_map);
-		};
-	};
-
 	switch (set->def_owner) {
 	case KDDM_RR_DEF_OWNER:
 	case KDDM_CUSTOM_DEF_OWNER:
-		param.set = set;
-		__for_each_kddm_object(set, browse_add_not_linked, &param);
+		param->set = set;
+		__for_each_kddm_object(set, add_browse_objects, _data);
 		break;
 
 	case KDDM_UNIQUE_ID_DEF_OWNER:
@@ -168,23 +160,53 @@ static void kddm_set_add_cb(void *_set, void *_data)
 
 static void set_add(krgnodemask_t * vector)
 {
-	krgnodemask_t nodes;
+	struct browse_add_param param;
+        kerrighed_node_t node;
 
-	krgnodes_copy(nodes, krgnode_online_map);
+	if(__krgnode_isset(kerrighed_node_id, vector))
+		rpc_enable(KDDM_CHANGE_PROB_OWNER);
 
-	__krgnodes_or (&nodes, &nodes, vector, KERRIGHED_MAX_NODES);
+	krgnodes_copy(param.new_nodes_map, krgnode_online_map);
+
+	param.new_nb_nodes = kerrighed_nb_nodes;
+	__for_each_krgnode_mask(node, vector) {
+		if (!krgnode_online(node)) {
+			krgnode_set(node, param.new_nodes_map);
+			param.new_nb_nodes++;
+		}
+	};
 
 	freeze_kddm();
 
-	cluster_barrier(kddm_barrier, nodes, __first_krgnode(nodes));
+	cluster_barrier(kddm_barrier, &param.new_nodes_map,
+			__first_krgnode(&param.new_nodes_map));
 
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
-				 kddm_set_add_cb, vector);
+				 add_browse_sets, &param);
 
-	cluster_barrier(kddm_barrier, nodes, __first_krgnode(nodes));
+	cluster_barrier(kddm_barrier, &param.new_nodes_map,
+			__first_krgnode(&param.new_nodes_map));
 
 	unfreeze_kddm();
-};
+
+	if(!__krgnode_isset(kerrighed_node_id, vector))
+		return;
+
+	rpc_enable(REQ_OBJECT_COPY);
+	rpc_enable(REQ_OBJECT_REMOVE);
+	rpc_enable(REQ_OBJECT_REMOVE_TO_MGR);
+	rpc_enable(SEND_BACK_FIRST_TOUCH);
+	rpc_enable(REQ_OBJECT_INVALID);
+	rpc_enable(INVALIDATION_ACK);
+	rpc_enable(REMOVE_ACK);
+	rpc_enable(REMOVE_ACK2);
+	rpc_enable(REMOVE_DONE);
+	rpc_enable(SEND_OWNERSHIP);
+	rpc_enable(CHANGE_OWNERSHIP_ACK);
+	rpc_enable(OBJECT_SEND);
+	rpc_enable(SEND_WRITE_ACCESS);
+	rpc_enable(NO_OBJECT_SEND);
+}
 
 /**
  *
