@@ -711,6 +711,30 @@ void send_back_object_first_touch(struct kddm_set * set,
 }
 
 
+/** Change the probable owner on a given node.
+ *  @author Renaud Lottiaux
+ *
+ *  @param set        Set the object belong to.
+ *  @param objid      Id of the object to change the owner
+ *  @param dest_node  Node to send the request to.
+ *  @param new_owner  The new default owner.
+ */
+void request_change_prob_owner(struct kddm_set * set,
+			       objid_t objid,
+			       kerrighed_node_t dest_node,
+			       kerrighed_node_t new_owner)
+{
+	msg_server_t msg_to_server;
+
+	msg_to_server.ns_id = set->ns->id;
+	msg_to_server.set_id = set->id;
+	msg_to_server.objid = objid;
+	msg_to_server.new_owner = new_owner;
+
+	rpc_sync(KDDM_CHANGE_PROB_OWNER, dest_node, &msg_to_server,
+		 sizeof(msg_server_t));
+}
+
 
 /*****************************************************************************/
 /*                                                                           */

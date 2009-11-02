@@ -157,6 +157,10 @@ int request_sync_object_and_unlock (struct kddm_set * set,
 				    kddm_obj_state_t new_state);
 
 
+void request_change_prob_owner(struct kddm_set * set, objid_t objid,
+			       kerrighed_node_t dest_node,
+			       kerrighed_node_t new_owner);
+
 void start_run_queue_thread (void);
 void stop_run_queue_thread (void);
 

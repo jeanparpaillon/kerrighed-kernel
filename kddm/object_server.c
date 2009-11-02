@@ -1183,6 +1183,38 @@ void handle_send_back_first_touch_req (struct rpc_desc* desc,
 }
 
 
+/** Handle the change of an object default owner.
+ *  @author Renaud Lottiaux
+ *
+ *  @param msg  Message received from the requesting node.
+ */
+static int handle_change_prob_owner_req(struct rpc_desc* desc,
+					void *_msg, size_t size)
+{
+	msg_server_t *msg = _msg;
+	struct kddm_obj *obj_entry;
+	struct kddm_set *set;
+	struct kddm_ns *ns;
+
+	BUG_ON (desc->client < 0 || desc->client > KERRIGHED_MAX_NODES);
+
+	ns = kddm_ns_get (msg->ns_id);
+	set = __find_get_kddm_set(ns, msg->set_id, KDDM_LOCK_FREE);
+
+	obj_entry = __get_alloc_kddm_obj_entry (set, msg->objid);
+
+	put_kddm_set(set);
+	kddm_ns_put(ns);
+
+	change_prob_owner(obj_entry, msg->new_owner);
+
+	if (OBJ_STATE(obj_entry) == INV_OWNER)
+		kddm_change_obj_state(set, obj_entry, msg->objid, INV_COPY);
+
+	put_kddm_obj_entry(set, obj_entry, msg->objid);
+
+	return 0;
+};
 
 /* Object Server Initialisation */
 
@@ -1251,6 +1283,9 @@ void object_server_init ()
 	__rpc_register(NO_OBJECT_SEND,
 		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_VOID,
 		       object_server, handle_no_object, 0);
+
+	rpc_register_int(KDDM_CHANGE_PROB_OWNER, handle_change_prob_owner_req,
+			 0);
 }
 
 
