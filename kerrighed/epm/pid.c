@@ -664,19 +664,19 @@ static int handle_pid_link_task(struct rpc_desc *desc, void *_msg, size_t size)
 	struct task_kddm_object *task_obj;
 	int r = 0;
 
-	task_obj = krg_task_readlock(msg->pid);
-
 	pid = krg_get_pid(msg->pid);
 	if (!pid) {
 		r = -ENOMEM;
 		goto out;
 	}
+	task_obj = krg_task_readlock(msg->pid);
+
 	__pid_link_task(pid, task_obj);
 
+	krg_task_unlock(msg->pid);
 	krg_end_get_pid(pid);
 	krg_put_pid(pid);
 out:
-	krg_task_unlock(msg->pid);
 	return r;
 }
 
