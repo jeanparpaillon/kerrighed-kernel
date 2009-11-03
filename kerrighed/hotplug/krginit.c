@@ -328,6 +328,8 @@ int init_kerrighed_communication_system(void)
 #endif
 
 #ifdef CONFIG_KRG_HOTPLUG
+	init_cluster_barrier();
+
 	if (init_hotplug())
 		goto err_hotplug;
 #endif
@@ -580,8 +582,6 @@ void __init kerrighed_init(void){
 
 	if (init_kerrighed_communication_system())
 		return;
-
-	init_cluster_barrier();
 
 #ifdef CONFIG_KERRIGHED
 	if (init_kerrighed_upper_layers())
