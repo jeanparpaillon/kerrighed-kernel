@@ -111,7 +111,7 @@ static void add_browse_sets(void *_set, void *_data)
 	case KDDM_RR_DEF_OWNER:
 	case KDDM_CUSTOM_DEF_OWNER:
 		param->set = set;
-		__for_each_kddm_object(set, add_browse_objects, _data);
+		set->ops->for_each_obj_entry(set, add_browse_objects, _data);
 		break;
 
 	case KDDM_UNIQUE_ID_DEF_OWNER:
