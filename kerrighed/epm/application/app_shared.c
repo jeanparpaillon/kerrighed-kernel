@@ -1207,18 +1207,44 @@ int local_restart_shared_complete(struct app_struct *app,
 	return 0;
 }
 
-static int local_restart_shared_objects(ghost_t *ghost,
-					struct rpc_desc *desc,
+static int local_restart_shared_objects(struct rpc_desc *desc,
 					struct app_struct *app,
 					struct task_struct *fake,
+					int chkpt_sn,
 					enum shared_obj_type from,
-					enum shared_obj_type to)
+					enum shared_obj_type to,
+					loff_t ghost_offsets[])
 {
-	int r;
+	int r = -EINVAL;
+	int idx = 0;
+	kerrighed_node_t node;
+	ghost_t *ghost;
 
 	/* 1) restore objects for which we are master */
-	r = import_shared_objects(ghost, app, fake);
+	for_each_krgnode_mask(node, app->restart.replacing_nodes) {
 
+		ghost = create_file_ghost(GHOST_READ, app->app_id, chkpt_sn,
+					  node, "shared_obj");
+
+		if (IS_ERR(ghost)) {
+			r = PTR_ERR(ghost);
+			goto err_import;
+		}
+
+		set_file_ghost_pos(ghost, ghost_offsets[idx]);
+
+		r = import_shared_objects(ghost, app, fake);
+		if (r)
+			goto err;
+
+		ghost_offsets[idx] = get_file_ghost_pos(ghost);
+
+		ghost_close(ghost);
+
+		idx++;
+	}
+
+err_import:
 	r = send_result(desc, r);
 	if (r)
 		goto err;
@@ -1244,36 +1270,39 @@ int local_restart_shared(struct rpc_desc *desc,
 			 struct task_struct *fake,
 			 int chkpt_sn)
 {
-	ghost_fs_t oldfs;
-	ghost_t *ghost;
 
-	int r;
+	loff_t *ghost_offsets;
+	ghost_fs_t oldfs;
+	int r, nb_nodes;
 
 	__set_ghost_fs(&oldfs);
 
-	ghost = create_file_ghost(GHOST_READ, app->app_id, chkpt_sn,
-				  kerrighed_node_id, "shared_obj");
+	nb_nodes = krgnodes_weight(app->restart.replacing_nodes);
 
-	if (IS_ERR(ghost)) {
-		r = PTR_ERR(ghost);
-		goto err_create_ghost;
+	ghost_offsets = kzalloc(nb_nodes * sizeof(int), GFP_KERNEL);
+	if (!ghost_offsets) {
+		r = -ENOMEM;
+		goto err_ghost_fs;
 	}
 
 	/* 1) restore pipes and files */
-	r = local_restart_shared_objects(ghost, desc, app, fake,
-					 PIPE_INODE, UNSUPPORTED_FILE);
+	r = local_restart_shared_objects(desc, app, fake, chkpt_sn,
+					 PIPE_INODE, UNSUPPORTED_FILE,
+					 ghost_offsets);
 	if (r)
-		goto err_ghost;
+		goto err_ghost_offset;
 
 	/* 2) restore other objects */
-	r = local_restart_shared_objects(ghost, desc, app, fake,
-					 FILES_STRUCT, SIGNAL_STRUCT);
+	r = local_restart_shared_objects(desc, app, fake, chkpt_sn,
+					 FILES_STRUCT, SIGNAL_STRUCT,
+					 ghost_offsets);
 	if (r)
-		goto err_ghost;
+		goto err_ghost_offset;
 
-err_ghost:
-	ghost_close(ghost);
-err_create_ghost:
+err_ghost_offset:
+	kfree(ghost_offsets);
+
+err_ghost_fs:
 	unset_ghost_fs(&oldfs);
 	return r;
 }

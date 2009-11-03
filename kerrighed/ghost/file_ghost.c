@@ -448,3 +448,20 @@ err_file:
 err:
 	return ERR_PTR(r);
 }
+
+loff_t get_file_ghost_pos(ghost_t *ghost)
+{
+	struct file *file;
+
+	file = ((struct file_ghost_data *)ghost->data)->file;
+
+	return file->f_pos;
+}
+
+void set_file_ghost_pos(ghost_t *ghost, loff_t file_pos)
+{
+	struct file *file;
+
+	file = ((struct file_ghost_data *)ghost->data)->file;
+	file->f_pos = file_pos;
+}

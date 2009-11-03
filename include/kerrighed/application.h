@@ -103,6 +103,7 @@ struct app_struct {
 
 		struct {
 			struct file *terminal;
+			krgnodemask_t replacing_nodes;
 		} restart;
 	};
 

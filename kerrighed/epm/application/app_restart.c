@@ -232,6 +232,10 @@ static inline int restore_local_app(long app_id, int chkpt_sn,
 
 	if (node_id == kerrighed_node_id || !duplicate) {
 		app = new_local_app(app_id);
+		if (!app)
+			goto err_read;
+
+		krgnodes_clear(app->restart.replacing_nodes);
 	} else {
 		do {
 			__set_current_state(TASK_UNINTERRUPTIBLE);
@@ -239,7 +243,8 @@ static inline int restore_local_app(long app_id, int chkpt_sn,
 			app = find_local_app(app_id);
 		} while (app == NULL);
 	}
-	BUG_ON(!app);
+
+	krgnode_set(node_id, app->restart.replacing_nodes);
 
 	app->chkpt_sn = chkpt_sn;
 

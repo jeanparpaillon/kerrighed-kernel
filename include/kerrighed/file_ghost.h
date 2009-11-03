@@ -65,6 +65,9 @@ ghost_t *create_file_ghost(int access,
  */
 ghost_t *create_file_ghost_from_fd(int access, unsigned int fd);
 
+loff_t get_file_ghost_pos(ghost_t *ghost);
+void set_file_ghost_pos(ghost_t *ghost, loff_t file_pos);
+
 typedef struct {
 	mm_segment_t fs;
 	const struct cred *cred;
