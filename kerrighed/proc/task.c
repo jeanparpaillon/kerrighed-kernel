@@ -611,6 +611,18 @@ void krg_unlock_pid_location(pid_t pid)
 	krg_task_unlock(pid);
 }
 
+static int task_flusher(struct kddm_set *set, objid_t objid,
+			struct kddm_obj *obj_entry, void *data)
+{
+	BUG();
+	return KERRIGHED_NODE_ID_NONE;
+}
+
+void proc_task_remove_local(void)
+{
+	_kddm_flush_set(task_kddm_set, task_flusher, NULL);
+}
+
 /**
  * @author David Margery
  * @author Pascal Gallard (update to kddm architecture)
