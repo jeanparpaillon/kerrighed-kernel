@@ -546,6 +546,7 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 	if (err)
 		goto cancel;
 
+	kerrighed_subsession_id = msg->node_set.subclusterid;
 	__nodes_add(&msg->node_set);
 
 	down_write(&kerrighed_init_sem);
