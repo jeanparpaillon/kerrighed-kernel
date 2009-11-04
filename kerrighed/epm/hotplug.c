@@ -57,6 +57,8 @@ static int epm_remove_local(struct hotplug_context *ctx)
 
 	zap_local_krg_ns_processes(ctx->ns, EXIT_DEAD);
 
+	pidmap_map_remove_local(ctx);
+
 	return 0;
 }
 
