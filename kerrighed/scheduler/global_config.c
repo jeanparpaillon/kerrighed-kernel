@@ -30,6 +30,7 @@
 #include <linux/namei.h>
 #include <linux/fs_struct.h>
 #include <linux/gfp.h>
+#include <linux/cluster_barrier.h>
 #include <linux/mutex.h>
 #include <linux/string.h>
 #include <linux/workqueue.h>
@@ -40,6 +41,7 @@
 #include <kerrighed/krginit.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
+#include <kerrighed/hotplug.h>
 #include <kerrighed/workqueue.h>
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/ghost.h>
@@ -59,6 +61,8 @@
 
 static struct kddm_set *global_items_set;
 static LIST_HEAD(items_head);
+
+static struct cluster_barrier *global_config_barrier;
 
 static struct vfsmount *scheduler_fs_mount; /* vfsmount attached to configfs */
 static int mount_count;
@@ -441,6 +445,24 @@ err_cancel:
 	rpc_cancel(desc);
 	rpc_end(desc, 0);
 	goto out;
+}
+
+static int __global_config_dir_op(krgnodemask_t *nodes, enum config_op op,
+				  const char *name, const char *old_name)
+{
+	struct rpc_desc *desc;
+	int err;
+
+	desc = __global_config_op_begin(nodes, op);
+	if (IS_ERR(desc)) {
+		err = PTR_ERR(desc);
+		goto out;
+	}
+
+	err = do_global_config_dir_op(desc, nodes, op, name, old_name);
+
+out:
+	return err;
 }
 
 /**
@@ -1308,6 +1330,92 @@ out:
 
 #endif /* CONFIG_KRG_EPM */
 
+static int replicate_config(kerrighed_node_t node)
+{
+	krgnodemask_t nodes = krgnodemask_of_node(node);
+	struct global_config_item *item;
+	enum config_op op;
+	int err = 0;
+
+	list_for_each_entry(item, &items_head, list) {
+		if (item->drop_ops->is_symlink)
+			op = CO_SYMLINK;
+		else
+			op = CO_MKDIR;
+		err = __global_config_dir_op(&nodes, op, item->path, item->target_path);
+		if (err)
+			goto cleanup;
+	}
+
+out:
+	return err;
+
+cleanup:
+	/* Do our best to cleanup */
+	list_for_each_entry_continue_reverse(item, &items_head, list) {
+		if (item->drop_ops->is_symlink)
+			op = CO_UNLINK;
+		else
+			op = CO_RMDIR;
+		__global_config_dir_op(&nodes, op, item->path, NULL);
+	}
+	goto out;
+}
+
+int global_config_add(struct hotplug_context *ctx)
+{
+	krgnodemask_t nodes;
+	kerrighed_node_t node, master;
+	int err, err2 = 0;
+
+	krgnodes_or(nodes, ctx->node_set.v, krgnode_online_map);
+	master = first_krgnode(nodes);
+
+	if (master == kerrighed_node_id) {
+		err = global_config_freeze();
+		if (err)
+			goto out;
+	}
+
+	rpc_enable(GLOBAL_CONFIG_OP);
+
+	err = cluster_barrier(global_config_barrier, &nodes, master);
+	if (err)
+		goto out_check;
+
+	/* There is no config to replicate at cluster start. */
+	if (first_krgnode(krgnode_online_map) == kerrighed_node_id) {
+		BUG_ON(krgnode_isset(kerrighed_node_id, ctx->node_set.v));
+		for_each_krgnode_mask(node, ctx->node_set.v) {
+			err = replicate_config(node);
+			if (err)
+				break;
+		}
+	}
+
+	err2 = cluster_barrier(global_config_barrier, &nodes, master);
+
+out_check:
+	err = err ? : err2;
+	if (err) {
+		if (krgnode_isset(kerrighed_node_id, ctx->node_set.v))
+			rpc_disable(GLOBAL_CONFIG_OP);
+		if (master == kerrighed_node_id)
+			global_config_thaw();
+	}
+out:
+	return err;
+}
+
+int global_config_post_add(struct hotplug_context *ctx)
+{
+	BUG_ON(!krgnodes_subset(ctx->node_set.v, krgnode_online_map));
+	if (first_krgnode(krgnode_online_map) == kerrighed_node_id)
+		global_config_thaw();
+
+	return 0;
+}
+
 /**
  * Initialize the global config subsystem
  */
@@ -1330,6 +1438,12 @@ int global_config_start(void)
 		goto err_set;
 	}
 
+	global_config_barrier = alloc_cluster_barrier(SCHED_HOTPLUG_BARRIER);
+	if (IS_ERR(global_config_barrier)) {
+		err = PTR_ERR(global_config_barrier);
+		goto err_barrier;
+	}
+
 	err = rpc_register_void(GLOBAL_CONFIG_OP, handle_global_config_op, 0);
 	if (err)
 		goto err_rpc;
@@ -1338,6 +1452,8 @@ out:
 	return err;
 
 err_rpc:
+
+err_barrier:
 
 err_set:
 
