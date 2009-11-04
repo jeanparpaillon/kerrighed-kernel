@@ -149,7 +149,6 @@ void freeze_kddm_event(struct kddm_set *set);
 void unfreeze_kddm_event(struct kddm_set *set);
 
 kerrighed_node_t choose_injection_node_in_copyset (struct kddm_obj * object);
-kerrighed_node_t choose_injection_node (void);
 
 
 int request_sync_object_and_unlock (struct kddm_set * set,

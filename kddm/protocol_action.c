@@ -779,16 +779,6 @@ void ack_change_object_owner(struct kddm_set * set,
 }
 
 
-
-kerrighed_node_t choose_injection_node()
-{
-	int res = -1;
-
-	return res;
-}
-
-
-
 kerrighed_node_t choose_injection_node_in_copyset(struct kddm_obj * object)
 {
 	int i = 0, res = -1;
