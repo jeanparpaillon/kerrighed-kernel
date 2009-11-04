@@ -9,6 +9,7 @@
 #include <linux/rwsem.h>
 #include <linux/mutex.h>
 #include <linux/completion.h>
+#include <linux/notifier.h>
 #include <linux/string.h>
 #include <linux/capability.h>
 #include <linux/limits.h>
@@ -850,6 +851,85 @@ static int cluster_restart(void *arg)
 	return 0;
 }
 
+void zap_local_krg_ns_processes(struct krg_namespace *ns, int min_exit_state)
+{
+	struct task_struct *g, *t;
+#ifdef CONFIG_KRG_PROC
+	struct pid_namespace *root_pid_ns = ns->root_nsproxy.pid_ns;
+#else
+	struct nsproxy *nsp;
+#endif
+	bool backoff;
+
+	rcu_read_lock();
+	read_lock(&tasklist_lock);
+	do_each_thread(g, t) {
+#ifdef CONFIG_KRG_PROC
+		if (task_active_pid_ns(t)->krg_ns_root != root_pid_ns)
+			continue;
+#else
+		nsp = rcu_dereference(t->nsproxy);
+		if (!nsp || nsp->krg_ns != ns)
+			continue;
+#endif
+
+		force_sig(SIGKILL, t);
+	} while_each_thread(g, t);
+	read_unlock(&tasklist_lock);
+	rcu_read_unlock();
+
+	for (;;) {
+		backoff = false;
+
+		rcu_read_lock();
+		read_lock(&tasklist_lock);
+		do_each_thread(g, t) {
+			if (t == ns->root_task)
+				continue;
+#ifdef CONFIG_KRG_PROC
+			if (task_active_pid_ns(t)->krg_ns_root != root_pid_ns)
+				continue;
+#else
+			nsp = rcu_dereference(t->nsproxy);
+			if (!nsp || nsp->krg_ns != ns)
+				continue;
+#endif
+
+			if (t->exit_state < min_exit_state
+			    || min_exit_state == EXIT_DEAD) {
+				backoff = true;
+				break;
+			}
+		} while_each_thread(g, t);
+		read_unlock(&tasklist_lock);
+		rcu_read_unlock();
+
+		if (!backoff)
+			break;
+
+		__set_current_state(TASK_UNINTERRUPTIBLE);
+		schedule_timeout(HZ);
+	}
+}
+
+#ifndef CONFIG_KRG_PROC
+static int proc_notification(struct notifier_block *nb, hotplug_event_t event,
+			     void *data)
+{
+	struct hotplug_context *ctx = data;
+
+	switch (event) {
+	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
+		zap_local_krg_ns_processes(ctx->ns, EXIT_ZOMBIE);
+		break;
+	default
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+#endif
+
 static int cluster_stop(void *arg)
 {
 	int unused;
@@ -938,6 +1018,11 @@ int hotplug_cluster_init(void)
 	for (bcl = 0; bcl < KERRIGHED_MAX_CLUSTERS; bcl++) {
 		clusters_status[bcl] = CLUSTER_UNDEF;
 	}
+
+#ifndef CONFIG_KRG_PROC
+	if (register_hotplug_notifier(proc_notification, HOTPLUG_PRIO_PROC))
+		panic("kerrighed: Couldn't register PROC hotplug notifier!\n");
+#endif
 
 	rpc_register_void(CLUSTER_START, handle_cluster_start, 0);
 
