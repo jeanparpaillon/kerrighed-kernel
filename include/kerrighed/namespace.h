@@ -2,6 +2,7 @@
 #define __KRG_NAMESPACE_H__
 
 #include <linux/nsproxy.h>
+#include <linux/completion.h>
 #include <linux/rcupdate.h>
 #include <linux/workqueue.h>
 #include <asm/atomic.h>
@@ -13,6 +14,8 @@ struct krg_namespace {
 	struct nsproxy root_nsproxy;
 	struct user_namespace *root_user_ns;
 	struct task_struct *root_task;
+	struct completion root_task_in_exit;
+	struct completion root_task_continue_exit;
 	struct rcu_head rcu;
 	struct work_struct free_work;
 };
