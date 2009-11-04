@@ -9,6 +9,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
+#include <linux/completion.h>
 #include <linux/nsproxy.h>
 #include <linux/utsname.h>
 #include <linux/ipc_namespace.h>
@@ -56,6 +57,8 @@ int copy_krg_ns(struct task_struct *task, struct nsproxy *new)
 
 				get_task_struct(task);
 				ns->root_task = task;
+				init_completion(&ns->root_task_in_exit);
+				init_completion(&ns->root_task_continue_exit);
 
 #ifdef CONFIG_KRG_PROC
 				BUG_ON(ns->root_nsproxy.pid_ns->krg_ns);
