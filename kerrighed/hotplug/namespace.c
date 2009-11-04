@@ -54,6 +54,8 @@ int copy_krg_ns(struct task_struct *task, struct nsproxy *new)
 				get_task_struct(task);
 				ns->root_task = task;
 
+				ns->hotplug_ctx = NULL;
+
 				BUG_ON(ns->root_pid_ns->krg_ns_root);
 				ns->root_pid_ns->krg_ns_root = ns->root_pid_ns;
 
@@ -100,6 +102,8 @@ static void delayed_free_krg_ns(struct rcu_head *rcu)
 void free_krg_ns(struct krg_namespace *ns)
 {
 	unsigned long flags;
+
+	BUG_ON(ns->hotplug_ctx);
 
 	spin_lock_irqsave(&krg_ns_lock, flags);
 	BUG_ON(ns != krg_ns);

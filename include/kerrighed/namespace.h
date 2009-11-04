@@ -5,6 +5,7 @@
 #include <asm/atomic.h>
 
 struct task_struct;
+struct hotplug_context;
 struct nsproxy;
 
 struct krg_namespace {
@@ -16,6 +17,7 @@ struct krg_namespace {
 	struct net	     *root_net_ns;
 	struct user_namespace *root_user_ns;
 	struct task_struct *root_task;
+	struct hotplug_context *hotplug_ctx;
 	struct rcu_head rcu;
 };
 

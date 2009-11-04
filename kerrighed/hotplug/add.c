@@ -24,7 +24,15 @@
 
 int __nodes_add(struct hotplug_context *ctx)
 {
+	/* TODO: make it race-free */
+	BUG_ON(ctx->ns->hotplug_ctx);
+	ctx->ns->hotplug_ctx = ctx;
+
 	hotplug_add_notify(ctx, HOTPLUG_NOTIFY_ADD);
+
+	/* TODO: make it race-free */
+	ctx->ns->hotplug_ctx = NULL;
+
 	return 0;
 }
 
