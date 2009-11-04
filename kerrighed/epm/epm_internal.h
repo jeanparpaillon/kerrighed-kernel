@@ -67,6 +67,7 @@ void epm_children_exit(void);
 void epm_pidmap_start(void);
 void epm_pidmap_exit(void);
 int pidmap_map_add(struct hotplug_context *ctx);
+int pidmap_map_remove_local(struct hotplug_context *ctx);
 
 void epm_pid_start(void);
 void epm_pid_exit(void);
