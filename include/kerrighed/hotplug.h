@@ -9,6 +9,7 @@ enum {
 	HOTPLUG_PRIO_MEMBERSHIP_ONLINE, // should be done after distributed services management
 	HOTPLUG_PRIO_SCHED,
 	HOTPLUG_PRIO_EPM,
+	HOTPLUG_PRIO_PROC,
         HOTPLUG_PRIO_MM,
 	HOTPLUG_PRIO_PROCFS,
 	HOTPLUG_PRIO_UNIQUE_ID,
@@ -81,5 +82,7 @@ void krg_node_departure(kerrighed_node_t nodeid);
 
 void membership_online_hold(void);
 void membership_online_release(void);
+
+void zap_local_krg_ns_processes(struct krg_namespace *ns, int min_exit_state);
 
 #endif

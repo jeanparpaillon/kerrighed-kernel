@@ -5,6 +5,7 @@
 
 void proc_task_start(void);
 void proc_task_exit(void);
+void proc_task_remove_local(void);
 
 void proc_krg_exit_start(void);
 void proc_krg_exit_exit(void);
