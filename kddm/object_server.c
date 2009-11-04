@@ -107,7 +107,8 @@ static inline int __handle_invalidation_ack (kerrighed_node_t sender,
 		  BUG_ON(SET_IS_EMPTY (COPYSET(obj_entry)));
 
 		  if (OBJ_EXCLUSIVE (obj_entry)) {
-			  dest = choose_injection_node ();
+			  CLEAR_OBJECT_RM_SO_ACK(obj_entry);
+			  dest = sender;
 
 			  BUG_ON (dest == 1);
 
@@ -567,8 +568,14 @@ void handle_change_ownership_ack (struct rpc_desc* desc,
 	{
 		change_prob_owner(obj_entry, msg->new_owner);
 
-		/* Wake up the set_flush_object function */
-		wake_up_on_wait_object (obj_entry, set);
+		if (TEST_OBJECT_RM_SO_ACK(obj_entry)) {
+			CLEAR_OBJECT_RM_SO_ACK(obj_entry);
+			destroy_kddm_obj_entry(set, obj_entry, msg->objid, 0);
+			return;
+		}
+		else
+			/* Wake up the set_flush_object function */
+			wake_up_on_wait_object (obj_entry, set);
 	}
 	else
 		STATE_MACHINE_ERROR (msg->set_id, msg->objid, obj_entry);
