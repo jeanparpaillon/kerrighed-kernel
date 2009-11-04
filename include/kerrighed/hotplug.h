@@ -5,7 +5,9 @@
 #include <kerrighed/krgnodemask.h>
 
 enum {
+	HOTPLUG_PRIO_SCHED_POST,
 	HOTPLUG_PRIO_MEMBERSHIP_ONLINE, // should be done after distributed services management
+	HOTPLUG_PRIO_SCHED,
 	HOTPLUG_PRIO_EPM,
 	HOTPLUG_PRIO_PROCFS,
 	HOTPLUG_PRIO_KDDM,

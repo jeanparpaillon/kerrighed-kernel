@@ -26,6 +26,60 @@ struct configfs_subsystem krg_scheduler_subsys = {
 	}
 };
 
+static int add(struct hotplug_context *ctx)
+{
+	return global_config_add(ctx);
+}
+
+static int hotplug_notifier(struct notifier_block *nb,
+			    hotplug_event_t event,
+			    void *data)
+{
+	struct hotplug_context *ctx;
+	int err;
+
+	switch(event){
+	case HOTPLUG_NOTIFY_ADD:
+		ctx = data;
+		err = add(ctx);
+		break;
+	default:
+		err = 0;
+		break;
+	}
+
+	if (err)
+		return notifier_from_errno(err);
+	return NOTIFY_OK;
+}
+
+static int post_add(struct hotplug_context *ctx)
+{
+	return global_config_post_add(ctx);
+}
+
+static int post_hotplug_notifier(struct notifier_block *nb,
+				 hotplug_event_t event,
+				 void *data)
+{
+	struct hotplug_context *ctx;
+	int err;
+
+	switch(event){
+	case HOTPLUG_NOTIFY_ADD:
+		ctx = data;
+		err = post_add(ctx);
+		break;
+	default:
+		err = 0;
+		break;
+	}
+
+	if (err)
+		return notifier_from_errno(err);
+	return NOTIFY_OK;
+}
+
 int init_scheduler(void)
 {
 	int ret;
@@ -86,8 +140,20 @@ int init_scheduler(void)
 		goto err_register;
 	}
 
+	ret = register_hotplug_notifier(hotplug_notifier,
+					HOTPLUG_PRIO_SCHED);
+	if (ret)
+		goto err_hotplug;
+
+	ret = register_hotplug_notifier(post_hotplug_notifier,
+					HOTPLUG_PRIO_SCHED_POST);
+	if (ret)
+		goto err_hotplug;
+
 	printk(KERN_INFO "scheduler initialization succeeded!\n");
 	return 0;
+
+err_hotplug:
 
 	configfs_unregister_subsystem(&krg_scheduler_subsys);
 err_register:
