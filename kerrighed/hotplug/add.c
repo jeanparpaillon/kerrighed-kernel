@@ -23,10 +23,7 @@
 
 int __nodes_add(struct hotplug_node_set *nodes_set)
 {
-	kerrighed_subsession_id = nodes_set->subclusterid;
-
 	hotplug_add_notify(nodes_set, HOTPLUG_NOTIFY_ADD);
-
 	return 0;
 }
 
