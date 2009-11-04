@@ -17,49 +17,45 @@ static int epm_add(struct hotplug_context *ctx)
 	return pidmap_map_add(ctx);
 }
 
-/* migrate all processes that we can migrate */
-static int epm_remove(const krgnodemask_t *vector)
+/* Try to migrate all processes to remaining nodes */
+static void expell_all(struct hotplug_context *ctx)
 {
 	struct task_struct *tsk;
-	kerrighed_node_t dest_node = kerrighed_node_id;
+	kerrighed_node_t target;
+	int nr = 0, nr_cpus;
 
-	printk("epm_remove...\n");
+	target = krgnode_next_online_in_ring(kerrighed_node_id);
 
-	/* Here we assume that all nodes of the cluster are not removed */
-	dest_node = krgnode_next_online_in_ring(dest_node);
-	BUG_ON(__krgnode_isset(dest_node, vector));
-
-	read_lock(&tasklist_lock);
+	rcu_read_lock();
 	for_each_process(tsk) {
-		if (!tsk->nsproxy->krg_ns)
+		if (tsk->nsproxy->krg_ns != ctx->ns)
 			continue;
 
-		if (cap_raised(tsk->krg_caps.effective, CAP_CAN_MIGRATE)) {
-			/* have to migrate this process */
-			printk("try to migrate %d %s to %d\n",
-			       task_pid_knr(tsk), tsk->comm, dest_node);
-
-			__migrate_linux_threads(tsk, MIGR_LOCAL_PROCESS,
-						dest_node);
-
-			/*
-			 * Here we assume that all nodes of the cluster are not
-			 * removed.
-			 */
-			dest_node = krgnode_next_online_in_ring(dest_node);
-			BUG_ON(__krgnode_isset(dest_node, vector));
-
-			continue;
-		}
-
-		if (cap_raised(tsk->krg_caps.effective, CAP_USE_REMOTE_MEMORY)) {
-			/* have to kill this process */
-			printk("epm_remove: have to kill %d (%s)\n",
-			       task_pid_knr(tsk), tsk->comm);
-			continue;
+		printk("try to migrate %d %s to %d\n",
+		       task_pid_knr(tsk), tsk->comm, target);
+		if (!__migrate_linux_threads(tsk, MIGR_LOCAL_PROCESS, target)) {
+			nr++;
+			target = krgnode_next_online_in_ring(target);
 		}
 	}
-	read_unlock(&tasklist_lock);
+	rcu_read_unlock();
+
+	if (nr) {
+		/* Give time to tasks to start migrating */
+		__set_current_state(TASK_UNINTERRUPTIBLE);
+		nr_cpus = num_online_cpus();
+		schedule_timeout((nr * HZ + nr_cpus - 1) / nr_cpus);
+	}
+}
+
+static int epm_remove_local(struct hotplug_context *ctx)
+{
+	printk("epm_remove...\n");
+
+	if (num_online_krgnodes())
+		expell_all(ctx);
+
+	zap_local_krg_ns_processes(ctx->ns, EXIT_DEAD);
 
 	return 0;
 }
@@ -74,8 +70,8 @@ static int epm_notification(struct notifier_block *nb, hotplug_event_t event,
 	case HOTPLUG_NOTIFY_ADD:
 		err = epm_add(ctx);
 		break;
-	case HOTPLUG_NOTIFY_REMOVE:
-		err = epm_remove(&ctx->node_set.v);
+	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
+		err = epm_remove_local(ctx);
 		break;
 	default:
 		err = 0;

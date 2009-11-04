@@ -1,6 +1,7 @@
 #ifndef __KRG_NAMESPACE_H__
 #define __KRG_NAMESPACE_H__
 
+#include <linux/completion.h>
 #include <linux/rcupdate.h>
 #include <asm/atomic.h>
 
@@ -16,6 +17,8 @@ struct krg_namespace {
 	struct net	     *root_net_ns;
 	struct user_namespace *root_user_ns;
 	struct task_struct *root_task;
+	struct completion root_task_in_exit;
+	struct completion root_task_continue_exit;
 	struct rcu_head rcu;
 };
 

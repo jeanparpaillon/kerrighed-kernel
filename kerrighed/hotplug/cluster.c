@@ -339,9 +339,10 @@ void krg_ns_root_exit(struct krg_namespace *ns)
 			       "Please retry manually.\n");
 #else
 	printk(KERN_WARNING "kerrighed: Root task exiting! Leaking zombies.\n");
-	set_current_state(TASK_UNINTERRUPTIBLE);
-	schedule();
 #endif
+
+	complete(&ns->root_task_in_exit);
+	wait_for_completion(&ns->root_task_continue_exit);
 }
 
 /* ns->root_task must be blocked and alive to get a reliable result */
@@ -835,6 +836,9 @@ void zap_local_krg_ns_processes(struct krg_namespace *ns, int min_exit_state)
 #endif
 	bool backoff;
 
+	if (min_exit_state == EXIT_DEAD)
+		complete(&ns->root_task_continue_exit);
+
 	rcu_read_lock();
 	read_lock(&tasklist_lock);
 	do_each_thread(g, t) {
@@ -852,14 +856,27 @@ void zap_local_krg_ns_processes(struct krg_namespace *ns, int min_exit_state)
 	read_unlock(&tasklist_lock);
 	rcu_read_unlock();
 
+	wait_for_completion(&ns->root_task_in_exit);
+
 	for (;;) {
 		backoff = false;
 
 		rcu_read_lock();
 		read_lock(&tasklist_lock);
 		do_each_thread(g, t) {
-			if (t == ns->root_task)
+			if (min_exit_state < EXIT_DEAD && g == ns->root_task)
+				/*
+				 * We block a thread of init before it can
+				 * become a zombie.
+				 */
 				continue;
+			if (min_exit_state == EXIT_DEAD && t == ns->root_task)
+				/*
+				 * We don't need that init be reaped, only
+				 * that all threads but group leader be reaped.
+				 */
+				continue;
+
 #ifdef CONFIG_KRG_PROC
 			if (task_active_pid_ns(t)->krg_ns_root != root_pid_ns)
 				continue;
@@ -895,6 +912,7 @@ static int proc_notification(struct notifier_block *nb, hotplug_event_t event,
 	switch (event) {
 	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
 		zap_local_krg_ns_processes(ctx->ns, EXIT_ZOMBIE);
+		complete(&ctx->ns->root_task_continue_exit);
 		break;
 	default
 		break;
