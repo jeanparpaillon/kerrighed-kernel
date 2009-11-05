@@ -195,19 +195,19 @@ char * get_chkpt_dir(long app_id,
 	char *buff;
 	char *dirname;
 
-	buff = kmalloc(MAX_LENGHT_STRING*sizeof(char), GFP_KERNEL);
-	dirname = kmalloc(MAX_LENGHT_STRING*sizeof(char), GFP_KERNEL);
+	buff = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
+	dirname = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
 
-	sprintf(dirname, "%s", checkpointRoot);
+	snprintf(dirname, PATH_MAX, "%s", checkpointRoot);
 
 	if (app_id) {
-		sprintf(buff,"%ld/", app_id);
-		strcat(dirname, buff);
+		snprintf(buff, PATH_MAX, "%ld/", app_id);
+		strncat(dirname, buff, PATH_MAX);
 	}
 
 	if (chkpt_sn) {
-		sprintf(buff, "v%d/", chkpt_sn);
-		strcat(dirname, buff);
+		snprintf(buff, PATH_MAX, "v%d/", chkpt_sn);
+		strncat(dirname, buff, PATH_MAX);
 	}
 
 	kfree(buff);
@@ -226,31 +226,31 @@ char * get_chkpt_filebase(long app_id,
 	char *buff;
 	char *filename;
 
-	buff = kmalloc(MAX_LENGHT_STRING*sizeof(char), GFP_KERNEL);
-	filename = kmalloc(MAX_LENGHT_STRING*sizeof(char), GFP_KERNEL);
+	buff = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
+	filename = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
 
-	sprintf(filename, "%s", checkpointRoot);
+	snprintf(filename, PATH_MAX, "%s", checkpointRoot);
 
 	if (app_id) {
-		sprintf(buff,"%ld/", app_id);
-		strcat(filename, buff);
+		snprintf(buff, PATH_MAX, "%ld/", app_id);
+		strncat(filename, buff, PATH_MAX);
 	}
 
 	if (chkpt_sn) {
-		sprintf(buff, "v%d/", chkpt_sn);
-		strcat(filename, buff);
+		snprintf(buff, PATH_MAX, "v%d/", chkpt_sn);
+		strncat(filename, buff, PATH_MAX);
 	}
 
 	BUG_ON(!obj_prefix);
 
-	strcat(filename, obj_prefix);
+	strncat(filename, obj_prefix, PATH_MAX);
 
 	if (obj_id != -1) {
-		sprintf(buff,"_%d", obj_id);
-                strcat(filename, buff);
+		snprintf(buff, PATH_MAX, "_%d", obj_id);
+                strncat(filename, buff, PATH_MAX);
 	}
 
-	strcat(filename, ".bin");
+	strncat(filename, ".bin", PATH_MAX);
 
 	kfree (buff);
 	return filename;
@@ -262,14 +262,14 @@ int mkdir_chkpt_path(long app_id, unsigned int chkpt_sn)
 	char *dir_name;
 	int r;
 
-	buff = kmalloc(MAX_LENGHT_STRING*sizeof(char), GFP_KERNEL);
-	dir_name = kmalloc(MAX_LENGHT_STRING*sizeof(char), GFP_KERNEL);
+	buff = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
+	dir_name = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
 
-	sprintf(dir_name, "%s", checkpointRoot);
+	snprintf(dir_name, PATH_MAX, "%s", checkpointRoot);
 
 	if (app_id) {
-		sprintf(buff,"%ld/", app_id);
-		strcat(dir_name, buff);
+		snprintf(buff, PATH_MAX, "%ld/", app_id);
+		strncat(dir_name, buff, PATH_MAX);
 	}
 
 	r = sys_mkdir(dir_name, S_IRWXUGO|S_ISVTX);
@@ -282,8 +282,8 @@ int mkdir_chkpt_path(long app_id, unsigned int chkpt_sn)
 		goto err;
 
 	if (chkpt_sn) {
-		sprintf(buff, "v%d/", chkpt_sn);
-		strcat(dir_name, buff);
+		snprintf(buff, PATH_MAX, "v%d/", chkpt_sn);
+		strncat(dir_name, buff, PATH_MAX);
 
 		r = sys_mkdir(dir_name, S_IRWXU);
 		if (r && r != -EEXIST)
