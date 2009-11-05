@@ -1024,6 +1024,9 @@ int remove_proc_node_info(kerrighed_node_t nodeid)
 	struct proc_dir_entry *subdir, *next;
 	char dir_name[80];
 
+	if (nodeid == kerrighed_node_id)
+		remove_proc_entry("self", procfs_nodes);
+
 	snprintf(dir_name, 80, "node%d", nodeid);
 
 	subdir = procfs_nodes->subdir;
