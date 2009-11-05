@@ -307,7 +307,7 @@ int init_anon_vma_kddm_set(struct task_struct *tsk,
 	mm->mm_id = 0;
 	krgnodes_clear (mm->copyset);
 
-	r = create_anon_vma_kddm_set(mm);
+	r = create_anon_vma_kddm_set(mm, tsk->pid);
 	if (r) {
 		BUG();
 		return r;

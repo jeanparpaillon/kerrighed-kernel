@@ -47,7 +47,7 @@ extern struct vm_operations_struct null_vm_ops;
  */
 int check_link_vma_to_anon_memory_kddm_set (struct vm_area_struct *vma);
 
-int create_anon_vma_kddm_set (struct mm_struct *dst_mm);
+int create_anon_vma_kddm_set (struct mm_struct *dst_mm, pid_t pid);
 
 static inline void restore_initial_vm_ops (struct vm_area_struct *vma)
 {

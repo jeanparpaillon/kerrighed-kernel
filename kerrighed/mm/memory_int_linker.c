@@ -41,13 +41,13 @@ struct vm_operations_struct null_vm_ops = {};
  *  The kddm_set is created empty. The caller must fill it with existing
  *  pages.
  */
-int create_anon_vma_kddm_set (struct mm_struct *mm)
+int create_anon_vma_kddm_set (struct mm_struct *mm, pid_t pid)
 {
 	struct kddm_set *set;
 
 	set = __create_new_kddm_set(kddm_def_ns, 0, &kddm_pt_set_ops, mm,
 				    MEMORY_LINKER, kerrighed_node_id,
-				    PAGE_SIZE, NULL, 0, 0);
+				    PAGE_SIZE, &pid, sizeof(pid), 0);
 
 	if (IS_ERR(set))
 		return PTR_ERR(set);
