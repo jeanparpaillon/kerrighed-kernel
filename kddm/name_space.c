@@ -64,7 +64,8 @@ struct kddm_ns * create_kddm_ns(int ns_id,
 	ns->id = ns_id;
 	init_rwsem(&ns->table_sem);
 	ns->kddm_set_table = hashtable_new(KDDM_SET_HASH_TABLE_SIZE);
-	init_and_set_unique_id_root(&ns->kddm_set_unique_id_root, MIN_KDDM_ID);
+	init_and_set_unique_id_root(UNIQUE_ID_KDDM,
+				    &ns->kddm_set_unique_id_root, MIN_KDDM_ID);
 	atomic_set(&ns->count, 1);
 
 	error = radix_tree_preload(GFP_KERNEL);

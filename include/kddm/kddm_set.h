@@ -100,6 +100,7 @@ enum
     KDDM_TEST4096,                    // 27
     MM_STRUCT_KDDM_ID,                // 28
     PIDMAP_MAP_KDDM_ID,               // 29
+    UNIQUE_ID_KDDM_ID,		      // 30
     MIN_KDDM_ID,           /* MUST always be the last one */
   };
 

@@ -597,7 +597,7 @@ void krg_do_mprotect(struct mm_struct *mm,
 
 void mm_struct_init (void)
 {
-	init_unique_id_root (&mm_struct_unique_id_root);
+	init_unique_id_root (UNIQUE_ID_MM_STRUCT, &mm_struct_unique_id_root);
 
 	mm_struct_kddm_set = create_new_kddm_set(kddm_def_ns,
 						 MM_STRUCT_KDDM_ID,
