@@ -161,10 +161,14 @@ static void init_cpu_info_seq_struct(struct cpu_info_seq_struct *seq_data)
 			// Cluster wide CPU info
 			seq_data->cur_node = nth_online_krgnode(0);
 			seq_data->last_node = KERRIGHED_MAX_NODES - 1;
-		} else {
+		} else if (krgnode_online(req_node)) {
 			// Node wide CPU info
 			seq_data->cur_node = req_node;
 			seq_data->last_node = req_node;
+		} else {
+			/* Stop the iterator now */
+			seq_data->cur_node = KERRIGHED_MAX_NODES;
+			seq_data->last_node = kerrighed_node_id;
 		}
 	} else {
 		seq_data->cur_node = kerrighed_node_id;
@@ -180,10 +184,16 @@ static void go_to_selected_cpu(struct cpu_info_seq_struct *seq_data,
 	krg_static_node_info_t *static_node_info;
 	int i;
 
+	if (seq_data->cur_node == KERRIGHED_MAX_NODES)
+		return;
+
 	for (i = seq_data->last_pos; i < pos; i++) {
-		seq_data->cpu_id++;
-		static_node_info = get_static_node_info(seq_data->cur_node);
-		if (seq_data->cpu_id >= static_node_info->nr_cpu) {
+		if (krgnode_online(seq_data->cur_node)) {
+			seq_data->cpu_id++;
+			static_node_info = get_static_node_info(seq_data->cur_node);
+		}
+		if (!krgnode_online(seq_data->cur_node)
+		    || seq_data->cpu_id >= static_node_info->nr_cpu) {
 			seq_data->cur_node =
 				krgnode_next_online(seq_data->cur_node);
 			seq_data->cpu_id = 0;
@@ -196,6 +206,9 @@ static void *c_start(struct seq_file *m, loff_t *pos)
 {
 	struct cpu_info_seq_struct *seq_data = m->private;
 	krg_static_cpu_info_t *cpu_info;
+
+	if (membership_online_hold())
+		return NULL;
 
 	if (*pos == 0)
 		init_cpu_info_seq_struct (seq_data);
@@ -210,9 +223,12 @@ static void *c_start(struct seq_file *m, loff_t *pos)
 	if (seq_data->cur_node <= seq_data->last_node) {
 		cpu_info =
 		    get_static_cpu_info(seq_data->cur_node, seq_data->cpu_id);
+		membership_online_release();
 		return &cpu_info->info;
-	} else
+	} else {
+		membership_online_release();
 		return NULL;
+	}
 }
 
 static void *c_next(struct seq_file *m, void *v, loff_t *pos)
@@ -308,7 +324,11 @@ static int show_meminfo(struct seq_file *p, void *v)
 	krg_dynamic_node_info_t *dyn_info;
 	kerrighed_node_t node;
 	long cached;
-	int i;
+	int i, err;
+
+	err = membership_online_hold();
+	if (err)
+		return err;
 
 	nodes = get_proc_nodes_vector(nodeid);
 
@@ -366,6 +386,8 @@ static int show_meminfo(struct seq_file *p, void *v)
 
 		krg_arch_accumulate_meminfo(dyn_info, &global_dyn_info);
 	}
+
+	membership_online_release();
 
 #define K(x) ((x) << (PAGE_SHIFT - 10))
 
@@ -515,7 +537,7 @@ static int show_stat(struct seq_file *p, void *v)
 	struct cpu_usage_stat *stat;
 	krg_dynamic_node_info_t *dynamic_node_info;
 	krg_static_node_info_t *static_node_info;
-	int i, j;
+	int i, j, err;
 	krgnodemask_t nodes;
 	cputime64_t user, nice, system, idle, iowait, irq, softirq, steal;
 	cputime64_t guest;
@@ -537,6 +559,10 @@ static int show_stat(struct seq_file *p, void *v)
 		return -ENOMEM;
 	for (j = 0; j < NR_IRQS; j++)
 		irqs[j] = 0;
+
+	err = membership_online_hold();
+	if (err)
+		return err;
 
 	nodes = get_proc_nodes_vector(req_nodeid);
 
@@ -607,6 +633,8 @@ static int show_stat(struct seq_file *p, void *v)
 		}
 		total_intr += dynamic_node_info->arch_irq;
 	}
+
+	membership_online_release();
 
 	/* Dirty trick to print "cpu" line at the beginning without parsing data
 	 * twice
@@ -691,9 +719,13 @@ static int show_loadavg(struct seq_file *p, void *v)
 	krgnodemask_t nodes;
 	kerrighed_node_t i;
 	int a, b, c, nr_threads, last_pid;
-	long nr_running;
+	long nr_running, err;
 
 	a = b = c = nr_running = nr_threads = last_pid = 0;
+
+	err = membership_online_hold();
+	if (err)
+		return err;
 
 	nodes = get_proc_nodes_vector(nodeid);
 
@@ -707,6 +739,9 @@ static int show_loadavg(struct seq_file *p, void *v)
 		nr_threads += dynamic_node_info->nr_threads;
 		last_pid = dynamic_node_info->last_pid;
 	}
+
+	membership_online_release();
+
 	a += (FIXED_1 / 200);
 	b += (FIXED_1 / 200);
 	c += (FIXED_1 / 200);
@@ -849,6 +884,11 @@ static int show_uptime(struct seq_file *p, void *v)
 	struct timespec uptime;
 	unsigned long long idle = 0;
 	unsigned long idle_mod;
+	int err;
+
+	err = membership_online_hold();
+	if (err)
+		return err;
 
 	nodes = get_proc_nodes_vector(nodeid);
 
@@ -864,6 +904,8 @@ static int show_uptime(struct seq_file *p, void *v)
 		idle += (unsigned long long)dynamic_node_info->idletime.tv_sec *
 		    NSEC_PER_SEC + dynamic_node_info->idletime.tv_nsec;
 	}
+
+	membership_online_release();
 
 	do_div(idle, nr_nodes);
 	idle_mod = do_div(idle, NSEC_PER_SEC);
