@@ -217,7 +217,8 @@ static int barrier_notification(struct notifier_block *nb,
 
 void init_cluster_barrier(void)
 {
-	init_and_set_unique_id_root(&barrier_id_root, CLUSTER_BARRIER_MAX);
+	init_and_set_unique_id_root(UNIQUE_ID_CLUSTER_BARRIER, &barrier_id_root,
+				    CLUSTER_BARRIER_MAX);
 	barrier_table = hashtable_new(TABLE_SIZE);
 
 	rpc_register_int (RPC_ENTER_BARRIER, handle_enter_barrier, 0);
