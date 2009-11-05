@@ -1184,6 +1184,18 @@ void unimport_private_signals(struct task_struct *task)
 	unimport_sigpending(task, &task->pending);
 }
 
+static int signal_flusher(struct kddm_set *set, objid_t objid,
+			  struct kddm_obj *obj_entry, void *data)
+{
+	BUG();
+	return KERRIGHED_NODE_ID_NONE;
+}
+
+void signal_remove_local(void)
+{
+	_kddm_flush_set(signal_struct_kddm_set, signal_flusher, NULL);
+}
+
 int epm_signal_start(void)
 {
 	unsigned long cache_flags = SLAB_PANIC;

@@ -57,12 +57,15 @@ void epm_hotplug_cleanup(void);
 
 int epm_signal_start(void);
 void epm_signal_exit(void);
+void signal_remove_local(void);
 
 int epm_sighand_start(void);
 void epm_sighand_exit(void);
+void sighand_remove_local(void);
 
 void epm_children_start(void);
 void epm_children_exit(void);
+void children_remove_local(void);
 
 void epm_pidmap_start(void);
 void epm_pidmap_exit(void);
@@ -71,6 +74,7 @@ int pidmap_map_remove_local(struct hotplug_context *ctx);
 
 void epm_pid_start(void);
 void epm_pid_exit(void);
+void pid_remove_local(void);
 
 int epm_procfs_start(void);
 void epm_procfs_exit(void);
@@ -86,6 +90,7 @@ void register_checkpoint_hooks(void);
 
 void application_cr_server_init(void);
 void application_cr_server_finalize(void);
+void application_remove_local(void);
 
 #endif /* CONFIG_KRG_EPM */
 
