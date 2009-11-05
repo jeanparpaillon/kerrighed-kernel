@@ -948,6 +948,32 @@ exit:
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
+static int application_flusher(struct kddm_set *set, objid_t objid,
+			       struct kddm_obj *obj_entry, void *data)
+{
+	struct app_kddm_object *app = obj_entry->object;
+	kerrighed_node_t node;
+
+	node = global_pid_default_owner(set, objid,
+					&krgnode_online_map,
+					num_online_krgnodes());
+	if (!krgnode_isset(node, app->nodes)) {
+		krgnodemask_t nodes;
+
+		krgnodes_and(nodes, app->nodes, krgnode_online_map);
+		node = first_krgnode(nodes);
+		if (node == KERRIGHED_MAX_NODES)
+			node = first_krgnode(krgnode_online_map);
+	}
+
+	return node;
+}
+
+void application_remove_local(void)
+{
+	_kddm_flush_set(task_kddm_set, task_flusher, NULL);
+}
+
 void application_cr_server_init(void)
 {
 	unsigned long cache_flags = SLAB_PANIC;

@@ -538,8 +538,11 @@ int pidmap_map_remove_local(struct hotplug_context *ctx)
 		return err;
 	err = pidmaps_inject(ctx);
 	pidmap_map_write_unlock();
+	if (err)
+		return err;
 
-	return err;
+	return _kddm_flush_object(pidmap_map_kddm_set, 0,
+				  first_krgnode(krgnode_online_map));
 }
 
 void epm_pidmap_start(void)

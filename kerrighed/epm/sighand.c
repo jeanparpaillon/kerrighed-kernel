@@ -591,6 +591,17 @@ struct shared_object_operations cr_shared_sighand_struct_ops = {
 	.delete            = cr_delete_sighand_struct,
 };
 
+static int sighand_flusher(struct kddm_set *set, objid_t objid,
+			   struct kddm_obj *obj_entry, void *data)
+{
+	BUG();
+}
+
+void sighand_remove_local(void)
+{
+	_kddm_flush_set(sighand_struct_kddm_set, sighand_flusher, NULL);
+}
+
 int epm_sighand_start(void)
 {
 	unsigned long cache_flags = SLAB_PANIC;

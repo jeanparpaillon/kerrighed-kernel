@@ -1632,6 +1632,19 @@ void krg_children_cleanup(struct task_struct *task)
 	}
 }
 
+static int children_flusher(struct kddm_set *set, objid_t objid,
+			    struct kddm_obj *obj_entry, void *data)
+{
+	return global_pid_default_owner(set, objid,
+					&krgnode_online_map,
+					num_online_krgnodes());
+}
+
+void children_remove_local(void)
+{
+	_kddm_flush_set(children_kddm_set, children_flusher, NULL);
+}
+
 /**
  * @author Louis Rilling
  */
