@@ -182,13 +182,26 @@ static int barrier_notification(struct notifier_block *nb,
 		rpc_enable(RPC_EXIT_BARRIER);
 		break;
 
-	case HOTPLUG_NOTIFY_REMOVE:
-		/* TODO */
+	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
+		/* Nothing to do */
+		break;
+
+	case HOTPLUG_NOTIFY_REMOVE_DISTANT:
+		rpc_disable(RPC_ENTER_BARRIER);
+		rpc_disable(RPC_EXIT_BARRIER);
+		break;
+
+	case HOTPLUG_NOTIFY_REMOVE_ADVERT:
+		/* Nothing to do */
+		break;
+
+	case HOTPLUG_NOTIFY_REMOVE_ACK:
+		/* Nothing to do */
 		break;
 
 	case HOTPLUG_NOTIFY_FAIL:
-		/* TODO */
-		break;
+		/* Not yet managed */
+		BUG();
 
 	default:
 		BUG();
