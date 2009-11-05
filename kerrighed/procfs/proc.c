@@ -161,10 +161,14 @@ static void init_cpu_info_seq_struct(struct cpu_info_seq_struct *seq_data)
 			// Cluster wide CPU info
 			seq_data->cur_node = nth_online_krgnode(0);
 			seq_data->last_node = KERRIGHED_MAX_NODES - 1;
-		} else {
+		} else if (krgnode_online(req_node)) {
 			// Node wide CPU info
 			seq_data->cur_node = req_node;
 			seq_data->last_node = req_node;
+		} else {
+			/* Stop the iterator now */
+			seq_data->cur_node = KERRIGHED_MAX_NODES;
+			seq_data->last_node = kerrighed_node_id;
 		}
 	} else {
 		seq_data->cur_node = kerrighed_node_id;
@@ -180,10 +184,16 @@ static void go_to_selected_cpu(struct cpu_info_seq_struct *seq_data,
 	krg_static_node_info_t *static_node_info;
 	int i;
 
+	if (seq_data->cur_node == KERRIGHED_MAX_NODES)
+		return;
+
 	for (i = seq_data->last_pos; i < pos; i++) {
-		seq_data->cpu_id++;
-		static_node_info = get_static_node_info(seq_data->cur_node);
-		if (seq_data->cpu_id >= static_node_info->nr_cpu) {
+		if (krgnode_online(seq_data->cur_node)) {
+			seq_data->cpu_id++;
+			static_node_info = get_static_node_info(seq_data->cur_node);
+		}
+		if (!krgnode_online(seq_data->cur_node)
+		    || seq_data->cpu_id >= static_node_info->nr_cpu) {
 			seq_data->cur_node =
 				krgnode_next_online(seq_data->cur_node);
 			seq_data->cpu_id = 0;
@@ -196,9 +206,12 @@ static void *c_start(struct seq_file *m, loff_t *pos)
 {
 	struct cpu_info_seq_struct *seq_data = m->private;
 	krg_static_cpu_info_t *cpu_info;
+	void *ret;
 
 	if (!current->nsproxy->krg_ns)
 		return cpuinfo_op.start(m, pos);
+
+	membership_online_hold();
 
 	if (*pos == 0)
 		init_cpu_info_seq_struct (seq_data);
@@ -213,9 +226,13 @@ static void *c_start(struct seq_file *m, loff_t *pos)
 	if (seq_data->cur_node <= seq_data->last_node) {
 		cpu_info =
 		    get_static_cpu_info(seq_data->cur_node, seq_data->cpu_id);
-		return &cpu_info->info;
+		ret = &cpu_info->info;
 	} else
-		return NULL;
+		ret = NULL;
+
+	membership_online_release();
+
+	return ret;
 }
 
 static void *c_next(struct seq_file *m, void *v, loff_t *pos)
@@ -321,6 +338,8 @@ static int show_meminfo(struct seq_file *p, void *v)
 	if (!current->nsproxy->krg_ns)
 		return meminfo_proc_show(p, v);
 
+	membership_online_hold();
+
 	nodes = get_proc_nodes_vector(nodeid);
 
 	memset(&global_dyn_info, 0, sizeof(krg_dynamic_node_info_t));
@@ -377,6 +396,8 @@ static int show_meminfo(struct seq_file *p, void *v)
 
 		krg_arch_accumulate_meminfo(dyn_info, &global_dyn_info);
 	}
+
+	membership_online_release();
 
 #define K(x) ((x) << (PAGE_SHIFT - 10))
 
@@ -552,6 +573,8 @@ static int krg_show_stat(struct seq_file *p, void *v)
 	for (j = 0; j < NR_IRQS; j++)
 		irqs[j] = 0;
 
+	membership_online_hold();
+
 	nodes = get_proc_nodes_vector(req_nodeid);
 
 	user = nice = system = idle = iowait = irq = softirq = steal =
@@ -621,6 +644,8 @@ static int krg_show_stat(struct seq_file *p, void *v)
 		}
 		total_intr += dynamic_node_info->arch_irq;
 	}
+
+	membership_online_release();
 
 	/* Dirty trick to print "cpu" line at the beginning without parsing data
 	 * twice
@@ -712,6 +737,8 @@ static int show_loadavg(struct seq_file *p, void *v)
 
 	a = b = c = nr_running = nr_threads = last_pid = 0;
 
+	membership_online_hold();
+
 	nodes = get_proc_nodes_vector(nodeid);
 
 	for_each_krgnode_mask(i, nodes) {
@@ -724,6 +751,9 @@ static int show_loadavg(struct seq_file *p, void *v)
 		nr_threads += dynamic_node_info->nr_threads;
 		last_pid = dynamic_node_info->last_pid;
 	}
+
+	membership_online_release();
+
 	a += (FIXED_1 / 200);
 	b += (FIXED_1 / 200);
 	c += (FIXED_1 / 200);
@@ -870,6 +900,8 @@ static int show_uptime(struct seq_file *p, void *v)
 	if (!current->nsproxy->krg_ns)
 		return uptime_proc_show(p, v);
 
+	membership_online_hold();
+
 	nodes = get_proc_nodes_vector(nodeid);
 
 	uptime.tv_sec = uptime.tv_nsec = 0;
@@ -884,6 +916,8 @@ static int show_uptime(struct seq_file *p, void *v)
 		idle += (unsigned long long)dynamic_node_info->idletime.tv_sec *
 		    NSEC_PER_SEC + dynamic_node_info->idletime.tv_nsec;
 	}
+
+	membership_online_release();
 
 	do_div(idle, nr_nodes);
 	idle_mod = do_div(idle, NSEC_PER_SEC);
