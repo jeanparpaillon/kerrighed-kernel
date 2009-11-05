@@ -756,6 +756,19 @@ void pid_wait_quiescent(void)
 	flush_work(&put_pid_work);
 }
 
+static int pid_flusher(struct kddm_set *set, objid_t objid,
+		       struct kddm_obj *obj_entry, void *data)
+{
+	return global_pid_default_owner(set, objid,
+					&krgnode_online_map,
+					num_online_krgnodes());
+}
+
+void pid_remove_local(void)
+{
+	_kddm_flush_set(pid_kddm_set, pid_flusher, NULL);
+}
+
 void epm_pid_start(void)
 {
 	unsigned long cache_flags = SLAB_PANIC;
