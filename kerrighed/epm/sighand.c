@@ -605,7 +605,8 @@ int epm_sighand_start(void)
 	 * Objid 0 is reserved to mark a sighand_struct having not been
 	 * linked to a kddm object yet.
 	 */
-	init_and_set_unique_id_root(&sighand_struct_id_root, 1);
+	init_and_set_unique_id_root(UNIQUE_ID_SIGHAND,
+				    &sighand_struct_id_root, 1);
 
 	register_io_linker(SIGHAND_STRUCT_LINKER, &sighand_struct_io_linker);
 

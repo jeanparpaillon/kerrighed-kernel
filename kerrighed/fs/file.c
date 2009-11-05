@@ -196,7 +196,8 @@ void krg_put_file(struct file *file)
 
 int dvfs_file_init(void)
 {
-	init_and_set_unique_id_root (&file_struct_unique_id_root, 1);
+	init_and_set_unique_id_root (UNIQUE_ID_FILE,
+				     &file_struct_unique_id_root, 1);
 
 	/* Create the DVFS file struct container */
 

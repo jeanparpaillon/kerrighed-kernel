@@ -65,6 +65,7 @@ enum
     KDDM_TEST_LINKER,
     MM_STRUCT_LINKER,
     PIDMAP_MAP_LINKER,
+    UNIQUE_ID_LINKER,
     MAX_IO_LINKER, /* MUST always be the last one */
   } ;
 

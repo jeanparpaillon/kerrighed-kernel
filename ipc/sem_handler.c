@@ -749,7 +749,8 @@ int krg_sem_init_ns(struct ipc_namespace *ns)
 		goto err_undolist;
 	}
 
-	init_unique_id_root(&sem_ops->undo_list_unique_id_root);
+	init_unique_id_root(UNIQUE_ID_SEMUNDO,
+			    &sem_ops->undo_list_unique_id_root);
 
 	sem_ops->krgops.ipc_lock = kcb_ipc_sem_lock;
 	sem_ops->krgops.ipc_unlock = kcb_ipc_sem_unlock;

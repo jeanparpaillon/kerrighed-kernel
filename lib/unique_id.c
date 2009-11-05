@@ -11,12 +11,39 @@
 #include <linux/module.h>
 #include <linux/unique_id.h>
 #include <kerrighed/krginit.h>
+#ifdef CONFIG_KRG_HOTPLUG
+#include <linux/cluster_barrier.h>
+#include <kerrighed/hotplug.h>
+#include <kddm/kddm.h>
+#endif
 
 #define INITVAL 1
+
+#ifdef CONFIG_KRG_HOTPLUG
+struct kddm_set *unique_id_set;
+struct cluster_barrier *unique_id_barrier;
+
+static struct unique_id_root *roots[NR_UNIQUE_IDS];
+#endif
 
 unique_id_root_t mm_unique_id_root = {
 	.local_unique_id = ATOMIC_LONG_INIT(INITVAL),
 };
+
+#ifdef CONFIG_KRG_HOTPLUG
+static void register_root(enum unique_id_type type, struct unique_id_root *root)
+{
+	BUG_ON(type < 0 && type >= NR_UNIQUE_IDS);
+	BUG_ON(roots[type]);
+	roots[type] = root;
+}
+#else
+static
+inline
+void register_root(enum unique_id_type type, struct unique_id_root *root)
+{
+}
+#endif
 
 /** Initialize a unique id root.
  *  @author Renaud Lottiaux
@@ -25,11 +52,12 @@ unique_id_root_t mm_unique_id_root = {
  *  @return       0 if everything ok.
  *                Negative value otherwise.
  */
-int init_unique_id_root(unique_id_root_t *root)
+int init_unique_id_root(enum unique_id_type type, unique_id_root_t *root)
 {
 	/* Value 0 is reserved for UNIQUE_ID_NONE */
 
 	atomic_long_set (&root->local_unique_id, INITVAL);
+	register_root(type, root);
 
 	return 0;
 }
@@ -45,9 +73,11 @@ EXPORT_SYMBOL(init_unique_id_root);
  *  @return       0 if everything ok.
  *                Negative value otherwise.
  */
-int init_and_set_unique_id_root(unique_id_root_t *root, int base)
+int init_and_set_unique_id_root(enum unique_id_type type,
+				unique_id_root_t *root, int base)
 {
 	atomic_long_set (&root->local_unique_id, base + INITVAL);
+	register_root(type, root);
 
 	return 0;
 }
@@ -88,5 +118,125 @@ EXPORT_SYMBOL(get_unique_id);
 
 void init_unique_ids(void)
 {
-	init_unique_id_root(&mm_unique_id_root);
+	init_unique_id_root(UNIQUE_ID_MM, &mm_unique_id_root);
 }
+
+
+#ifdef CONFIG_KRG_HOTPLUG
+static struct iolinker_struct unique_id_io_linker = {
+	.linker_name   = "unique_id ",
+	.linker_id     = UNIQUE_ID_LINKER,
+};
+
+static int root_obj_id(enum unique_id_type type, kerrighed_node_t node)
+{
+	return node * NR_UNIQUE_IDS + type;
+}
+
+static int unique_ids_add(struct hotplug_context *ctx)
+{
+	krgnodemask_t nodes;
+	struct unique_id_root *root;
+	objid_t id;
+	int i, err;
+
+	for (i = 0; i < NR_UNIQUE_IDS; i++) {
+		id = root_obj_id(i, kerrighed_node_id);
+		root = _kddm_get_object_no_ft(unique_id_set, id);
+		if (IS_ERR(root))
+			return PTR_ERR(root);
+		if (root)
+			atomic_long_set(&roots[i]->local_unique_id,
+					atomic_long_read(&root->local_unique_id));
+		_kddm_put_object(unique_id_set, id);
+	}
+
+	krgnodes_or(nodes, krgnode_online_map, ctx->node_set.v);
+	return cluster_barrier(unique_id_barrier, nodes, first_krgnode(nodes));
+}
+
+static int unique_id_flusher(struct kddm_set *set, objid_t id,
+			     struct kddm_obj *obj, void *data)
+{
+	return nth_krgnode((id / NR_UNIQUE_IDS) % num_online_krgnodes(),
+			   krgnode_online_map);
+}
+
+static int unique_ids_remove_local(struct hotplug_context *ctx)
+{
+	kerrighed_node_t node;
+	struct unique_id_root *root;
+	objid_t id;
+	int i;
+
+	if (!num_online_krgnodes()) {
+		for (node = 0; node < KERRIGHED_MAX_NODES; node++)
+			for (i = 0; i < NR_UNIQUE_IDS; i++)
+				_kddm_remove_object(unique_id_set,
+						    root_obj_id(i, node));
+
+		return 0;
+	}
+
+	for (i = 0; i < NR_UNIQUE_IDS; i++) {
+		id = root_obj_id(i, kerrighed_node_id);
+		root = _kddm_grab_object(unique_id_set, id);
+		if (IS_ERR(root))
+			return PTR_ERR(root);
+		BUG_ON(!root);
+		atomic_long_set(root->local_unique_id,
+				atomic_long_read(&roots[i]->local_unique_id));
+		_kddm_put_object(unique_id_set, id);
+	}
+
+	_kddm_flush_set(unique_id_set, unique_id_flusher, NULL);
+
+	return 0;
+}
+
+static int hotplug_notifier(struct notifier_block *nb, hotplug_event_t event,
+			    void *data)
+{
+	struct hotplug_context *ctx = data;
+	int err;
+
+	switch(event){
+	case HOTPLUG_NOTIFY_ADD:
+		err = unique_ids_add(ctx);
+		break;
+	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
+		err = unique_ids_remove_local(ctx);
+		break;
+	default:
+		err = 0;
+		break;
+	}
+
+	if (err)
+		return notifier_from_errno(err);
+	return NOTIFY_OK;
+}
+
+int init_unique_ids_hotplug(void)
+{
+	register_io_linker(UNIQUE_ID_LINKER, &unique_id_io_linker);
+	unique_id_set = create_new_kddm_set(kddm_def_ns, UNIQUE_ID_KDDM_ID,
+					    UNIQUE_ID_LINKER,
+					    KDDM_RR_DEF_OWNER,
+					    sizeof(struct unique_id_root), 0);
+	if (IS_ERR(unique_id_set))
+		panic("kerrighed: Couldn't create unique_ids_set!\n");
+
+	unique_id_barrier = alloc_cluster_barrier(UNIQUE_ID_BARRIER);
+	if (IS_ERR(unique_id_barrier))
+		panic("kerrighed: Couldn't create unique_id_barrier!\n");
+
+	register_hotplug_notifier(hotplug_notifier, HOTPLUG_PRIO_UNIQUE_ID);
+
+	return 0;
+}
+
+void cleanup_unique_ids_hotplug(void)
+{
+}
+#endif
