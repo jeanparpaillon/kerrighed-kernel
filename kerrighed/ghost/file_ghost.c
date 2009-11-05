@@ -298,6 +298,42 @@ err:
 	return r;
 }
 
+static ghost_t *__create_file_ghost(int access, struct file *file, int from_fd)
+{
+	ghost_t *ghost;
+	struct file_ghost_data *ghost_data;
+	int r;
+
+	/* A file ghost can only be used in uni-directional mode */
+	BUG_ON(!(!(access & GHOST_READ) ^ !(access & GHOST_WRITE)));
+
+	ghost = create_ghost(GHOST_FILE, access);
+	if (IS_ERR(ghost)) {
+		r = PTR_ERR(ghost);
+		goto err_file;
+	}
+
+	ghost_data = kmalloc(sizeof(struct file_ghost_data), GFP_KERNEL);
+	if (!ghost_data) {
+		r = -ENOMEM;
+		goto err_ghost;
+	}
+
+	ghost_data->file = file;
+	ghost_data->from_fd = from_fd;
+
+	ghost->data = ghost_data;
+	ghost->ops = &ghost_file_ops;
+
+	return ghost;
+
+err_ghost:
+	free_ghost(ghost);
+
+err_file:
+	return ERR_PTR(r);
+}
+
 /** Create a new file ghost.
  *  @author Renaud Lottiaux, Matthieu Fertré
  *
@@ -313,17 +349,12 @@ ghost_t *create_file_ghost(int access,
 			   int obj_id,
 			   const char *label)
 {
-	struct file *file ;
+	struct file *file;
 	char *file_name;
 	struct path prev_root;
 
-	struct file_ghost_data *ghost_data ;
 	ghost_t *ghost;
-
 	int r;
-
-	/* A file ghost can only be used in uni-directional mode */
-	BUG_ON(!(!(access & GHOST_READ) ^ !(access & GHOST_WRITE)));
 
 	chroot_to_physical_root(&prev_root);
 
@@ -354,31 +385,17 @@ ghost_t *create_file_ghost(int access,
 	}
 
 	/* Create a ghost to host the checkoint */
-	ghost = create_ghost(GHOST_FILE, access);
+	ghost = __create_file_ghost(access, file, 0);
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
 		goto err_file;
 	}
-
-	ghost_data = kmalloc(sizeof(struct file_ghost_data), GFP_KERNEL);
-	if (!ghost_data) {
-		r = -ENOMEM;
-		goto err_ghost;
-	}
-
-	ghost_data->file = file;
-	ghost_data->from_fd = 0;
-
-	ghost->data = ghost_data;
-	ghost->ops = &ghost_file_ops;
 
 out:
 	chroot_to_prev_root(&prev_root);
 
 	return ghost;
 
-err_ghost:
-	free_ghost(ghost);
 err_file:
 	filp_close(file, current->files);
 err:
@@ -397,15 +414,9 @@ err:
  */
 ghost_t *create_file_ghost_from_fd(int access, unsigned int fd)
 {
-	struct file *file ;
-
-	struct file_ghost_data *ghost_data ;
+	struct file *file;
 	ghost_t *ghost;
-
 	int r;
-
-	/* A file ghost can only be used in uni-directional mode */
-	BUG_ON(!(!(access & GHOST_READ) ^ !(access & GHOST_WRITE)));
 
 	file = fget(fd);
 	if (!file) {
@@ -421,28 +432,14 @@ ghost_t *create_file_ghost_from_fd(int access, unsigned int fd)
 	}
 
 	/* Create a ghost to host the checkoint */
-	ghost = create_ghost(GHOST_FILE, access);
+	ghost = __create_file_ghost(access, file, 1);
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
 		goto err_file;
 	}
 
-	ghost_data = kmalloc(sizeof(struct file_ghost_data), GFP_KERNEL);
-	if (!ghost_data) {
-		r = -ENOMEM;
-		goto err_ghost;
-	}
-
-	ghost_data->file = file;
-	ghost_data->from_fd = 1;
-
-	ghost->data = ghost_data;
-	ghost->ops = &ghost_file_ops;
-
 	return ghost;
 
-err_ghost:
-	free_ghost(ghost);
 err_file:
 	fput(file);
 err:
