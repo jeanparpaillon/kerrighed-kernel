@@ -44,6 +44,7 @@ extern struct kddm_set *dynamic_cpu_info_kddm_set;
  *--------------------------------------------------------------------------*/
 
 int dynamic_cpu_info_init(void);
+void init_dynamic_cpu_info_objects(void);
 
 /** Helper function to get dynamic CPU info
  *  @author Renaud Lottiaux

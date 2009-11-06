@@ -92,6 +92,7 @@ extern struct kddm_set *dynamic_node_info_kddm_set;
  *--------------------------------------------------------------------------*/
 
 int dynamic_node_info_init(void);
+void init_dynamic_node_info_object(void);
 
 /** Helper function to get dynamic node informations.
  *  @author Renaud Lottiaux
