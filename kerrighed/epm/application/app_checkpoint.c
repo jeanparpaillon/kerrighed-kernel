@@ -271,12 +271,18 @@ static inline int __get_next_chkptsn(long app_id, int original_sn)
 	do {
 		version++;
 		dirname = get_chkpt_dir(app_id, version);
+		if (IS_ERR(dirname)) {
+			version = PTR_ERR(dirname);
+			goto error;
+		}
+
 		error = path_lookup(dirname, 0, &nd);
 		if (!error)
 			path_put(&nd.path);
 		kfree(dirname);
 	} while (error != -ENOENT);
 
+error:
 	return version;
 }
 
@@ -388,8 +394,11 @@ static int global_do_chkpt(struct app_kddm_object *obj, int flags)
 	struct checkpoint_request_msg msg;
 	int r , err_rpc, one_terminal;
 
-	obj->chkpt_sn = __get_next_chkptsn(obj->app_id,
-					   obj->chkpt_sn);
+	r = __get_next_chkptsn(obj->app_id, obj->chkpt_sn);
+	if (r < 0)
+		goto exit;
+
+	obj->chkpt_sn = r;
 
 	/* prepare message */
 	msg.requester = kerrighed_node_id;

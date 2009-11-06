@@ -189,14 +189,23 @@ void unset_ghost_fs(const ghost_fs_t *oldfs)
 
 char checkpointRoot[CHECKPOINT_PATH_LENGTH] = CHECKPOINT_PATH;
 
-char * get_chkpt_dir(long app_id,
-		     unsigned int chkpt_sn)
+char *get_chkpt_dir(long app_id,
+		    unsigned int chkpt_sn)
 {
 	char *buff;
 	char *dirname;
 
 	buff = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
+	if (!buff) {
+		dirname = ERR_PTR(-ENOMEM);
+		goto err_buff;
+	}
+
 	dirname = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
+	if (!dirname) {
+		dirname = ERR_PTR(-ENOMEM);
+		goto err_dirname;
+	}
 
 	snprintf(dirname, PATH_MAX, "%s", checkpointRoot);
 
@@ -210,91 +219,108 @@ char * get_chkpt_dir(long app_id,
 		strncat(dirname, buff, PATH_MAX);
 	}
 
+err_dirname:
 	kfree(buff);
+err_buff:
 	return dirname;
 }
+
+char *__get_chkpt_filebase(const char *directory, const char *label, int objid)
+{
+	char *filename;
+
+	filename = kmalloc(PATH_MAX * sizeof(char), GFP_KERNEL);
+	if (!filename) {
+		filename = ERR_PTR(-ENOMEM);
+		goto err_filename;
+	}
+
+	if (objid != -1)
+		snprintf(filename, PATH_MAX, "%s/%s_%d.bin",
+			 directory, label, objid);
+	else
+		snprintf(filename, PATH_MAX, "%s/%s.bin",
+			 directory, label);
+
+err_filename:
+	return filename;
+}
+
 
 /** Returns a string with the name of the file
  *  The caller's responsibility to free it.
  *  checkPointRoot/AppId/vSN/prefixOBJECT_ID
  */
-char * get_chkpt_filebase(long app_id,
-			  unsigned int chkpt_sn,
-			  int obj_id,
-			  const char *obj_prefix)
+char *get_chkpt_filebase(long app_id,
+			 unsigned int chkpt_sn,
+			 int objid,
+			 const char *label)
 {
-	char *buff;
+	char *dirname;
 	char *filename;
 
-	buff = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
-	filename = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
-
-	snprintf(filename, PATH_MAX, "%s", checkpointRoot);
-
-	if (app_id) {
-		snprintf(buff, PATH_MAX, "%ld/", app_id);
-		strncat(filename, buff, PATH_MAX);
+	dirname = get_chkpt_dir(app_id, chkpt_sn);
+	if (IS_ERR(dirname)) {
+		filename = ERR_PTR(PTR_ERR(dirname));
+		goto err;
 	}
 
-	if (chkpt_sn) {
-		snprintf(buff, PATH_MAX, "v%d/", chkpt_sn);
-		strncat(filename, buff, PATH_MAX);
-	}
+	filename = __get_chkpt_filebase(dirname, label, objid);
 
-	BUG_ON(!obj_prefix);
-
-	strncat(filename, obj_prefix, PATH_MAX);
-
-	if (obj_id != -1) {
-		snprintf(buff, PATH_MAX, "_%d", obj_id);
-                strncat(filename, buff, PATH_MAX);
-	}
-
-	strncat(filename, ".bin", PATH_MAX);
-
-	kfree (buff);
+	kfree (dirname);
+err:
 	return filename;
 }
 
 int mkdir_chkpt_path(long app_id, unsigned int chkpt_sn)
 {
 	char *buff;
-	char *dir_name;
+	char *dirname;
 	int r;
 
 	buff = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
-	dir_name = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
+	if (!buff) {
+		r = -ENOMEM;
+		goto err_buff;
+	}
 
-	snprintf(dir_name, PATH_MAX, "%s", checkpointRoot);
+	dirname = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
+	if (!dirname) {
+		r = -ENOMEM;
+		goto err_dirname;
+	}
+
+	snprintf(dirname, PATH_MAX, "%s", checkpointRoot);
 
 	if (app_id) {
 		snprintf(buff, PATH_MAX, "%ld/", app_id);
-		strncat(dir_name, buff, PATH_MAX);
+		strncat(dirname, buff, PATH_MAX);
 	}
 
-	r = sys_mkdir(dir_name, S_IRWXUGO|S_ISVTX);
+	r = sys_mkdir(dirname, S_IRWXUGO|S_ISVTX);
 	if (r && r != -EEXIST)
 		goto err;
 
 	/* really force the mode without looking at umask */
-	r = sys_chmod(dir_name, S_IRWXUGO|S_ISVTX);
+	r = sys_chmod(dirname, S_IRWXUGO|S_ISVTX);
 	if (r)
 		goto err;
 
 	if (chkpt_sn) {
 		snprintf(buff, PATH_MAX, "v%d/", chkpt_sn);
-		strncat(dir_name, buff, PATH_MAX);
+		strncat(dirname, buff, PATH_MAX);
 
-		r = sys_mkdir(dir_name, S_IRWXU);
+		r = sys_mkdir(dirname, S_IRWXU);
 		if (r && r != -EEXIST)
 			goto err;
 		r = 0;
 	}
 
 err:
+	kfree(dirname);
+err_dirname:
 	kfree(buff);
-	kfree(dir_name);
-
+err_buff:
 	return r;
 }
 

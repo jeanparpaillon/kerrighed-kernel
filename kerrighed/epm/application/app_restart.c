@@ -536,6 +536,9 @@ static inline int was_checkpointed(struct app_struct *app, pid_t pid)
 
 	char *filename = get_chkpt_filebase(app->app_id, app->chkpt_sn,
 					    pid, "task");
+	if (IS_ERR(filename))
+		return PTR_ERR(filename);
+
 	chroot_to_physical_root(&prev_root);
 	error = path_lookup(filename, 0, &nd);
 	chroot_to_prev_root(&prev_root);
@@ -621,7 +624,7 @@ static inline void free_pids_list(pids_list_t *orphan_pids)
 static inline int return_orphan_sessions_and_prgps(struct app_struct *app,
 						   struct rpc_desc *desc)
 {
-	int r = 0;
+	int r = 0, checkpointed;
 	task_state_t *t;
 	pids_list_t orphan_pids;
 	INIT_LIST_HEAD(&orphan_pids.pids);
@@ -629,16 +632,29 @@ static inline int return_orphan_sessions_and_prgps(struct app_struct *app,
 
 	/* first, build a list of orphan pids of session(s) and pgrp(s) */
 	list_for_each_entry(t, &app->tasks, next_task) {
-		if (t->restart.session && !was_checkpointed(app, t->restart.session)) {
-			r = add_unique_pid(&orphan_pids, t->restart.session);
-			if (r)
+
+		if (t->restart.session) {
+			checkpointed = was_checkpointed(app, t->restart.session);
+			if (!checkpointed) {
+				r = add_unique_pid(&orphan_pids, t->restart.session);
+				if (r)
+					goto err;
+			} else if (checkpointed < 0) {
+				r = checkpointed;
 				goto err;
+			}
 		}
 
-		if (t->restart.pgrp && !was_checkpointed(app, t->restart.pgrp)) {
-			r = add_unique_pid(&orphan_pids, t->restart.pgrp);
-			if (r)
+		if (t->restart.pgrp) {
+			checkpointed = was_checkpointed(app, t->restart.pgrp);
+			if (!checkpointed) {
+				r = add_unique_pid(&orphan_pids, t->restart.pgrp);
+				if (r)
+					goto err;
+			} else if (checkpointed < 0) {
+				r = checkpointed;
 				goto err;
+			}
 		}
 	}
 
@@ -755,15 +771,18 @@ exit:
 	return r;
 }
 
-static void local_replace_parent(struct app_struct *app,
-				 const task_identity_t *requester,
-				 pid_t *root_pid)
+static int local_replace_parent(struct app_struct *app,
+				const task_identity_t *requester,
+				pid_t *root_pid)
 {
 	task_state_t *t;
+	int r = 0, checkpointed;
 
 	list_for_each_entry(t, &app->tasks, next_task) {
 
-		if (!was_checkpointed(app, t->restart.parent)) {
+		checkpointed = was_checkpointed(app, t->restart.parent);
+
+		if (!checkpointed) {
 			if (t->restart.parent != 1) {
 				/* parent was not checkpointed and was not
 				   "init" process, we will reparent to the
@@ -774,8 +793,14 @@ static void local_replace_parent(struct app_struct *app,
 
 				*root_pid = t->restart.tgid;
 			}
+		} else if (checkpointed < 0) {
+			r = checkpointed;
+			goto err;
 		}
 	}
+
+err:
+	return r;
 }
 
 static int local_restore_task_object(struct app_struct *app)
@@ -1012,7 +1037,12 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	if (r)
 		goto error;
 
-	local_replace_parent(app, &msg->requester_task, &root_pid);
+	r = local_replace_parent(app, &msg->requester_task, &root_pid);
+	if (r) {
+		r = send_result(desc, r);
+		goto error;
+	}
+
 	r = send_result(desc, root_pid);
 	if (r)
 		goto error;
