@@ -55,7 +55,9 @@ static int epm_remove_local(struct hotplug_context *ctx)
 	if (num_online_krgnodes())
 		expell_all(ctx);
 
-	zap_local_krg_ns_processes(ctx->ns, EXIT_DEAD);
+	zap_local_krg_ns_processes(ctx->ns, EXIT_ZOMBIE);
+
+	complete(&ctx->ns->root_task_continue_exit);
 
 	application_remove_local();
 	children_remove_local();
