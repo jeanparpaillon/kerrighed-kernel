@@ -63,6 +63,8 @@ struct cluster_barrier *alloc_cluster_barrier(unique_id_t key)
 		return ERR_PTR(r);
 	}
 
+	printk ("Barrier %ld (%p) allocated\n", (unsigned long)key, barrier);
+
 	return barrier;
 }
 
@@ -81,6 +83,8 @@ int cluster_barrier(struct cluster_barrier *barrier,
 	struct cluster_barrier_id id;
 	struct rpc_desc *desc;
 	int err = 0;
+
+	printk ("cluster_barrier: copyset 0x%lx\n", *(unsigned long *)nodes);
 
 	spin_lock(&barrier->lock);
 	barrier->id.toggle = (barrier->id.toggle + 1) % 2;
@@ -129,6 +133,14 @@ static int handle_enter_barrier(struct rpc_desc* desc,
 
 	core_bar = &barrier->core[id->toggle];
 
+	printk ("handle_enter_barrier: bar %ld (%p)\n", id->key, barrier);
+	printk ("handle_enter_barrier: received copyset 0x%lx\n",
+		*((unsigned long *)&nodes));
+	printk ("handle_enter_barrier: local copyset 0x%lx\n",
+		*((unsigned long *)&core_bar->nodes_in_barrier));
+	printk ("handle_enter_barrier: nodes to wait 0x%lx\n",
+		*((unsigned long *)&core_bar->nodes_to_wait));
+
 	if (krgnodes_empty(core_bar->nodes_to_wait)) {
 		krgnodes_copy(core_bar->nodes_in_barrier, nodes);
 		krgnodes_copy(core_bar->nodes_to_wait, nodes);
@@ -176,6 +188,7 @@ static int barrier_notification(struct notifier_block *nb,
 				hotplug_event_t event,
 				void *data)
 {
+	printk ("barrier_notification: enter\n");
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:
 		rpc_enable(RPC_ENTER_BARRIER);
