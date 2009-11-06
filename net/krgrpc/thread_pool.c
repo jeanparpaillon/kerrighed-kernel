@@ -267,6 +267,7 @@ int thread_pool_run(void* _data){
 			do_krgrpc_handler(desc, j);
 
 		spin_lock_bh(&waiting_desc_lock);
+		printk ("thread_pool_run: enter list_for_each\n");
 		list_for_each_entry_safe(wd, wd_safe,
 					 &waiting_desc,
 					 list_waiting_desc){
@@ -315,11 +316,13 @@ void new_thread_worker(struct work_struct *data){
 	int i;
 
 	for_each_online_cpu(i){
+		printk ("new_thread_worker: enter cpu %d\n", i);
 		while(atomic_add_unless(&new_thread_data.request[i],
 					 -1, 0)){
 			struct task_struct *tsk;
 
 			tsk = kthread_create(thread_pool_run, NULL, "krgrpc");
+			printk ("new_thread_worker: task %p created\n", tsk);
 			if (IS_ERR(tsk)) {
 				atomic_inc(&new_thread_data.request[i]);
 				/* Backoff,
@@ -375,6 +378,10 @@ void queue_waiting_desc(struct rpc_desc* desc){
 	desc->state = RPC_STATE_HANDLE;
 
 	spin_lock(&waiting_desc_lock);
+
+	if (desc->rpcid == RPC_ENTER_BARRIER)
+		printk ("queue_waiting_desc: desc = %p\n", desc);
+
 	list_add_tail(&wd->list_waiting_desc, &waiting_desc);
 	spin_unlock(&waiting_desc_lock);
 
@@ -471,9 +478,14 @@ int rpc_handle_new(struct rpc_desc* desc){
 
 	// Is it a disabled rpc ?
 	if(unlikely(test_bit(desc->rpcid, rpc_mask))){
+		printk ("rpc_handle_new: rpc id: %d (%p)\n", desc->rpcid,
+			desc);
 		queue_waiting_desc(desc);
 		return r;
 	};
+
+	if (desc->rpcid == RPC_ENTER_BARRIER)
+		printk ("rpc_handle_new: ici (%p)\n", desc);
 
 	// Is it an interruption-ready handler ?
 	if(likely(desc->service->flags & RPC_FLAGS_NOBLOCK)
@@ -495,11 +507,16 @@ int rpc_handle_new(struct rpc_desc* desc){
 
 		wake_up_process(desc->thread);
 	}else{
+		int res;
 
 		// No available handler
 		queue_waiting_desc(desc);
 
-		if(atomic_inc_return(&new_thread_data.request[smp_processor_id()]) == 1)
+		res = atomic_inc_return(&new_thread_data.request[smp_processor_id()]);
+
+		printk ("rpc_handle_new: dans le else res = %d - smp_processor_id = %d\n", res, smp_processor_id());
+
+		if(res == 1)
 			queue_delayed_work(krg_nb_wq, &new_thread_data.dwork, 0);
 
 	};

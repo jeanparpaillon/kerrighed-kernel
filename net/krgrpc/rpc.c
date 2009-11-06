@@ -181,6 +181,8 @@ void rpc_enable(enum rpcid rpcid){
 	if(rpc_services[rpcid]->id == rpcid)
 		clear_bit(rpcid, rpc_mask);
 
+	printk ("rpc_enable: activate %d\n", rpcid);
+
 	spin_unlock_bh(&waiting_desc_lock);
 };
 
