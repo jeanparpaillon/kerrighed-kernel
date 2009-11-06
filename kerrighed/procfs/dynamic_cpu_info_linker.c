@@ -81,6 +81,11 @@ static void update_dynamic_cpu_info_worker(struct work_struct *data)
 	queue_delayed_work(krg_wq, &update_dynamic_cpu_info_work, HZ);
 }
 
+void init_dynamic_cpu_info_objects(void)
+{
+	update_dynamic_cpu_info_worker(&update_dynamic_cpu_info_work.work);
+}
+
 int dynamic_cpu_info_init(void)
 {
 	register_io_linker(DYNAMIC_CPU_INFO_LINKER,
@@ -98,6 +103,6 @@ int dynamic_cpu_info_init(void)
 	if (IS_ERR(dynamic_cpu_info_kddm_set))
 		OOM;
 
-	queue_delayed_work(krg_wq, &update_dynamic_cpu_info_work, 0);
+	init_dynamic_cpu_info_objects();
 	return 0;
 }

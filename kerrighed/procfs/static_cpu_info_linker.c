@@ -41,24 +41,10 @@ static struct iolinker_struct static_cpu_info_io_linker = {
 	.default_owner = cpu_info_default_owner
 };
 
-int static_cpu_info_init(void)
+void init_static_cpu_info_objects(void)
 {
 	krg_static_cpu_info_t *static_cpu_info;
 	int cpu_id, i;
-
-	register_io_linker(STATIC_CPU_INFO_LINKER, &static_cpu_info_io_linker);
-
-	/* Create the CPU info kddm set */
-
-	static_cpu_info_kddm_set =
-		create_new_kddm_set(kddm_def_ns,
-				    STATIC_CPU_INFO_KDDM_ID,
-				    STATIC_CPU_INFO_LINKER,
-				    KDDM_CUSTOM_DEF_OWNER,
-				    sizeof(krg_static_cpu_info_t),
-				    0);
-	if (IS_ERR(static_cpu_info_kddm_set))
-		OOM;
 
 	for_each_online_cpu (i) {
 		cpu_id = krg_cpu_id(i);
@@ -74,6 +60,25 @@ int static_cpu_info_init(void)
 
 		_kddm_put_object(static_cpu_info_kddm_set, cpu_id);
 	}
+}
+
+int static_cpu_info_init(void)
+{
+	register_io_linker(STATIC_CPU_INFO_LINKER, &static_cpu_info_io_linker);
+
+	/* Create the CPU info kddm set */
+
+	static_cpu_info_kddm_set =
+		create_new_kddm_set(kddm_def_ns,
+				    STATIC_CPU_INFO_KDDM_ID,
+				    STATIC_CPU_INFO_LINKER,
+				    KDDM_CUSTOM_DEF_OWNER,
+				    sizeof(krg_static_cpu_info_t),
+				    0);
+	if (IS_ERR(static_cpu_info_kddm_set))
+		OOM;
+
+	init_static_cpu_info_objects();
 
 	return 0;
 }

@@ -170,6 +170,11 @@ static void update_dynamic_node_info_worker(struct work_struct *work)
 	queue_delayed_work(krg_wq, &update_dynamic_node_info_work, HZ);
 }
 
+void init_dynamic_node_info_object(void)
+{
+	update_dynamic_node_info_worker(&update_dynamic_node_info_work.work);
+}
+
 int dynamic_node_info_init(void)
 {
 	register_io_linker(DYNAMIC_NODE_INFO_LINKER,
@@ -186,7 +191,7 @@ int dynamic_node_info_init(void)
 		OOM;
 
 	/* Start periodic updates */
-	queue_delayed_work(krg_wq, &update_dynamic_node_info_work, 0);
+	init_dynamic_node_info_object();
 
 	return 0;
 }

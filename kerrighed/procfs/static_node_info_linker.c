@@ -37,10 +37,22 @@ static struct iolinker_struct static_node_info_io_linker = {
 	.linker_id = STATIC_NODE_INFO_LINKER,
 };
 
-int static_node_info_init()
+void init_static_node_info_object(void)
 {
 	krg_static_node_info_t *static_node_info;
 
+	static_node_info = _kddm_grab_object(static_node_info_kddm_set,
+					     kerrighed_node_id);
+
+	static_node_info->nr_cpu = num_online_cpus();
+	static_node_info->totalram = totalram_pages;
+	static_node_info->totalhigh = totalhigh_pages;
+
+	_kddm_put_object(static_node_info_kddm_set, kerrighed_node_id);
+}
+
+int static_node_info_init()
+{
 	register_io_linker(STATIC_NODE_INFO_LINKER,
 			   &static_node_info_io_linker);
 
@@ -56,14 +68,7 @@ int static_node_info_init()
 	if (IS_ERR(static_node_info_kddm_set))
 		OOM;
 
-	static_node_info = _kddm_grab_object(static_node_info_kddm_set,
-					     kerrighed_node_id);
-
-	static_node_info->nr_cpu = num_online_cpus();
-	static_node_info->totalram = totalram_pages;
-	static_node_info->totalhigh = totalhigh_pages;
-
-	_kddm_put_object(static_node_info_kddm_set, kerrighed_node_id);
+	init_static_node_info_object();
 
 	return 0;
 }
