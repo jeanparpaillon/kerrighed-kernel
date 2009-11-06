@@ -9,7 +9,12 @@
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/hotplug.h>
+#include <kddm/kddm.h>
 
+#include <kerrighed/dynamic_node_info_linker.h>
+#include "static_node_info_linker.h"
+#include "dynamic_cpu_info_linker.h"
+#include "static_cpu_info_linker.h"
 #include "proc.h"
 
 struct notifier_block;
@@ -22,20 +27,57 @@ static void procfs_add(krgnodemask_t *v)
 		create_proc_node_info(i);
 }
 
-static void procfs_remove_online(void)
+static int procfs_remove_other_node(kerrighed_node_t node)
 {
-	kerrighed_node_t i;
+	krg_static_node_info_t *info;
+	int err;
 
-	for_each_online_krgnode(i)
-		remove_proc_node_info(i);
+	remove_proc_node_info(node);
+
+	/*
+	 * In order to avoid destroying the removed node's procfs KDDM objects,
+	 * All other nodes destroy their copies.
+	 */
+	info = get_static_node_info(node);
+	for (i = 0; i < info->nr_cpu; i++) {
+		err = _kddm_flush_object(static_cpu_info_kddm_set,
+					 __krg_cpu_id(node, i),
+					 node);
+		if (err)
+			return err;
+		err = _kddm_flush_object(dynamic_cpu_info_kddm_set,
+					 __krg_cpu_id(node, i),
+					 node);
+		if (err)
+			return err;
+	}
+	err = _kddm_flush_object(static_node_info_kddm_set, node, node);
+	if (err)
+		return err;
+	err = _kddm_flush_object(dynamic_node_info_kddm_set, node, node);
+
+	return err;
 }
 
-static void procfs_remove(krgnodemask_t *v)
+static int procfs_remove_local(krgnodemask_t *v)
+{
+	krgnodemask_t other_nodes;
+	kerrighed_node_t node;
+
+	krgnodes_or(other_nodes, krgnode_online_map, *v);
+	krgnode_clear(kerrighed_node_id, other_nodes);
+	for_each_krgnode_mask(node, other_nodes)
+		procfs_remove_other_node(node);
+
+	remove_proc_node_info(kerrighed_node_id);
+}
+
+static void procfs_remove_advert(krgnodemask_t *v)
 {
 	kerrighed_node_t i;
 
 	__for_each_krgnode_mask(i, v)
-		remove_proc_node_info(i);
+		procfs_remove_other_node(i);
 }
 
 static int procfs_notification(struct notifier_block *nb, hotplug_event_t event,
@@ -48,10 +90,10 @@ static int procfs_notification(struct notifier_block *nb, hotplug_event_t event,
 		procfs_add(&ctx->node_set.v);
 		break;
 	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
-		procfs_remove_online();
-		/* Fallthrough */
+		procfs_remove_local(&ctx->node_set.v);
+		break;
 	case HOTPLUG_NOTIFY_REMOVE_ADVERT:
-		procfs_remove(&ctx->node_set.v);
+		procfs_remove_advert(&ctx->node_set.v);
 		break;
 	default:
 		break;
