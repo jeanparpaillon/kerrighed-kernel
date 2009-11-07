@@ -988,80 +988,78 @@ int krg_get_parent(struct children_kddm_object *obj, struct task_struct *child,
 				parent_pid, real_parent_pid);
 }
 
+/*
+ * daemonize()->reparent_to_kthreadd() can have made task a cross-namespace
+ * child of kthreadd.
+ * The check is more generic to prepare for possible other tasks grabbing
+ * children, as long as they are not part of a Kerrighed namespace.
+ */
+static bool reparented_to_kthreadd(struct task_struct *task)
+{
+	struct pid_namespace *parent_ns;
+	struct task_struct *parent;
+	bool ret = false;
+
+	rcu_read_lock();
+	parent = rcu_dereference(task->real_parent);
+	if (parent != baby_sitter) {
+		parent_ns = task_active_pid_ns(parent);
+		if (!parent_ns || !parent_ns->krg_ns_root)
+			ret = true;
+	}
+	rcu_read_unlock();
+
+	return ret;
+}
+
 struct children_kddm_object *
 krg_parent_children_writelock(struct task_struct *task)
 {
-	struct children_kddm_object *obj;
-	struct pid_namespace *ns = task_active_pid_ns(task)->krg_ns_root;
-	pid_t tgid, reaper_tgid;
+	struct children_kddm_object *obj, *locked_obj;
+	pid_t tgid;
 
-	BUG_ON(!ns);
 	rcu_read_lock();
-	tgid = krg_get_real_parent_tgid(task, ns);
 	obj = rcu_dereference(task->parent_children_obj);
+	if (!obj || !krg_children_alive(obj)) {
+		rcu_read_unlock();
+		return NULL;
+	}
+	tgid = obj->tgid;
 	rcu_read_unlock();
-	/*
-	 * daemonize()->reparent_to_kthreadd() can have made task a
-	 * cross-namespace child of kthreadd.
-	 */
-	if (!tgid) {
-		obj = NULL;
-		goto out;
-	}
-	reaper_tgid = task_tgid_knr(task_active_pid_ns(task)->child_reaper);
-	if (!obj || tgid == reaper_tgid) {
-		obj = NULL;
-		goto out;
-	}
 
-	obj = krg_children_writelock(tgid);
+	locked_obj = krg_children_writelock(tgid);
 	/* Check that tgid was not reused */
-	if (!is_child(obj, task_pid_knr(task))) {
-		if (obj)
-			krg_children_unlock(obj);
-		obj = NULL;
+	if (locked_obj && (locked_obj != obj || reparented_to_kthreadd(task))) {
+		krg_children_unlock(locked_obj);
+		return NULL;
 	}
 
-out:
-	return obj;
+	return locked_obj;
 }
 
 struct children_kddm_object *
 krg_parent_children_readlock(struct task_struct *task)
 {
-	struct children_kddm_object *obj;
-	struct pid_namespace *ns = task_active_pid_ns(task)->krg_ns_root;
-	pid_t tgid, reaper_tgid;
+	struct children_kddm_object *obj, *locked_obj;
+	pid_t tgid;
 
-	BUG_ON(!ns);
 	rcu_read_lock();
-	tgid = krg_get_real_parent_tgid(task, ns);
 	obj = rcu_dereference(task->parent_children_obj);
+	if (!obj || !krg_children_alive(obj)) {
+		rcu_read_unlock();
+		return NULL;
+	}
+	tgid = obj->tgid;
 	rcu_read_unlock();
-	/*
-	 * daemonize()->reparent_to_kthreadd() can have made task a
-	 * cross-namespace child of kthreadd.
-	 */
-	if (!tgid) {
-		obj = NULL;
-		goto out;
-	}
-	reaper_tgid = task_tgid_knr(task_active_pid_ns(task)->child_reaper);
-	if (!obj || tgid == reaper_tgid) {
-		obj = NULL;
-		goto out;
-	}
 
-	obj = krg_children_readlock(tgid);
+	locked_obj = krg_children_readlock(tgid);
 	/* Check that tgid was not reused */
-	if (!is_child(obj, task_pid_knr(task))) {
-		if (obj)
-			krg_children_unlock(obj);
-		obj = NULL;
+	if (locked_obj && (locked_obj != obj || reparented_to_kthreadd(task))) {
+		krg_children_unlock(locked_obj);
+		return NULL;
 	}
 
-out:
-	return obj;
+	return locked_obj;
 }
 
 pid_t krg_get_real_parent_pid(struct task_struct *task)
