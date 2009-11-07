@@ -294,10 +294,14 @@ static int krg_get_father_cap(struct task_struct *son,
 		read_unlock(&tasklist_lock);
 
 		parent_children_obj = krg_parent_children_readlock(son);
-		if (!parent_children_obj)
-			/* Parent is init. */
-			return krg_get_cap(task_active_pid_ns(son)->child_reaper,
-					   resulting_cap);
+		if (!parent_children_obj) {
+			read_lock(&tasklist_lock);
+			/* Parent is (container or global) init. */
+			retval = krg_get_cap(task_active_pid_ns(son)->child_reaper,
+					     resulting_cap);
+			read_unlock(&tasklist_lock);
+			return retval;
+		}
 		krg_get_parent(parent_children_obj, son,
 			       &parent_pid, &real_parent_pid);
 		retval = remote_get_pid_cap(real_parent_pid, resulting_cap);

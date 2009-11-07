@@ -1328,10 +1328,12 @@ static int import_krg_structs(struct epm_action *action,
 		 * Bringing restarted processes to foreground will need more
 		 * work
 		 */
+		read_lock(&tasklist_lock);
 		reaper = task_active_pid_ns(tsk)->child_reaper;
 		obj->parent = task_pid_knr(reaper);
 		obj->real_parent = obj->parent;
 		obj->real_parent_tgid = task_tgid_knr(reaper);
+		read_unlock(&tasklist_lock);
 		/*
 		 * obj->group_leader has already been set when creating the
 		 * object. Fix it for non leader threads.

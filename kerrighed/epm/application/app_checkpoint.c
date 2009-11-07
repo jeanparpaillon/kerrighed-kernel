@@ -140,9 +140,9 @@ static inline int write_task_parent_links(task_state_t *t,
 		rcu_read_unlock();
 		krg_children_unlock(obj);
 	} else {
-		struct task_struct *reaper =
-			task_active_pid_ns(t->task)->child_reaper;
-		parent = real_parent = task_pid_knr(reaper);
+		read_lock(&tasklist_lock);
+		parent = real_parent = task_pid_knr(ns->child_reaper);
+		read_unlock(&tasklist_lock);
 		real_parent_tgid = parent;
 	}
 
