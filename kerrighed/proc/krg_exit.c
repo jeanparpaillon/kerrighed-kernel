@@ -235,15 +235,8 @@ int krg_delayed_notify_parent(struct task_struct *leader)
 	 * Needed to check whether we were reparented to init, and to
 	 * know which task to notify in case parent is still remote
 	 */
-	if (parent_children_obj) {
-		/* Make sure that task_obj is up to date */
-		krg_update_parents(leader, parent_pid, real_parent_pid);
-		leader->task_obj->parent_node = parent_node;
-	} else if (leader->real_parent == baby_sitter
-		   || leader->parent == baby_sitter) {
-		/* Real parent died and let us reparent leader to local init. */
-		krg_reparent_to_local_child_reaper(leader);
-	}
+	krg_update_parents(leader, parent_children_obj,
+			   parent_pid, real_parent_pid, parent_node);
 
 	do_notify_parent(leader, leader->exit_signal);
 
@@ -493,12 +486,7 @@ krg_prepare_exit_ptrace_task(struct task_struct *tracer,
 	write_lock_irq(&tasklist_lock);
 	BUG_ON(!task->ptrace);
 
-	if (obj && task->task_obj) {
-		krg_update_parents(task, parent_pid, real_parent_pid);
-		task->task_obj->parent_node = parent_node;
-	} else if (!obj && task->real_parent == baby_sitter) {
-		krg_reparent_to_local_child_reaper(task);
-	}
+	krg_update_parents(task, obj, parent_pid, real_parent_pid, parent_node);
 
 	return obj;
 }
@@ -553,15 +541,8 @@ void *krg_prepare_exit_notify(struct task_struct *task)
 
 #ifdef CONFIG_KRG_EPM
 		write_lock_irq(&tasklist_lock);
-		if (cookie) {
-			/* Make sure that task_obj is up to date */
-			krg_update_parents(task, parent_pid, real_parent_pid);
-			task->task_obj->parent_node = parent_node;
-		} else if (task->real_parent == baby_sitter
-			   || task->parent == baby_sitter) {
-			/* Real parent died and let us reparent to local init. */
-			krg_reparent_to_local_child_reaper(task);
-		}
+		krg_update_parents(task, cookie, parent_pid, real_parent_pid,
+				   parent_node);
 		write_unlock_irq(&tasklist_lock);
 #endif /* CONFIG_KRG_EPM */
 	}
