@@ -445,14 +445,11 @@ static void reparent_to_kthreadd(void)
 {
 #ifdef CONFIG_KRG_EPM
 	struct children_kddm_object *parent_children_obj = NULL;
-	pid_t parent_tgid;
 
 	down_read(&kerrighed_init_sem);
 
 	if (rcu_dereference(current->parent_children_obj))
-		parent_children_obj = krg_parent_children_writelock(
-					current,
-					&parent_tgid);
+		parent_children_obj = krg_parent_children_writelock(current);
 #endif /* CONFIG_KRG_EPM */
 	write_lock_irq(&tasklist_lock);
 
@@ -1578,14 +1575,12 @@ int wait_task_zombie(struct task_struct *p, int options,
 	if (traced) {
 #ifdef CONFIG_KRG_EPM
 		struct children_kddm_object *parent_children_obj = NULL;
-		pid_t real_parent_tgid;
 		/* p may be set to NULL while we still need it */
 		struct task_struct *saved_p = p;
 
 		if (rcu_dereference(saved_p->parent_children_obj))
 			parent_children_obj =
-				krg_parent_children_writelock(saved_p,
-							      &real_parent_tgid);
+				krg_parent_children_writelock(saved_p);
 #endif
 		write_lock_irq(&tasklist_lock);
 		/* We dropped tasklist, ptracer could die and untrace */
