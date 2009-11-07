@@ -1564,8 +1564,8 @@ void krg_children_finish_de_thread(struct children_kddm_object *obj,
  * Expects tasklist and task KDDM object writelocked,
  * and real parent's children KDDM object locked
  */
-void
-krg_update_parents(struct task_struct *task, pid_t parent, pid_t real_parent)
+static
+void update_parents(struct task_struct *task, pid_t parent, pid_t real_parent)
 {
 	if (task->real_parent == baby_sitter) {
 		remove_from_krg_parent(task, task->task_obj->real_parent);
@@ -1610,6 +1610,23 @@ void krg_reparent_to_local_child_reaper(struct task_struct *task)
 
 	if (!task_detached(task))
 		task->exit_signal = SIGCHLD;
+}
+
+void krg_update_parents(struct task_struct *task,
+			struct children_kddm_object *parent_children_obj,
+			pid_t parent, pid_t real_parent,
+			kerrighed_node_t node)
+{
+	if (parent_children_obj && task->task_obj) {
+		/* Make sure that task_obj is up to date */
+		update_parents(task, parent, real_parent);
+		task->task_obj->parent_node = node;
+	} else if (!parent_children_obj
+		   && (task->real_parent == baby_sitter
+		       || task->parent == baby_sitter)) {
+		/* Real parent died and let us reparent task to local init. */
+		krg_reparent_to_local_child_reaper(task);
+	}
 }
 
 void krg_unhash_process(struct task_struct *tsk)

@@ -4,6 +4,7 @@
 #ifdef CONFIG_KRG_EPM
 
 #include <linux/types.h>
+#include <kerrighed/sys/types.h>
 
 struct children_kddm_object;
 struct task_struct;
@@ -76,8 +77,10 @@ void krg_children_finish_de_thread(struct children_kddm_object *obj,
 				   struct task_struct *task);
 
 /* Used by krg_prepare_exit_notify() and krg_delayed_notify_parent() */
-void
-krg_update_parents(struct task_struct *task, pid_t parent, pid_t real_parent);
+void krg_update_parents(struct task_struct *task,
+			struct children_kddm_object *parent_children_obj,
+			pid_t parent, pid_t real_parent,
+			kerrighed_node_t node);
 /* Used by krg_release_task() */
 void krg_unhash_process(struct task_struct *tsk);
 
