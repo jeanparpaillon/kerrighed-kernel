@@ -280,7 +280,6 @@ int ptrace_attach(struct task_struct *task)
 {
 #ifdef CONFIG_KRG_EPM
 	struct children_kddm_object *parent_children_obj;
-	pid_t real_parent_tgid;
 #endif
 	int retval;
 	unsigned long flags;
@@ -301,8 +300,7 @@ int ptrace_attach(struct task_struct *task)
 	down_read(&kerrighed_init_sem);
 	parent_children_obj = rcu_dereference(task->parent_children_obj);
 	if (parent_children_obj)
-		parent_children_obj =
-			krg_parent_children_writelock(task, &real_parent_tgid);
+		parent_children_obj = krg_parent_children_writelock(task);
 #endif /* CONFIG_KRG_EPM */
 
 	retval = -EPERM;
@@ -417,7 +415,6 @@ int ptrace_detach(struct task_struct *child, unsigned int data)
 {
 #ifdef CONFIG_KRG_EPM
 	struct children_kddm_object *parent_children_obj;
-	pid_t real_parent_tgid;
 #endif
 	bool dead = false;
 
@@ -432,8 +429,7 @@ int ptrace_detach(struct task_struct *child, unsigned int data)
 	down_read(&kerrighed_init_sem);
 	parent_children_obj = rcu_dereference(child->parent_children_obj);
 	if (parent_children_obj)
-		parent_children_obj =
-			krg_parent_children_writelock(child, &real_parent_tgid);
+		parent_children_obj = krg_parent_children_writelock(child);
 #endif /* CONFIG_KRG_EPM */
 	write_lock_irq(&tasklist_lock);
 	/*
@@ -753,7 +749,6 @@ int ptrace_traceme(void)
 {
 #ifdef CONFIG_KRG_EPM
 	struct children_kddm_object *parent_children_obj;
-	pid_t real_parent_tgid;
 #endif /* CONFIG_KRG_EPM */
 	int ret = -EPERM;
 
@@ -761,8 +756,7 @@ int ptrace_traceme(void)
 	down_read(&kerrighed_init_sem);
 	parent_children_obj = rcu_dereference(current->parent_children_obj);
 	if (parent_children_obj)
-		parent_children_obj =
-			krg_parent_children_writelock(current, &real_parent_tgid);
+		parent_children_obj = krg_parent_children_writelock(current);
 #endif /* CONFIG_KRG_EPM */
 	/*
 	 * Are we already being traced?

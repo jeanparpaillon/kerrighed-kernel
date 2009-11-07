@@ -111,6 +111,7 @@ static inline int write_task_parent_links(task_state_t *t,
 	int r = 0;
 	pid_t parent, real_parent, real_parent_tgid;
 	pid_t pid, tgid, pgrp, session;
+	struct pid_namespace *ns;
 	struct children_kddm_object *obj;
 
 	if (!can_be_checkpointed(t->task)) {
@@ -128,10 +129,15 @@ static inline int write_task_parent_links(task_state_t *t,
 	if (r)
 		goto error;
 
-	obj = krg_parent_children_readlock(t->task, &real_parent_tgid);
+	ns = task_active_pid_ns(t->task);
+	obj = krg_parent_children_readlock(t->task);
 	if (obj) {
 		r = krg_get_parent(obj, t->task, &parent, &real_parent);
 		BUG_ON(r);
+		rcu_read_lock();
+		real_parent_tgid = krg_get_real_parent_tgid(t->task,
+							    ns->krg_ns_root);
+		rcu_read_unlock();
 		krg_children_unlock(obj);
 	} else {
 		struct task_struct *reaper =

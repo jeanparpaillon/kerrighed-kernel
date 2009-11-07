@@ -47,11 +47,9 @@ struct children_kddm_object *krg_children_writelock_nested(pid_t tgid);
 struct children_kddm_object *krg_children_readlock(pid_t tgid);
 struct children_kddm_object *__krg_children_readlock(struct task_struct *task);
 struct children_kddm_object *
-krg_parent_children_writelock(struct task_struct *task,
-			      pid_t *parent_tgid);
+krg_parent_children_writelock(struct task_struct *task);
 struct children_kddm_object *
-krg_parent_children_readlock(struct task_struct *task,
-			     pid_t *parent_tgid);
+krg_parent_children_readlock(struct task_struct *task);
 void krg_children_unlock(struct children_kddm_object *obj);
 void krg_update_self_exec_id(struct task_struct *task);
 u32 krg_get_real_parent_self_exec_id(struct task_struct *task,

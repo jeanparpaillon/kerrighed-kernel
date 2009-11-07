@@ -1479,7 +1479,6 @@ struct children_kddm_object *
 krg_prepare_setpgid(pid_t pid, pid_t pgid, kerrighed_node_t *nodep)
 {
 	struct children_kddm_object *parent_children_obj = NULL;
-	pid_t real_parent_tgid;
 	kerrighed_node_t node = KERRIGHED_NODE_ID_NONE;
 	struct task_kddm_object *task_obj;
 	struct timespec backoff_time = {
@@ -1497,8 +1496,7 @@ krg_prepare_setpgid(pid_t pid, pid_t pgid, kerrighed_node_t *nodep)
 	if (pid == current->tgid) {
 		if (rcu_dereference(current->parent_children_obj))
 			parent_children_obj =
-				krg_parent_children_writelock(current,
-							      &real_parent_tgid);
+				krg_parent_children_writelock(current);
 		goto out;
 	}
 
@@ -1758,16 +1756,13 @@ SYSCALL_DEFINE0(setsid)
 	pid_t session = pid_vnr(sid);
 #ifdef CONFIG_KRG_EPM
 	struct children_kddm_object *parent_children_obj = NULL;
-	pid_t real_parent_tgid;
 #endif /* CONFIG_KRG_EPM */
 	int err = -EPERM;
 
 #ifdef CONFIG_KRG_EPM
 	down_read(&kerrighed_init_sem);
 	if (rcu_dereference(current->parent_children_obj))
-		parent_children_obj =
-			krg_parent_children_writelock(current,
-						      &real_parent_tgid);
+		parent_children_obj = krg_parent_children_writelock(current);
 #endif /* CONFIG_KRG_EPM */
 	write_lock_irq(&tasklist_lock);
 	/* Fail if I am already a session leader */

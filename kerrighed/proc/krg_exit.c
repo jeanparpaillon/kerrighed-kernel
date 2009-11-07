@@ -164,13 +164,11 @@ err:
 static
 struct children_kddm_object *
 parent_children_writelock_pid_location_lock(struct task_struct *task,
-					    pid_t *real_parent_tgid_p,
 					    pid_t *real_parent_pid_p,
 					    pid_t *parent_pid_p,
 					    kerrighed_node_t *parent_node_p)
 {
 	struct children_kddm_object *children_obj;
-	pid_t real_parent_tgid;
 	pid_t real_parent_pid;
 	pid_t parent_pid;
 	struct task_kddm_object *obj;
@@ -186,8 +184,7 @@ parent_children_writelock_pid_location_lock(struct task_struct *task,
 	 * migration
 	 */
 	for (;;) {
-		children_obj = krg_parent_children_writelock(task,
-							     &real_parent_tgid);
+		children_obj = krg_parent_children_writelock(task);
 		if (!children_obj)
 			break;
 		krg_get_parent(children_obj, task,
@@ -211,7 +208,6 @@ parent_children_writelock_pid_location_lock(struct task_struct *task,
 	 * otherwise none is locked.
 	 */
 	if (children_obj) {
-		*real_parent_tgid_p = real_parent_tgid;
 		*real_parent_pid_p = real_parent_pid;
 		*parent_pid_p = parent_pid;
 		*parent_node_p = parent_node;
@@ -222,14 +218,12 @@ parent_children_writelock_pid_location_lock(struct task_struct *task,
 int krg_delayed_notify_parent(struct task_struct *leader)
 {
 	struct children_kddm_object *parent_children_obj;
-	pid_t real_parent_tgid;
 	pid_t parent_pid, real_parent_pid;
 	kerrighed_node_t parent_node;
 	int zap_leader;
 
 	parent_children_obj = parent_children_writelock_pid_location_lock(
 				leader,
-				&real_parent_tgid,
 				&real_parent_pid,
 				&parent_pid,
 				&parent_node);
@@ -473,7 +467,7 @@ krg_prepare_exit_ptrace_task(struct task_struct *tracer,
 			     struct task_struct *task)
 {
 	struct children_kddm_object *obj;
-	pid_t real_parent_tgid, real_parent_pid, parent_pid;
+	pid_t real_parent_pid, parent_pid;
 	kerrighed_node_t parent_node;
 
 	/* Prepare a call to do_notify_parent() in __ptrace_detach() */
@@ -486,7 +480,6 @@ krg_prepare_exit_ptrace_task(struct task_struct *tracer,
 	if (obj)
 		obj = parent_children_writelock_pid_location_lock(
 			task,
-			&real_parent_tgid,
 			&real_parent_pid,
 			&parent_pid,
 			&parent_node);
@@ -538,7 +531,6 @@ void *krg_prepare_exit_notify(struct task_struct *task)
 {
 	void *cookie = NULL;
 #ifdef CONFIG_KRG_EPM
-	pid_t real_parent_tgid = 0;
 	pid_t real_parent_pid = 0;
 	pid_t parent_pid = 0;
 	kerrighed_node_t parent_node = KERRIGHED_NODE_ID_NONE;
@@ -548,7 +540,6 @@ void *krg_prepare_exit_notify(struct task_struct *task)
 	if (rcu_dereference(task->parent_children_obj))
 		cookie = parent_children_writelock_pid_location_lock(
 				task,
-				&real_parent_tgid,
 				&real_parent_pid,
 				&parent_pid,
 				&parent_node);
