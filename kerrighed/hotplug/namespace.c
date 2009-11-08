@@ -79,9 +79,11 @@ int copy_krg_ns(struct task_struct *task, struct nsproxy *new)
 	return retval;
 }
 
-static void delayed_free_krg_ns(struct rcu_head *rcu)
+static void __delayed_free_krg_ns(struct work_struct *work)
 {
-	struct krg_namespace *ns = container_of(rcu, struct krg_namespace, rcu);
+	struct krg_namespace *ns;
+
+	ns = container_of(work, struct krg_namespace, free_work);
 
 	BUG_ON(atomic_read(&ns->root_nsproxy.count) != 1);
 	if (ns->root_nsproxy.uts_ns)
@@ -100,6 +102,14 @@ static void delayed_free_krg_ns(struct rcu_head *rcu)
 	put_task_struct(ns->root_task);
 
 	kfree(ns);
+}
+
+static void delayed_free_krg_ns(struct rcu_head *rcu)
+{
+	struct krg_namespace *ns = container_of(rcu, struct krg_namespace, rcu);
+
+	INIT_WORK(&ns->free_work, __delayed_free_krg_ns);
+	schedule_work(&ns->free_work);
 }
 
 void free_krg_ns(struct krg_namespace *ns)
