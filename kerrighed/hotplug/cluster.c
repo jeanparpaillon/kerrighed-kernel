@@ -311,6 +311,7 @@ static struct attribute_group attr_group = {
 
 static void krg_container_abort(int err)
 {
+	complete(&cluster_init_helper_ns->root_task_continue_exit);
 	put_krg_ns(cluster_init_helper_ns);
 	cluster_init_helper_ns = ERR_PTR(err);
 	complete(&cluster_init_helper_ready);
