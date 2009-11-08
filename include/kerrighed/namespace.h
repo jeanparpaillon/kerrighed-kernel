@@ -2,6 +2,7 @@
 #define __KRG_NAMESPACE_H__
 
 #include <linux/rcupdate.h>
+#include <linux/workqueue.h>
 #include <asm/atomic.h>
 
 struct task_struct;
@@ -17,6 +18,7 @@ struct krg_namespace {
 	struct user_namespace *root_user_ns;
 	struct task_struct *root_task;
 	struct rcu_head rcu;
+	struct work_struct free_work;
 };
 
 int copy_krg_ns(struct task_struct *task, struct nsproxy *new);
