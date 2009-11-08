@@ -1,6 +1,13 @@
 #ifndef __HOTPLUG_INTERNAL__
 #define __HOTPLUG_INTERNAL__
 
+enum {
+	CLUSTER_UNDEF,
+	CLUSTER_DEF,
+};
+
+extern char clusters_status[KERRIGHED_MAX_CLUSTERS];
+
 extern struct kobject *krghotplugsys;
 
 extern struct workqueue_struct *krg_ha_wq;
