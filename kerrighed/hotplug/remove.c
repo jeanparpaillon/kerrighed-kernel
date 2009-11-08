@@ -46,7 +46,9 @@ static void do_local_node_remove(struct hotplug_context *ctx)
 
 	CLEAR_KERRIGHED_NODE_FLAGS(KRGFLAGS_RUNNING);
 
+	down_write(&kerrighed_init_sem);
 	hooks_stop();
+	up_write(&kerrighed_init_sem);
 	SET_KERRIGHED_NODE_FLAGS(KRGFLAGS_STOPPED);
 
 #if 0
