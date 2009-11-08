@@ -51,12 +51,7 @@
 #define ADVERTISE_PERIOD (2*HZ)
 #define UNIVERSE_PERIOD (60*HZ)
 
-enum {
-	CLUSTER_UNDEF,
-	CLUSTER_DEF,
-};
-
-static char clusters_status[KERRIGHED_MAX_CLUSTERS];
+char clusters_status[KERRIGHED_MAX_CLUSTERS];
 
 static struct hotplug_context *cluster_start_ctx;
 static struct cluster_start_msg {

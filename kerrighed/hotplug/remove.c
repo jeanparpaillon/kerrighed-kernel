@@ -44,21 +44,21 @@ static void do_local_node_remove(struct hotplug_context *ctx)
 	rpc_sync_m(NODE_REMOVE_CONFIRM, &new_online,
 		   &ctx->node_set, sizeof(ctx->node_set));
 
+	rpc_disable_all();
+
 	CLEAR_KERRIGHED_NODE_FLAGS(KRGFLAGS_RUNNING);
+	CLEAR_KERRIGHED_CLUSTER_FLAGS(KRGFLAGS_RUNNING);
+	clusters_status[kerrighed_subsession_id] = CLUSTER_UNDEF;
 
 	down_write(&kerrighed_init_sem);
 	hooks_stop();
 	up_write(&kerrighed_init_sem);
-	SET_KERRIGHED_NODE_FLAGS(KRGFLAGS_STOPPED);
 
-#if 0
-	printk("...sleep\n");
-	set_current_state(TASK_INTERRUPTIBLE);
-	schedule_timeout(10*HZ);
+	CLEAR_KERRIGHED_NODE_FLAGS(KRGFLAGS_STOPPING);
 
-	printk("...try to reboot\n");
-	queue_work(krg_nb_wq, &fail_work);
-#endif
+	kerrighed_subsession_id = -1;
+
+	rpc_enable(CLUSTER_START);
 }
 
 static void do_other_node_remove(struct hotplug_context *ctx)
