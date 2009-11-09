@@ -61,7 +61,6 @@ static void do_other_node_remove(struct hotplug_node_set *node_set)
 {
 	printk("do_other_node_remove\n");
 	hotplug_remove_notify(node_set, HOTPLUG_NOTIFY_REMOVE_ADVERT);
-	rpc_async_m(NODE_REMOVE_ACK, &node_set->v, NULL, 0);
 }
 
 static void handle_node_remove(struct rpc_desc *desc, void *data, size_t size)
@@ -77,12 +76,6 @@ static void handle_node_remove(struct rpc_desc *desc, void *data, size_t size)
 	}
 
 	do_local_node_remove(node_set);
-}
-
-/* we receive the ack from cluster about our remove operation */
-static void handle_node_remove_ack(struct rpc_desc *desc, void *data, size_t size)
-{
-	printk("Need to take care that node %d ack the remove (if needed)\n", desc->client);
 }
 
 /* cluster receive the confirmation about the remove operation */
@@ -213,7 +206,6 @@ int hotplug_remove_init(void)
 {
 	rpc_register(NODE_POWEROFF, handle_node_poweroff, 0);
 	rpc_register_void(NODE_REMOVE, handle_node_remove, 0);
-	rpc_register_void(NODE_REMOVE_ACK, handle_node_remove_ack, 0);
 	rpc_register_int(NODE_REMOVE_CONFIRM, handle_node_remove_confirm, 0);
 
 	register_proc_service(KSYS_HOTPLUG_REMOVE, nodes_remove);
