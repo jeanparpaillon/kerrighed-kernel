@@ -307,6 +307,7 @@ int rpc_sync(enum rpcid rpcid,
 void rpc_enable(enum rpcid rpcid);
 void rpc_enable_all(void);
 void rpc_disable(enum rpcid rpcid);
+void rpc_disable_all(void);
 
 void rpc_connect(void);
 

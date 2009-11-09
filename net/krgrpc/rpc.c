@@ -199,6 +199,13 @@ void rpc_disable(enum rpcid rpcid){
 		set_bit(rpcid, rpc_mask);
 };
 
+void rpc_disable_all(void)
+{
+	int i;
+
+	for(i = 0; i < RPCID_MAX; i++)
+		rpc_disable(i);
+}
 
 /** Initialisation of the rpc module.
  *  @author Pascal Gallard
