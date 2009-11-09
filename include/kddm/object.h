@@ -269,10 +269,19 @@ static inline int do_func_on_obj_entry (unsigned long objid,
 	return r;
 }
 
-int destroy_kddm_obj_entry (struct kddm_set *kddm_set,
-			    struct kddm_obj *obj_entry,
-			    objid_t objid,
-			    int cluster_wide_remove);
+int __destroy_kddm_obj_entry (struct kddm_set *kddm_set,
+			      struct kddm_obj *obj_entry, objid_t objid,
+			      int cluster_wide_remove, int put_page);
+
+static inline int destroy_kddm_obj_entry (struct kddm_set *kddm_set,
+					  struct kddm_obj *obj_entry,
+					  objid_t objid,
+					  int cluster_wide_remove)
+{
+	return __destroy_kddm_obj_entry (kddm_set, obj_entry, objid,
+					 cluster_wide_remove, 1);
+}
+
 
 void __for_each_kddm_object(struct kddm_set *kddm_set,
 			    int(*f)(unsigned long, void *, void*),

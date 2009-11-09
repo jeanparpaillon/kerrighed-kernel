@@ -233,10 +233,11 @@ void free_kddm_obj_entry(struct kddm_set *set,
 
 /*** Remove an object entry from a kddm set object table. ***/
 
-int destroy_kddm_obj_entry (struct kddm_set *set,
-			    struct kddm_obj *obj_entry,
-			    objid_t objid,
-			    int cluster_wide_remove)
+int __destroy_kddm_obj_entry (struct kddm_set *set,
+			      struct kddm_obj *obj_entry,
+			      objid_t objid,
+			      int cluster_wide_remove,
+			      int put_object)
 {
 	kerrighed_node_t default_owner = kddm_io_default_owner(set, objid);
 
@@ -257,7 +258,13 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 		}
 
 		wake_up (&obj_entry->waiting_tsk);
-		kddm_io_remove_object_and_unlock (obj_entry, set, objid);
+		if (put_object)
+			kddm_io_remove_object_and_unlock (obj_entry, set,
+							  objid);
+		else
+			if (obj_entry->object)
+				kddm_io_remove_object (obj_entry->object,
+						       set, objid);
 		goto exit;
 	}
 
@@ -273,7 +280,8 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 	set->ops->remove_obj_entry(set, objid);
 	kddm_unlock_obj_table(set);
 
-	put_kddm_obj_entry(set, obj_entry, objid);
+	if (put_object)
+		put_kddm_obj_entry(set, obj_entry, objid);
 
 	put_obj_entry_count(set, obj_entry, objid);
 exit:
