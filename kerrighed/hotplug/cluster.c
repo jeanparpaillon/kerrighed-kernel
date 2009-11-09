@@ -316,12 +316,15 @@ static void krg_container_abort(int err)
 	put_krg_ns(cluster_init_helper_ns);
 	cluster_init_helper_ns = ERR_PTR(err);
 	complete(&cluster_init_helper_ready);
+	printk("krg_container_abort: err = %d\n", err);
 }
 
 void krg_ns_root_exit(struct krg_namespace *ns)
 {
-	if (ns == cluster_init_helper_ns)
+	if (ns == cluster_init_helper_ns) {
+		printk("krg_ns_root_exit\n");
 		krg_container_abort(-EAGAIN);
+	}
 
 #ifdef CONFIG_KRG_HOTPLUG_DEL
 	/* TODO: Make it race-free */
@@ -436,6 +439,7 @@ static int krg_container_init(void *arg)
 	BUG_ON(cluster_init_helper_ns);
 	ns = current->nsproxy->krg_ns;
 	if (!ns) {
+		printk("krg_container_init: no krg_ns!\n");
 		cluster_init_helper_ns = ERR_PTR(-EPERM);
 		complete(&cluster_init_helper_ready);
 		return 0;
@@ -462,13 +466,17 @@ static int __create_krg_container(void *arg)
 	int ret;
 
 	ret = krg_set_cluster_creator((void *)1);
-	if (ret)
+	if (ret) {
+		printk("__create_krg_container: krg_set_cluster_creator() -> %d\n", ret);
 		goto err;
+	}
 	clone_flags = cluster_init_opt_clone_flags|SIGCHLD;
 	ret = kernel_thread(krg_container_init, NULL, clone_flags);
 	krg_set_cluster_creator(NULL);
-	if (ret < 0)
+	if (ret < 0) {
+		printk("__create_krg_container: kernel_thread() -> %d\n", ret);
 		goto err;
+	}
 
 	return 0;
 
@@ -502,11 +510,13 @@ struct krg_namespace *create_krg_container(struct krg_namespace *ns)
 	if (IS_ERR(t)) {
 		put_cred(cluster_init_helper_cred);
 		cluster_init_helper_cred = NULL;
+		printk("create_krg_container: kthread_run() -> %ld\n", PTR_ERR(t));
 		return NULL;
 	}
 
 	wait_for_completion(&cluster_init_helper_ready);
 	if (IS_ERR(cluster_init_helper_ns)) {
+		printk("create_krg_container: cluster_init_helper_ns -> %ld\n", PTR_ERR(cluster_init_helper_ns));
 		ns = NULL;
 	} else {
 		ns = cluster_init_helper_ns;
