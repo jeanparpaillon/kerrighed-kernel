@@ -21,16 +21,8 @@
 #include "rpc_internal.h"
 
 struct rpc_service** rpc_services;
-unsigned long rpc_desc_id;
-struct hlist_head desc_srv[KERRIGHED_MAX_NODES][RPC_DESC_TABLE_SIZE];
-struct hlist_head desc_clt[RPC_DESC_TABLE_SIZE];
-spinlock_t rpc_desc_done_lock[KERRIGHED_MAX_NODES];
-unsigned long rpc_desc_done_id[KERRIGHED_MAX_NODES];
-DEFINE_SPINLOCK(desc_clt_lock);
 
-unsigned long rpc_link_send_seq_id[KERRIGHED_MAX_NODES];
-unsigned long rpc_link_send_ack_id[KERRIGHED_MAX_NODES];
-unsigned long rpc_link_recv_seq_id[KERRIGHED_MAX_NODES];
+struct rpc_communicator static_communicator;
 
 DEFINE_PER_CPU(struct hlist_head, rpc_desc_trash);
 
@@ -40,11 +32,6 @@ struct kmem_cache* rpc_desc_recv_cachep;
 struct kmem_cache* rpc_desc_elem_cachep;
 struct kmem_cache* rpc_tx_elem_cachep;
 struct kmem_cache* __rpc_synchro_cachep;
-
-static struct lock_class_key rpc_desc_srv_lock_key;
-static struct lock_class_key rpc_desc_clt_lock_key;
-
-unsigned long rpc_mask[RPCID_MAX/(sizeof(unsigned long)*8)+1];
 
 /*
  * RPC management
@@ -179,7 +166,7 @@ void test(void){
 void rpc_enable(enum rpcid rpcid){
 	spin_lock_bh(&waiting_desc_lock);
 	if(rpc_services[rpcid]->id == rpcid)
-		clear_bit(rpcid, rpc_mask);
+		clear_bit(rpcid, static_communicator.rpc_mask);
 
 	spin_unlock_bh(&waiting_desc_lock);
 };
@@ -196,7 +183,7 @@ void rpc_enable_all(void){
 
 void rpc_disable(enum rpcid rpcid){
 	if(rpc_services[rpcid]->id == rpcid)
-		set_bit(rpcid, rpc_mask);
+		set_bit(rpcid, static_communicator.rpc_mask);
 };
 
 void rpc_disable_all(void)
@@ -205,6 +192,68 @@ void rpc_disable_all(void)
 
 	for(i = 0; i < RPCID_MAX; i++)
 		rpc_disable(i);
+}
+
+struct rpc_connection *
+rpc_connection_alloc(struct rpc_communicator *comm, kerrighed_node_t node)
+{
+	struct rpc_connection *conn;
+	int err;
+
+	conn = rpc_connection_alloc_ll(comm, node);
+	if (!conn)
+		return NULL;
+
+	rpc_desc_table_init(conn->desc_srv);
+	conn->desc_done_id = 0;
+	spin_lock_init(&conn->desc_done_lock);
+
+	kref_init(&conn->kref);
+	rpc_communicator_get(comm);
+	conn->comm = comm;
+	conn->peer = node;
+
+	return conn;
+}
+
+void rpc_connection_release(struct kref *kref)
+{
+	struct rpc_communicator *comm;
+	struct rpc_connection *conn;
+
+	BUG();
+
+	conn = container_of(kref, struct rpc_connection, kref);
+	comm = conn->comm;
+	rpc_connection_free_ll(conn);
+	rpc_communicator_put(comm);
+}
+
+int rpc_communicator_init(struct rpc_communicator *communicator, int id)
+{
+	memset(communicator, 0, sizeof(*communicator));
+	communicator->next_desc_id = 1;
+	rpc_desc_table_init(communicator->desc_clt);
+	spin_lock_init(&communicator->desc_clt_lock);
+	kref_init(&communicator->kref);
+	communicator->id = id;
+	return 0;
+}
+
+void rpc_communicator_release(struct kref *kref)
+{
+	struct rpc_communicator *communicator;
+
+	BUG();
+	communicator = container_of(kref, struct rpc_communicator, kref);
+}
+
+struct rpc_communicator *rpc_find_get_communicator(int id)
+{
+	BUG_ON(id != 0);
+
+	kref_get(&static_communicator.kref);
+	return &static_communicator;
 }
 
 /** Initialisation of the rpc module.
@@ -239,6 +288,7 @@ int init_rpc(void)
 {
 	int i, res;
 	struct rpc_service *rpc_undef_service;
+	struct rpc_connection *conn;
 
 	rpc_desc_cachep = kmem_cache_create("rpc_desc",
 					    sizeof(struct rpc_desc),
@@ -276,8 +326,6 @@ int init_rpc(void)
 	if(!__rpc_synchro_cachep)
 		return -ENOMEM;
 	
-	memset(rpc_mask, 0, sizeof(rpc_mask));
-	
 	rpc_services = kmalloc(sizeof(*rpc_services)*(RPCID_MAX+1),
 			       GFP_KERNEL);
 	if(!rpc_services)
@@ -295,24 +343,18 @@ int init_rpc(void)
 	for_each_possible_cpu(i){
 		INIT_HLIST_HEAD(&per_cpu(rpc_desc_trash, i));
 	};
-		
-	rpc_desc_id = 1;
 
-	for(i=0;i<KERRIGHED_MAX_NODES;i++){
-		rpc_desc_table_init(&desc_srv[i]);
-		rpc_desc_done_id[i] = 0;
-		spin_lock_init(&rpc_desc_done_lock[i]);
-	};
-	rpc_desc_table_init(&desc_clt);
-
-	lockdep_set_class(&desc_clt->lock, &rpc_desc_clt_lock_key);
-
+	res = rpc_communicator_init(&static_communicator, 0);
+	if (res)
+		panic("kerrighed: Couldn't allocate static_communicator!\n");
 	for (i = 0; i < KERRIGHED_MAX_NODES; i++) {
-		rpc_link_send_seq_id[i] = 1;
-		rpc_link_send_ack_id[i] = 0;
-		rpc_link_recv_seq_id[i] = 1;
+		conn = rpc_connection_alloc(&static_communicator, i);
+		if (!conn)
+			panic("kerrighed: Couldn't allocate static"
+			      "connection!\n");
+		static_communicator.conn[i] = conn;
 	}
-		
+
 	res = thread_pool_init();
 	if(res)
 		return res;

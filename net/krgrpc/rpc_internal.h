@@ -7,6 +7,7 @@
 #include <linux/spinlock.h>
 #include <linux/radix-tree.h>
 #include <linux/slab.h>
+#include <linux/kref.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
 #include <net/krgrpc/rpc.h>
@@ -45,6 +46,15 @@ struct rpc_desc_recv {
 	struct rpc_desc_elem *iter;
 	struct rpc_desc_elem *iter_provided;
 	int flags;
+};
+
+struct rpc_connection {
+	struct hlist_head desc_srv[RPC_DESC_TABLE_SIZE];
+	unsigned long desc_done_id;
+	spinlock_t desc_done_lock;
+	struct kref kref;
+	struct rpc_communicator *comm;
+	kerrighed_node_t peer;
 };
 
 struct __rpc_synchro_tree {
@@ -125,16 +135,6 @@ struct rpc_tx_elem {
 
 extern struct rpc_service** rpc_services;
 
-#define RPC_DESC_TABLE_BITS 5
-#define RPC_DESC_TABLE_SIZE (1 << RPC_DESC_TABLE_BITS)
-
-extern struct hlist_head desc_srv[KERRIGHED_MAX_NODES][RPC_DESC_TABLE_SIZE];
-extern struct hlist_head desc_clt[RPC_DESC_TABLE_SIZE];
-extern unsigned long rpc_desc_id;
-extern unsigned long rpc_desc_done_id[KERRIGHED_MAX_NODES];
-extern spinlock_t rpc_desc_done_lock[KERRIGHED_MAX_NODES];
-extern spinlock_t desc_clt_lock;
-
 extern struct kmem_cache* rpc_desc_cachep;
 extern struct kmem_cache* rpc_desc_send_cachep;
 extern struct kmem_cache* rpc_desc_recv_cachep;
@@ -142,15 +142,12 @@ extern struct kmem_cache* rpc_desc_elem_cachep;
 extern struct kmem_cache* rpc_tx_elem_cachep;
 extern struct kmem_cache* __rpc_synchro_cachep;
 
-extern unsigned long rpc_mask[RPCID_MAX/(sizeof(unsigned long)*8)+1];
 extern spinlock_t waiting_desc_lock;
 extern struct list_head waiting_desc;
 
 extern struct list_head list_synchro_head;
 
-extern unsigned long rpc_link_send_seq_id[KERRIGHED_MAX_NODES];
-extern unsigned long rpc_link_send_ack_id[KERRIGHED_MAX_NODES];
-extern unsigned long rpc_link_recv_seq_id[KERRIGHED_MAX_NODES];
+extern struct rpc_communicator static_communicator;
 
 struct rpc_desc* rpc_desc_alloc(void);
 struct rpc_desc_send* rpc_desc_send_alloc(void);
@@ -207,8 +204,8 @@ int __rpc_signalack(struct rpc_desc* desc);
 int rpc_handle_new(struct rpc_desc* desc);
 void rpc_wake_up_thread(struct rpc_desc *desc);
 
-void rpc_new_desc_id_lock(bool lock_table);
-void rpc_new_desc_id_unlock(bool unlock_table);
+void rpc_new_desc_id_lock(struct rpc_communicator *comm, bool lock_table);
+void rpc_new_desc_id_unlock(struct rpc_communicator *comm, bool unlock_table);
 int __rpc_emergency_send_buf_alloc(struct rpc_desc *desc, size_t size);
 void __rpc_emergency_send_buf_free(struct rpc_desc *desc);
 int __rpc_send_ll(struct rpc_desc* desc,
@@ -221,6 +218,42 @@ int __rpc_send_ll(struct rpc_desc* desc,
 void __rpc_put_raw_data(void *raw);
 void __rpc_get_raw_data(void *raw);
 
+struct rpc_connection *
+rpc_connection_alloc_ll(struct rpc_communicator *comm, kerrighed_node_t node);
+void rpc_connection_free_ll(struct rpc_connection *connection);
+
+struct rpc_connection *
+rpc_connection_alloc(struct rpc_communicator *comm, kerrighed_node_t node);
+
+static inline void rpc_connection_get(struct rpc_connection *connection)
+{
+	kref_get(&connection->kref);
+}
+
+void rpc_connection_release(struct kref *kref);
+static inline void rpc_connection_put(struct rpc_connection *connection)
+{
+	kref_put(&connection->kref, rpc_connection_release);
+}
+
+static inline struct rpc_connection *rpc_find_get_connection(int id)
+{
+	struct rpc_connection *conn = static_communicator.conn[id];
+
+	rpc_connection_get(conn);
+	return conn;
+}
+
+static
+inline
+struct rpc_connection *
+rpc_communicator_get_connection(struct rpc_communicator *comm,
+				kerrighed_node_t node)
+{
+	rpc_connection_get(comm->conn[node]);
+	return comm->conn[node];
+}
+
 void __rpc_synchro_free(struct rpc_desc *desc);
 int rpc_synchro_lookup(struct rpc_desc* desc);
 
@@ -232,18 +265,6 @@ int comlayer_disable_dev(const char *name);
 int thread_pool_init(void);
 int rpclayer_init(void);
 int rpc_monitor_init(void);
-
-#define rpc_link_seq_id(p, node) \
-  __asm__ __volatile__( \
-    "lock xadd %%eax, %1" \
-    :"=a" (p), "=m" (rpc_link_send_seq_id[node]) \
-    :"a" (1) : "memory")
-
-#define rpc_desc_set_id(p) \
-  __asm__ __volatile__( \
-    "lock xadd %%eax, %1" \
-    :"=a" (p), "=m" (rpc_desc_id) \
-    :"a" (1) : "memory")
 
 #endif
 

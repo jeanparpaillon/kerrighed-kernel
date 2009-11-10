@@ -55,13 +55,21 @@ static DEFINE_SPINLOCK(tipc_tx_queue_lock);
 static void tipc_send_ack_worker(struct work_struct *work);
 static DECLARE_DELAYED_WORK(tipc_ack_work, tipc_send_ack_worker);
 
-struct rx_engine {
-	kerrighed_node_t from;
+struct tipc_connection {
+	struct rpc_connection conn;
+	atomic_long_t send_seq_id;
+	unsigned long send_ack_id;
+	unsigned long last_cleanup_ack;
 	struct sk_buff_head rx_queue;
 	struct delayed_work run_rx_queue_work;
+	unsigned long recv_seq_id;
+	int consecutive_recv;
 };
 
-struct rx_engine tipc_rx_engine[KERRIGHED_MAX_NODES];
+static inline struct tipc_connection *to_ll(struct rpc_connection *conn)
+{
+	return container_of(conn, struct tipc_connection, conn);
+}
 
 struct workqueue_struct *krgcom_wq;
 
@@ -131,9 +139,7 @@ DEFINE_PER_CPU(u32, tipc_send_ref);
 struct tipc_name_seq tipc_seq;
 
 krgnodemask_t nodes_requiring_ack;
-unsigned long last_cleanup_ack[KERRIGHED_MAX_NODES];
 static int ack_cleanup_window_size;
-static int consecutive_recv[KERRIGHED_MAX_NODES];
 static int max_consecutive_recv[KERRIGHED_MAX_NODES];
 
 void __rpc_put_raw_data(void *data){
@@ -151,10 +157,11 @@ inline int __send_iovec(kerrighed_node_t node, int nr_iov, struct iovec *iov)
 		.type = TIPC_KRG_SERVER_TYPE,
 		.instance = node
 	};
+	struct tipc_connection *conn = to_ll(static_communicator.conn[node]);
 	struct __rpc_header *h = iov[0].iov_base;
 	int err;
 
-	h->link_ack_id = rpc_link_recv_seq_id[node] - 1;
+	h->link_ack_id = conn->recv_seq_id - 1;
 	lockdep_off();
 	err = tipc_send2name(per_cpu(tipc_send_ref, smp_processor_id()),
 			     &name, 0,
@@ -163,7 +170,7 @@ inline int __send_iovec(kerrighed_node_t node, int nr_iov, struct iovec *iov)
 	if (err > 0)
 		err = 0;
 	if (!err)
-		consecutive_recv[node] = 0;
+		conn->consecutive_recv = 0;
 
 	return err;
 }
@@ -219,10 +226,11 @@ static void __rpc_tx_elem_free(struct rpc_tx_elem *elem)
 static int __rpc_tx_elem_send(struct rpc_tx_elem *elem, int link_seq_index,
 			      kerrighed_node_t node)
 {
+	struct tipc_connection *conn = to_ll(static_communicator.conn[node]);
 	int err = 0;
 
 	elem->h.link_seq_id = elem->link_seq_id[link_seq_index];
-	if (elem->h.link_seq_id <= rpc_link_send_ack_id[node])
+	if (elem->h.link_seq_id <= conn->send_ack_id)
 		goto out;
 
 	/* try to send */
@@ -440,6 +448,7 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 	spin_unlock_bh(&tipc_tx_queue_lock);
 
 	list_for_each_entry_safe(iter, safe, &queue, tx_queue){
+		struct tipc_connection *conn;
 		int need_to_free, link_seq_index;
 
 		need_to_free = 0;
@@ -449,8 +458,8 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 
 			iter->h.link_seq_id = iter->link_seq_id[link_seq_index];
 
-			if (iter->h.link_seq_id >
-			    rpc_link_send_ack_id[node])
+			conn = to_ll(static_communicator.conn[node]);
+			if (iter->h.link_seq_id > conn->send_ack_id)
 				goto next_iter;
 
 			link_seq_index++;
@@ -569,6 +578,7 @@ int __rpc_send_ll(struct rpc_desc* desc,
 			 const void* data, size_t size,
 			 int rpc_flags)
 {
+	struct tipc_connection *conn;
 	struct rpc_tx_elem* elem;
 	struct tx_engine *engine;
 	kerrighed_node_t node;
@@ -584,11 +594,13 @@ int __rpc_send_ll(struct rpc_desc* desc,
 
 	link_seq_index = 0;
 	__for_each_krgnode_mask(node, nodes) {
-		rpc_link_seq_id(elem->link_seq_id[link_seq_index], node);
+		conn = to_ll(static_communicator.conn[node]);
+		elem->link_seq_id[link_seq_index] =
+			atomic_long_inc_return(&conn->send_seq_id);
 		link_seq_index++;
 	}
 	if (rpc_flags & RPC_FLAGS_NEW_DESC_ID)
-		rpc_new_desc_id_unlock(desc->type == RPC_RQ_CLT);
+		rpc_new_desc_id_unlock(&static_communicator, desc->type == RPC_RQ_CLT);
 
 	elem->h.from = kerrighed_node_id;
 	elem->h.client = desc->client;
@@ -835,7 +847,9 @@ int handle_valid_desc(struct rpc_desc *desc,
 	return err;
 }
 
-static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
+static
+struct rpc_desc *
+server_rpc_desc_setup(struct rpc_connection *conn, const struct __rpc_header *h)
 {
 	struct rpc_desc *desc;
 
@@ -875,8 +889,8 @@ static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
 	rpc_desc_get(desc);
 
 	BUG_ON(h->desc_id != desc->desc_id);
-	rpc_desc_table_add(desc_srv[h->from], desc);
-	desc->hash_lock = &rpc_desc_done_lock[h->from];
+	rpc_desc_table_add(conn->desc_srv, desc);
+	desc->hash_lock = &conn->desc_done_lock;
 
 out:
 	return desc;
@@ -895,10 +909,12 @@ err_desc_send:
  * Packets are in the right order, so we have to find the corresponding
  * descriptor (if any).
  */
-static int tipc_handler_ordered(struct sk_buff *buf,
+static int tipc_handler_ordered(struct tipc_connection *conn,
+				struct sk_buff *buf,
 				unsigned const char* data,
 				unsigned int size)
 {
+	struct rpc_connection *rpc_conn = &conn->conn;
 	unsigned char const* iter;
 	struct __rpc_header *h;
 	struct rpc_desc *desc;
@@ -913,18 +929,18 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 
 	/* select the right array regarding the type of request:
 	   __RPC_HEADER_FLAGS_SRV_REPLY: we are the client side -> desc_clt
-	   else: we are the server side -> desc_srv[]
+	   else: we are the server side -> desc_srv
 	*/
 	if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
-		hash_lock = &desc_clt_lock;
+		hash_lock = &rpc_conn->comm->desc_clt_lock;
 	else
-		hash_lock = &rpc_desc_done_lock[h->from];
+		hash_lock = &rpc_conn->desc_done_lock;
 
 	spin_lock(hash_lock);
 	if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
-		desc = rpc_desc_table_find(desc_clt, h->client_desc_id);
+		desc = rpc_desc_table_find(rpc_conn->comm->desc_clt, h->client_desc_id);
 	else
-		desc = rpc_desc_table_find(desc_srv[h->from], h->desc_id);
+		desc = rpc_desc_table_find(rpc_conn->desc_srv, h->desc_id);
 
 	if (desc) {
 
@@ -941,12 +957,12 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 
 		}else{
 
-			if (unlikely(h->desc_id <= rpc_desc_done_id[h->from])) {
+			if (unlikely(h->desc_id <= rpc_conn->desc_done_id)) {
 				spin_unlock(hash_lock);
 				goto out;
 			}
 
-			desc = server_rpc_desc_setup(h);
+			desc = server_rpc_desc_setup(rpc_conn, h);
 			if (!desc) {
 				/*
 				 * Drop the packet, but not silently.
@@ -959,7 +975,7 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 				goto out;
 			}
 
-			rpc_desc_done_id[h->from] = h->desc_id;
+			rpc_conn->desc_done_id = h->desc_id;
 
 		}
 
@@ -1050,42 +1066,40 @@ out:
 	return err;
 }
 
-static inline int handle_one_packet(kerrighed_node_t node,
+static inline int handle_one_packet(struct tipc_connection *conn,
 				    struct sk_buff *buf,
 				    unsigned char const *data,
 				    unsigned int size)
 {
 	int err;
 
-	err = tipc_handler_ordered(buf, data, size);
+	err = tipc_handler_ordered(conn, buf, data, size);
 	if (!err) {
-		if (node == kerrighed_node_id)
-			rpc_link_send_ack_id[node] = rpc_link_recv_seq_id[node];
-		rpc_link_recv_seq_id[node]++;
+		if (conn->conn.peer == kerrighed_node_id)
+			conn->send_ack_id = conn->recv_seq_id;
+		conn->recv_seq_id++;
 	}
 	return err;
 }
 
-static void schedule_run_rx_queue(struct rx_engine *engine);
+static void schedule_run_rx_queue(struct tipc_connection *conn);
 
-static void run_rx_queue(struct rx_engine *engine)
+static void run_rx_queue(struct tipc_connection *conn)
 {
 	struct sk_buff_head *queue;
-	kerrighed_node_t node;
 	struct sk_buff *buf;
 	struct __rpc_header *h;
 
-	node = engine->from;
-	queue = &engine->rx_queue;
+	queue = &conn->rx_queue;
 	while ((buf = skb_peek(queue))) {
 		h = (struct __rpc_header *)buf->data;
 
-		BUG_ON(h->link_seq_id < rpc_link_recv_seq_id[node]);
-		if (h->link_seq_id > rpc_link_recv_seq_id[node])
+		BUG_ON(h->link_seq_id < conn->recv_seq_id);
+		if (h->link_seq_id > conn->recv_seq_id)
 			break;
 
-		if (handle_one_packet(node, buf, buf->data, buf->len)) {
-			schedule_run_rx_queue(engine);
+		if (handle_one_packet(conn, buf, buf->data, buf->len)) {
+			schedule_run_rx_queue(conn);
 			break;
 		}
 
@@ -1096,16 +1110,23 @@ static void run_rx_queue(struct rx_engine *engine)
 
 static void run_rx_queue_worker(struct work_struct *work)
 {
-	struct rx_engine *engine =
-		container_of(work, struct rx_engine, run_rx_queue_work.work);
-	spin_lock_bh(&engine->rx_queue.lock);
-	run_rx_queue(engine);
-	spin_unlock_bh(&engine->rx_queue.lock);
+	struct tipc_connection *conn;
+
+	conn = container_of(work, struct tipc_connection, run_rx_queue_work.work);
+	spin_lock_bh(&conn->rx_queue.lock);
+	run_rx_queue(conn);
+	spin_unlock_bh(&conn->rx_queue.lock);
+	rpc_connection_put(&conn->conn);
 }
 
-static void schedule_run_rx_queue(struct rx_engine *engine)
+static void schedule_run_rx_queue(struct tipc_connection *conn)
 {
-	queue_delayed_work(krgcom_wq, &engine->run_rx_queue_work, HZ / 2);
+	int queued;
+
+	rpc_connection_get(&conn->conn);
+	queued = queue_delayed_work(krgcom_wq, &conn->run_rx_queue_work, HZ / 2);
+	if (!queued)
+		rpc_connection_put(&conn->conn);
 }
 
 /*
@@ -1121,6 +1142,7 @@ static void tipc_handler(void *usr_handle,
 			 struct tipc_portid const *orig,
 			 struct tipc_name_seq const *dest)
 {
+	struct tipc_connection *conn;
 	struct sk_buff_head *queue;
 	struct sk_buff *__buf;
 	struct __rpc_header *h;
@@ -1129,15 +1151,17 @@ static void tipc_handler(void *usr_handle,
 	h = (struct __rpc_header*)data;
 	BUG_ON(size != __buf->len);
 
-	queue = &tipc_rx_engine[h->from].rx_queue;
+	conn = to_ll(rpc_find_get_connection(h->from));
+	queue = &conn->rx_queue;
+
 	spin_lock(&queue->lock);
 
 	// Update the ack value sent by the other node
-	if (h->link_ack_id > rpc_link_send_ack_id[h->from]){
-		rpc_link_send_ack_id[h->from] = h->link_ack_id;
-		if(rpc_link_send_ack_id[h->from] - last_cleanup_ack[h->from]
+	if (h->link_ack_id > conn->send_ack_id){
+		conn->send_ack_id = h->link_ack_id;
+		if(conn->send_ack_id - conn->last_cleanup_ack
 			> ack_cleanup_window_size){
-			last_cleanup_ack[h->from] = h->link_ack_id;
+			conn->last_cleanup_ack = h->link_ack_id;
 			cleanup_not_retx();
 		}
 
@@ -1147,21 +1171,21 @@ static void tipc_handler(void *usr_handle,
 		goto exit;
 
 	// Check if we are not receiving an already received packet
-	if (h->link_seq_id < rpc_link_recv_seq_id[h->from]) {
+	if (h->link_seq_id < conn->recv_seq_id) {
 		krgnode_set(h->from, nodes_requiring_ack);
 		queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
 		goto exit;
 	}
 
 	// Check if we are receiving lot of packets but sending none
-	if (consecutive_recv[h->from] >= max_consecutive_recv[h->from]){
+	if (conn->consecutive_recv >= max_consecutive_recv[h->from]){
 		krgnode_set(h->from, nodes_requiring_ack);
 		queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
 	}
-	consecutive_recv[h->from]++;
+	conn->consecutive_recv++;
 
 	// Is-it the next ordered message ?
-	if (h->link_seq_id > rpc_link_recv_seq_id[h->from]) {
+	if (h->link_seq_id > conn->recv_seq_id) {
 		struct sk_buff *at;
 		unsigned long seq_id = h->link_seq_id;
 
@@ -1184,16 +1208,18 @@ static void tipc_handler(void *usr_handle,
 		goto exit;
 	}
 
-	if (handle_one_packet(h->from, __buf, data, size)) {
+	if (handle_one_packet(conn, __buf, data, size)) {
 		skb_get(__buf);
 		__skb_queue_head(queue, __buf);
-		schedule_run_rx_queue(&tipc_rx_engine[h->from]);
+		schedule_run_rx_queue(conn);
 	} else {
-		run_rx_queue(&tipc_rx_engine[h->from]);
+		run_rx_queue(conn);
 	}
 
  exit:
 	spin_unlock(&queue->lock);
+
+	rpc_connection_put(&conn->conn);
 }
 
 static
@@ -1325,6 +1351,33 @@ void rpc_disable_local_lowmem_mode(void){
 	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE;
 }
 
+struct rpc_connection *
+rpc_connection_alloc_ll(struct rpc_communicator *comm, kerrighed_node_t node)
+{
+	struct tipc_connection *ll;
+
+	ll = kmalloc(sizeof(*ll), GFP_ATOMIC);
+	if (!ll)
+		return NULL;
+
+	atomic_long_set(&ll->send_seq_id, 0);
+	ll->send_ack_id = 0;
+	ll->last_cleanup_ack = 0;
+	skb_queue_head_init(&ll->rx_queue);
+	INIT_DELAYED_WORK(&ll->run_rx_queue_work, run_rx_queue_worker);
+	ll->recv_seq_id = 1;
+	ll->consecutive_recv = 0;
+
+	return &ll->conn;
+}
+
+void rpc_connection_free_ll(struct rpc_connection *conn)
+{
+	struct tipc_connection *ll = to_ll(conn);
+	BUG_ON(!skb_queue_empty(&ll->rx_queue));
+	kfree(ll);
+}
+
 int comlayer_init(void)
 {
 	int res = 0;
@@ -1353,12 +1406,6 @@ int comlayer_init(void)
 	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE;
 
 	for (i = 0; i < KERRIGHED_MAX_NODES; i++) {
-		tipc_rx_engine[i].from = i;
-		skb_queue_head_init(&tipc_rx_engine[i].rx_queue);
-		INIT_DELAYED_WORK(&tipc_rx_engine[i].run_rx_queue_work,
-				  run_rx_queue_worker);
-		last_cleanup_ack[i] = 0;
-		consecutive_recv[i] = 0;
 		max_consecutive_recv[i] = MAX_CONSECUTIVE_RECV;
 	}
 

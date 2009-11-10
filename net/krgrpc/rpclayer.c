@@ -29,19 +29,19 @@ kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc){
 	return desc->client;
 }
 
-void rpc_new_desc_id_lock(bool lock_table)
+void rpc_new_desc_id_lock(struct rpc_communicator *comm, bool lock_table)
 {
 	if (!irqs_disabled())
 		local_bh_disable();
 	spin_lock(&lock_id);
 	if (lock_table)
-		spin_lock(&desc_clt_lock);
+		spin_lock(&comm->desc_clt_lock);
 }
 
-void rpc_new_desc_id_unlock(bool unlock_table)
+void rpc_new_desc_id_unlock(struct rpc_communicator *comm, bool unlock_table)
 {
 	if (unlock_table)
-		spin_unlock(&desc_clt_lock);
+		spin_unlock(&comm->desc_clt_lock);
 	spin_unlock(&lock_id);
 	if (!irqs_disabled())
 		local_bh_enable();
@@ -63,13 +63,13 @@ int __rpc_send(struct rpc_desc* desc,
 
 			BUG_ON(desc->hash_lock);
 
-			rpc_new_desc_id_lock(is_client);
+			rpc_new_desc_id_lock(&static_communicator, is_client);
 
-			rpc_desc_set_id(desc->desc_id);
+			desc->desc_id = static_communicator.next_desc_id++;
 			if (is_client) {
 				desc->client_desc_id = desc->desc_id;
-				rpc_desc_table_add(desc_clt, desc);
-				desc->hash_lock = &desc_clt_lock;
+				rpc_desc_table_add(static_communicator.desc_clt, desc);
+				desc->hash_lock = &static_communicator.desc_clt_lock;
 			}
 
 			/* Calls rpc_new_desc_id_unlock() on success */
@@ -82,7 +82,7 @@ int __rpc_send(struct rpc_desc* desc,
 					rpc_desc_table_remove(desc);
 					desc->hash_lock = NULL;
 				}
-				rpc_new_desc_id_unlock(is_client);
+				rpc_new_desc_id_unlock(&static_communicator, is_client);
 
 				desc->desc_id = 0;
 				desc->client_desc_id = 0;
