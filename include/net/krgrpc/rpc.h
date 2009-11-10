@@ -7,8 +7,24 @@
 
 #include <linux/list.h>
 #include <linux/spinlock.h>
+#include <linux/kref.h>
 #include <linux/errno.h>
 #include <linux/sched.h>
+
+struct rpc_connection;
+
+#define RPC_DESC_TABLE_BITS 5
+#define RPC_DESC_TABLE_SIZE (1 << RPC_DESC_TABLE_BITS)
+
+struct rpc_communicator {
+	unsigned long next_desc_id;
+	struct hlist_head desc_clt[RPC_DESC_TABLE_SIZE];
+	spinlock_t desc_clt_lock;
+	struct rpc_connection *conn[KERRIGHED_MAX_NODES];
+	unsigned long rpc_mask[(RPCID_MAX + BITS_PER_LONG - 1) / BITS_PER_LONG];
+	struct kref kref;
+	int id;
+};
 
 enum rpc_target {
 	RPC_TARGET_NODE,
@@ -307,6 +323,18 @@ void rpc_enable_alldev(void);
 int rpc_enable_dev(const char *name);
 void rpc_disable_alldev(void);
 int rpc_disable_dev(const char *name);
+
+static inline void rpc_communicator_get(struct rpc_communicator *communicator)
+{
+	kref_get(&communicator->kref);
+}
+void rpc_communicator_release(struct kref *kref);
+static inline
+void rpc_communicator_put(struct rpc_communicator *communicator)
+{
+	kref_put(&communicator->kref, rpc_communicator_release);
+}
+struct rpc_communicator *rpc_find_get_communicator(int id);
 
 kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc);
 
