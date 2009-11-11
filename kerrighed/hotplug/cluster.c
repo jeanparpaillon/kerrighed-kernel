@@ -687,6 +687,10 @@ out:
 
 cancel:
 	rpc_cancel(desc);
+	if (!master) {
+		rpc_disconnect();
+		rpc_connect();
+	}
 	goto out;
 }
 
@@ -758,6 +762,7 @@ out:
 	return err;
 cancel:
 	rpc_cancel(desc);
+	rpc_reset(&cluster_start_ctx->node_set.v);
 	if (err == -ECANCELED)
 		err = -EPIPE;
 	goto end;

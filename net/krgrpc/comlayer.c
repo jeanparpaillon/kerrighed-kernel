@@ -55,6 +55,7 @@ static DEFINE_PER_CPU(struct tx_engine, tipc_tx_engine);
 static DEFINE_SPINLOCK(tipc_tx_queue_lock);
 static void tipc_send_ack_worker(struct work_struct *work);
 static DECLARE_DELAYED_WORK(tipc_ack_work, tipc_send_ack_worker);
+static bool stop_tx_workers;
 
 struct rx_engine {
 	kerrighed_node_t from;
@@ -266,6 +267,9 @@ static void tipc_delayed_tx_worker(struct work_struct *work)
 	struct rpc_tx_elem *iter;
 	struct rpc_tx_elem *safe;
 
+	if (stop_tx_workers)
+		return;
+
 	lockdep_off();
 
 	// get the waiting list
@@ -340,6 +344,9 @@ static void tipc_retx_worker(struct work_struct *work)
 	LIST_HEAD(not_retx_queue);
 	struct rpc_tx_elem *iter;
 	struct rpc_tx_elem *safe;
+
+	if (stop_tx_workers)
+		return;
 
 	lockdep_off();
 
@@ -435,6 +442,9 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 	struct rpc_tx_elem *safe;
 	LIST_HEAD(queue);
 	int node;
+
+	if (stop_tx_workers)
+		return;
 
 	spin_lock_bh(&tipc_tx_queue_lock);
 	list_splice_init(&engine->not_retx_queue, &queue);
@@ -1291,6 +1301,111 @@ void comlayer_disable(void)
 	for_each_netdev(&init_net, netdev)
 		comlayer_disable_dev(netdev->name);
 	read_unlock(&dev_base_lock);
+}
+
+static
+void
+reset_check_tx_list(const struct list_head *head, const krgnodemask_t *nodes)
+{
+	struct rpc_tx_elem *elem, *safe;
+	bool bad = false;
+
+	list_for_each_entry_safe(elem, safe, head, tx_queue) {
+		if (krgnodes_intersects(*nodes, elem->nodes)) {
+			bad = true;
+			list_del(&elem->tx_queue);
+			__rpc_tx_elem_free(elem);
+		}
+	}
+
+	if (bad)
+		printk("kerrighed: WARNING dropped remaining packets to removed nodes!\n");
+}
+
+void comlayer_flush(const krgnodemask_t *nodes)
+{
+	struct tx_engine *engine;
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		engine = &per_cpu(tipc_tx_engine, cpu);
+		queue_delayed_work(krgcom_wq, &engine->delayed_tx_work, 0);
+		queue_delayed_work(krgcom_wq, &engine->retx_work, 0);
+	}
+	flush_workqueue(krgcom_wq);
+
+	__set_current_state(TASK_UNINTERRUPTIBLE);
+	schedule_timeout(HZ);
+
+	krgnodes_or(nodes_requiring_ack, nodes_requiring_ack, *nodes);
+	flush_work(&tipc_ack_work.work);
+	queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
+	flush_work(&tipc_ack_work.work);
+
+	__set_current_state(TASK_UNINTERRUPTIBLE);
+	schedule_timeout(HZ);
+
+	for_each_possible_cpu(cpu) {
+		engine = &per_cpu(tipc_tx_engine, cpu);
+		queue_delayed_work(krgcom_wq, &engine->cleanup_not_retx_work, 0);
+	}
+	flush_workqueue(krgcom_wq);
+}
+
+void comlayer_reset(const krgnodemask_t *nodes)
+{
+	kerrighed_node_t node;
+	int cpu;
+
+	krgnodes_andnot(nodes_requiring_ack, nodes_requiring_ack, *nodes);
+
+	stop_tx_workers = true;
+	flush_workqueue(krgcom_wq);
+
+	spin_lock_bh(&tipc_tx_queue_lock);
+	for_each_possible_cpu(cpu) {
+		struct tx_engine *engine = &per_cpu(tipc_tx_engine, cpu);
+
+		reset_check_tx_list(&engine->delayed_tx_queue, nodes);
+		reset_check_tx_list(&engine->not_retx_queue, nodes);
+		reset_check_tx_list(&engine->retx_queue, nodes);
+		engine->retx_iter = NULL;
+	}
+	spin_unlock_bh(&tipc_tx_queue_lock);
+
+	stop_tx_workers = false;
+	for_each_possible_cpu(cpu) {
+		struct tx_engine *engine = &per_cpu(tipc_tx_engine, cpu);
+
+		queue_delayed_work(krgcom_wq, &engine->delayed_tx_work, 0);
+		queue_delayed_work(krgcom_wq, &engine->cleanup_not_retx_work, 0);
+		queue_delayed_work(krgcom_wq, &engine->retx_work, 0);
+	}
+
+	if (__krgnode_isset(kerrighed_node_id, nodes))
+		rpc_desc_id = 1;
+
+	__for_each_krgnode_mask(node, nodes) {
+		struct sk_buff_head *queue = &tipc_rx_engine[node].rx_queue;
+		bool bad;
+
+		spin_lock_bh(&queue->lock);
+		bad = skb_peek(queue) != NULL;
+		__skb_queue_purge(queue);
+		spin_unlock_bh(&queue->lock);
+		if (bad)
+			printk("kerrighed: WARNING remaining from packets from node %d dropped!\n", node);
+
+		rpc_link_send_seq_id[node] = 1;
+		rpc_link_send_ack_id[node] = 0;
+		rpc_link_recv_seq_id[node] = 1;
+
+		last_cleanup_ack[node] = 0;
+		consecutive_recv[node] = 0;
+		max_consecutive_recv[node] = MAX_CONSECUTIVE_RECV;
+
+		rpc_desc_done_id[node] = 0;
+	}
 }
 
 void krg_node_reachable(kerrighed_node_t nodeid){

@@ -56,6 +56,8 @@ int __rpc_send(struct rpc_desc* desc,
 {
 	int err = 0;
 
+	BUG_ON(krgnodes_intersects(rpc_blacklist, desc->nodes));
+
 	switch (desc->type) {
 	case RPC_RQ_FWD:
 	case RPC_RQ_CLT:

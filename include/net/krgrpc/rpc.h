@@ -309,6 +309,10 @@ int rpc_enable_dev(const char *name);
 void rpc_disable_alldev(void);
 int rpc_disable_dev(const char *name);
 
+void rpc_reset(const krgnodemask_t *nodes);
+void rpc_connect(void);
+void rpc_disconnect(void);
+
 kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc);
 
 extern struct task_struct *first_krgrpc;

@@ -215,10 +215,35 @@ void rpc_undef_handler (struct rpc_desc *desc){
 	printk("service %d not registered\n", desc->rpcid);
 };
 
+krgnodemask_t rpc_blacklist;
+
+void rpc_reset(const krgnodemask_t *nodes)
+{
+	kerrighed_node_t node;
+
+	__for_each_krgnode_mask(node, nodes)
+		printk("kerrighed: banning node %d for 2s\n", node);
+
+	krgnodes_or(rpc_blacklist, rpc_blacklist, *nodes);
+	comlayer_flush(nodes);
+	comlayer_reset(nodes);
+	krgnodes_andnot(rpc_blacklist, rpc_blacklist, *nodes);
+}
+
 void rpc_enable_alldev(void)
 {
+	krgnodemask_t nodes = KRGNODE_MASK_ALL;
+
+	printk("kerrighed: node remaining offline for 2s\n");
+	__set_current_state(TASK_UNINTERRUPTIBLE);
+	schedule_timeout(2 * HZ);
+
+	comlayer_reset(&nodes);
+	krgnodes_clear(rpc_blacklist);
 	comlayer_enable();
 }
+
+void rpc_connect(void) __attribute__((alias("rpc_enable_alldev")));
 
 int rpc_enable_dev(const char *name)
 {
@@ -227,8 +252,14 @@ int rpc_enable_dev(const char *name)
 
 void rpc_disable_alldev(void)
 {
+	krgnodemask_t nodes = KRGNODE_MASK_ALL;
+
+	krgnodes_setall(rpc_blacklist);
+	comlayer_flush(&nodes);
 	comlayer_disable();
 }
+
+void rpc_disconnect(void) __attribute__((alias("rpc_disable_alldev")));
 
 int rpc_disable_dev(const char *name)
 {

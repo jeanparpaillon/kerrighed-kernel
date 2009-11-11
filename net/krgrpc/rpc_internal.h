@@ -148,6 +148,8 @@ extern unsigned long rpc_link_send_seq_id[KERRIGHED_MAX_NODES];
 extern unsigned long rpc_link_send_ack_id[KERRIGHED_MAX_NODES];
 extern unsigned long rpc_link_recv_seq_id[KERRIGHED_MAX_NODES];
 
+extern krgnodemask_t rpc_blacklist;
+
 struct rpc_desc* rpc_desc_alloc(void);
 struct rpc_desc_send* rpc_desc_send_alloc(void);
 struct rpc_desc_recv* rpc_desc_recv_alloc(void);
@@ -183,6 +185,8 @@ void __rpc_synchro_free(struct rpc_desc *desc);
 int rpc_synchro_lookup(struct rpc_desc* desc);
 
 int comlayer_init(void);
+void comlayer_flush(const krgnodemask_t *nodes);
+void comlayer_reset(const krgnodemask_t *nodes);
 void comlayer_enable(void);
 int comlayer_enable_dev(const char *name);
 void comlayer_disable(void);

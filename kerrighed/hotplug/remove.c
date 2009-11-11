@@ -64,6 +64,7 @@ static void do_local_node_remove(struct rpc_desc *desc,
 	rpc_unpack_type(desc, ret);
 
 	rpc_disable(HOTPLUG_FINISH_REQ);
+	rpc_disconnect();
 
 	CLEAR_KERRIGHED_NODE_FLAGS(KRGFLAGS_RUNNING);
 	CLEAR_KERRIGHED_CLUSTER_FLAGS(KRGFLAGS_RUNNING);
@@ -78,6 +79,7 @@ static void do_local_node_remove(struct rpc_desc *desc,
 	kerrighed_subsession_id = -1;
 
 	rpc_enable(CLUSTER_START);
+	rpc_connect();
 }
 
 /* we receive the ack from cluster about our remove operation */
@@ -102,6 +104,8 @@ static void do_other_node_remove(struct rpc_desc *desc,
 	ret = 0;
 	rpc_pack_type(desc, ret);
 	rpc_unpack_type(desc, ret);
+
+	rpc_reset(&ctx->node_set.v);
 }
 
 static void handle_node_remove(struct rpc_desc *desc, void *data, size_t size)
