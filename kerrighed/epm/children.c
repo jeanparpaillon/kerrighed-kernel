@@ -309,13 +309,14 @@ struct children_kddm_object *krg_children_readlock(pid_t tgid)
 		return NULL;
 
 	obj = _kddm_get_object_no_ft(children_kddm_set, tgid);
-	if (obj) {
-		down_read(&obj->sem);
-		/* Marker for unlock. Dirty but temporary. */
-		obj->write_locked = 0;
-	} else {
+	if (!obj) {
 		_kddm_put_object(children_kddm_set, tgid);
+		return NULL;
 	}
+
+	down_read(&obj->sem);
+	/* Marker for unlock. Dirty but temporary. */
+	obj->write_locked = 0;
 
 	return obj;
 }
@@ -334,16 +335,17 @@ static struct children_kddm_object *children_writelock(pid_t tgid, int nested)
 		return NULL;
 
 	obj = _kddm_grab_object_no_ft(children_kddm_set, tgid);
-	if (obj) {
-		if (!nested)
-			down_write(&obj->sem);
-		else
-			down_write_nested(&obj->sem, SINGLE_DEPTH_NESTING);
-		/* Marker for unlock. Dirty but temporary. */
-		obj->write_locked = 1;
-	} else {
+	if (!obj) {
 		_kddm_put_object(children_kddm_set, tgid);
+		return NULL;
 	}
+
+	if (!nested)
+		down_write(&obj->sem);
+	else
+		down_write_nested(&obj->sem, SINGLE_DEPTH_NESTING);
+	/* Marker for unlock. Dirty but temporary. */
+	obj->write_locked = 1;
 
 	return obj;
 }
@@ -370,13 +372,14 @@ static struct children_kddm_object *children_create_writelock(pid_t tgid)
 	BUG_ON(!(tgid & GLOBAL_PID_MASK));
 
 	obj = _kddm_grab_object(children_kddm_set, tgid);
-	if (obj) {
-		down_write(&obj->sem);
-		/* Marker for unlock. Dirty but temporary. */
-		obj->write_locked = 1;
-	} else {
+	if (!obj) {
 		_kddm_put_object(children_kddm_set, tgid);
+		return NULL;
 	}
+
+	down_write(&obj->sem);
+	/* Marker for unlock. Dirty but temporary. */
+	obj->write_locked = 1;
 
 	return obj;
 }
