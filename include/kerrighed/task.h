@@ -55,9 +55,10 @@ struct task_kddm_object {
 	struct task_struct *task;
 
 	struct rw_semaphore sem;
-	int write_locked;
+	unsigned write_locked:1;
+	unsigned removing:1;
 
-	int alive;
+	unsigned alive:1;
 	struct kref kref;
 
 	struct rcu_head rcu;
