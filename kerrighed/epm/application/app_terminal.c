@@ -23,6 +23,9 @@ int is_tty(struct file *file)
 {
 	int r = 0;
 
+	if (!file)
+		return 0;
+
 	if (file->f_flags & O_FAF_CLT) {
 		if (file->f_flags & O_FAF_TTY)
 			r = 1;
@@ -40,20 +43,40 @@ struct file *get_valid_terminal(void)
 	stdin = fget(0);
 	stdout = fget(1);
 	stderr = fget(2);
+	term = NULL;
 
-	if (stdin == stdout
-	    && stdin == stderr
-	    && is_tty(stdin))
+	if (is_tty(stdin))
 		term = stdin;
-	else
-		term = NULL;
 
-	if (!term)
+	if (is_tty(stdout)) {
+		if (!term)
+			term = stdout;
+		else if (term != stdout)
+			goto err;
+	}
+
+	if (is_tty(stderr)) {
+		if (!term)
+			term = stderr;
+		else if (term != stderr)
+			goto err;
+	}
+
+exit:
+	if (term)
+		get_file(term);
+
+	if (stdin)
 		fput(stdin);
-
-	fput(stdout);
-	fput(stderr);
+	if (stdout)
+		fput(stdout);
+	if (stderr)
+		fput(stderr);
 	return term;
+
+err:
+	term = NULL;
+	goto exit;
 }
 
 void app_set_checkpoint_terminal(struct app_struct *app,
