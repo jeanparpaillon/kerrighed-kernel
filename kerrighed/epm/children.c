@@ -48,7 +48,8 @@ struct children_kddm_object {
 
 	/* Remaining fields are not shared */
 	struct rw_semaphore sem;
-	int write_locked;
+	unsigned write_locked:1;
+	unsigned removing:1;
 
 	int alive;
 	struct kref kref;
@@ -148,6 +149,7 @@ static int children_alloc_object(struct kddm_obj *obj_entry,
 	obj->nr_threads = 0;
 	obj->self_exec_id = 0;
 	init_rwsem(&obj->sem);
+	obj->removing = 0;
 	obj->alive = 1;
 	kref_init(&obj->kref);
 	obj_entry->object = obj;
@@ -318,6 +320,11 @@ struct children_kddm_object *krg_children_readlock(pid_t tgid)
 	/* Marker for unlock. Dirty but temporary. */
 	obj->write_locked = 0;
 
+	if (obj->removing) {
+		krg_children_unlock(obj);
+		return NULL;
+	}
+
 	return obj;
 }
 
@@ -346,6 +353,11 @@ static struct children_kddm_object *children_writelock(pid_t tgid, int nested)
 		down_write_nested(&obj->sem, SINGLE_DEPTH_NESTING);
 	/* Marker for unlock. Dirty but temporary. */
 	obj->write_locked = 1;
+
+	if (obj->removing) {
+		krg_children_unlock(obj);
+		return NULL;
+	}
 
 	return obj;
 }
@@ -380,6 +392,11 @@ static struct children_kddm_object *children_create_writelock(pid_t tgid)
 	down_write(&obj->sem);
 	/* Marker for unlock. Dirty but temporary. */
 	obj->write_locked = 1;
+
+	if (obj->removing) {
+		krg_children_unlock(obj);
+		return NULL;
+	}
 
 	return obj;
 }
@@ -431,6 +448,7 @@ static void free_children(struct task_struct *task)
 
 	rcu_assign_pointer(task->children_obj, NULL);
 
+	obj->removing = 1;
 	up_write(&obj->sem);
 	_kddm_remove_frozen_object(children_kddm_set, obj->tgid);
 }
