@@ -71,16 +71,18 @@ void fill_faf_file_krg_desc(faf_client_data_t *data, struct file *file)
 	    || file->f_op == &hung_up_tty_fops)
 		flags |= O_FAF_TTY;
 
-	/* socket file can not be checkpointed */
-	else if (S_ISSOCK(file->f_dentry->d_inode->i_mode))
-		flags |= O_KRG_NO_CHKPT;
-
 	data->f_flags = flags;
 	data->f_mode = file->f_mode;
 	data->f_pos = file->f_pos;
 	data->server_id = kerrighed_node_id;
 	data->server_fd = file->f_faf_srv_index;
 	data->i_mode = file->f_dentry->d_inode->i_mode;
+
+	if (S_ISFIFO(file->f_dentry->d_inode->i_mode)
+	    && strlen(file->f_dentry->d_name.name))
+		data->is_named_pipe = 1;
+	else
+		data->is_named_pipe = 0;
 }
 
 

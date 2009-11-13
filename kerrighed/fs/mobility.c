@@ -192,15 +192,11 @@ exit:
 
 static int is_file_type_supported(const struct file *file)
 {
-	if (file->f_dentry
-	    && file->f_dentry->d_inode) {
-
-		if (S_ISSOCK(file->f_dentry->d_inode->i_mode)) {
-			printk("Checkpoint of socket file is not supported\n");
-			return 0;
-		}
-	} else if (file->f_flags & O_KRG_NO_CHKPT) {
-		printk("Checkpoint of special file is not supported\n");
+	if (is_socket(file)) {
+		printk("Checkpoint of socket file is not supported\n");
+		return 0;
+	} else if (is_named_pipe(file)) {
+		printk("Checkpoint of FIFO file (nammed pipe) is not supported\n");
 		return 0;
 	}
 
@@ -225,7 +221,7 @@ static int _cr_get_file_type_and_key(const struct file *file,
 		*type = REGULAR_DVFS_FILE;
 		*key = file->f_objid;
 		if (locality) {
-			if (is_pipe(file)) {
+			if (is_anonymous_pipe(file)) {
 				if (file->f_flags & O_FAF_CLT)
 					*locality = SHARED_SLAVE;
 				else
@@ -558,7 +554,7 @@ int cr_add_file_to_shared_table(struct task_struct *task,
 		app_set_checkpoint_terminal(task->application, file);
 	}
 
-	if (!(file->f_flags & O_FAF_CLT) && is_pipe(file)) {
+	if (!(file->f_flags & O_FAF_CLT) && is_anonymous_pipe(file)) {
 		r = cr_add_pipe_inode_to_shared_table(task, file);
 		if (r)
 			goto error;

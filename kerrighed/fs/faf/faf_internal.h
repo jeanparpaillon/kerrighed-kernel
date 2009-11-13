@@ -36,6 +36,7 @@ typedef struct faf_client_data {
 	wait_queue_head_t poll_wq;
 	unsigned int poll_revents;
 	umode_t i_mode;
+	unsigned int is_named_pipe:1;
 } faf_client_data_t;
 
 /*--------------------------------------------------------------------------*
