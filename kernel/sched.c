@@ -5054,8 +5054,7 @@ asmlinkage void __sched __schedule(void)
 #endif
 
 #ifdef CONFIG_KRG_EPM
-	krg_cur = krg_current;
-	krg_current = NULL;
+	krg_current_save(krg_cur);
 #endif
 	cpu = smp_processor_id();
 	rq = cpu_rq(cpu);
@@ -5121,7 +5120,7 @@ need_resched_nonpreemptible:
 	if (unlikely(reacquire_kernel_lock(current) < 0))
 		goto need_resched_nonpreemptible;
 #ifdef CONFIG_KRG_EPM
-	krg_current = krg_cur;
+	krg_current_restore(krg_cur);
 #endif
 }
 
@@ -6545,13 +6544,13 @@ EXPORT_SYMBOL(cond_resched_softirq);
 void __sched yield(void)
 {
 #ifdef CONFIG_KRG_EPM
-	struct task_struct *krg_cur = krg_current;
-	krg_current = NULL;
+	struct task_struct *krg_cur;
+	krg_current_save(krg_cur);
 #endif
 	set_current_state(TASK_RUNNING);
 	sys_sched_yield();
 #ifdef CONFIG_KRG_EPM
-	krg_current = krg_cur;
+	krg_current_restore(krg_cur);
 #endif
 }
 EXPORT_SYMBOL(yield);

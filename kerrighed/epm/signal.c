@@ -420,6 +420,8 @@ static void __krg_signal_alloc(struct task_struct *task, struct pid *pid)
 void krg_signal_alloc(struct task_struct *task, struct pid *pid,
 		      unsigned long clone_flags)
 {
+	struct task_struct *krg_cur;
+
 	if (!task->nsproxy->krg_ns)
 		return;
 
@@ -434,7 +436,9 @@ void krg_signal_alloc(struct task_struct *task, struct pid *pid,
 		/* New thread: already done in copy_signal() */
 		return;
 
+	krg_current_save(krg_cur);
 	__krg_signal_alloc(task, pid);
+	krg_current_restore(krg_cur);
 }
 
 /*

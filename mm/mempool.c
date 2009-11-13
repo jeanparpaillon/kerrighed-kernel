@@ -236,8 +236,7 @@ repeat_alloc:
 		return NULL;
 
 #ifdef CONFIG_KRG_EPM
-	krg_cur = krg_current;
-	krg_current = NULL;
+	krg_current_save(krg_cur);
 #endif
 	/* Now start performing page reclaim */
 	gfp_temp = gfp_mask;
@@ -253,7 +252,7 @@ repeat_alloc:
 	}
 	finish_wait(&pool->wait, &wait);
 #ifdef CONFIG_KRG_EPM
-	krg_current = krg_cur;
+	krg_current_restore(krg_cur);
 #endif
 
 	goto repeat_alloc;

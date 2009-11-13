@@ -223,6 +223,9 @@ static int flush_page(struct page *page,
 {
 	struct kddm_set *set = mm->anon_vma_kddm_set;
 	kerrighed_node_t dest_node;
+#ifdef CONFIG_KRG_EPM
+	struct task_struct *krg_cur;
+#endif
 	int r = SWAP_FAIL;
 
 	pte_unmap_unlock(pte, ptl);
@@ -241,7 +244,13 @@ static int flush_page(struct page *page,
 		dest_node = KERRIGHED_NODE_ID_NONE;
 
 	SetPageSwapCache(page);
+#ifdef CONFIG_KRG_EPM
+	krg_current_save(krg_cur);
+#endif
 	r = _kddm_flush_object(set, objid, dest_node);
+#ifdef CONFIG_KRG_EPM
+	krg_current_restore(krg_cur);
+#endif
 	ClearPageSwapCache(page);
 
 	if (r) {

@@ -312,6 +312,7 @@ static void __krg_sighand_alloc(struct task_struct *task,
 void krg_sighand_alloc(struct task_struct *task, unsigned long clone_flags)
 {
 	struct sighand_struct *sig = task->sighand;
+	struct task_struct *krg_cur;
 
 	if (krg_current && !in_krg_do_fork())
 		/*
@@ -324,7 +325,9 @@ void krg_sighand_alloc(struct task_struct *task, unsigned long clone_flags)
 		/* New thread: already done in copy_sighand() */
 		return;
 
+	krg_current_save(krg_cur);
 	__krg_sighand_alloc(task, sig);
+	krg_current_restore(krg_cur);
 }
 
 void krg_sighand_alloc_unshared(struct task_struct *task,

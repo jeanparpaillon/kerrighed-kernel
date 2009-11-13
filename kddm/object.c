@@ -412,14 +412,6 @@ void __sleep_on_kddm_obj(struct kddm_set * set,
 {
 	struct kddm_info_struct *kddm_info = current->kddm_info;
 	wait_queue_t wait;
-#ifdef CONFIG_KRG_EPM
-	struct task_struct *krg_cur = krg_current;
-#endif
-
-#ifdef CONFIG_KRG_EPM
-	if (krg_cur)
-		krg_current = NULL;
-#endif
 
 	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
@@ -471,11 +463,6 @@ retry:
 	   release the object */
 	if (atomic_dec_and_test(&obj_entry->sleeper_count))
 		CLEAR_OBJECT_PINNED(obj_entry);
-
-#ifdef CONFIG_KRG_EPM
-	if (krg_cur)
-		krg_current = krg_cur;
-#endif
 }
 
 
