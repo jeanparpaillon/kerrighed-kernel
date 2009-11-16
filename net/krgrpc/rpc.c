@@ -163,8 +163,128 @@ struct rpc_desc_recv* rpc_desc_recv_alloc(void){
 	return desc_recv;
 };
 
+static void handle_test(struct rpc_desc *desc, void *msg, size_t size)
+{
+	kerrighed_node_t source = *(kerrighed_node_t *)msg;
+	kerrighed_node_t target;
+	int err;
+
+	BUG_ON(source != desc->client);
+
+	err = rpc_unpack_type(desc, target);
+	BUG_ON(err);
+	printk("handle_test from %d for %d\n", source, target);
+	if (target != kerrighed_node_id) {
+		err = rpc_forward(desc, kerrighed_node_id + 1);
+		BUG_ON(err);
+	} else {
+		printk("tested by %d\n", source);
+		err = rpc_pack_type(desc, kerrighed_node_id);
+		BUG_ON(err);
+	}
+}
 
 void test(void){
+	struct rpc_desc *desc;
+	kerrighed_node_t target = 4;
+	kerrighed_node_t ret;
+	int err;
+
+	if (kerrighed_node_id != 1)
+		return;
+
+	printk("testing %d through %d\n", target, 2),
+	desc = rpc_begin(RPC_TEST, 2);
+	BUG_ON(!desc);
+	err = rpc_pack_type(desc, kerrighed_node_id);
+	BUG_ON(err);
+	err = rpc_pack_type(desc, target);
+	BUG_ON(err);
+	err = rpc_unpack_type(desc, ret);
+	BUG_ON(err);
+	rpc_end(desc, 0);
+	BUG_ON(ret != target);
+	printk("ret = %d\n", ret);
+}
+
+static int handle_test2(struct rpc_desc *desc, void *msg, size_t size)
+{
+	kerrighed_node_t source = *(kerrighed_node_t *)msg;
+	kerrighed_node_t target;
+	int err;
+
+	BUG_ON(source != desc->client);
+
+	err = rpc_unpack_type(desc, target);
+	BUG_ON(err);
+	printk("handle_test from %d for %d\n", source, target);
+	if (target != kerrighed_node_id) {
+		err = rpc_forward(desc, kerrighed_node_id + 1);
+		BUG_ON(err);
+	} else {
+		printk("tested by %d\n", source);
+	}
+
+	return kerrighed_node_id;
+}
+
+void test2(void){
+	struct rpc_desc *desc;
+	kerrighed_node_t target = 4;
+	int ret;
+	int err;
+
+	if (kerrighed_node_id != 1)
+		return;
+
+	printk("testing %d through %d\n", target, 2),
+	desc = rpc_begin(RPC_FORWARD_DATA, 2);
+	BUG_ON(!desc);
+	err = rpc_pack_type(desc, kerrighed_node_id);
+	BUG_ON(err);
+	err = rpc_pack_type(desc, target);
+	BUG_ON(err);
+	err = rpc_unpack_type(desc, ret);
+	BUG_ON(err);
+	rpc_end(desc, 0);
+	printk("ret = %d\n", ret);
+	BUG_ON(ret != target);
+}
+
+void test3(void){
+	struct rpc_desc *desc;
+	kerrighed_node_t target = 4;
+	krgnodemask_t nodes;
+	int ret;
+	int err;
+
+	if (kerrighed_node_id != 1)
+		return;
+
+	printk("testing %d through %d and %d and %d\n", target, 1, 2, 4),
+	krgnodes_clear(nodes);
+	krgnode_set(1, nodes);
+	krgnode_set(2, nodes);
+	krgnode_set(4, nodes);
+	desc = rpc_begin_m(RPC_FORWARD_DATA, &nodes);
+	BUG_ON(!desc);
+	err = rpc_pack_type(desc, kerrighed_node_id);
+	BUG_ON(err);
+	err = rpc_pack_type(desc, target);
+	BUG_ON(err);
+	err = rpc_unpack_type_from(desc, 1, ret);
+	BUG_ON(err);
+	printk("ret through 1 = %d\n", ret);
+	BUG_ON(ret != target);
+	err = rpc_unpack_type_from(desc, 2, ret);
+	BUG_ON(err);
+	printk("ret through 2 = %d\n", ret);
+	BUG_ON(ret != target);
+	err = rpc_unpack_type_from(desc, 4, ret);
+	BUG_ON(err);
+	printk("ret through 4 = %d\n", ret);
+	BUG_ON(ret != target);
+	rpc_end(desc, 0);
 }
 
 /*
@@ -210,7 +330,12 @@ void rpc_undef_handler (struct rpc_desc *desc){
 
 void rpc_connect(void)
 {
+	rpc_enable(RPC_TEST);
+	rpc_enable(RPC_FORWARD_DATA);
 	comlayer_enable();
+	test();
+	test2();
+	test3();
 }
 
 int init_rpc(void)
@@ -314,6 +439,9 @@ int init_rpc(void)
 	res = rpc_monitor_init();
 	if(res)
 		return res;
+	
+	rpc_register_void(RPC_TEST, handle_test, 0);
+	rpc_register_int(RPC_FORWARD_DATA, handle_test2, 0);
 	
 	printk("RPC initialisation done\n");
 	
