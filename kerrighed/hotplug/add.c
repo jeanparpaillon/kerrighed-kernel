@@ -128,9 +128,7 @@ static int nodes_add(void __user *arg)
 	if (!krgnodes_subset(ctx->node_set.v, krgnode_present_map))
 		goto out;
 
-	err = -EPERM;
-	if (krgnodes_intersects(ctx->node_set.v, krgnode_online_map))
-		goto out;
+	krgnodes_andnot(ctx->node_set.v, ctx->node_set.v, krgnode_online_map);
 
 	err = do_nodes_add(ctx);
 
