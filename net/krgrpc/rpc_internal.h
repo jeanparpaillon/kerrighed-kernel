@@ -14,6 +14,7 @@
 #define __RPC_HEADER_FLAGS_SIGACK    (1<<1)
 #define __RPC_HEADER_FLAGS_SRV_REPLY (1<<3)
 #define __RPC_HEADER_FLAGS_CANCEL_PACK (1<<4)
+#define __RPC_HEADER_FLAGS_FORWARD   (1<<5)
 
 enum {
 	__RPC_FLAGS_EMERGENCY_BUF = __RPC_FLAGS_MAX,
@@ -91,7 +92,9 @@ struct rpc_service {
 struct __rpc_header {
 	kerrighed_node_t from;
 	kerrighed_node_t client;
+	kerrighed_node_t server;
 	unsigned long desc_id;
+	unsigned long client_desc_id;
 	unsigned long seq_id;
 	unsigned long link_seq_id;
 	unsigned long link_ack_id;
@@ -162,8 +165,8 @@ int __rpc_signalack(struct rpc_desc* desc);
 int rpc_handle_new(struct rpc_desc* desc);
 void rpc_wake_up_thread(struct rpc_desc *desc);
 
-void rpc_new_desc_id_lock(void);
-void rpc_new_desc_id_unlock(void);
+void rpc_new_desc_id_lock(bool lock_table);
+void rpc_new_desc_id_unlock(bool unlock_table);
 int __rpc_emergency_send_buf_alloc(struct rpc_desc *desc, size_t size);
 void __rpc_emergency_send_buf_free(struct rpc_desc *desc);
 int __rpc_send_ll(struct rpc_desc* desc,
@@ -201,6 +204,11 @@ int rpc_monitor_init(void);
     :"a" (1) : "memory")
 
 #endif
+
+static inline bool rpc_desc_forwarded(struct rpc_desc *desc)
+{
+	return desc->forwarded;
+}
 
 static inline
 int __rpc_synchro_get(struct __rpc_synchro *__rpc_synchro){

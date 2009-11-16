@@ -83,6 +83,7 @@ enum rpc_rq_state {
  | RPC_STATE_WAIT1)
 
 struct rpc_service;
+struct hashtable_t;
 
 struct rpc_desc {
 	struct rpc_desc_send* desc_send;
@@ -90,12 +91,16 @@ struct rpc_desc {
 	struct rpc_service* service;
 	krgnodemask_t nodes;
 	enum rpc_rq_type type;
+	struct hashtable_t *table;
 	struct list_head list;
-	int in_interrupt;
+	unsigned in_interrupt:1;
+	unsigned forwarded:1;
 	unsigned long desc_id;
 	spinlock_t desc_lock;
 	enum rpcid rpcid;
 	kerrighed_node_t client;
+	kerrighed_node_t server;
+	unsigned long client_desc_id;
 	enum rpc_rq_state state;
 	struct task_struct *thread;
 	kerrighed_node_t wait_from;

@@ -30,17 +30,19 @@ kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc){
 	return desc->client;
 }
 
-void rpc_new_desc_id_lock(void)
+void rpc_new_desc_id_lock(bool lock_table)
 {
 	if (!irqs_disabled())
 		local_bh_disable();
 	spin_lock(&lock_id);
-	hashtable_lock(desc_clt);
+	if (lock_table)
+		hashtable_lock(desc_clt);
 }
 
-void rpc_new_desc_id_unlock(void)
+void rpc_new_desc_id_unlock(bool unlock_table)
 {
-	hashtable_unlock(desc_clt);
+	if (unlock_table)
+		hashtable_unlock(desc_clt);
 	spin_unlock(&lock_id);
 	if (!irqs_disabled())
 		local_bh_enable();
@@ -55,19 +57,28 @@ int __rpc_send(struct rpc_desc* desc,
 	int err = 0;
 
 	switch (desc->type) {
+	case RPC_RQ_FWD:
 	case RPC_RQ_CLT:
 		if (desc->desc_id == 0) {
+			bool is_client = desc->type == RPC_RQ_CLT;
 
-			rpc_new_desc_id_lock();
+			BUG_ON(desc->table);
+
+			rpc_new_desc_id_lock(is_client);
 
 			rpc_desc_set_id(desc->desc_id);
+			if (is_client) {
+				desc->client_desc_id = desc->desc_id;
+				if (__hashtable_add(desc_clt, desc->desc_id,
+						    desc)) {
+					rpc_new_desc_id_unlock(true);
 
-			if (__hashtable_add(desc_clt, desc->desc_id, desc)) {
-				rpc_new_desc_id_unlock();
+					desc->desc_id = 0;
+					desc->client_desc_id = 0;
 
-				desc->desc_id = 0;
-
-				return -ENOMEM;
+					return -ENOMEM;
+				}
+				desc->table = desc_clt;
 			}
 
 			/* Calls rpc_new_desc_id_unlock() on success */
@@ -76,10 +87,15 @@ int __rpc_send(struct rpc_desc* desc,
 					    __flags, data, size,
 					    rpc_flags | RPC_FLAGS_NEW_DESC_ID);
 			if (err) {
-				__hashtable_remove(desc_clt, desc->desc_id);
-				rpc_new_desc_id_unlock();
+				if (is_client) {
+					__hashtable_remove(desc_clt,
+							   desc->desc_id);
+					desc->table = NULL;
+				}
+				rpc_new_desc_id_unlock(is_client);
 
 				desc->desc_id = 0;
+				desc->client_desc_id = 0;
 			}
 
 		} else
@@ -122,6 +138,7 @@ struct rpc_desc* rpc_begin_m(enum rpcid rpcid,
 	__krgnodes_copy(&desc->nodes, nodes);
 	desc->type = RPC_RQ_CLT;
 	desc->client = kerrighed_node_id;
+	desc->server = KERRIGHED_NODE_ID_NONE;
 	
 	desc->desc_send = rpc_desc_send_alloc();
 	if(!desc->desc_send)
@@ -170,7 +187,7 @@ int __rpc_end_pack(struct rpc_desc* desc)
 		 * receivers may not be able to unpack them because of the
 		 * missing ones.
 		 */
-		if (!err) {
+		if (!err && !rpc_desc_forwarded(desc)) {
 			err = -EPIPE;
 			if (!(desc->desc_send->flags & RPC_FLAGS_CLOSED)) {
 				err = __rpc_send(desc, descelem->seq_id, 0,
@@ -186,6 +203,7 @@ int __rpc_end_pack(struct rpc_desc* desc)
 	return err;
 }
 
+/* TODO: do not block if cancelled */
 inline
 int __rpc_end_unpack(struct rpc_desc_recv* desc_recv)
 {
@@ -230,7 +248,6 @@ int __rpc_end_unpack_clean(struct rpc_desc* desc)
 int rpc_end(struct rpc_desc* desc, int flags)
 {
 	struct rpc_desc_send *rpc_desc_send;
-	struct hashtable_t* desc_ht;
 	int err;
 
 	lockdep_off();
@@ -244,15 +261,11 @@ int rpc_end(struct rpc_desc* desc, int flags)
 		for_each_krgnode_mask(i, desc->nodes){
 			__rpc_end_unpack(desc->desc_recv[i]);
 		}
-
-		desc_ht = desc_clt;
 		break;
 	}
 	case RPC_RQ_SRV:
 		
 		__rpc_end_unpack(desc->desc_recv[0]);
-
-		desc_ht = desc_srv[desc->client];
 		break;
 	default:
 		printk("unexpected case\n");
@@ -260,14 +273,15 @@ int rpc_end(struct rpc_desc* desc, int flags)
 	}
 
 	spin_lock_bh(&desc->desc_lock);
-	hashtable_lock(desc_ht);
+	hashtable_lock(desc->table);
 
 	desc->state = RPC_STATE_END;
 
-	__hashtable_remove(desc_ht, desc->desc_id);
-	BUG_ON(__hashtable_find(desc_ht, desc->desc_id));
+	__hashtable_remove(desc->table, desc->desc_id);
+	BUG_ON(__hashtable_find(desc->table, desc->desc_id));
 
-	hashtable_unlock(desc_ht);
+	hashtable_unlock(desc->table);
+	desc->table = NULL;
 	spin_unlock_bh(&desc->desc_lock);
 
 	__rpc_emergency_send_buf_free(desc);
@@ -292,6 +306,8 @@ int rpc_cancel_pack(struct rpc_desc* desc)
 	int last_pack;
 	unsigned long seq_id;
 	int err = 0;
+
+	BUG_ON(rpc_desc_forwarded(desc));
 
 	if (desc->desc_send->flags & RPC_FLAGS_CLOSED)
 		goto out;
@@ -331,6 +347,8 @@ void rpc_cancel_unpack_from(struct rpc_desc *desc, kerrighed_node_t node)
 {
 	struct rpc_desc_recv *desc_recv = desc->desc_recv[node];
 
+	BUG_ON(rpc_desc_forwarded(desc));
+
 	desc_recv->flags |= RPC_FLAGS_CLOSED;
 	/* TODO: send a notification to the sender so that it stops sending */
 }
@@ -352,13 +370,137 @@ int rpc_cancel(struct rpc_desc* desc){
 	return err;
 }
 
-int rpc_forward(struct rpc_desc* desc, kerrighed_node_t node){
-	return 0;
+static
+struct rpc_desc *
+forward_rpc_desc_setup(struct rpc_desc *desc, kerrighed_node_t target)
+{
+	struct rpc_desc *fwd_desc;
+
+	fwd_desc = rpc_desc_alloc();
+	if (!fwd_desc)
+		return NULL;
+
+	fwd_desc->desc_send = rpc_desc_send_alloc();
+	if (!fwd_desc->desc_send)
+		goto err_desc_send;
+	/* fwd_desc->desc_recv = NULL; */
+
+	krgnode_set(target, fwd_desc->nodes);
+	/* First __rpc_send() will set fwd_desc->desc_id */
+	fwd_desc->type = RPC_RQ_FWD;
+	fwd_desc->client = desc->client;
+	fwd_desc->server = desc->server;
+	fwd_desc->client_desc_id = desc->client_desc_id;
+	fwd_desc->rpcid = desc->rpcid;
+	/* fwd_desc->service = NULL; */
+	/* fwd_desc->thread = NULL; */
+	/* fwd_desc->table = NULL; */
+
+	if (__rpc_emergency_send_buf_alloc(fwd_desc, 0))
+		goto err_emergency_buf;
+
+	fwd_desc->state = RPC_STATE_RUN;
+
+	return fwd_desc;
+
+err_emergency_buf:
+	kmem_cache_free(rpc_desc_send_cachep, fwd_desc->desc_send);
+err_desc_send:
+	rpc_desc_put(fwd_desc);
+	return NULL;
+}
+
+static void forward_rpc_desc_cleanup(struct rpc_desc *desc)
+{
+	__rpc_emergency_send_buf_free(desc);
+	kmem_cache_free(rpc_desc_send_cachep, desc->desc_send);
+	rpc_desc_put(desc);
+}
+
+int rpc_forward(struct rpc_desc *desc, kerrighed_node_t node)
+{
+	struct rpc_desc_send *desc_send = desc->desc_send;
+#ifdef CONFIG_KRG_DEBUG
+	int nr_send_later;
+#endif
+	struct rpc_desc_recv *desc_recv = desc->desc_recv[0];
+	struct rpc_desc *fwd_desc;
+	LIST_HEAD(queue);
+	struct rpc_desc_elem *elem;
+	int err;
+
+	BUG_ON(desc->type != RPC_RQ_SRV);
+	BUG_ON(rpc_desc_forwarded(desc));
+	/*
+	 * Only simple cases are supported:
+	 * client should not do more pack() (hard to check reliably),
+	 * no immediate pack() from server should be done yet,
+	 * no rpc_signal().
+	 */
+#ifdef CONFIG_KRG_DEBUG
+	nr_send_later = 0;
+	list_for_each_entry(elem, &desc_send->list_desc_head, list_desc_elem)
+		nr_send_later++;
+	BUG_ON(atomic_read(&desc_send->seq_id) != nr_send_later);
+#endif
+
+	if (desc_send->flags & RPC_FLAGS_CLOSED)
+		return -EPIPE;
+
+	__rpc_end_unpack(desc_recv);
+
+	spin_lock_bh(&desc->desc_lock);
+	BUG_ON(!list_empty(&desc_recv->list_signal_head));
+	list_splice_init(&desc_recv->list_desc_head, &queue);
+	spin_unlock_bh(&desc->desc_lock);
+
+	list_for_each_entry_reverse(elem, &queue, list_desc_elem)
+		if (elem->flags & __RPC_HEADER_FLAGS_CANCEL_PACK) {
+			desc_recv->flags |= RPC_FLAGS_CLOSED;
+			err = -EPIPE;
+			goto out_restore_queue;
+		}
+
+	err = -ENOMEM;
+	fwd_desc = forward_rpc_desc_setup(desc, node);
+	if (!fwd_desc)
+		goto out_restore_queue;
+
+	desc->forwarded = 1;
+
+	err = 0;
+	list_for_each_entry(elem, &queue, list_desc_elem) {
+		err = __rpc_send(fwd_desc, elem->seq_id,
+				 elem->flags | __RPC_HEADER_FLAGS_FORWARD,
+				 elem->data, elem->size,
+				 0);
+		if (err) {
+			__rpc_send(fwd_desc, elem->seq_id,
+				   __RPC_HEADER_FLAGS_CANCEL_PACK |
+				   __RPC_HEADER_FLAGS_FORWARD,
+				   0, 0,
+				   RPC_FLAGS_EMERGENCY_BUF);
+			desc->forwarded = 0;
+			break;
+		}
+	}
+
+	forward_rpc_desc_cleanup(fwd_desc);
+
+out_restore_queue:
+	spin_lock_bh(&desc->desc_lock);
+	BUG_ON(!list_empty(&desc_recv->list_desc_head));
+	list_splice(&queue, &desc_recv->list_desc_head);
+	spin_unlock_bh(&desc->desc_lock);
+
+	return err;
 }
 
 int rpc_pack(struct rpc_desc* desc, int flags, const void* data, size_t size)
 {
 	int err = -EPIPE;
+
+	BUG_ON(rpc_desc_forwarded(desc));
 
 	if (desc->desc_send->flags & RPC_FLAGS_CLOSED)
 		goto out;
@@ -396,6 +538,8 @@ int rpc_wait_pack(struct rpc_desc* desc, int seq_id)
 	struct rpc_desc_elem *descelem, *safe;
 	int err;
 	int last_seq_id = 0;
+
+	BUG_ON(rpc_desc_forwarded(desc));
 
 	if (!list_empty(&desc->desc_send->list_desc_head)) {
 		list_for_each_entry_safe(descelem, safe,
@@ -500,6 +644,8 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 
 	BUG_ON(!desc);
 	BUG_ON(!data);
+
+	BUG_ON(rpc_desc_forwarded(desc));
 
 	if (desc_recv->flags & RPC_FLAGS_CLOSED)
 		return RPC_EPIPE;
