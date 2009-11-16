@@ -575,11 +575,13 @@ int __rpc_send_ll(struct rpc_desc* desc,
 		link_seq_index++;
 	}
 	if (rpc_flags & RPC_FLAGS_NEW_DESC_ID)
-		rpc_new_desc_id_unlock();
+		rpc_new_desc_id_unlock(desc->type == RPC_RQ_CLT);
 
 	elem->h.from = kerrighed_node_id;
 	elem->h.client = desc->client;
+	elem->h.server = desc->server;
 	elem->h.desc_id = desc->desc_id;
+	elem->h.client_desc_id = desc->client_desc_id;
 	elem->h.seq_id = seq_id;
 	
 	elem->h.flags = __flags;
@@ -696,7 +698,7 @@ int do_action(struct rpc_desc *desc, struct __rpc_header *h)
 		return rpc_handle_new(desc);
 	case RPC_STATE_WAIT1:
 		if (desc->type == RPC_RQ_CLT
-		    && desc->wait_from != h->from) {
+		    && desc->wait_from != h->server) {
 			spin_unlock(&desc->desc_lock);
 			break;
 		}
@@ -847,6 +849,11 @@ static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
 	desc->desc_id = h->desc_id;
 	desc->type = RPC_RQ_SRV;
 	desc->client = h->client;
+	if (h->flags & __RPC_HEADER_FLAGS_FORWARD)
+		desc->server = h->server;
+	else
+		desc->server = kerrighed_node_id;
+	desc->client_desc_id = h->client_desc_id;
 	desc->rpcid = h->rpcid;
 	desc->service = rpc_services[h->rpcid];
 	desc->thread = NULL;
@@ -859,8 +866,9 @@ static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
 	rpc_desc_get(desc);
 
 	BUG_ON(h->desc_id != desc->desc_id);
-	if (__hashtable_add(desc_srv[h->client], h->desc_id, desc))
+	if (__hashtable_add(desc_srv[h->from], h->desc_id, desc))
 		goto err_hashtable;
+	desc->table = desc_srv[h->from];
 
 out:
 	return desc;
@@ -902,13 +910,16 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 	   __RPC_HEADER_FLAGS_SRV_REPLY: we are the client side -> desc_clt
 	   else: we are the server side -> desc_srv[]
 	*/
-	desc_ht = (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY) ? desc_clt : desc_srv[h->client];
+	desc_ht = (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY) ? desc_clt : desc_srv[h->from];
 
 	hashtable_lock(desc_ht);
-	desc = __hashtable_find(desc_ht, h->desc_id);
+	if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
+		desc = __hashtable_find(desc_ht, h->client_desc_id);
+	else
+		desc = __hashtable_find(desc_ht, h->desc_id);
 
 	if (desc) {
-		BUG_ON(desc->desc_id != h->desc_id);
+
 		rpc_desc_get(desc);
 
 	} else {
@@ -922,17 +933,17 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 
 		}else{
 
-			spin_lock(&rpc_desc_done_lock[h->client]);
-			if (unlikely(h->desc_id <= rpc_desc_done_id[h->client])) {
+			spin_lock(&rpc_desc_done_lock[h->from]);
+			if (unlikely(h->desc_id <= rpc_desc_done_id[h->from])) {
 
-				spin_unlock(&rpc_desc_done_lock[h->client]);
+				spin_unlock(&rpc_desc_done_lock[h->from]);
 				hashtable_unlock(desc_ht);
 				goto out;
 
 			}
 
-			rpc_desc_done_id[h->client] = h->desc_id;
-			spin_unlock(&rpc_desc_done_lock[h->client]);
+			rpc_desc_done_id[h->from] = h->desc_id;
+			spin_unlock(&rpc_desc_done_lock[h->from]);
 
 			desc = server_rpc_desc_setup(h);
 			if (!desc) {
@@ -951,7 +962,11 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 
 	}
 
-	BUG_ON(desc->desc_id != h->desc_id);
+	BUG_ON(desc->table != desc_ht);
+	if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
+		BUG_ON(desc->desc_id != h->client_desc_id);
+	else
+		BUG_ON(desc->desc_id != h->desc_id);
 
 	/* Optimization: do not allocate memory if we already know that it is
 	 * useless to.
@@ -966,7 +981,7 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 	switch (desc->type) {
 	case RPC_RQ_CLT:
 		// we are in the client side (just received a msg from server)
-		desc_recv = desc->desc_recv[h->from];
+		desc_recv = desc->desc_recv[h->server];
 		break;
 
 	case RPC_RQ_SRV:
@@ -975,7 +990,6 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 		break;
 
 	case RPC_RQ_FWD:
-		printk("tipc_handler_ordered: todo\n");
 		BUG();
 		break;
 
