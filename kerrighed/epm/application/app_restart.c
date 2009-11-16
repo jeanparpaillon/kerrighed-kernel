@@ -65,14 +65,18 @@ static inline int restore_app_kddm_object(struct app_kddm_object *obj,
 	r = ghost_read_string(ghost, compile_info);
 	if (r)
 		goto err_read;
+#ifndef CONFIG_KRG_DEBUG
 	if (strncmp(UTS_VERSION, compile_info, MAX_GHOST_STRING))
 		goto err_kernel_version;
+#endif
 
 	r = ghost_read_string(ghost, compile_info);
 	if (r)
 		goto err_read;
+#ifndef CONFIG_KRG_DEBUG
 	if (strncmp(LINUX_COMPILE_TIME, compile_info, MAX_GHOST_STRING))
 		goto err_kernel_version;
+#endif
 
 	r = ghost_read_string(ghost, compile_info);
 	if (r)
