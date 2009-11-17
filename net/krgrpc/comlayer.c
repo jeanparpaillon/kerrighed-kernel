@@ -912,18 +912,6 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 		rpc_desc_get(desc);
 
 	} else {
-		
-		spin_lock(&rpc_desc_done_lock[h->client]);
-		if (unlikely(h->desc_id <= rpc_desc_done_id[h->client])) {
-			
-			spin_unlock(&rpc_desc_done_lock[h->client]);
-			hashtable_unlock(desc_ht);
-			goto out;
-
-		}
-
-		rpc_desc_done_id[h->client] = h->desc_id;
-		spin_unlock(&rpc_desc_done_lock[h->client]);
 
 		if(h->flags & __RPC_HEADER_FLAGS_SRV_REPLY){
 
@@ -933,6 +921,18 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 			goto out;
 
 		}else{
+
+			spin_lock(&rpc_desc_done_lock[h->client]);
+			if (unlikely(h->desc_id <= rpc_desc_done_id[h->client])) {
+
+				spin_unlock(&rpc_desc_done_lock[h->client]);
+				hashtable_unlock(desc_ht);
+				goto out;
+
+			}
+
+			rpc_desc_done_id[h->client] = h->desc_id;
+			spin_unlock(&rpc_desc_done_lock[h->client]);
 
 			desc = server_rpc_desc_setup(h);
 			if (!desc) {
