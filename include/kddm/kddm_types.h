@@ -3,7 +3,6 @@
 
 #include <kddm/kddm_tree.h>
 #include <linux/wait.h>
-#include <net/krgrpc/rpc.h>
 #include <kerrighed/types.h>
 
 
@@ -177,6 +176,7 @@ typedef struct kddm_obj {
 
 
 struct kddm_set;
+struct rpc_desc;
 
 typedef struct kddm_set_ops {
 	void *(*obj_set_alloc) (struct kddm_set *set, void *data);
