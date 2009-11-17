@@ -164,7 +164,43 @@ struct rpc_desc_recv* rpc_desc_recv_alloc(void){
 };
 
 
+static void handle_test(struct rpc_desc *desc, void *msg, size_t size)
+{
+	int dummy = 0;
+
+	printk("tested by %d\n", desc->client);
+
+	rpc_pack_type(desc, dummy);
+	__set_current_state(TASK_UNINTERRUPTIBLE);
+	schedule_timeout(2 * HZ);
+	rpc_pack_type(desc, dummy);
+}
+
+void test1(void)
+{
+	int dummy = 0;
+
+	printk("testing 2\n");
+	rpc_sync(RPC_TEST, 2, &dummy, sizeof(dummy));
+	printk("tested 2\n");
+}
+
+void test2(void)
+{
+	int dummy = 0;
+
+	__set_current_state(TASK_UNINTERRUPTIBLE);
+	schedule_timeout(4 * HZ);
+	printk("testing 1\n");
+	rpc_sync(RPC_TEST, 1, &dummy, sizeof(dummy));
+	printk("tested 1\n");
+}
+
 void test(void){
+	if (kerrighed_node_id == 1)
+		test1();
+	else if (kerrighed_node_id == 2)
+		test2();
 }
 
 /*
@@ -210,7 +246,9 @@ void rpc_undef_handler (struct rpc_desc *desc){
 
 void rpc_connect(void)
 {
+	rpc_enable(RPC_TEST);
 	comlayer_enable();
+	test();
 }
 
 int init_rpc(void)
@@ -314,6 +352,8 @@ int init_rpc(void)
 	res = rpc_monitor_init();
 	if(res)
 		return res;
+
+	rpc_register_void(RPC_TEST, handle_test, 0);
 	
 	printk("RPC initialisation done\n");
 	
