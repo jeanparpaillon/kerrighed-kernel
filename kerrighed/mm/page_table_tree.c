@@ -11,6 +11,7 @@
 #include <linux/pagemap.h>
 #include <asm/pgtable.h>
 
+#include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 
 #include "page_table_tree.h"

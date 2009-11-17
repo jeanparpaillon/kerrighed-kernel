@@ -6,7 +6,6 @@
 #define __APPLICATION_SHARED_H__
 
 #include <linux/rbtree.h>
-#include <net/krgrpc/rpc.h>
 #include <kerrighed/ghost_types.h>
 #include <kerrighed/action.h>
 
@@ -14,6 +13,7 @@
 
 struct app_struct;
 struct app_kddm_object;
+struct rpc_desc;
 
 void clear_shared_objects(struct app_struct *app);
 

@@ -8,6 +8,8 @@
 #include <linux/sched.h>
 #include <linux/file.h>
 #include <linux/proc_fs.h>
+#include <net/krgrpc/rpc.h>
+#include <net/krgrpc/rpcid.h>
 #include <kerrighed/krginit.h>
 #include <asm/uaccess.h>
 #include <kerrighed/krg_services.h>

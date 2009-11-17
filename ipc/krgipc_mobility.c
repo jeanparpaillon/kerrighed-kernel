@@ -18,6 +18,8 @@
 #include <linux/shm.h>
 #include <linux/syscalls.h>
 #include <linux/unique_id.h>
+#include <net/krgrpc/rpc.h>
+#include <net/krgrpc/rpcid.h>
 #include <kddm/kddm.h>
 #include <kerrighed/namespace.h>
 #include <kerrighed/ghost.h>
