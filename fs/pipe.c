@@ -1316,9 +1316,9 @@ err_inode:
 int cr_import_complete_pipe_inode(struct task_struct *fake,
 				  void *_pipe_dentry)
 {
-	/* struct dentry *dentry = _pipe_dentry; */
+	struct dentry *dentry = _pipe_dentry;
 
-	/* dput(dentry); */
+	dput(dentry);
 
 	return 0;
 }
@@ -1328,7 +1328,9 @@ int cr_delete_pipe_inode(struct task_struct *fake,
 {
 	struct dentry *dentry = _pipe_dentry;
 
-	free_pipe_info(dentry->d_inode);
+	/* destruction of the pipe info would happen
+	   when there is no more user of the pipe */
+	/* free_pipe_info(dentry->d_inode); */
 
 	dput(dentry);
 
@@ -1388,9 +1390,11 @@ struct file *reopen_pipe_file_entry_from_krg_desc(struct task_struct *task,
 
 	BUG_ON(!dentry);
 
-	if (desc->pipe.f_flags & O_WRONLY)
+	if (desc->pipe.f_flags & O_WRONLY) {
 		file = __create_write_pipe(dentry, desc->pipe.f_flags);
-	else
+		if (!IS_ERR(file))
+			dget(dentry);
+	} else
 		file = __create_read_pipe(dentry, desc->pipe.f_flags);
 
 	return file;
