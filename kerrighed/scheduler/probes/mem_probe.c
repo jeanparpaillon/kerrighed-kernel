@@ -12,6 +12,12 @@
 
 #include "mem_probe.h"
 
+enum {
+	SOURCE_FREE,
+	SOURCE_TOTAL,
+	SOURCE_NR
+};
+
 #define K(x) ((x) << (PAGE_SHIFT - 10))
 
 static mem_probe_data_t probe_data;
@@ -36,40 +42,24 @@ static int mem_total_active = 1;
 
 DEFINE_SCHEDULER_PROBE_SOURCE_GET(mem_free, unsigned long, value_p, nr)
 {
-	//spin_lock(&probe_data.lock);
 	*value_p = K(probe_data.ram_free);
-	//spin_unlock(&probe_data.lock);
 	return 1;
 }
 
 DEFINE_SCHEDULER_PROBE_SOURCE_SHOW(mem_free, page)
 {
-	ssize_t ret;
-
-	//spin_lock(&probe_data.lock);
-	ret = sprintf(page, "%lu\n", K(probe_data.ram_free));
-	//spin_unlock(&probe_data.lock);
-
-	return ret;
+	return sprintf(page, "%lu\n", K(probe_data.ram_free));
 }
 
 DEFINE_SCHEDULER_PROBE_SOURCE_GET(mem_total, unsigned long, value_p, nr)
 {
-	//spin_lock(&probe_data.lock);
 	*value_p = K(probe_data.ram_total);
-	//spin_unlock(&probe_data.lock);
 	return 1;
 }
 
 DEFINE_SCHEDULER_PROBE_SOURCE_SHOW(mem_total, page)
 {
-	ssize_t ret;
-
-	//spin_lock(&probe_data.lock);
-	ret = sprintf(page, "%lu\n", K(probe_data.ram_total));
-	//spin_unlock(&probe_data.lock);
-
-	return ret;
+	return sprintf(page, "%lu\n", K(probe_data.ram_total));
 }
 
 static void measure_mem(void)
@@ -80,10 +70,8 @@ static void measure_mem(void)
 
 	si_meminfo(&meminfo);
 
-	//spin_lock(&probe_data.lock);
 	probe_data.ram_free = meminfo.freeram;
 	probe_data.ram_total = meminfo.totalram;
-	//spin_unlock( &(probe_data.lock) );
 
 	PDEBUG("mem_probe: finished.\n");
 }
@@ -188,7 +176,7 @@ static BEGIN_SCHEDULER_PROBE_SOURCE_TYPE(mem_free),
 	.SCHEDULER_PROBE_SOURCE_ATTRS(mem_free, mem_free_attrs),
 END_SCHEDULER_PROBE_SOURCE_TYPE(mem_free);
 
-static struct scheduler_probe_source *mem_probe_sources[3];
+static struct scheduler_probe_source *mem_probe_sources[SOURCE_NR + 1];
 
 static SCHEDULER_PROBE_TYPE(mem_probe_type, NULL, measure_mem);
 
@@ -196,17 +184,18 @@ int init_module()
 {
 	int err = -ENOMEM;
 
-	mem_probe_sources[0] = scheduler_probe_source_create(&mem_free_type,
-							     "ram_free");
-	mem_probe_sources[1] = scheduler_probe_source_create(&mem_total_type,
-							     "ram_total");
-	mem_probe_sources[2] = NULL;
+	mem_probe_sources[SOURCE_FREE] =
+		scheduler_probe_source_create(&mem_free_type, "ram_free");
+	mem_probe_sources[SOURCE_TOTAL] =
+		scheduler_probe_source_create(&mem_total_type, "ram_total");
+	mem_probe_sources[SOURCE_NR] = NULL;
 
-	if (mem_probe_sources[0]==NULL || mem_probe_sources[1]==NULL) {
-		printk(KERN_ERR "error: cannot initialize mem_probe "
-			"attributes\n");
-		goto out_kmalloc;
-	}
+	for (i = 0; i < SOURCE_NR; i++)
+		if (!mem_probe_sources[i]) {
+			printk(KERN_ERR "error: cannot initialize mem_probe "
+				"attributes\n");
+			goto out_kmalloc;
+		}
 
 	mem_probe = scheduler_probe_create(&mem_probe_type, MEM_PROBE_NAME,
 					   mem_probe_sources, NULL);
@@ -228,10 +217,9 @@ int init_module()
 err_register:
 	scheduler_probe_free(mem_probe);
 out_kmalloc:
-	if (mem_probe_sources[0] != NULL)
-		scheduler_probe_source_free(mem_probe_sources[0]);
-	if (mem_probe_sources[1] != NULL)
-		scheduler_probe_source_free(mem_probe_sources[1]);
+	for (i = 0; i < SOURCE_NR; i++)
+		if (mem_probe_sources[i])
+			scheduler_probe_source_free(mem_probe_sources[i]);
 
 	return err;
 }
@@ -242,6 +230,6 @@ void cleanup_module()
 	PDEBUG(KERN_INFO "mem_probe cleanup function called!\n");
 	scheduler_probe_unregister(mem_probe);
 	scheduler_probe_free(mem_probe);
-	for (i = 0; mem_probe_sources[i] != NULL; i++)
+	for (i = 0; i < SOURCE_NR; i++)
 		scheduler_probe_source_free(mem_probe_sources[i]);
 }
