@@ -5,9 +5,11 @@
  *  Copyright (C) 2007-2008 Louis Rilling - Kerlabs
  */
 
+#include <linux/sched.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mm.h>
+#include <kerrighed/pid.h>
 #include <kerrighed/scheduler/probe.h>
 
 #include "mem_probe.h"
@@ -15,6 +17,7 @@
 enum {
 	SOURCE_FREE,
 	SOURCE_TOTAL,
+	SOURCE_TASK_RSS,
 	SOURCE_NR
 };
 
@@ -23,7 +26,7 @@ enum {
 static mem_probe_data_t probe_data;
 static mem_probe_data_t probe_data_prev;
 
-MODULE_LICENSE("LGPL");
+MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Marko Novak <marko.novak@xlab.si>, "
 	      "Louis Rilling <Louis.Rilling@kerlabs.com>");
 MODULE_DESCRIPTION("Memory probe module.");
@@ -176,18 +179,57 @@ static BEGIN_SCHEDULER_PROBE_SOURCE_TYPE(mem_free),
 	.SCHEDULER_PROBE_SOURCE_ATTRS(mem_free, mem_free_attrs),
 END_SCHEDULER_PROBE_SOURCE_TYPE(mem_free);
 
+DEFINE_SCHEDULER_PROBE_SOURCE_GET_WITH_INPUT(task_rss,
+					     unsigned long, value_p, nr,
+					     pid_t, in_value_p, in_nr)
+{
+	pid_t pid;
+	struct task_struct *task;
+	struct mm_struct *mm;
+	int i;
+
+	rcu_read_lock();
+	for (i = 0; i < in_nr && i < nr; i++) {
+		pid = in_value_p[i];
+
+		task = find_task_by_kpid(pid);
+		if (!task)
+			break;
+
+		mm = get_task_mm(task);
+		if (!mm)
+			break;
+
+		value_p[i] = K(get_mm_rss(mm));
+
+		mmput(mm);
+	}
+	rcu_read_unlock();
+
+	return i;
+}
+
+static BEGIN_SCHEDULER_PROBE_SOURCE_TYPE(task_rss),
+	.SCHEDULER_PROBE_SOURCE_GET(task_rss),
+	.SCHEDULER_PROBE_SOURCE_VALUE_TYPE(task_rss, unsigned long),
+	.SCHEDULER_PROBE_SOURCE_PARAM_TYPE(task_rss, pid_t),
+END_SCHEDULER_PROBE_SOURCE_TYPE(task_rss);
+
 static struct scheduler_probe_source *mem_probe_sources[SOURCE_NR + 1];
 
 static SCHEDULER_PROBE_TYPE(mem_probe_type, NULL, measure_mem);
 
 int init_module()
 {
+	int i;
 	int err = -ENOMEM;
 
 	mem_probe_sources[SOURCE_FREE] =
 		scheduler_probe_source_create(&mem_free_type, "ram_free");
 	mem_probe_sources[SOURCE_TOTAL] =
 		scheduler_probe_source_create(&mem_total_type, "ram_total");
+	mem_probe_sources[SOURCE_TASK_RSS] =
+		scheduler_probe_source_create(&task_rss_type, "task_rss");
 	mem_probe_sources[SOURCE_NR] = NULL;
 
 	for (i = 0; i < SOURCE_NR; i++)
