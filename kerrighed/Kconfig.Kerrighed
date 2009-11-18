@@ -271,6 +271,16 @@ config KRG_SCHED_HIGH_THRESHOLD_FILTER
 
 	  If unsure, say N.
 
+config KRG_SCHED_LOW_THRESHOLD_FILTER
+	tristate "Low-pass threshold filter"
+	depends on m
+	default n
+	help
+	  Filter propagating events only if the value does not exceed the
+	  configured threshold
+
+	  If unsure, say N.
+
 config KRG_SCHED_FREQ_LIMIT_FILTER
 	tristate "Frequency limit filter"
 	depends on m
