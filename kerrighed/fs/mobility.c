@@ -1629,6 +1629,7 @@ static int cr_delete_files_struct(struct task_struct *fake, void *_files)
 
 struct shared_object_operations cr_shared_files_struct_ops = {
         .export_now        = cr_export_now_files_struct,
+	.export_user_info  = NULL,
 	.import_now        = cr_import_now_files_struct,
 	.import_complete   = cr_import_complete_files_struct,
 	.delete            = cr_delete_files_struct,
@@ -1690,6 +1691,7 @@ static int cr_delete_fs_struct(struct task_struct *fake, void *_fs)
 
 struct shared_object_operations cr_shared_fs_struct_ops = {
         .export_now        = cr_export_now_fs_struct,
+	.export_user_info  = NULL,
 	.import_now        = cr_import_now_fs_struct,
 	.import_complete   = cr_import_complete_fs_struct,
 	.delete            = cr_delete_fs_struct,
@@ -1726,6 +1728,7 @@ static int cr_delete_unsupported_file(struct task_struct *fake, void *_fs)
 struct shared_object_operations cr_shared_unsupported_file_ops = {
         .restart_data_size = 0,
         .export_now        = cr_export_now_unsupported_file,
+	.export_user_info  = cr_export_user_info_file,
 	.import_now        = cr_import_now_unsupported_file,
 	.import_complete   = cr_import_complete_unsupported_file,
 	.delete            = cr_delete_unsupported_file,
