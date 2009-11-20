@@ -172,7 +172,6 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 	}
 
 	file_name = get_phys_filename(file, tmp);
-
 	if (!file_name)
 		goto exit_free_page;
 
@@ -527,9 +526,9 @@ struct dvfs_mobility_operations dvfs_mobility_regular_ops = {
 	.file_import = regular_file_import,
 };
 
-int cr_export_now_regular_file(struct epm_action *action, ghost_t *ghost,
-			       struct task_struct *task,
-			       union export_args *args)
+static int cr_export_now_regular_file(struct epm_action *action, ghost_t *ghost,
+				      struct task_struct *task,
+				      union export_args *args)
 {
 	int r, tty;
 
@@ -554,6 +553,84 @@ error:
 			 args->file_args.index,
 			 task_pid_knr(task));
 
+	return r;
+}
+
+int cr_export_user_info_file(struct epm_action *action, ghost_t *ghost,
+			     unsigned long key, struct task_struct *task,
+			     union export_args *args)
+{
+	int r, keylen, nodelen;
+	char *tmp, *file_name;
+	struct file *file;
+	kerrighed_node_t file_node;
+
+	/* do not export info about mapped file */
+	if (args->file_args.index == -1)
+		return 0;
+
+	file = args->file_args.file;
+
+	tmp = (char *) __get_free_page (GFP_KERNEL);
+	if (!tmp) {
+		r = -ENOMEM;
+		goto exit;
+	}
+
+	file_name = get_filename(file, tmp);
+
+	if (!file_name) {
+		file_name = tmp;
+		sprintf(file_name, "-");
+	}
+
+	if (is_socket(file))
+		r = ghost_printf(ghost, "socket  ");
+
+	else if (is_anonymous_pipe(file))
+		r = ghost_printf(ghost, "pipe    ");
+
+	else if (is_named_pipe(file))
+		r = ghost_printf(ghost, "fifo    ");
+
+	else if (is_tty(file))
+		r = ghost_printf(ghost, "tty     ");
+
+	else if (is_char_device(file))
+		r = ghost_printf(ghost, "char    ");
+
+	else if (is_block_device(file))
+		r = ghost_printf(ghost, "block   ");
+
+	else if (is_link(file))
+		r = ghost_printf(ghost, "link    ");
+
+	else if (is_directory(file))
+		r = ghost_printf(ghost, "dir     ");
+
+	else
+		r = ghost_printf(ghost, "file    ");
+
+	if (r)
+		goto err_free_page;
+
+	if (file->f_objid)
+		/* if the file is shared, there is no host node */
+		file_node = KERRIGHED_NODE_ID_NONE;
+	else
+		file_node = kerrighed_node_id;
+
+	nodelen = sizeof(file_node)*2;
+	keylen = sizeof(key)*2;
+
+	r = ghost_printf(ghost, "|%0*hX%0*lX|%s|%d:%d\n",
+			 nodelen, file_node, keylen, key,
+			 file_name, task_pid_knr(task), args->file_args.index);
+
+
+err_free_page:
+	free_page ((unsigned long) tmp);
+exit:
 	return r;
 }
 
@@ -787,6 +864,7 @@ error:
 
 struct shared_object_operations cr_shared_regular_file_ops = {
 	.export_now        = cr_export_now_regular_file,
+	.export_user_info  = cr_export_user_info_file,
 	.import_now        = cr_import_now_regular_file,
 	.import_complete   = cr_import_complete_regular_file,
 	.delete            = cr_delete_regular_file,
