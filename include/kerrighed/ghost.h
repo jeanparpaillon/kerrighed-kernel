@@ -148,6 +148,8 @@ err_read:
 	return r;
 }
 
+int __must_check ghost_printf(ghost_t *ghost, char *format, ...);
+
 /** Generic function to close a ghost.
  *  @author Matthieu Fertré
  *

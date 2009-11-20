@@ -41,6 +41,27 @@ int free_ghost(ghost_t *ghost)
 	return 0 ;
 }
 
+int ghost_printf(ghost_t *ghost, char *format, ...)
+{
+	va_list args;
+	char *buffer;
+	int r, len;
+
+	va_start(args, format);
+	buffer = kvasprintf(GFP_KERNEL, format, args);
+	va_end(args);
+
+	if (!buffer)
+		return -ENOMEM;
+
+	len = strlen(buffer);
+
+	r = ghost_write(ghost, buffer, len);
+
+	kfree(buffer);
+	return r;
+}
+
 /*****************************************************************************/
 /*                                                                           */
 /*                              INITIALIZATION                               */
