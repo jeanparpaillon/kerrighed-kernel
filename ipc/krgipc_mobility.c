@@ -577,6 +577,7 @@ static int cr_delete_sysv_sem(struct task_struct * fake, void * _undo_list_id)
 
 struct shared_object_operations cr_shared_semundo_ops = {
         .export_now        = cr_export_now_sysv_sem,
+	.export_user_info  = NULL,
 	.import_now        = cr_import_now_sysv_sem,
 	.import_complete   = cr_import_complete_sysv_sem,
 	.delete            = cr_delete_sysv_sem,
