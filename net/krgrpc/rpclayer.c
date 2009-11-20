@@ -52,7 +52,16 @@ int __rpc_send(struct rpc_desc* desc,
 			rpc_desc_set_id(desc->desc_id);
 
 			hashtable_lock(desc_clt);
-			__hashtable_add(desc_clt, desc->desc_id, desc);
+			if (__hashtable_add(desc_clt, desc->desc_id, desc)) {
+				hashtable_unlock(desc_clt);
+				spin_unlock(&lock_id);
+				if (!irqs_disabled())
+					local_bh_enable();
+
+				desc->desc_id = 0;
+
+				return -ENOMEM;
+			}
 			hashtable_unlock(desc_clt);
 
 			for_each_krgnode_mask(node, desc->nodes){
