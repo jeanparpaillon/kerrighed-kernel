@@ -17,10 +17,12 @@
 
 enum {
 	__RPC_FLAGS_EMERGENCY_BUF = __RPC_FLAGS_MAX,
+	__RPC_FLAGS_NEW_DESC_ID,
 	__RPC_FLAGS_CLOSED,
 };
 
 #define RPC_FLAGS_EMERGENCY_BUF	(1<<__RPC_FLAGS_EMERGENCY_BUF)
+#define RPC_FLAGS_NEW_DESC_ID	(1<<__RPC_FLAGS_NEW_DESC_ID)
 #define RPC_FLAGS_CLOSED	(1<<__RPC_FLAGS_CLOSED)
 
 struct rpc_desc_send {
@@ -160,12 +162,13 @@ int __rpc_signalack(struct rpc_desc* desc);
 int rpc_handle_new(struct rpc_desc* desc);
 void rpc_wake_up_thread(struct rpc_desc *desc);
 
+void rpc_new_desc_id_lock(void);
+void rpc_new_desc_id_unlock(void);
 int __rpc_emergency_send_buf_alloc(struct rpc_desc *desc, size_t size);
 void __rpc_emergency_send_buf_free(struct rpc_desc *desc);
 int __rpc_send_ll(struct rpc_desc* desc,
 		  krgnodemask_t *nodes,
 		  unsigned long seq_id,
-		  unsigned long* link_seq,
 		  int __flags,
 		  const void* data, size_t size,
 		  int rpc_flags);

@@ -30,56 +30,61 @@ kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc){
 	return desc->client;
 }
 
+void rpc_new_desc_id_lock(void)
+{
+	if (!irqs_disabled())
+		local_bh_disable();
+	spin_lock(&lock_id);
+	hashtable_lock(desc_clt);
+}
+
+void rpc_new_desc_id_unlock(void)
+{
+	hashtable_unlock(desc_clt);
+	spin_unlock(&lock_id);
+	if (!irqs_disabled())
+		local_bh_enable();
+}
+
 inline
 int __rpc_send(struct rpc_desc* desc,
 		      unsigned long seq_id, int __flags,
 		      const void* data, size_t size,
 		      int rpc_flags)
 {
-	kerrighed_node_t node;
-	unsigned long link_seq_id[KERRIGHED_MAX_NODES];
 	int err = 0;
 
 	switch (desc->type) {
 	case RPC_RQ_CLT:
 		if (desc->desc_id == 0) {
-			if (!irqs_disabled())
-				local_bh_disable();
-			spin_lock(&lock_id);
 
-			node = 0;
+			rpc_new_desc_id_lock();
 
 			rpc_desc_set_id(desc->desc_id);
 
-			hashtable_lock(desc_clt);
 			if (__hashtable_add(desc_clt, desc->desc_id, desc)) {
-				hashtable_unlock(desc_clt);
-				spin_unlock(&lock_id);
-				if (!irqs_disabled())
-					local_bh_enable();
+				rpc_new_desc_id_unlock();
 
 				desc->desc_id = 0;
 
 				return -ENOMEM;
 			}
-			hashtable_unlock(desc_clt);
 
-			for_each_krgnode_mask(node, desc->nodes){
-				rpc_link_seq_id(link_seq_id[node], node);
-			}
-
-			spin_unlock(&lock_id);
-			if (!irqs_disabled())
-				local_bh_enable();
-
+			/* Calls rpc_new_desc_id_unlock() on success */
 			err = __rpc_send_ll(desc, &desc->nodes,
-					    seq_id, link_seq_id,
+					    seq_id,
 					    __flags, data, size,
-					    rpc_flags);
+					    rpc_flags | RPC_FLAGS_NEW_DESC_ID);
+			if (err) {
+				__hashtable_remove(desc_clt, desc->desc_id);
+				rpc_new_desc_id_unlock();
+
+				desc->desc_id = 0;
+			}
 
 		} else
 			err = __rpc_send_ll(desc, &desc->nodes,
-					    seq_id, NULL,
+					    seq_id,
 					    __flags, data, size,
 					    rpc_flags);
 		break;
@@ -90,7 +95,7 @@ int __rpc_send(struct rpc_desc* desc,
 		krgnodes_clear(nodes);
 		krgnode_set(desc->client, nodes);
 
-		err = __rpc_send_ll(desc, &nodes, seq_id, NULL,
+		err = __rpc_send_ll(desc, &nodes, seq_id,
 				    __flags, data, size,
 				    rpc_flags);
 		break;

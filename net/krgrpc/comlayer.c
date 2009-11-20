@@ -552,7 +552,6 @@ static struct rpc_tx_elem *next_emergency_send_buf(struct rpc_desc *desc)
 int __rpc_send_ll(struct rpc_desc* desc,
 			 krgnodemask_t *nodes,
 			 unsigned long seq_id,
-			 unsigned long* link_seq,
 			 int __flags,
 			 const void* data, size_t size,
 			 int rpc_flags)
@@ -560,6 +559,7 @@ int __rpc_send_ll(struct rpc_desc* desc,
 	struct rpc_tx_elem* elem;
 	struct tx_engine *engine;
 	kerrighed_node_t node;
+	int link_seq_index;
 
 	elem = __rpc_tx_elem_alloc(size, __krgnodes_weight(nodes));
 	if (!elem) {
@@ -568,6 +568,14 @@ int __rpc_send_ll(struct rpc_desc* desc,
 		if (!elem)
 			return -ENOMEM;
 	}
+
+	link_seq_index = 0;
+	__for_each_krgnode_mask(node, nodes) {
+		rpc_link_seq_id(elem->link_seq_id[link_seq_index], node);
+		link_seq_index++;
+	}
+	if (rpc_flags & RPC_FLAGS_NEW_DESC_ID)
+		rpc_new_desc_id_unlock();
 
 	elem->h.from = kerrighed_node_id;
 	elem->h.client = desc->client;
@@ -593,25 +601,6 @@ int __rpc_send_ll(struct rpc_desc* desc,
 	elem->iov[1].iov_base = elem->data;
 		
 	__krgnodes_copy(&elem->nodes, nodes);	
-		
-	if (link_seq) {
-		kerrighed_node_t link_seq_index;
-			
-		link_seq_index = 0;
-		__for_each_krgnode_mask(node, nodes){
-			elem->link_seq_id[link_seq_index] = link_seq[node];
-			link_seq_index++;
-		}
-		
-	} else {
-		kerrighed_node_t link_seq_index;
-		
-		link_seq_index = 0;
-		__for_each_krgnode_mask(node, nodes){
-			rpc_link_seq_id(elem->link_seq_id[link_seq_index], node);
-			link_seq_index++;
-		}
-	}
 
 	preempt_disable();
 	engine = &per_cpu(tipc_tx_engine, smp_processor_id());
@@ -628,7 +617,6 @@ int __rpc_send_ll(struct rpc_desc* desc,
 
 	} else {
 		int err = 0;
-		kerrighed_node_t link_seq_index, node;
 
 		link_seq_index = 0;
 		__for_each_krgnode_mask(node, nodes){
