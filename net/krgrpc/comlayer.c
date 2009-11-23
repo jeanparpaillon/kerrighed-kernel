@@ -52,6 +52,9 @@ struct tx_engine {
 
 static DEFINE_PER_CPU(struct tx_engine, tipc_tx_engine);
 static DEFINE_SPINLOCK(tipc_tx_queue_lock);
+
+static LIST_HEAD(tipc_ack_head);
+static DEFINE_SPINLOCK(tipc_ack_list_lock);
 static void tipc_send_ack_worker(struct work_struct *work);
 static DECLARE_DELAYED_WORK(tipc_ack_work, tipc_send_ack_worker);
 
@@ -63,6 +66,7 @@ struct tipc_connection {
 	struct sk_buff_head rx_queue;
 	struct delayed_work run_rx_queue_work;
 	unsigned long recv_seq_id;
+	struct list_head ack_list;
 	int consecutive_recv;
 };
 
@@ -138,7 +142,6 @@ u32 tipc_port_ref;
 DEFINE_PER_CPU(u32, tipc_send_ref);
 struct tipc_name_seq tipc_seq;
 
-krgnodemask_t nodes_requiring_ack;
 static int ack_cleanup_window_size;
 static int max_consecutive_recv[KERRIGHED_MAX_NODES];
 
@@ -240,16 +243,29 @@ out:
 	return err;
 }
 
+static void send_acks(struct tipc_connection *conn)
+{
+	spin_lock_bh(&tipc_ack_list_lock);
+	if (list_empty(&conn->ack_list)) {
+		rpc_connection_get(&conn->conn);
+		list_add_tail(&conn->ack_list, &tipc_ack_head);
+		queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
+	}
+	spin_unlock_bh(&tipc_ack_list_lock);
+}
+
 static
 void tipc_send_ack_worker(struct work_struct *work)
 {
+	LIST_HEAD(ack_head);
 	struct iovec iov[1];
 	struct __rpc_header h;
-	kerrighed_node_t node;
+	struct tipc_connection *conn, *safe;
 	int err;
 
-	if (next_krgnode(0, nodes_requiring_ack) > KERRIGHED_MAX_NODES)
-		return;
+	spin_lock_bh(&tipc_ack_list_lock);
+	list_splice_init(&tipc_ack_head, &ack_head);
+	spin_unlock_bh(&tipc_ack_list_lock);
 
 	h.from = kerrighed_node_id;
 	h.rpcid = RPC_ACK;
@@ -258,10 +274,15 @@ void tipc_send_ack_worker(struct work_struct *work)
 	iov[0].iov_base = &h;
 	iov[0].iov_len = sizeof(h);
 
-	for_each_krgnode_mask(node, nodes_requiring_ack) {
-		err = send_iovec(node, ARRAY_SIZE(iov), iov);
-		if (!err)
-			krgnode_clear(node, nodes_requiring_ack);
+	list_for_each_entry_safe(conn, safe, &ack_head, ack_list) {
+		spin_lock_bh(&tipc_ack_list_lock);
+		list_del_init(&conn->ack_list);
+		spin_unlock_bh(&tipc_ack_list_lock);
+
+		err = send_iovec(conn->conn.peer, ARRAY_SIZE(iov), iov);
+		if (err)
+			send_acks(conn);
+		rpc_connection_put(&conn->conn);
 	}
 }
 
@@ -1172,16 +1193,13 @@ static void tipc_handler(void *usr_handle,
 
 	// Check if we are not receiving an already received packet
 	if (h->link_seq_id < conn->recv_seq_id) {
-		krgnode_set(h->from, nodes_requiring_ack);
-		queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
+		send_acks(conn);
 		goto exit;
 	}
 
 	// Check if we are receiving lot of packets but sending none
-	if (conn->consecutive_recv >= max_consecutive_recv[h->from]){
-		krgnode_set(h->from, nodes_requiring_ack);
-		queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
-	}
+	if (conn->consecutive_recv >= max_consecutive_recv[h->from])
+		send_acks(conn);
 	conn->consecutive_recv++;
 
 	// Is-it the next ordered message ?
@@ -1334,8 +1352,7 @@ void krg_node_unreachable(kerrighed_node_t nodeid){
 void rpc_enable_lowmem_mode(kerrighed_node_t nodeid){
 	max_consecutive_recv[nodeid] = MAX_CONSECUTIVE_RECV__LOWMEM_MODE;
 
-	krgnode_set(nodeid, nodes_requiring_ack);
-	queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
+	send_acks(to_ll(static_communicator.conn[nodeid]));
 }
 
 void rpc_disable_lowmem_mode(kerrighed_node_t nodeid){
@@ -1366,6 +1383,7 @@ rpc_connection_alloc_ll(struct rpc_communicator *comm, kerrighed_node_t node)
 	skb_queue_head_init(&ll->rx_queue);
 	INIT_DELAYED_WORK(&ll->run_rx_queue_work, run_rx_queue_worker);
 	ll->recv_seq_id = 1;
+	INIT_LIST_HEAD(&ll->ack_list);
 	ll->consecutive_recv = 0;
 
 	return &ll->conn;
@@ -1374,6 +1392,7 @@ rpc_connection_alloc_ll(struct rpc_communicator *comm, kerrighed_node_t node)
 void rpc_connection_free_ll(struct rpc_connection *conn)
 {
 	struct tipc_connection *ll = to_ll(conn);
+	BUG_ON(!list_empty(&ll->ack_list));
 	BUG_ON(!skb_queue_empty(&ll->rx_queue));
 	kfree(ll);
 }
@@ -1382,8 +1401,6 @@ int comlayer_init(void)
 {
 	int res = 0;
 	long i;
-
-	krgnodes_clear(nodes_requiring_ack);	
 
 	for_each_possible_cpu(i) {
 		struct tx_engine *engine = &per_cpu(tipc_tx_engine, i);
