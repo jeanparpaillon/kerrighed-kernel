@@ -26,28 +26,41 @@
 #include "../epm_internal.h"
 #include "app_utils.h"
 
-static inline int restore_app_kddm_object(struct app_kddm_object *obj,
-					  long app_id, int chkpt_sn,
-					  int *one_terminal)
+static int restore_app_kddm_object(struct app_kddm_object **app_obj,
+				   const char *checkpoint_dir,
+				   long *app_id,
+				   int *one_terminal)
 {
+	struct app_kddm_object *obj = NULL;
 	ghost_fs_t oldfs;
 	ghost_t *ghost;
-	long tmpl;
-	int tmpi;
 	int r = 0;
-	int magic = 4342338;
+	int r_magic, magic = 4342338;
 	u32 linux_version;
 	char compile_info[MAX_GHOST_STRING];
 
 	__set_ghost_fs(&oldfs);
 
-	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn,
-				  -1, "global");
+	ghost = create_file_ghost(GHOST_READ, "%s/global.bin", checkpoint_dir);
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
 		goto err_open;
 	}
+
+	r = ghost_read(ghost, app_id, sizeof(long));
+	if (r)
+		goto err_read;
+
+	/* initialize app_kddm_object */
+
+	obj = kddm_grab_object(kddm_def_ns, APP_KDDM_ID, *app_id);
+
+	if (obj->app_id == *app_id) {
+		r = -E_CR_APPBUSY;
+		goto err_read;
+	}
+	obj->app_id = *app_id;
 
 	/* check some information about the Linux kernel version */
 	r = ghost_read(ghost, &linux_version, sizeof(linux_version));
@@ -96,28 +109,11 @@ static inline int restore_app_kddm_object(struct app_kddm_object *obj,
 	if (strncmp(LINUX_COMPILER, compile_info, MAX_GHOST_STRING))
 		goto err_kernel_version;
 
-	/* check some information about the checkpoint itself */
-	r = ghost_read(ghost, &tmpl, sizeof(tmpl));
+	/* continue initialization of app_kddm_object */
+
+	r = ghost_read(ghost, &obj->chkpt_sn, sizeof(obj->chkpt_sn));
 	if (r)
 		goto err_read;
-
-	if (tmpl != app_id) {
-		r = -E_CR_BADDATA;
-		goto err_read;
-	}
-
-	r = ghost_read(ghost, &tmpi, sizeof(tmpi));
-	if (r)
-		goto err_read;
-
-	if (tmpi != chkpt_sn) {
-		r = -E_CR_BADDATA;
-		goto err_read;
-	}
-
-	/* initialize app_kddm_object */
-	obj->app_id = app_id;
-	obj->chkpt_sn = chkpt_sn;
 
 	r = ghost_read(ghost, &obj->nodes, sizeof(obj->nodes));
 	if (r)
@@ -131,11 +127,11 @@ static inline int restore_app_kddm_object(struct app_kddm_object *obj,
 	if (r)
 		goto err_read;
 
-	r = ghost_read(ghost, &tmpi, sizeof(tmpi));
+	r = ghost_read(ghost, &r_magic, sizeof(int));
 	if (r)
 		goto err_read;
 
-	if (tmpi != magic) {
+	if (r_magic != magic) {
 		r = -E_CR_BADDATA;
 		goto err_read;
 	}
@@ -146,6 +142,7 @@ err_read:
 
 err_open:
 	unset_ghost_fs(&oldfs);
+	*app_obj = obj;
 
 	return r;
 
@@ -210,9 +207,8 @@ err_alloc:
 	return r;
 }
 
-static inline int restore_local_app(long app_id, int chkpt_sn,
-				    kerrighed_node_t node_id,
-				    int duplicate)
+static int restore_local_app(long app_id, const char *checkpoint_dir,
+			     kerrighed_node_t node_id, int duplicate)
 {
 	int r = 0;
 	ghost_fs_t oldfs;
@@ -223,15 +219,25 @@ static inline int restore_local_app(long app_id, int chkpt_sn,
 
 	struct app_struct *app = NULL;
 	kerrighed_node_t r_node_id;
+	long r_app_id;
 
 	__set_ghost_fs(&oldfs);
 
-	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn,
-				  node_id, "node");
+	ghost = create_file_ghost(GHOST_READ, "%s/node_%u.bin",
+				  checkpoint_dir, node_id);
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
 		goto err_open;
+	}
+
+	r = ghost_read(ghost, &r_app_id, sizeof(long));
+	if (r)
+		goto err_read;
+
+	if (r_app_id != app_id) {
+		r = -E_CR_BADDATA;
+		goto err_read;
 	}
 
 	if (node_id == kerrighed_node_id || !duplicate) {
@@ -249,8 +255,6 @@ static inline int restore_local_app(long app_id, int chkpt_sn,
 	}
 
 	krgnode_set(node_id, app->restart.replacing_nodes);
-
-	app->chkpt_sn = chkpt_sn;
 
 	/* read the node_id */
 	r = ghost_read(ghost, &r_node_id, sizeof(kerrighed_node_t));
@@ -289,6 +293,8 @@ static inline int restore_local_app(long app_id, int chkpt_sn,
 		BUG_ON(pid == prev);
 	}
 
+	app->restart.storage_dir = checkpoint_dir;
+
 err_read:
 	/* End of the really interesting part */
 	ghost_close(ghost);
@@ -302,16 +308,16 @@ err_open:
 
 /*--------------------------------------------------------------------------*/
 
-static inline int __local_init_restart(long app_id, int chkpt_sn,
+static inline int __local_init_restart(long app_id, const char *checkpoint_dir,
 				       kerrighed_node_t node_id, int duplicate)
 {
-	return restore_local_app(app_id, chkpt_sn, node_id, duplicate);
+	return restore_local_app(app_id, checkpoint_dir, node_id,
+				 duplicate);
 }
 
 struct init_restart_msg {
 	kerrighed_node_t requester;
 	long app_id;
-	int chkpt_sn;
 	int recovery;
 };
 
@@ -322,7 +328,8 @@ static void handle_init_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	int duplicate = 0;
 	struct cred *cred;
 	const struct cred *old_cred;
-	int r;
+	char *checkpoint_dir = NULL;
+	int r, len;
 
 	if (msg->recovery) {
 		r = rpc_unpack_type(desc, n);
@@ -345,7 +352,22 @@ static void handle_init_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	}
 	old_cred = override_creds(cred);
 
-	r = __local_init_restart(msg->app_id, msg->chkpt_sn, n, duplicate);
+	r = rpc_unpack_type(desc, len);
+	if (r)
+		goto err_rpc;
+
+	checkpoint_dir = kmalloc(sizeof(char) * len, GFP_KERNEL);
+	if (!checkpoint_dir) {
+		r = -ENOMEM;
+		goto err_rpc;
+	}
+
+	r = rpc_unpack(desc, 0, checkpoint_dir, len);
+	if (r)
+		goto err_rpc;
+
+
+	r = __local_init_restart(msg->app_id, checkpoint_dir, n, duplicate);
 
 	revert_creds(old_cred);
 	put_cred(cred);
@@ -358,6 +380,11 @@ send_res:
 
 err_rpc:
 	rpc_cancel(desc);
+	if (checkpoint_dir) {
+		kfree(checkpoint_dir);
+		checkpoint_dir = NULL;
+	}
+
 	return;
 }
 
@@ -396,9 +423,25 @@ out:
 	return n;
 }
 
-static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn,
-			       int *one_terminal)
+static int send_checkpoint_dir(struct rpc_desc *desc,
+			       const char *checkpoint_dir)
 {
+	int r, len;
+	len = strlen(checkpoint_dir) + 1;
+
+	r = rpc_pack_type(desc, len);
+	if (r)
+		goto err;
+
+	r = rpc_pack(desc, 0, checkpoint_dir, len);
+err:
+	return r;
+}
+
+static int global_init_restart(struct app_kddm_object **app_obj, long *app_id,
+			       char *checkpoint_dir, int *one_terminal)
+{
+	struct app_kddm_object *obj;
 	struct rpc_desc *desc;
 	struct init_restart_msg msg;
 	krgnodemask_t nodes, nodes_to_replace;
@@ -407,14 +450,16 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn,
 	int duplicate = 0;
 	int r;
 
-	r = restore_app_kddm_object(obj, obj->app_id, chkpt_sn, one_terminal);
+	r = restore_app_kddm_object(app_obj, checkpoint_dir, app_id,
+				    one_terminal);
 	if (r)
 		goto exit;
 
+	obj = *app_obj;
+
 	/* prepare message */
 	msg.requester = kerrighed_node_id;
-	msg.app_id = obj->app_id;
-	msg.chkpt_sn = chkpt_sn;
+	msg.app_id = *app_id;
 	msg.recovery = 0;
 
 	/* prepare nodes vector */
@@ -434,6 +479,10 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn,
 		if (r)
 			goto err_rpc;
 		r = pack_creds(desc, current_cred());
+		if (r)
+			goto err_rpc;
+
+		r = send_checkpoint_dir(desc, checkpoint_dir);
 		if (r)
 			goto err_rpc;
 
@@ -466,6 +515,10 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn,
 			goto err_rpc;
 
 		r = pack_creds(desc, current_cred());
+		if (r)
+			goto err_rpc;
+
+		r = send_checkpoint_dir(desc, checkpoint_dir);
 		if (r)
 			goto err_rpc;
 
@@ -515,8 +568,7 @@ static inline int __restart_process(struct app_struct *app,
 {
 	int r = 0;
 	struct task_struct *task;
-	task = restart_process(t->restart.pid,
-			       app->app_id, app->chkpt_sn);
+	task = restart_process(app, t->restart.pid);
 	if (IS_ERR(task)) {
 		r = PTR_ERR(task);
 		goto error;
@@ -538,8 +590,9 @@ static inline int was_checkpointed(struct app_struct *app, pid_t pid)
 	struct nameidata nd;
 	struct path prev_root;
 
-	char *filename = get_chkpt_filebase(app->app_id, app->chkpt_sn,
-					    pid, "task");
+	char *filename = get_chkpt_filebase("%s/task_%d.bin",
+					    app->restart.storage_dir,
+					    pid);
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
 
@@ -1009,7 +1062,7 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 		goto error;
 	}
 
-	r = local_restart_shared(desc, app, fake, app->chkpt_sn);
+	r = local_restart_shared(desc, app, fake);
 	if (r)
 		goto error;
 
@@ -1221,24 +1274,18 @@ err_no_pids:
  *  Main application restarting interface.
  *  @author Matthieu Fertré
  */
-int app_restart(struct restart_request *req,
-		const task_identity_t *requester, pid_t *root_pid)
+int app_restart(struct restart_request *req, const task_identity_t *requester)
 {
 	struct app_kddm_object *obj;
 	struct file *term = NULL;
 	int r = 0;
 	int one_terminal;
 
-	obj = kddm_grab_object(kddm_def_ns, APP_KDDM_ID, req->app_id);
+	req->app_id = 0; /* sanitize app_id */
 
-	if (obj->app_id == req->app_id) {
-		r = -E_CR_APPBUSY;
-		goto exit_app_busy;
-	}
-	obj->app_id = req->app_id;
-
-	/* open the files and recreate the struct app_struct */
-	r = global_init_restart(obj, req->chkpt_sn, &one_terminal);
+	/* recreate the app_kddm_obj and the struct app_struct */
+	r = global_init_restart(&obj, &req->app_id, req->storage_dir,
+				  &one_terminal);
 	if (r)
 		goto exit;
 
@@ -1256,7 +1303,7 @@ int app_restart(struct restart_request *req,
         }
 
 	/* recreate all the tasks */
-	r = global_do_restart(obj, requester, term, root_pid);
+	r = global_do_restart(obj, requester, term, &req->root_pid);
 	if (r)
 		goto exit_put_term;
 
@@ -1268,11 +1315,13 @@ exit_put_term:
 		fput(term);
 
 exit:
-	if (r)
-		kddm_remove_frozen_object(kddm_def_ns, APP_KDDM_ID, req->app_id);
-	else
-exit_app_busy:
-		kddm_put_object(kddm_def_ns, APP_KDDM_ID, req->app_id);
+	if (req->app_id) {
+		if (r && r != -E_CR_APPBUSY)
+			kddm_remove_frozen_object(kddm_def_ns, APP_KDDM_ID,
+						  req->app_id);
+		else
+			kddm_put_object(kddm_def_ns, APP_KDDM_ID, req->app_id);
+	}
 
 	return r;
 }

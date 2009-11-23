@@ -80,7 +80,6 @@ struct app_kddm_object {
 
 struct app_struct {
 	long app_id;
-	int chkpt_sn;
 
 	spinlock_t lock;
 	struct completion tasks_chkpted;
@@ -98,11 +97,13 @@ struct app_struct {
 	union {
 		struct {
 			struct file *terminal;
+			char *storage_dir;
 			int flags;
 		} checkpoint;
 
 		struct {
 			struct file *terminal;
+			const char *storage_dir;
 			krgnodemask_t replacing_nodes;
 		} restart;
 	};

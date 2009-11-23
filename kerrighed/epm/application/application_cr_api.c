@@ -49,14 +49,14 @@ int sys_app_chkpt(struct checkpoint_info *infos)
  *  System call function to restart an application
  *  @author Matthieu Fertré
  */
-int sys_app_restart(struct restart_request *req, pid_t *root_pid)
+int sys_app_restart(struct restart_request *req)
 {
 	task_identity_t requester;
 
 	requester.pid = task_pid_knr(current);
 	requester.tgid = task_tgid_knr(current);
 
-	return app_restart(req, &requester, root_pid);
+	return app_restart(req, &requester);
 }
 
 /**

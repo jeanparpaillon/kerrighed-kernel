@@ -12,6 +12,7 @@
 #include <linux/types.h>
 
 struct task_struct;
+struct app_struct;
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -19,6 +20,6 @@ struct task_struct;
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-struct task_struct *restart_process(pid_t pid, long app_id, int chkpt_sn);
+struct task_struct *restart_process(struct app_struct *app, pid_t pid);
 
 #endif /* __RESTART_H__ */
