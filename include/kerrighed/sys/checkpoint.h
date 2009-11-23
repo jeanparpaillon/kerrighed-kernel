@@ -14,13 +14,15 @@
 struct checkpoint_info
 {
 	long app_id;
-
 	int flags;
 
 	int chkpt_sn;
 	int result;
 
 	int signal;
+
+	size_t storage_dir_len;
+	char *storage_dir;
 };
 
 #define GET_RESTART_CMD_PTS 1
@@ -28,8 +30,11 @@ struct checkpoint_info
 struct restart_request
 {
 	long app_id;
-	int chkpt_sn;
+	pid_t root_pid;
 	int flags;
+
+	size_t storage_dir_len;
+	char *storage_dir;
 };
 
 struct app_userdata_request

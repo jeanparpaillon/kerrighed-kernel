@@ -24,16 +24,14 @@ int global_chkpt_shared(struct rpc_desc *desc,
 			struct app_kddm_object *obj);
 
 int local_chkpt_shared(struct rpc_desc *desc,
-		       struct app_struct *app,
-		       int chkpt_sn);
+		       struct app_struct *app);
 
 int global_restart_shared(struct rpc_desc *desc,
 			  struct app_kddm_object *obj);
 
 int local_restart_shared(struct rpc_desc *desc,
 			 struct app_struct *app,
-			 struct task_struct *fake,
-			 int chkpt_sn);
+			 struct task_struct *fake);
 
 int local_restart_shared_complete(struct app_struct *app,
 				  struct task_struct *fake);

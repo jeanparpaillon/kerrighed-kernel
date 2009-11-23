@@ -120,10 +120,9 @@ int checkpoint_task_on_disk(struct epm_action *action,
 	struct app_struct *app = task_to_checkpoint->application;
 	BUG_ON(!app);
 
-	ghost = create_file_ghost(GHOST_WRITE,
-				  app->app_id,
-				  app->chkpt_sn,
-				  task_pid_knr(task_to_checkpoint), "task");
+	ghost = create_file_ghost(GHOST_WRITE, "%s/task_%d.bin",
+				  app->checkpoint.storage_dir,
+				  task_pid_knr(task_to_checkpoint));
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);

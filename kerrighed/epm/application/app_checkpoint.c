@@ -32,8 +32,9 @@
 
 /*--------------------------------------------------------------------------*/
 
-static inline int save_app_kddm_object(struct app_kddm_object *obj,
-				       int one_terminal)
+static int save_app_kddm_object(struct app_kddm_object *obj,
+				const char *checkpoint_dir,
+				int one_terminal)
 {
 	ghost_fs_t oldfs;
 	ghost_t *ghost;
@@ -43,13 +44,16 @@ static inline int save_app_kddm_object(struct app_kddm_object *obj,
 
 	__set_ghost_fs(&oldfs);
 
-	ghost = create_file_ghost(GHOST_WRITE, obj->app_id, obj->chkpt_sn,
-				  -1, "global");
+	ghost = create_file_ghost(GHOST_WRITE, "%s/global.bin", checkpoint_dir);
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
 		goto exit;
 	}
+
+	r = ghost_write(ghost, &obj->app_id, sizeof(long));
+	if (r)
+		goto err_write;
 
 	/* write information about the Linux kernel version */
 	linux_version = LINUX_VERSION_CODE;
@@ -76,9 +80,6 @@ static inline int save_app_kddm_object(struct app_kddm_object *obj,
 		goto err_write;
 
 	/* write information about the checkpoint itself */
-	r = ghost_write(ghost, &obj->app_id, sizeof(obj->app_id));
-	if (r)
-		goto err_write;
 	r = ghost_write(ghost, &obj->chkpt_sn, sizeof(obj->chkpt_sn));
 	if (r)
 		goto err_write;
@@ -169,7 +170,7 @@ error:
 /*
  * Store the _LOCAL_ checkpoint description in a file
  */
-static inline int save_local_app(struct app_struct *app, int chkpt_sn)
+static int save_local_app(struct app_struct *app)
 {
 	ghost_fs_t oldfs;
 	ghost_t *ghost;
@@ -180,13 +181,18 @@ static inline int save_local_app(struct app_struct *app, int chkpt_sn)
 
 	__set_ghost_fs(&oldfs);
 
-	ghost = create_file_ghost(GHOST_WRITE, app->app_id, chkpt_sn,
-				  kerrighed_node_id, "node");
+	ghost = create_file_ghost(GHOST_WRITE, "%s/node_%u.bin",
+				  app->checkpoint.storage_dir,
+				  kerrighed_node_id);
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
 		goto exit;
 	}
+
+	r = ghost_write(ghost, &app->app_id, sizeof(long));
+	if (r)
+		goto err_write;
 
 	/* Here is the really interesting part */
 	r = ghost_write(ghost, &kerrighed_node_id, sizeof(kerrighed_node_t));
@@ -263,26 +269,9 @@ static inline void __chkpt_task_req(struct task_struct *task)
 
 static inline int __get_next_chkptsn(long app_id, int original_sn)
 {
-	char *dirname;
-	int error;
-	struct nameidata nd;
 	int version = original_sn;
 
-	do {
-		version++;
-		dirname = get_chkpt_dir(app_id, version);
-		if (IS_ERR(dirname)) {
-			version = PTR_ERR(dirname);
-			goto error;
-		}
-
-		error = path_lookup(dirname, 0, &nd);
-		if (!error)
-			path_put(&nd.path);
-		kfree(dirname);
-	} while (error != -ENOENT);
-
-error:
+	version++;
 	return version;
 }
 
@@ -293,7 +282,7 @@ error:
  * checkpoint of an application
  *
  */
-static inline int __local_do_chkpt(struct app_struct *app, int chkpt_sn)
+static inline int __local_do_chkpt(struct app_struct *app)
 {
 	task_state_t *tsk;
 	struct task_struct *tmp = NULL;
@@ -301,9 +290,7 @@ static inline int __local_do_chkpt(struct app_struct *app, int chkpt_sn)
 
 	BUG_ON(list_empty(&app->tasks));
 
-	app->chkpt_sn = chkpt_sn;
-
-	r = save_local_app(app, chkpt_sn);
+	r = save_local_app(app);
 	if (r)
 		goto exit;
 
@@ -332,7 +319,6 @@ exit:
 struct checkpoint_request_msg {
 	kerrighed_node_t requester;
 	long app_id;
-	int chkpt_sn;
 	int flags;
 };
 
@@ -342,7 +328,7 @@ static void handle_do_chkpt(struct rpc_desc *desc, void *_msg, size_t size)
 	struct app_struct *app = find_local_app(msg->app_id);
 	struct cred *cred;
 	const struct cred *old_cred = NULL;
-	int r;
+	int r, len;
 
 	BUG_ON(!app);
 
@@ -362,14 +348,28 @@ static void handle_do_chkpt(struct rpc_desc *desc, void *_msg, size_t size)
 
 	app->checkpoint.flags = msg->flags;
 
-	r = __local_do_chkpt(app, msg->chkpt_sn);
+	r = rpc_unpack_type(desc, len);
+	if (r)
+		goto error;
+
+	app->checkpoint.storage_dir = kmalloc(sizeof(char) * len, GFP_KERNEL);
+	if (!app->checkpoint.storage_dir) {
+		r = -ENOMEM;
+		goto error;
+	}
+
+	r = rpc_unpack(desc, 0, app->checkpoint.storage_dir, len);
+	if (r)
+		goto error;
+
+	r = __local_do_chkpt(app);
 
 send_res:
 	r = send_result(desc, r);
 	if (r) /* an error as occured on other node */
 		goto error;
 
-	r = local_chkpt_shared(desc, app, msg->chkpt_sn);
+	r = local_chkpt_shared(desc, app);
 
 	r = send_result(desc, r);
 	if (r)
@@ -386,13 +386,20 @@ error:
 		revert_creds(old_cred);
 		put_cred(cred);
 	}
+
+	if (app->checkpoint.storage_dir) {
+		kfree(app->checkpoint.storage_dir);
+		app->checkpoint.storage_dir = NULL;
+	}
 }
 
-static int global_do_chkpt(struct app_kddm_object *obj, int flags)
+static int global_do_chkpt(struct app_kddm_object *obj,
+			   const char *checkpoint_dir,
+			   int flags)
 {
 	struct rpc_desc *desc;
 	struct checkpoint_request_msg msg;
-	int r , err_rpc, one_terminal;
+	int r, err_rpc, len, one_terminal;
 
 	r = __get_next_chkptsn(obj->app_id, obj->chkpt_sn);
 	if (r < 0)
@@ -403,7 +410,6 @@ static int global_do_chkpt(struct app_kddm_object *obj, int flags)
 	/* prepare message */
 	msg.requester = kerrighed_node_id;
 	msg.app_id = obj->app_id;
-	msg.chkpt_sn = obj->chkpt_sn;
 	msg.flags = flags;
 
 	desc = rpc_begin_m(APP_DO_CHKPT, &obj->nodes);
@@ -411,6 +417,16 @@ static int global_do_chkpt(struct app_kddm_object *obj, int flags)
 	if (err_rpc)
 		goto err_rpc;
 	err_rpc = pack_creds(desc, current_cred());
+	if (err_rpc)
+		goto err_rpc;
+
+	len = strlen(checkpoint_dir) + 1;
+
+	err_rpc = rpc_pack_type(desc, len);
+	if (err_rpc)
+		goto err_rpc;
+
+	err_rpc = rpc_pack(desc, 0, checkpoint_dir, len);
 	if (err_rpc)
 		goto err_rpc;
 
@@ -435,7 +451,7 @@ static int global_do_chkpt(struct app_kddm_object *obj, int flags)
 	if (r)
 		goto err_rpc;
 
-	r = save_app_kddm_object(obj, one_terminal);
+	r = save_app_kddm_object(obj, checkpoint_dir, one_terminal);
 	if (r)
 		goto exit;
 
@@ -524,7 +540,7 @@ static int _checkpoint_frozen_app(struct checkpoint_info *info)
 
 	prev_chkpt_sn = obj->chkpt_sn;
 
-	r = global_do_chkpt(obj, info->flags);
+	r = global_do_chkpt(obj, info->storage_dir, info->flags);
 
 	info->chkpt_sn = obj->chkpt_sn;
 	if (r)
@@ -537,23 +553,6 @@ exit_kddmput:
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------*/
-
-static inline int create_app_folder(long app_id, int chkpt_sn)
-{
-	ghost_fs_t oldfs;
-	struct path prev_root;
-	int r;
-
-	__set_ghost_fs(&oldfs);
-	chroot_to_physical_root(&prev_root);
-
-	r = mkdir_chkpt_path(app_id, chkpt_sn);
-
-	chroot_to_prev_root(&prev_root);
-	unset_ghost_fs(&oldfs);
-
-	return r;
-}
 
 long get_appid(const struct checkpoint_info *info)
 {

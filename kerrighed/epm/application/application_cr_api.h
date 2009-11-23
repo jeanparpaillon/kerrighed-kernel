@@ -41,7 +41,7 @@ int sys_app_chkpt(struct checkpoint_info *info);
  *  System call function to restart an application.
  *  @author Matthieu Fertré
  */
-int sys_app_restart(struct restart_request *req, pid_t *root_pid);
+int sys_app_restart(struct restart_request *req);
 
 /**
  *  System call function to set a user data per application
