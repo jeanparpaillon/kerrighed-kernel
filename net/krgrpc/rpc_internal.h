@@ -57,6 +57,11 @@ struct rpc_connection {
 	kerrighed_node_t peer;
 };
 
+struct rpc_connection_set {
+	struct rpc_connection *conn[KERRIGHED_MAX_NODES];
+	struct kref kref;
+};
+
 struct __rpc_synchro_tree {
 	spinlock_t lock;
 	struct radix_tree_root rt;
@@ -252,6 +257,22 @@ rpc_communicator_get_connection(struct rpc_communicator *comm,
 {
 	rpc_connection_get(comm->conn[node]);
 	return comm->conn[node];
+}
+
+struct rpc_connection_set *__rpc_connection_set_alloc(void);
+struct rpc_connection_set *
+rpc_connection_set_alloc(struct rpc_communicator *comm,
+			 const krgnodemask_t *nodes);
+
+static inline void rpc_connection_set_get(struct rpc_connection_set *set)
+{
+	kref_get(&set->kref);
+}
+
+void rpc_connection_set_release(struct kref *kref);
+static inline void rpc_connection_set_put(struct rpc_connection_set *set)
+{
+	kref_put(&set->kref, rpc_connection_set_release);
 }
 
 void __rpc_synchro_free(struct rpc_desc *desc);
