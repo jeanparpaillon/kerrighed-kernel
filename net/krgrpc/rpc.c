@@ -229,6 +229,58 @@ void rpc_connection_release(struct kref *kref)
 	rpc_communicator_put(comm);
 }
 
+struct rpc_connection_set *__rpc_connection_set_alloc(void)
+{
+	struct rpc_connection_set *set;
+
+	set = kzalloc(sizeof(*set), GFP_ATOMIC);
+	if (!set)
+		return NULL;
+
+	kref_init(&set->kref);
+
+	return set;
+}
+
+struct rpc_connection_set *
+rpc_connection_set_alloc(struct rpc_communicator *comm,
+			 const krgnodemask_t *nodes)
+{
+	struct rpc_connection_set *set;
+	kerrighed_node_t node;
+
+	set = __rpc_connection_set_alloc();
+	if (!set)
+		return ERR_PTR(-ENOMEM);
+
+	__for_each_krgnode_mask(node, nodes) {
+		set->conn[node] = rpc_communicator_get_connection(comm, node);
+		if (!set->conn[node])
+			goto err_invalid_node;
+	}
+
+	return set;
+
+err_invalid_node:
+	__for_each_krgnode_mask(node, nodes)
+		if (set->conn[node])
+			rpc_connection_put(set->conn[node]);
+	kfree(set);
+	return ERR_PTR(-EPIPE);
+}
+
+void rpc_connection_set_release(struct kref *kref)
+{
+	struct rpc_connection_set *set;
+	kerrighed_node_t node;
+
+	set = container_of(kref, struct rpc_connection_set, kref);
+	for (node = 0; node < KERRIGHED_MAX_NODES; node++)
+		if (set->conn[node])
+			rpc_connection_put(set->conn[node]);
+	kfree(set);
+}
+
 int rpc_communicator_init(struct rpc_communicator *communicator, int id)
 {
 	memset(communicator, 0, sizeof(*communicator));

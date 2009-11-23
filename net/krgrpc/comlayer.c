@@ -872,7 +872,9 @@ static
 struct rpc_desc *
 server_rpc_desc_setup(struct rpc_connection *conn, const struct __rpc_header *h)
 {
+	krgnodemask_t nodes;
 	struct rpc_desc *desc;
+	int err = -ENOMEM;
 
 	desc = rpc_desc_alloc();
 	if (!desc)
@@ -889,6 +891,13 @@ server_rpc_desc_setup(struct rpc_connection *conn, const struct __rpc_header *h)
 	// Since a RPC_RQ_CLT can only be received from one node:
 	// by choice, we decide to use 0 as the corresponding id
 	krgnode_set(0, desc->nodes);
+
+	nodes = krgnodemask_of_node(h->client);
+	desc->conn_set = rpc_connection_set_alloc(conn->comm, &nodes);
+	if (IS_ERR(desc->conn_set)) {
+		err = PTR_ERR(desc->conn_set);
+		goto err_conn_set;
+	}
 
 	desc->desc_id = h->desc_id;
 	desc->type = RPC_RQ_SRV;
@@ -917,12 +926,14 @@ out:
 	return desc;
 
 err_emergency_send:
+	rpc_connection_set_put(desc->conn_set);
+err_conn_set:
 	kmem_cache_free(rpc_desc_recv_cachep, desc->desc_recv[0]);
 err_desc_recv:
 	kmem_cache_free(rpc_desc_send_cachep, desc->desc_send);
 err_desc_send:
 	rpc_desc_put(desc);
-	return NULL;
+	return ERR_PTR(err);
 }
 
 /*
@@ -984,15 +995,19 @@ static int tipc_handler_ordered(struct tipc_connection *conn,
 			}
 
 			desc = server_rpc_desc_setup(rpc_conn, h);
-			if (!desc) {
+			if (IS_ERR(desc)) {
 				/*
-				 * Drop the packet, but not silently.
+				 * Drop the packet, but not silently if this is
+				 * due to memory pressure.
 				 * tipc_handler() may decide to drop more pending
 				 * packets to decrease memory pressure, or keep
 				 * the packet and retry handling it later.
 				 */
+				if (PTR_ERR(desc) == -ENOMEM)
+					err = -ENOMEM;
+				else
+					rpc_conn->desc_done_id = h->desc_id;
 				spin_unlock(hash_lock);
-				err = -ENOMEM;
 				goto out;
 			}
 
