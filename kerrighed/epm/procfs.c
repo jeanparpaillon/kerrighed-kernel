@@ -93,15 +93,30 @@ static int proc_app_chkpt(void __user *arg)
 {
 	int res;
 	struct checkpoint_info ckpt_info;
+	char *storage_dir;
 
 	if (copy_from_user(&ckpt_info, arg, sizeof(ckpt_info)))
 		return -EFAULT;
 
+	storage_dir = kmalloc(ckpt_info.storage_dir_len, GFP_KERNEL);
+	if (!storage_dir)
+		return -ENOMEM;
+
+	if (copy_from_user(storage_dir, ckpt_info.storage_dir,
+			   ckpt_info.storage_dir_len * sizeof(char))) {
+		res = -EFAULT;
+		goto err_fault;
+	}
+
+	ckpt_info.storage_dir = storage_dir;
+
 	res = sys_app_chkpt(&ckpt_info);
 
 	if (copy_to_user(arg, &ckpt_info, sizeof(ckpt_info)))
-		return -EFAULT;
+		res = -EFAULT;
 
+err_fault:
+	kfree(storage_dir);
 	return res;
 }
 
@@ -116,24 +131,32 @@ static int proc_app_restart(void __user *arg)
 {
 	int res;
 	struct restart_request restart_req;
-	pid_t root_pid;
+	char *storage_dir;
 
 	if (copy_from_user(&restart_req, arg, sizeof(restart_req)))
 		return -EFAULT;
 
-	res = sys_app_restart(&restart_req, &root_pid);
+	storage_dir = kmalloc(restart_req.storage_dir_len, GFP_KERNEL);
+	if (!storage_dir)
+		return -ENOMEM;
 
-	/*
-	 * in case of success, we replace the req.app_id by the application
-	 * root process id.
-	 */
-	if (!res) {
-		res = root_pid;
-
-		if (copy_to_user(arg, &restart_req, sizeof(restart_req)))
-			return -EFAULT;
+	if (copy_from_user(storage_dir, restart_req.storage_dir,
+			   restart_req.storage_dir_len * sizeof(char))) {
+		res = -EFAULT;
+		goto err_fault;
 	}
 
+	restart_req.storage_dir = storage_dir;
+
+	res = sys_app_restart(&restart_req);
+
+	if (copy_to_user(arg, &restart_req, sizeof(restart_req))) {
+		res = -EFAULT;
+		goto err_fault;
+	}
+
+err_fault:
+	kfree(storage_dir);
 	return res;
 }
 

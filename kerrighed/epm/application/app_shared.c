@@ -499,7 +499,7 @@ error:
 	return r;
 }
 
-static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
+static int chkpt_shared_objects(struct app_struct *app)
 {
 	int r;
 
@@ -508,13 +508,18 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 
 	__set_ghost_fs(&oldfs);
 
-	ghost = create_file_ghost(GHOST_WRITE, app->app_id, chkpt_sn,
-				  kerrighed_node_id, "shared_obj");
+	ghost = create_file_ghost(GHOST_WRITE, "%s/shared_obj_%u.bin",
+				  app->checkpoint.storage_dir,
+				  kerrighed_node_id);
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
 		goto exit_unset_fs;
 	}
+
+	r = ghost_write(ghost, &app->app_id, sizeof(long));
+	if (r)
+		goto exit_close_ghost;
 
 	r = export_shared_objects(ghost, app, PIPE_INODE, UNSUPPORTED_FILE);
 	if (r)
@@ -760,8 +765,7 @@ error:
 }
 
 int local_chkpt_shared(struct rpc_desc *desc,
-		       struct app_struct *app,
-		       int chkpt_sn)
+		       struct app_struct *app)
 {
 	int r = 0;
 
@@ -781,7 +785,7 @@ int local_chkpt_shared(struct rpc_desc *desc,
 		goto error;
 
 	/* 4) dump the shared objects for which we are responsible */
-	r = chkpt_shared_objects(app, chkpt_sn);
+	r = chkpt_shared_objects(app);
 error:
 	return r;
 }
@@ -1220,25 +1224,38 @@ int local_restart_shared_complete(struct app_struct *app,
 static int local_restart_shared_objects(struct rpc_desc *desc,
 					struct app_struct *app,
 					struct task_struct *fake,
-					int chkpt_sn,
 					enum shared_obj_type from,
 					enum shared_obj_type to,
 					loff_t ghost_offsets[])
 {
 	int r = -EINVAL;
 	int idx = 0;
+	long r_app_id;
 	kerrighed_node_t node;
 	ghost_t *ghost;
 
 	/* 1) restore objects for which we are master */
 	for_each_krgnode_mask(node, app->restart.replacing_nodes) {
 
-		ghost = create_file_ghost(GHOST_READ, app->app_id, chkpt_sn,
-					  node, "shared_obj");
+		ghost = create_file_ghost(GHOST_READ, "%s/shared_obj_%u.bin",
+					  app->restart.storage_dir, node);
 
 		if (IS_ERR(ghost)) {
 			r = PTR_ERR(ghost);
 			goto err_import;
+		}
+
+		if (ghost_offsets[idx] == 0) {
+			r = ghost_read(ghost, &r_app_id, sizeof(long));
+			if (r)
+				goto err;
+
+			if (r_app_id != app->app_id) {
+				r = -E_CR_BADDATA;
+				goto err;
+			}
+
+			ghost_offsets[idx] = get_file_ghost_pos(ghost);
 		}
 
 		set_file_ghost_pos(ghost, ghost_offsets[idx]);
@@ -1277,8 +1294,7 @@ err:
 
 int local_restart_shared(struct rpc_desc *desc,
 			 struct app_struct *app,
-			 struct task_struct *fake,
-			 int chkpt_sn)
+			 struct task_struct *fake)
 {
 
 	loff_t *ghost_offsets;
@@ -1296,14 +1312,14 @@ int local_restart_shared(struct rpc_desc *desc,
 	}
 
 	/* 1) restore pipes and files */
-	r = local_restart_shared_objects(desc, app, fake, chkpt_sn,
+	r = local_restart_shared_objects(desc, app, fake,
 					 PIPE_INODE, UNSUPPORTED_FILE,
 					 ghost_offsets);
 	if (r)
 		goto err_ghost_offset;
 
 	/* 2) restore other objects */
-	r = local_restart_shared_objects(desc, app, fake, chkpt_sn,
+	r = local_restart_shared_objects(desc, app, fake,
 					 FILES_STRUCT, SIGNAL_STRUCT,
 					 ghost_offsets);
 	if (r)

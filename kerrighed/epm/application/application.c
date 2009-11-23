@@ -88,7 +88,6 @@ struct app_struct *new_local_app(long app_id)
 	app = kmem_cache_zalloc(app_struct_cachep, GFP_KERNEL);
 
 	app->app_id = app_id;
-	app->chkpt_sn = 0;
 
 	spin_lock_init(&app->lock);
 	init_completion(&app->tasks_chkpted);
