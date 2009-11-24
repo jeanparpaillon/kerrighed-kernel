@@ -63,13 +63,13 @@ int __rpc_send(struct rpc_desc* desc,
 
 			BUG_ON(desc->hash_lock);
 
-			rpc_new_desc_id_lock(&static_communicator, is_client);
+			rpc_new_desc_id_lock(desc->comm, is_client);
 
-			desc->desc_id = static_communicator.next_desc_id++;
+			desc->desc_id = desc->comm->next_desc_id++;
 			if (is_client) {
 				desc->client_desc_id = desc->desc_id;
-				rpc_desc_table_add(static_communicator.desc_clt, desc);
-				desc->hash_lock = &static_communicator.desc_clt_lock;
+				rpc_desc_table_add(desc->comm->desc_clt, desc);
+				desc->hash_lock = &desc->comm->desc_clt_lock;
 			}
 
 			/* Calls rpc_new_desc_id_unlock() on success */
@@ -82,7 +82,7 @@ int __rpc_send(struct rpc_desc* desc,
 					rpc_desc_table_remove(desc);
 					desc->hash_lock = NULL;
 				}
-				rpc_new_desc_id_unlock(&static_communicator, is_client);
+				rpc_new_desc_id_unlock(desc->comm, is_client);
 
 				desc->desc_id = 0;
 				desc->client_desc_id = 0;
@@ -140,7 +140,9 @@ struct rpc_desc* rpc_begin_m(enum rpcid rpcid,
 			goto oom_free_desc_recv;
 	}
 
-	desc->conn_set = rpc_connection_set_alloc(&static_communicator, &desc->nodes);
+	rpc_communicator_get(&static_communicator);
+	desc->comm = &static_communicator;
+	desc->conn_set = rpc_connection_set_alloc(desc->comm, &desc->nodes);
 	if (IS_ERR(desc->conn_set))
 		goto oom_free_desc_recv;
 
@@ -158,6 +160,7 @@ struct rpc_desc* rpc_begin_m(enum rpcid rpcid,
 oom_free_conn_set:
 	rpc_connection_set_put(desc->conn_set);
 oom_free_desc_recv:
+	rpc_communicator_put(desc->comm);
 	for_each_krgnode_mask(i, desc->nodes)
 		if (desc->desc_recv[i])
 			kmem_cache_free(rpc_desc_recv_cachep,
@@ -290,6 +293,7 @@ int rpc_end(struct rpc_desc* desc, int flags)
 	__rpc_end_unpack_clean(desc);
 
 	rpc_connection_set_put(desc->conn_set);
+	rpc_communicator_put(desc->comm);
 
 	if(desc->__synchro)
 		__rpc_synchro_put(desc->__synchro);
@@ -409,8 +413,10 @@ forward_rpc_desc_setup(struct rpc_desc *desc, kerrighed_node_t target)
 		goto err_desc_send;
 	/* fwd_desc->desc_recv = NULL; */
 
+	rpc_communicator_get(desc->comm);
+	fwd_desc->comm = desc->comm;
 	krgnode_set(target, fwd_desc->nodes);
-	fwd_desc->conn_set = rpc_connection_set_alloc(&static_communicator,
+	fwd_desc->conn_set = rpc_connection_set_alloc(fwd_desc->comm,
 						      &fwd_desc->nodes);
 	if (IS_ERR(fwd_desc->conn_set))
 		goto err_conn_set;
@@ -435,6 +441,7 @@ forward_rpc_desc_setup(struct rpc_desc *desc, kerrighed_node_t target)
 err_emergency_buf:
 	rpc_connection_set_put(fwd_desc->conn_set);
 err_conn_set:
+	rpc_communicator_put(fwd_desc->comm);
 	kmem_cache_free(rpc_desc_send_cachep, fwd_desc->desc_send);
 err_desc_send:
 	rpc_desc_put(fwd_desc);
@@ -445,6 +452,7 @@ static void forward_rpc_desc_cleanup(struct rpc_desc *desc)
 {
 	__rpc_emergency_send_buf_free(desc);
 	rpc_connection_set_put(desc->conn_set);
+	rpc_communicator_put(desc->comm);
 	kmem_cache_free(rpc_desc_send_cachep, desc->desc_send);
 	rpc_desc_put(desc);
 }

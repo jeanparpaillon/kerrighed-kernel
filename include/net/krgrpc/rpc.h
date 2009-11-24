@@ -98,6 +98,7 @@ struct rpc_service;
 struct rpc_desc {
 	struct rpc_desc_send* desc_send;
 	struct rpc_desc_recv* desc_recv[KERRIGHED_MAX_NODES];
+	struct rpc_communicator *comm;
 	struct rpc_connection_set *conn_set;
 	struct rpc_service* service;
 	krgnodemask_t nodes;
