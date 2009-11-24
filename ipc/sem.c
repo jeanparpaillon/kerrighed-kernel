@@ -518,7 +518,7 @@ begin:
 
 #ifdef CONFIG_KRG_IPC
 			if (remote)
-				krg_ipc_sem_wakeup_process(q, error);
+				krg_ipc_sem_wakeup_process(sma, q, error);
 			else
 #endif
 			wake_up_process(q->sleeper);
