@@ -27,6 +27,7 @@
 
 static void do_local_node_remove(struct hotplug_context *ctx)
 {
+	struct rpc_communicator *comm = ctx->ns->rpc_comm;
 	krgnodemask_t new_online;
 
 	SET_KERRIGHED_NODE_FLAGS(KRGFLAGS_STOPPING);
@@ -53,6 +54,9 @@ static void do_local_node_remove(struct hotplug_context *ctx)
 	down_write(&kerrighed_init_sem);
 	hooks_stop();
 	up_write(&kerrighed_init_sem);
+
+	rpc_communicator_put(comm);
+	ctx->ns->rpc_comm = NULL;
 
 	CLEAR_KERRIGHED_NODE_FLAGS(KRGFLAGS_STOPPING);
 

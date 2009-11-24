@@ -7,12 +7,14 @@
 #include <asm/atomic.h>
 
 struct task_struct;
+struct rpc_communicator;
 
 struct krg_namespace {
 	atomic_t count;
 	struct nsproxy root_nsproxy;
 	struct user_namespace *root_user_ns;
 	struct task_struct *root_task;
+	struct rpc_communicator *rpc_comm;
 	struct rcu_head rcu;
 	struct work_struct free_work;
 };
