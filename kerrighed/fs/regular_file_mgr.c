@@ -282,24 +282,24 @@ exit:
 
 int ghost_read_file_krg_desc(ghost_t *ghost, void **desc, int *desc_size)
 {
-       int r;
-       r = ghost_read(ghost, desc_size, sizeof (int));
-       if (r)
-               goto error;
+	int r;
+	r = ghost_read(ghost, desc_size, sizeof (int));
+	if (r)
+		goto error;
 
-       *desc = kmalloc(*desc_size, GFP_KERNEL);
-       if (!(*desc)) {
-                 r = -ENOMEM;
-                goto error;
-       }
+	*desc = kmalloc(*desc_size, GFP_KERNEL);
+	if (!(*desc)) {
+		r = -ENOMEM;
+		goto error;
+	}
 
-       r = ghost_read(ghost, *desc, *desc_size);
-       if (r) {
-               kfree(*desc);
-               *desc = NULL;
-       }
+	r = ghost_read(ghost, *desc, *desc_size);
+	if (r) {
+		kfree(*desc);
+		*desc = NULL;
+	}
 error:
-       return r;
+	return r;
 }
 
 int ghost_write_file_krg_desc(ghost_t *ghost, void *desc, int desc_size)
@@ -336,41 +336,41 @@ error:
 struct file *begin_import_dvfs_file(unsigned long dvfs_objid,
 				    struct dvfs_file_struct **dvfs_file)
 {
-       struct file *file = NULL;
+	struct file *file = NULL;
 
-       /* Check if the file struct is already present */
-       *dvfs_file = grab_dvfs_file_struct(dvfs_objid);
-       file = (*dvfs_file)->file;
-       if (file)
-               get_file(file);
+	/* Check if the file struct is already present */
+	*dvfs_file = grab_dvfs_file_struct(dvfs_objid);
+	file = (*dvfs_file)->file;
+	if (file)
+		get_file(file);
 
-       return file;
+	return file;
 }
 
 int end_import_dvfs_file(unsigned long dvfs_objid,
 			 struct dvfs_file_struct *dvfs_file,
 			 struct file *file, int first_import)
 {
-       int r = 0;
+	int r = 0;
 
-       if (IS_ERR(file)) {
-               r = PTR_ERR (file);
-               goto error;
-       }
+	if (IS_ERR(file)) {
+		r = PTR_ERR (file);
+		goto error;
+	}
 
-       if (first_import) {
-	       /* This is the first time the file is imported on this node
+	if (first_import) {
+		/* This is the first time the file is imported on this node
 		* Setup the DVFS file field and inc the DVFS counter.
 		*/
-               file->f_objid = dvfs_objid;
-               dvfs_file->file = file;
+		file->f_objid = dvfs_objid;
+		dvfs_file->file = file;
 
-               dvfs_file->count++;
-       }
+		dvfs_file->count++;
+	}
 
 error:
-       put_dvfs_file_struct(dvfs_objid);
-       return r;
+	put_dvfs_file_struct(dvfs_objid);
+	return r;
 }
 
 /*****************************************************************************/
