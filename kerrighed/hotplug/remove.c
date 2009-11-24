@@ -32,6 +32,7 @@ static DECLARE_WAIT_QUEUE_HEAD(all_removed_wqh);
 static void do_local_node_remove(struct rpc_desc *desc,
 				 struct hotplug_context *ctx)
 {
+	struct rpc_communicator *comm = ctx->ns->rpc_comm;
 	krgnodemask_t new_online;
 	int ret;
 
@@ -72,6 +73,9 @@ static void do_local_node_remove(struct rpc_desc *desc,
 	down_write(&kerrighed_init_sem);
 	hooks_stop();
 	up_write(&kerrighed_init_sem);
+
+	rpc_communicator_put(comm);
+	ctx->ns->rpc_comm = NULL;
 
 	CLEAR_KERRIGHED_NODE_FLAGS(KRGFLAGS_STOPPING);
 

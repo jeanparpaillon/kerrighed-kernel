@@ -14,6 +14,7 @@
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/hotplug.h>
+#include <kerrighed/namespace.h>
 #include <kddm/kddm.h>
 #include "protocol_action.h"
 #include "internal.h"
@@ -167,12 +168,17 @@ static void add_browse_sets(void *_set, void *_data)
 
 };
 
-static void set_add(krgnodemask_t * vector)
+static void set_add(struct hotplug_context *ctx)
 {
+	krgnodemask_t *vector = &ctx->node_set.v;
 	struct browse_data param;
         kerrighed_node_t node;
 
 	if (__krgnode_isset(kerrighed_node_id, vector)) {
+		BUG_ON(kddm_def_ns->rpc_comm);
+		rpc_communicator_get(ctx->ns->rpc_comm);
+		kddm_def_ns->rpc_comm = ctx->ns->rpc_comm;
+
 		rpc_enable(REQ_KDDM_CHANGE_MGR);
 		rpc_enable(KDDM_CHANGE_PROB_OWNER);
 	}
@@ -594,6 +600,13 @@ static void set_remove(krgnodemask_t * vector)
 
 	unfreeze_kddm();
 };
+
+static void set_remove_distant(struct hotplug_context *ctx)
+{
+	BUG_ON(kddm_def_ns->rpc_comm != ctx->ns->rpc_comm);
+	rpc_communicator_put(kddm_def_ns->rpc_comm);
+	kddm_def_ns->rpc_comm = NULL;
+}
 
 /**
  *
@@ -1062,15 +1075,14 @@ static int kddm_notification(struct notifier_block *nb, hotplug_event_t event,
 
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:
-		set_add(&ctx->node_set.v);
+		set_add(ctx);
 		break;
 	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
 	case HOTPLUG_NOTIFY_REMOVE_ADVERT:
 		set_remove(&ctx->node_set.v);
 		break;
-
 	case HOTPLUG_NOTIFY_REMOVE_DISTANT:
-		/* Nothing to do */
+		set_remove_distant(ctx);
 		break;
 
 	case HOTPLUG_NOTIFY_REMOVE_ACK:

@@ -65,6 +65,8 @@ int copy_krg_ns(struct task_struct *task, struct nsproxy *new)
 				ns->root_nsproxy.pid_ns->krg_ns = ns;
 #endif
 
+				ns->rpc_comm = NULL;
+
 				rcu_assign_pointer(krg_ns, ns);
 			} else {
 				retval = -ENOMEM;
@@ -119,6 +121,8 @@ static void delayed_free_krg_ns(struct rcu_head *rcu)
 void free_krg_ns(struct krg_namespace *ns)
 {
 	unsigned long flags;
+
+	BUG_ON(ns->rpc_comm);
 
 	spin_lock_irqsave(&krg_ns_lock, flags);
 	BUG_ON(ns != krg_ns);
