@@ -625,7 +625,7 @@ int __rpc_send_ll(struct rpc_desc* desc,
 		link_seq_index++;
 	}
 	if (rpc_flags & RPC_FLAGS_NEW_DESC_ID)
-		rpc_new_desc_id_unlock(&static_communicator, desc->type == RPC_RQ_CLT);
+		rpc_new_desc_id_unlock(desc->comm, desc->type == RPC_RQ_CLT);
 
 	elem->h.from = kerrighed_node_id;
 	elem->h.client = desc->client;
@@ -896,8 +896,10 @@ server_rpc_desc_setup(struct rpc_connection *conn, const struct __rpc_header *h)
 	// by choice, we decide to use 0 as the corresponding id
 	krgnode_set(0, desc->nodes);
 
+	rpc_communicator_get(conn->comm);
+	desc->comm = conn->comm;
 	nodes = krgnodemask_of_node(h->client);
-	desc->conn_set = rpc_connection_set_alloc(conn->comm, &nodes);
+	desc->conn_set = rpc_connection_set_alloc(desc->comm, &nodes);
 	if (IS_ERR(desc->conn_set)) {
 		err = PTR_ERR(desc->conn_set);
 		goto err_conn_set;
@@ -932,6 +934,7 @@ out:
 err_emergency_send:
 	rpc_connection_set_put(desc->conn_set);
 err_conn_set:
+	rpc_communicator_put(desc->comm);
 	kmem_cache_free(rpc_desc_recv_cachep, desc->desc_recv[0]);
 err_desc_recv:
 	kmem_cache_free(rpc_desc_send_cachep, desc->desc_send);
