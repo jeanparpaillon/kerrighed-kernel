@@ -637,6 +637,9 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 		if (!ctx)
 			goto cancel;
 		ctx->node_set = msg->node_set;
+
+		rpc_communicator_get(desc->comm);
+		ctx->ns->rpc_comm = desc->comm;
 	}
 
 	err = rpc_pack_type(desc, ret);
@@ -686,15 +689,21 @@ out:
 	return;
 
 cancel:
+	if (ctx && !master) {
+		rpc_communicator_put(ctx->ns->rpc_comm);
+		ctx->ns->rpc_comm = NULL;
+	}
 	rpc_cancel(desc);
 	goto out;
 }
 
 static void cluster_start_worker(struct work_struct *work)
 {
+	struct rpc_communicator *comm;
 	struct rpc_desc *desc;
 	char *page;
 	kerrighed_node_t node;
+	bool boot;
 	int ret;
 	int err = -ENOMEM;
 
@@ -709,9 +718,18 @@ static void cluster_start_worker(struct work_struct *work)
 
 	free_page((unsigned long)page);
 
+	boot = krgnode_isset(kerrighed_node_id, cluster_start_ctx->node_set.v);
+	if (boot) {
+		BUG_ON(cluster_start_ctx->ns->rpc_comm);
+		cluster_start_ctx->ns->rpc_comm = rpc_find_get_communicator(0);
+		if (!cluster_start_ctx->ns->rpc_comm)
+			goto out;
+	}
+	comm = cluster_start_ctx->ns->rpc_comm;
+
 	desc = rpc_begin_m(CLUSTER_START, &cluster_start_ctx->node_set.v);
 	if (!desc)
-		goto out;
+		goto out_check_comm;
 	err = rpc_pack_type(desc, cluster_start_msg);
 	if (err)
 		goto end;
@@ -736,6 +754,12 @@ static void cluster_start_worker(struct work_struct *work)
 	 */
 end:
 	rpc_end(desc, 0);
+
+out_check_comm:
+	if (err && boot) {
+		rpc_communicator_put(comm);
+		cluster_start_ctx->ns->rpc_comm = NULL;
+	}
 out:
 	if (err)
 		printk(KERN_ERR "kerrighed: [ADD] Setting up new nodes failed! err=%d\n",
