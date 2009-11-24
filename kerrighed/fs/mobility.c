@@ -220,7 +220,7 @@ static int _cr_get_file_type_and_key(const struct file *file,
 		} else
 			return -ENOSYS;
 	} else if (file->f_objid) {
-		*type = REGULAR_DVFS_FILE;
+		*type = DVFS_FILE;
 		*key = file->f_objid;
 		if (locality) {
 			if (is_anonymous_pipe(file)) {
@@ -232,7 +232,7 @@ static int _cr_get_file_type_and_key(const struct file *file,
 				*locality = SHARED_ANY;
 		}
 	} else {
-		*type = REGULAR_FILE;
+		*type = LOCAL_FILE;
 		*key = (long)file;
 		if (locality)
 			*locality = LOCAL_ONLY;
@@ -1006,8 +1006,8 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 	if (r)
 		goto error;
 
-	if (type != REGULAR_FILE
-	    && type != REGULAR_DVFS_FILE
+	if (type != LOCAL_FILE
+	    && type != DVFS_FILE
 	    && type != UNSUPPORTED_FILE)
 		goto err_bad_data;
 
@@ -1032,13 +1032,13 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 	}
 
 	switch (type) {
-	case REGULAR_FILE:
-		r = cr_link_to_local_regular_file(action, ghost, task,
-						  returned_file, key);
+	case LOCAL_FILE:
+		r = cr_link_to_local_file(action, ghost, task,
+					  returned_file, key);
 		break;
-	case REGULAR_DVFS_FILE:
-		r = cr_link_to_dvfs_regular_file(action, ghost, task,
-						 returned_file, key);
+	case DVFS_FILE:
+		r = cr_link_to_dvfs_file(action, ghost, task,
+					 returned_file, key);
 		break;
 	case UNSUPPORTED_FILE:
 		*returned_file = NULL;
