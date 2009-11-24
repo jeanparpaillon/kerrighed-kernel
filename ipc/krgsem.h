@@ -8,7 +8,8 @@ int krg_ipc_sem_newary(struct ipc_namespace *ns, struct sem_array *sma);
 void krg_ipc_sem_freeary(struct ipc_namespace *ns,
 			 struct kern_ipc_perm *ipcp);
 
-void krg_ipc_sem_wakeup_process(struct sem_queue *q, int error);
+void krg_ipc_sem_wakeup_process(struct sem_array *sma, struct sem_queue *q,
+				int error);
 
 int krg_ipc_sem_copy_semundo(unsigned long clone_flags,
 			     struct task_struct *tsk);
