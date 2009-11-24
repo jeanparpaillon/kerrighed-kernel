@@ -129,6 +129,7 @@ struct rpc_desc_elem {
 
 struct rpc_tx_elem {
 	krgnodemask_t nodes;
+	struct rpc_connection_set *conn_set;
 	kerrighed_node_t index;
 	kerrighed_node_t link_seq_index;
 	void *data;

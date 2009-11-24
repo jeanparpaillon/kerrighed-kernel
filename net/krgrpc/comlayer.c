@@ -154,13 +154,13 @@ void __rpc_get_raw_data(void *data){
 }
 
 static
-inline int __send_iovec(kerrighed_node_t node, int nr_iov, struct iovec *iov)
+inline
+int __send_iovec(struct tipc_connection *conn, int nr_iov, struct iovec *iov)
 {
 	struct tipc_name name = {
 		.type = TIPC_KRG_SERVER_TYPE,
-		.instance = node
+		.instance = conn->conn.peer
 	};
-	struct tipc_connection *conn = to_ll(static_communicator.conn[node]);
 	struct __rpc_header *h = iov[0].iov_base;
 	int err;
 
@@ -179,12 +179,12 @@ inline int __send_iovec(kerrighed_node_t node, int nr_iov, struct iovec *iov)
 }
 
 static
-inline int send_iovec(kerrighed_node_t node, int nr_iov, struct iovec *iov)
+inline int send_iovec(struct tipc_connection *conn, int nr_iov, struct iovec *iov)
 {
 	int err;
 
 	local_bh_disable();
-	err = __send_iovec(node, nr_iov, iov);
+	err = __send_iovec(conn, nr_iov, iov);
 	local_bh_enable();
 
 	return err;
@@ -229,7 +229,7 @@ static void __rpc_tx_elem_free(struct rpc_tx_elem *elem)
 static int __rpc_tx_elem_send(struct rpc_tx_elem *elem, int link_seq_index,
 			      kerrighed_node_t node)
 {
-	struct tipc_connection *conn = to_ll(static_communicator.conn[node]);
+	struct tipc_connection *conn = to_ll(elem->conn_set->conn[node]);
 	int err = 0;
 
 	elem->h.link_seq_id = elem->link_seq_id[link_seq_index];
@@ -237,7 +237,7 @@ static int __rpc_tx_elem_send(struct rpc_tx_elem *elem, int link_seq_index,
 		goto out;
 
 	/* try to send */
-	err = send_iovec(node, ARRAY_SIZE(elem->iov), elem->iov);
+	err = send_iovec(conn, ARRAY_SIZE(elem->iov), elem->iov);
 
 out:
 	return err;
@@ -279,7 +279,7 @@ void tipc_send_ack_worker(struct work_struct *work)
 		list_del_init(&conn->ack_list);
 		spin_unlock_bh(&tipc_ack_list_lock);
 
-		err = send_iovec(conn->conn.peer, ARRAY_SIZE(iov), iov);
+		err = send_iovec(conn, ARRAY_SIZE(iov), iov);
 		if (err)
 			send_acks(conn);
 		rpc_connection_put(&conn->conn);
@@ -479,7 +479,7 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 
 			iter->h.link_seq_id = iter->link_seq_id[link_seq_index];
 
-			conn = to_ll(static_communicator.conn[node]);
+			conn = to_ll(iter->conn_set->conn[node]);
 			if (iter->h.link_seq_id > conn->send_ack_id)
 				goto next_iter;
 
@@ -490,6 +490,7 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 	next_iter:
 		if(need_to_free){
 			list_del(&iter->tx_queue);
+			rpc_connection_set_put(iter->conn_set);
 			__rpc_tx_elem_free(iter);
 		}
 	}
@@ -613,9 +614,12 @@ int __rpc_send_ll(struct rpc_desc* desc,
 			return -ENOMEM;
 	}
 
+	rpc_connection_set_get(desc->conn_set);
+	elem->conn_set = desc->conn_set;
+
 	link_seq_index = 0;
 	__for_each_krgnode_mask(node, nodes) {
-		conn = to_ll(static_communicator.conn[node]);
+		conn = to_ll(elem->conn_set->conn[node]);
 		elem->link_seq_id[link_seq_index] =
 			atomic_long_inc_return(&conn->send_seq_id);
 		link_seq_index++;
