@@ -328,11 +328,10 @@ struct cr_file_link {
 	void *desc;
 };
 
-int __cr_link_to_regular_file(struct epm_action *action,
-			      ghost_t *ghost,
-			      struct task_struct *task,
-			      struct cr_file_link *file_link,
-			      struct file **returned_file)
+static int __cr_link_to_file(struct epm_action *action, ghost_t *ghost,
+			     struct task_struct *task,
+			     struct cr_file_link *file_link,
+			     struct file **returned_file)
 {
 	int r = 0;
 
@@ -395,10 +394,10 @@ exit:
 	return r;
 }
 
-int cr_link_to_local_regular_file(struct epm_action *action, ghost_t *ghost,
-				  struct task_struct *task,
-				  struct file **returned_file,
-				  long key)
+int cr_link_to_local_file(struct epm_action *action, ghost_t *ghost,
+			  struct task_struct *task,
+			  struct file **returned_file,
+			  long key)
 {
 	int r = 0;
 	struct cr_file_link *file_link;
@@ -407,18 +406,17 @@ int cr_link_to_local_regular_file(struct epm_action *action, ghost_t *ghost,
 	 imported in import_shared_objects */
 
 	file_link = get_imported_shared_object(action->restart.app,
-					       REGULAR_FILE, key);
+					       LOCAL_FILE, key);
 
-	r = __cr_link_to_regular_file(action, ghost, task, file_link,
-				      returned_file);
+	r = __cr_link_to_file(action, ghost, task, file_link, returned_file);
+
 	return r;
 }
 
-int cr_link_to_dvfs_regular_file(struct epm_action *action,
-				 ghost_t *ghost,
-				 struct task_struct *task,
-				 struct file **returned_file,
-				 long key)
+int cr_link_to_dvfs_file(struct epm_action *action, ghost_t *ghost,
+			 struct task_struct *task,
+			 struct file **returned_file,
+			 long key)
 {
 	int r = 0;
 	struct cr_file_link *file_link;
@@ -427,10 +425,9 @@ int cr_link_to_dvfs_regular_file(struct epm_action *action,
 	 imported in import_shared_objects */
 
 	file_link = get_imported_shared_object(action->restart.app,
-					       REGULAR_DVFS_FILE, key);
+					       DVFS_FILE, key);
 
-	r = __cr_link_to_regular_file(action, ghost, task, file_link,
-				      returned_file);
+	r = __cr_link_to_file(action, ghost, task, file_link, returned_file);
 	return r;
 }
 
@@ -526,9 +523,9 @@ struct dvfs_mobility_operations dvfs_mobility_regular_ops = {
 	.file_import = regular_file_import,
 };
 
-static int cr_export_now_regular_file(struct epm_action *action, ghost_t *ghost,
-				      struct task_struct *task,
-				      union export_args *args)
+static int cr_export_now_file(struct epm_action *action, ghost_t *ghost,
+			      struct task_struct *task,
+			      union export_args *args)
 {
 	int r, tty;
 
@@ -718,12 +715,12 @@ static int prepare_restart_data_faf_file(struct file *f,
 }
 #endif
 
-static int cr_import_now_regular_file(struct epm_action *action,
-				      ghost_t *ghost,
-				      struct task_struct *fake,
-				      int local_only,
-				      void **returned_data,
-				      size_t *data_size)
+static int cr_import_now_file(struct epm_action *action,
+			      ghost_t *ghost,
+			      struct task_struct *fake,
+			      int local_only,
+			      void **returned_data,
+			      size_t *data_size)
 {
 	int r, tty, desc_size;
 	struct file *f;
@@ -793,8 +790,7 @@ error:
 	return r;
 }
 
-int cr_import_complete_regular_file(struct task_struct *fake,
-				    void *_file_link)
+static int cr_import_complete_file(struct task_struct *fake, void *_file_link)
 {
 	struct cr_file_link *file_link = _file_link;
 	struct file *file;
@@ -825,8 +821,7 @@ int cr_import_complete_regular_file(struct task_struct *fake,
 	return 0;
 }
 
-int cr_delete_regular_file(struct task_struct *fake,
-			   void *_file_link)
+static int cr_delete_file(struct task_struct *fake, void *_file_link)
 {
 	int r = 0;
 	struct cr_file_link *file_link = _file_link;
@@ -862,10 +857,10 @@ error:
 	return 0;
 }
 
-struct shared_object_operations cr_shared_regular_file_ops = {
-	.export_now        = cr_export_now_regular_file,
+struct shared_object_operations cr_shared_file_ops = {
+	.export_now        = cr_export_now_file,
 	.export_user_info  = cr_export_user_info_file,
-	.import_now        = cr_import_now_regular_file,
-	.import_complete   = cr_import_complete_regular_file,
-	.delete            = cr_delete_regular_file,
+	.import_now        = cr_import_now_file,
+	.import_complete   = cr_import_complete_file,
+	.delete            = cr_delete_file,
 };

@@ -43,8 +43,8 @@ enum shared_obj_type {
 	PIPE_INODE,
 
 	/* file descriptors */
-	REGULAR_FILE,
-	REGULAR_DVFS_FILE,
+	LOCAL_FILE,
+	DVFS_FILE,
 	UNSUPPORTED_FILE,
 
 	/* other objects */
