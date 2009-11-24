@@ -325,9 +325,9 @@ int init_rpc(void)
 	if(res)
 		return res;
 
-	res = rpc_monitor_init();
-	if(res)
-		return res;
+	/* res = rpc_monitor_init(); */
+	/* if(res) */
+	/*         return res; */
 	
 	printk("RPC initialisation done\n");
 	
