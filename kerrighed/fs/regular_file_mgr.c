@@ -23,64 +23,11 @@
 #include <kerrighed/faf_file_mgr.h>
 #endif
 #include <kerrighed/file.h>
+#include <kerrighed/file_stat.h>
 #include <kerrighed/ghost_helpers.h>
 #include <kerrighed/regular_file_mgr.h>
 #include <kerrighed/physical_fs.h>
 #include "mobility.h"
-
-int is_pipe(const struct file *file)
-{
-	umode_t i_mode;
-
-#ifdef CONFIG_KRG_FAF
-	if (file->f_flags & O_FAF_CLT)
-		i_mode = ((struct faf_client_data*)file->private_data)->i_mode;
-	else
-#endif
-		i_mode = file->f_dentry->d_inode->i_mode;
-
-	return S_ISFIFO(i_mode);
-}
-
-static int __is_pipe_named(const struct file *file)
-{
-#ifdef CONFIG_KRG_FAF
-	if (file->f_flags & O_FAF_CLT)
-		return ((struct faf_client_data*)file->private_data)->is_named_pipe;
-#endif
-
-	return strlen(file->f_dentry->d_name.name);
-}
-
-int is_anonymous_pipe(const struct file *file)
-{
-	if (!is_pipe(file))
-		return 0;
-
-	return (!__is_pipe_named(file));
-}
-
-int is_named_pipe(const struct file *file)
-{
-	if (!is_pipe(file))
-		return 0;
-
-	return (__is_pipe_named(file));
-}
-
-int is_socket(const struct file *file)
-{
-	umode_t i_mode;
-
-#ifdef CONFIG_KRG_FAF
-	if (file->f_flags & O_FAF_CLT)
-		i_mode = ((struct faf_client_data*)file->private_data)->i_mode;
-	else
-#endif
-		i_mode = file->f_dentry->d_inode->i_mode;
-
-	return S_ISSOCK(i_mode);
-}
 
 /*****************************************************************************/
 /*                                                                           */
@@ -188,20 +135,6 @@ int check_flush_file (struct epm_action *action,
 	return err;
 }
 
-static char *get_filename(struct file* file, char *buffer, int buffer_size)
-{
-	char *filename;
-
-#ifdef CONFIG_KRG_FAF
-	if (file->f_flags & O_FAF_CLT)
-		filename = krg_faf_d_path(file, buffer, buffer_size);
-	else
-#endif
-		filename = physical_d_path(&file->f_path, buffer);
-
-	return filename;
-}
-
 /** Return a kerrighed descriptor corresponding to the given file.
  *  @author Renaud Lottiaux, Matthieu Fertré
  *
@@ -215,16 +148,13 @@ static char *get_filename(struct file* file, char *buffer, int buffer_size)
 static int get_regular_file_krg_desc(struct file *file, void **desc,
 				     int *desc_size)
 {
-	char *tmp = (char *) __get_free_page (GFP_KERNEL);
-	char *file_name;
+	char *tmp, *file_name;
 	struct regular_file_krg_desc *data;
 	int size = 0, name_len;
 	int r = -ENOENT;
 
 #ifdef CONFIG_KRG_IPC
-	BUG_ON(file->f_op == &krg_shm_file_operations);
-
-	if (file->f_op == &shm_file_operations) {
+	if (is_shm(file)) {
 		r = get_shm_file_krg_desc(file, desc, desc_size);
 		goto exit;
 	}
@@ -234,10 +164,16 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 		goto exit;
 	}
 
-	file_name = get_filename(file, tmp, PAGE_SIZE);
+	tmp = (char *)__get_free_page(GFP_KERNEL);
+	if (!tmp) {
+		r = -ENOMEM;
+		goto exit;
+	}
+
+	file_name = get_phys_filename(file, tmp);
 
 	if (!file_name)
-		goto exit;
+		goto exit_free_page;
 
 	name_len = strlen (file_name) + 1;
 	size = sizeof (struct regular_file_krg_desc) + name_len;
@@ -245,7 +181,7 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 	data = kmalloc (size, GFP_KERNEL);
 	if (!data) {
 		r = -ENOMEM;
-		goto exit;
+		goto exit_free_page;
 	}
 
 	data->type = FILE;
@@ -276,8 +212,9 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 	*desc = data;
 	*desc_size = size;
 	r = 0;
-exit:
+exit_free_page:
 	free_page ((unsigned long) tmp);
+exit:
 	return r;
 }
 

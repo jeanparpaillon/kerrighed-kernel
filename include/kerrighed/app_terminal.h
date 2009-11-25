@@ -11,8 +11,6 @@
 
 /*--------------------------------------------------------------------------*/
 
-int is_tty(struct file *file);
-
 struct file *get_valid_terminal(void);
 
 void app_set_checkpoint_terminal(struct app_struct *app,
