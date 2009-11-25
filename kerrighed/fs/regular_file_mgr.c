@@ -138,27 +138,30 @@ struct file *create_file_entry_from_krg_desc (struct task_struct *task,
  *  @return   0 if everything ok.
  *            Negative value otherwise.
  */
-struct file *import_regular_file_from_krg_desc (struct task_struct *task,
-                                                void *_desc)
+static struct file *import_regular_file_from_krg_desc(
+	struct task_struct *task, struct regular_file_krg_desc *desc)
 {
-	struct regular_file_krg_desc *desc = _desc;
+	struct file *file;
 
 	BUG_ON (!task);
 	BUG_ON (!desc);
 
-	desc->file.filename = (char *) &desc[1];
-
 	if (desc->type == PIPE)
-		return reopen_pipe_file_entry_from_krg_desc(task, desc);
+		file = reopen_pipe_file_entry_from_krg_desc(task, desc);
 #ifdef CONFIG_KRG_IPC
 	else if (desc->type == SHM)
-		return reopen_shm_file_entry_from_krg_desc (task, desc);
+		file = reopen_shm_file_entry_from_krg_desc(task, desc);
 #endif
+	else {
+		desc->file.filename = (char *) &desc[1];
 
-	if (desc->file.ctnrid != KDDM_SET_UNUSED)
-		return create_file_entry_from_krg_desc (task, desc);
-	else
-		return reopen_file_entry_from_krg_desc (task, desc);
+		if (desc->file.ctnrid != KDDM_SET_UNUSED)
+			file = create_file_entry_from_krg_desc(task, desc);
+		else
+			file = reopen_file_entry_from_krg_desc(task, desc);
+	}
+
+	return file;
 }
 
 int check_flush_file (struct epm_action *action,
@@ -528,7 +531,7 @@ int regular_file_export (struct epm_action *action,
 }
 
 int __regular_file_import_from_desc(struct epm_action *action,
-				    void *desc,
+				    struct regular_file_krg_desc *desc,
 				    struct task_struct *task,
 				    struct file **returned_file)
 {
@@ -558,17 +561,17 @@ exit:
  *  @return   0 if everything ok.
  *            Negative value otherwise.
  */
-int regular_file_import (struct epm_action *action,
-			 ghost_t *ghost,
-                         struct task_struct *task,
-                         struct file **returned_file)
+int regular_file_import(struct epm_action *action,
+			ghost_t *ghost,
+			struct task_struct *task,
+			struct file **returned_file)
 {
-	void *desc;
+	struct regular_file_krg_desc *desc;
 	int desc_size, r = 0;
 
 	BUG_ON(action->type == EPM_CHECKPOINT);
 
-	r = ghost_read_file_krg_desc(ghost, &desc, &desc_size);
+	r = ghost_read_file_krg_desc(ghost, (void **)(&desc), &desc_size);
 	if (r)
 		goto exit;
 
