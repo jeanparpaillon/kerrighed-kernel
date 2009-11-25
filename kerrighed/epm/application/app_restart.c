@@ -17,6 +17,7 @@
 #include <kerrighed/app_terminal.h>
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/physical_fs.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
@@ -1246,11 +1247,13 @@ int app_restart(struct restart_request *req,
         if (req->flags & GET_RESTART_CMD_PTS) {
 		if (!one_terminal) {
 			r = -EPERM;
+			ckpt_err(NULL, r, "Fail to replace terminal");
 			goto exit;
 		}
 		term = get_valid_terminal();
 		if (!term) {
 			r = -EINVAL;
+			ckpt_err(NULL, r, "Fail to replace terminal");
 			goto exit;
 		}
         }
