@@ -9,32 +9,13 @@
 #include <net/krgrpc/rpc.h>
 #include <linux/file.h>
 #include <kerrighed/file.h>
+#include <kerrighed/file_stat.h>
 #include <kerrighed/ghost_helpers.h>
 #include <kerrighed/regular_file_mgr.h>
 #include <kerrighed/faf.h>
 #include <kerrighed/faf_file_mgr.h>
 #include <kerrighed/app_terminal.h>
 #include <kerrighed/app_shared.h>
-
-extern const struct file_operations tty_fops;
-extern const struct file_operations hung_up_tty_fops;
-
-int is_tty(struct file *file)
-{
-	int r = 0;
-
-	if (!file)
-		return 0;
-
-	if (file->f_flags & O_FAF_CLT) {
-		if (file->f_flags & O_FAF_TTY)
-			r = 1;
-	} else if (file->f_op == &tty_fops
-		   || file->f_op == &hung_up_tty_fops)
-		r = 1;
-
-	return r;
-}
 
 struct file *get_valid_terminal(void)
 {
