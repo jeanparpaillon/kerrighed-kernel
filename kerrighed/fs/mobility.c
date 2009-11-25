@@ -29,6 +29,7 @@
 #include <kerrighed/app_shared.h>
 #include <kerrighed/app_terminal.h>
 #include <kerrighed/file.h>
+#include <kerrighed/file_stat.h>
 #include "mobility.h"
 #include <kerrighed/regular_file_mgr.h>
 #include <kerrighed/physical_fs.h>
