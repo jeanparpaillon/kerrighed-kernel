@@ -92,14 +92,21 @@ struct task_struct *restart_task_from_disk(struct epm_action *action,
 					   long app_id,
 					   int chkpt_sn)
 {
+	int r;
 	ghost_t *ghost;
 	struct task_struct *task;
 
 	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn,
 				  "task_%d.bin", pid);
 
-	if (IS_ERR(ghost))
-		return ERR_PTR(PTR_ERR(ghost));
+	if (IS_ERR(ghost)) {
+		r = PTR_ERR(ghost);
+		ckpt_err(action, r,
+			 "Fail to open file /var/chkpt/%ld/v%d/task_%d.bin to "
+			 "restart process %d",
+			 app_id, chkpt_sn, pid, pid);
+		return ERR_PTR(r);
+	}
 
 	/* Recreate the process */
 

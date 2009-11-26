@@ -129,6 +129,12 @@ int checkpoint_task_on_disk(struct epm_action *action,
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
+		ckpt_err(action, r,
+			 "Fail to create file /var/chkpt/%ld/v%d/task_%d.bin "
+			 "to checkpoint process %d",
+			 app->app_id, app->chkpt_sn,
+			 task_pid_knr(task_to_checkpoint),
+			 task_pid_knr(task_to_checkpoint));
 		goto exit;
 	}
 

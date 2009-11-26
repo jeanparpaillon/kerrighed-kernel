@@ -47,6 +47,9 @@ static int save_app_kddm_object(struct app_kddm_object *obj)
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
+		ckpt_err(NULL, r,
+			 "Fail to create file /var/chkpt/%ld/v%d/global.bin",
+			 obj->app_id, obj->chkpt_sn);
 		goto exit;
 	}
 
@@ -181,6 +184,9 @@ static inline int save_local_app(struct app_struct *app, int chkpt_sn)
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
+		ckpt_err(NULL, r,
+			 "Fail to create file /var/chkpt/%ld/v%d/node_%u.bin",
+			 app->app_id, chkpt_sn, kerrighed_node_id);
 		goto exit;
 	}
 
