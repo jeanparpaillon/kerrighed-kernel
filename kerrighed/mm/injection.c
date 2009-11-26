@@ -149,8 +149,8 @@ static void do_notify_mem(unsigned long unused)
 	krgnodes_copy(nodes, krgnode_online_map);
 	krgnode_clear(kerrighed_node_id, nodes);
 
-	rpc_async_m(RPC_MM_NOTIFY_LOW_MEM, &nodes, &mem_usage_notified,
-		    sizeof(mem_usage_notified));
+	rpc_async_m(RPC_MM_NOTIFY_LOW_MEM, kddm_def_ns->rpc_comm, &nodes,
+		    &mem_usage_notified, sizeof(mem_usage_notified));
 }
 
 

@@ -284,7 +284,8 @@ int find_kddm_set_remotely(struct kddm_set *kddm_set)
 	kddm_id.set_id = kddm_set->id;
 	kddm_id.ns_id = kddm_set->ns->id;
 
-	desc = rpc_begin(REQ_KDDM_SET_LOOKUP, kddm_set_mgr_node_id);
+	desc = rpc_begin(REQ_KDDM_SET_LOOKUP,
+			 kddm_set->ns->rpc_comm, kddm_set_mgr_node_id);
 	rpc_pack_type(desc, kddm_id);
 
 	msg_size = sizeof(msg_kddm_set_t) + MAX_PRIVATE_DATA_SIZE;
@@ -665,7 +666,8 @@ int _destroy_kddm_set(struct kddm_set * kddm_set)
 	kddm_id.set_id = kddm_set->id;
 	kddm_id.ns_id = kddm_set->ns->id;
 
-	rpc_async_m(REQ_KDDM_SET_DESTROY, &krgnode_online_map,
+	rpc_async_m(REQ_KDDM_SET_DESTROY,
+		    kddm_set->ns->rpc_comm, &krgnode_online_map,
 		    &kddm_id, sizeof(kddm_id_msg_t));
 	return 0;
 }

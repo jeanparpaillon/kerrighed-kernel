@@ -44,6 +44,7 @@
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/hotplug.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/workqueue.h>
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/ghost.h>
@@ -291,10 +292,13 @@ static struct rpc_desc *__global_config_op_begin(krgnodemask_t *nodes,
 	struct config_op_message msg = {
 		.op = op
 	};
+	struct krg_namespace *ns;
 	struct rpc_desc *desc;
 	int err;
 
-	desc = rpc_begin_m(GLOBAL_CONFIG_OP, nodes);
+	ns = find_get_krg_ns();
+	desc = rpc_begin_m(GLOBAL_CONFIG_OP, ns->rpc_comm, nodes);
+	put_krg_ns(ns);
 	if (!desc)
 		return ERR_PTR(-ENOMEM);
 

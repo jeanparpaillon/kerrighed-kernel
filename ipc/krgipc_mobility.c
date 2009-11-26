@@ -798,7 +798,7 @@ int __sys_msgq_checkpoint(int msqid, int fd)
 
 	file = fget(fd);
 
-	desc = rpc_begin(IPC_MSG_CHKPT, *master_node);
+	desc = rpc_begin(IPC_MSG_CHKPT, master_set->ns->rpc_comm, *master_node);
 	_kddm_put_object(master_set, index);
 
 	msg.msqid = msqid;

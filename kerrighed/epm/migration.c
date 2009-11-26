@@ -163,7 +163,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	if (!migration_implemented(tsk))
 		return -ENOSYS;
 
-	desc = rpc_begin(RPC_EPM_MIGRATE, target);
+	desc = rpc_begin(RPC_EPM_MIGRATE, tsk->nsproxy->krg_ns->rpc_comm, target);
 	if (!desc)
 		return -ENOMEM;
 

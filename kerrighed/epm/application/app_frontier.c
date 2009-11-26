@@ -13,6 +13,7 @@
 #include <kerrighed/krginit.h>
 #include <kerrighed/pid.h>
 #include <kerrighed/application.h>
+#include <kddm/name_space.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include "../checkpoint.h"
@@ -133,7 +134,7 @@ long get_appid_from_pid(pid_t pid)
 	msg.requester = kerrighed_node_id;
 	msg.pid = pid;
 
-	desc = rpc_begin(APP_REMOTE_CHKPT, n);
+	desc = rpc_begin(APP_REMOTE_CHKPT, kddm_def_ns->rpc_comm, n);
 	if (!desc)
 		goto out_unlock;
 	err = rpc_pack_type(desc, msg);

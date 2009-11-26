@@ -786,7 +786,7 @@ int global_stop(struct app_kddm_object *obj)
 	msg.requester = kerrighed_node_id;
 	msg.app_id = obj->app_id;
 
-	desc = rpc_begin_m(APP_STOP, &obj->nodes);
+	desc = rpc_begin_m(APP_STOP, kddm_def_ns->rpc_comm, &obj->nodes);
 	err_rpc = rpc_pack_type(desc, msg);
 	if (err_rpc)
 		goto err_rpc;
@@ -905,7 +905,7 @@ static int global_continue(struct app_kddm_object *obj)
 	else
 		msg.first_run = 0;
 
-	desc = rpc_begin_m(APP_CONTINUE, &obj->nodes);
+	desc = rpc_begin_m(APP_CONTINUE, kddm_def_ns->rpc_comm, &obj->nodes);
 
 	r = rpc_pack_type(desc, msg);
 	if (r)
@@ -1011,7 +1011,7 @@ static int global_kill(struct app_kddm_object *obj, int signal)
 	msg.app_id = obj->app_id;
 	msg.signal = signal;
 
-	desc = rpc_begin_m(APP_KILL, &obj->nodes);
+	desc = rpc_begin_m(APP_KILL, kddm_def_ns->rpc_comm, &obj->nodes);
 
 	r = rpc_pack_type(desc, msg);
 	if (r)

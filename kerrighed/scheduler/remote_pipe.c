@@ -13,6 +13,7 @@
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/krginit.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/workqueue.h>
 #include <kerrighed/scheduler/pipe.h>
 #include <kerrighed/scheduler/global_config.h>
@@ -140,6 +141,7 @@ static int start_pipe_get_remote_value(
 	const void *in_value_p, unsigned int in_nr)
 {
 	struct remote_pipe_desc *show_desc = &sink->remote_pipe;
+	struct krg_namespace *ns;
 	struct rpc_desc *desc;
 	size_t in_size = sink->type->get_value_types.in_type_size;
 	int err;
@@ -150,7 +152,9 @@ static int start_pipe_get_remote_value(
 		return scheduler_source_get_value(local_pipe->source,
 						  value_p, nr,
 						  in_value_p, in_nr);
-	desc = rpc_begin(SCHED_PIPE_GET_REMOTE_VALUE, node);
+	ns = find_get_krg_ns();
+	desc = rpc_begin(SCHED_PIPE_GET_REMOTE_VALUE, ns->rpc_comm, node);
+	put_krg_ns(ns);
 	if (!desc)
 		return -ENOMEM;
 	err = global_config_pack_item(desc, &local_pipe->config.cg_item);

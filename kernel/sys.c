@@ -1097,7 +1097,9 @@ static int krg_forward_setpgid(kerrighed_node_t node, pid_t pid, pid_t pgid)
 	msg.pgid = pgid;
 	msg.parent_session = task_session_knr(current);
 
-	retval = rpc_sync(PROC_FORWARD_SETPGID, node, &msg, sizeof(msg));
+	retval = rpc_sync(PROC_FORWARD_SETPGID,
+			  current->nsproxy->krg_ns->rpc_comm, node,
+			  &msg, sizeof(msg));
 
 out:
 	return retval;

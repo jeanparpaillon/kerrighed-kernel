@@ -45,7 +45,7 @@ struct kmem_cache *kddm_da_cachep;
  */
 static inline void send_msg_to_object_server(kerrighed_node_t dest,
 					     enum rpcid type,
-					     int ns_id,
+					     struct kddm_ns *ns,
 					     kddm_set_id_t set_id,
 					     objid_t objid,
 					     int flags,
@@ -56,14 +56,14 @@ static inline void send_msg_to_object_server(kerrighed_node_t dest,
 
 	BUG_ON(dest < 0 || dest > KERRIGHED_MAX_NODES);
 
-	msg_to_server.ns_id = ns_id;
+	msg_to_server.ns_id = ns->id;
 	msg_to_server.set_id = set_id;
 	msg_to_server.objid = objid;
 	msg_to_server.flags = flags;
 	msg_to_server.new_owner = new_owner;
 	msg_to_server.reply_node = kerrighed_node_id;
 
-	rpc_async(type, dest, &msg_to_server, sizeof(msg_server_t));
+	rpc_async(type, ns->rpc_comm, dest, &msg_to_server, sizeof(msg_server_t));
 }
 
 
@@ -98,7 +98,7 @@ static inline int send_msg_to_object_receiver(kerrighed_node_t dest,
 	object_send_msg.object_state = object_state;
 	object_send_msg.flags = flags;
 
-	desc = rpc_begin(OBJECT_SEND, dest);
+	desc = rpc_begin(OBJECT_SEND, set->ns->rpc_comm, dest);
 	if (!desc)
 		OOM;
 
@@ -208,7 +208,7 @@ void request_copies_invalidation(struct kddm_set * set,
 	krgnode_clear(kerrighed_node_id, nodes);
 	krgnode_clear(sender, nodes);
 
-	rpc_async_m(REQ_OBJECT_INVALID, &nodes,
+	rpc_async_m(REQ_OBJECT_INVALID, set->ns->rpc_comm, &nodes,
 		    &msgToServer, sizeof(msg_server_t));
 
 	return;
@@ -254,7 +254,8 @@ int request_copies_remove(struct kddm_set * set,
 		msgToServer.objid = objid;
 		msgToServer.reply_node = sender;
 
-		rpc_async_m(REQ_OBJECT_REMOVE, RMSET(obj_entry),
+		rpc_async_m(REQ_OBJECT_REMOVE,
+			    set->ns->rpc_comm, RMSET(obj_entry),
 			    &msgToServer, sizeof(msg_server_t));
 
 		need_wait = 1;
@@ -282,7 +283,7 @@ void request_object_on_write(struct kddm_set * set,
 			     int flags)
 {
 	send_msg_to_object_server(get_prob_owner(obj_entry), REQ_OBJECT_COPY,
-				  set->ns->id, set->id, objid,
+				  set->ns, set->id, objid,
 				  flags | KDDM_OBJ_COPY_ON_WRITE,
 				  kerrighed_node_id, 0);
 }
@@ -303,7 +304,7 @@ void request_object_on_read(struct kddm_set * set,
 			    int flags)
 {
 	send_msg_to_object_server(get_prob_owner(obj_entry), REQ_OBJECT_COPY,
-				  set->ns->id, set->id, objid,
+				  set->ns, set->id, objid,
 				  flags | KDDM_OBJ_COPY_ON_READ, 0, 0);
 }
 
@@ -322,7 +323,7 @@ void request_objects_remove_to_mgr(struct kddm_set * set,
 {
 	send_msg_to_object_server(get_prob_owner(obj_entry),
 				  REQ_OBJECT_REMOVE_TO_MGR,
-				  set->ns->id, set->id, objid, 0, 0, 0);
+				  set->ns, set->id, objid, 0, 0, 0);
 }
 
 
@@ -427,7 +428,7 @@ void send_no_object(struct kddm_set * set,
 		kddm_change_obj_state(set, obj_entry, objid, INV_COPY);
 	}
 
-	send_msg_to_object_server(dest_node, NO_OBJECT_SEND, set->ns->id,
+	send_msg_to_object_server(dest_node, NO_OBJECT_SEND, set->ns,
 				  set->id, objid, send_ownership,
 				  kerrighed_node_id, 0);
 }
@@ -468,7 +469,8 @@ void transfer_write_access_and_unlock(struct kddm_set * set,
 		return;
 	}
 
-	rpc_async(SEND_WRITE_ACCESS, dest_node, &msg, sizeof(msg_injection_t));
+	rpc_async(SEND_WRITE_ACCESS, set->ns->rpc_comm, dest_node,
+		  &msg, sizeof(msg_injection_t));
 
 	kddm_invalidate_local_object_and_unlock(obj_entry, set, objid,
 						INV_COPY);
@@ -521,7 +523,7 @@ void send_invalidation_ack(struct kddm_set * set,
 {
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
-	send_msg_to_object_server(dest_node, INVALIDATION_ACK, set->ns->id,
+	send_msg_to_object_server(dest_node, INVALIDATION_ACK, set->ns,
 				  set->id, objid, 0, kerrighed_node_id,
 				  0);
 }
@@ -542,7 +544,7 @@ void send_remove_ack(struct kddm_set * set,
 {
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
-	send_msg_to_object_server(dest_node, REMOVE_ACK, set->ns->id, set->id,
+	send_msg_to_object_server(dest_node, REMOVE_ACK, set->ns, set->id,
 				  objid, flags, 0, 0);
 }
 
@@ -568,7 +570,7 @@ void send_remove_ack2(struct kddm_set * set,
 	msg_to_server.objid = objid;
 	msg_to_server.req_id = 0;
 
-	rpc_async(REMOVE_ACK2, dest_node,
+	rpc_async(REMOVE_ACK2, set->ns->rpc_comm, dest_node,
 		  &msg_to_server, sizeof(msg_server_t));
 }
 
@@ -597,7 +599,8 @@ void send_remove_object_done(struct kddm_set * set,
 
 	DUP2_SET(rmset, &msg.rmset);
 
-	rpc_async(REMOVE_DONE, dest_node, &msg, sizeof(rm_done_msg_server_t));
+	rpc_async(REMOVE_DONE, set->ns->rpc_comm, dest_node,
+		  &msg, sizeof(rm_done_msg_server_t));
 }
 
 
@@ -708,7 +711,7 @@ void send_back_object_first_touch(struct kddm_set * set,
 	msgToServer.reply_node = kerrighed_node_id;
 	msgToServer.flags = flags;
 
-	rpc_async(req_type, dest_node,
+	rpc_async(req_type, set->ns->rpc_comm, dest_node,
 		  &msgToServer, sizeof(msg_server_t));
 
 	change_prob_owner(obj_entry, dest_node);
@@ -736,8 +739,8 @@ void request_change_prob_owner(struct kddm_set * set,
 	msg_to_server.objid = objid;
 	msg_to_server.new_owner = new_owner;
 
-	rpc_sync(KDDM_CHANGE_PROB_OWNER, dest_node, &msg_to_server,
-		 sizeof(msg_server_t));
+	rpc_sync(KDDM_CHANGE_PROB_OWNER, set->ns->rpc_comm, dest_node,
+		 &msg_to_server, sizeof(msg_server_t));
 }
 
 
@@ -767,7 +770,7 @@ void send_change_ownership_req(struct kddm_set * set,
 	changeOwnerMsg.reply_node = kerrighed_node_id;
 	changeOwnerMsg.owner_info = *master_info;
 
-	rpc_async(SEND_OWNERSHIP, dest_node,
+	rpc_async(SEND_OWNERSHIP, set->ns->rpc_comm, dest_node,
 		  &changeOwnerMsg, sizeof(msg_injection_t));
 
 	kddm_change_obj_state(set, obj_entry, objid, WAIT_CHG_OWN_ACK);
@@ -796,7 +799,7 @@ void ack_change_object_owner(struct kddm_set * set,
 	obj_entry->master_obj = *master_info;
 	kddm_change_obj_state(set, obj_entry, objid, READ_OWNER);
 
-	rpc_async(CHANGE_OWNERSHIP_ACK, dest_node,
+	rpc_async(CHANGE_OWNERSHIP_ACK, set->ns->rpc_comm, dest_node,
 		  &msgToServer, sizeof (msg_server_t));
 }
 

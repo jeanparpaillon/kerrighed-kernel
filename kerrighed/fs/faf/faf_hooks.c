@@ -147,7 +147,7 @@ off_t krg_faf_lseek (struct file * file,
 	msg.offset = offset;
 	msg.origin = origin;
 
-	desc = rpc_begin(RPC_FAF_LSEEK, data->server_id);
+	desc = rpc_begin(RPC_FAF_LSEEK, kddm_def_ns->rpc_comm, data->server_id);
 
 	rpc_pack_type(desc, msg);
 
@@ -183,7 +183,7 @@ long krg_faf_llseek (struct file *file,
 	msg.offset_low = offset_low;
 	msg.origin = origin;
 
-	desc = rpc_begin(RPC_FAF_LLSEEK, data->server_id);
+	desc = rpc_begin(RPC_FAF_LLSEEK, kddm_def_ns->rpc_comm, data->server_id);
 
 	rpc_pack_type(desc, msg);
 
@@ -223,7 +223,7 @@ ssize_t krg_faf_read(struct file * file, char *buf, size_t count, loff_t *pos)
 	msg.pos = *pos;
 
 	nr = -ENOMEM;
-	desc = rpc_begin(RPC_FAF_READ, data->server_id);
+	desc = rpc_begin(RPC_FAF_READ, kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc)
 		goto out;
 
@@ -313,7 +313,7 @@ ssize_t krg_faf_write(struct file * file, const char *buf,
 	msg.pos = *pos;
 
 	nr = -ENOMEM;
-	desc = rpc_begin(RPC_FAF_WRITE, data->server_id);
+	desc = rpc_begin(RPC_FAF_WRITE, kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc)
 		goto out;
 
@@ -398,7 +398,7 @@ ssize_t krg_faf_readv(struct file *file, const struct iovec __user *vec,
 	total_len = ret.ret;
 
 	ret.ret = -ENOMEM;
-	desc = rpc_begin(RPC_FAF_READV, data->server_id);
+	desc = rpc_begin(RPC_FAF_READV, kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc)
 		goto out;
 
@@ -462,7 +462,7 @@ ssize_t krg_faf_writev(struct file *file, const struct iovec __user *vec,
 	total_len = ret.ret;
 
 	ret.ret = -ENOMEM;
-	desc = rpc_begin(RPC_FAF_WRITEV, data->server_id);
+	desc = rpc_begin(RPC_FAF_WRITEV, kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc)
 		goto out;
 
@@ -527,7 +527,7 @@ long krg_faf_ioctl (struct file *file,
 	msg.arg = arg;
 
 	err = -ENOMEM;
-	desc = rpc_begin(RPC_FAF_IOCTL, data->server_id);
+	desc = rpc_begin(RPC_FAF_IOCTL, kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc)
 		goto out_err;
 
@@ -590,7 +590,7 @@ long krg_faf_fcntl (struct file *file,
 		msg.arg = arg;
 
 	r = -ENOLCK;
-	desc = rpc_begin(RPC_FAF_FCNTL, data->server_id);
+	desc = rpc_begin(RPC_FAF_FCNTL, kddm_def_ns->rpc_comm, data->server_id);
 	if (unlikely(!desc))
 		goto out;
 
@@ -659,6 +659,7 @@ long krg_faf_fcntl64 (struct file *file,
 
 	r = -ENOLCK;
 	desc = rpc_begin(RPC_FAF_FCNTL64,
+			 kddm_def_ns->rpc_comm,
 			 data->server_id);
 	if (unlikely(!desc))
 		goto out;
@@ -716,7 +717,7 @@ long krg_faf_fstat (struct file *file,
 
 	msg.server_fd = data->server_fd;
 
-	desc = rpc_begin(RPC_FAF_FSTAT, data->server_id);
+	desc = rpc_begin(RPC_FAF_FSTAT, kddm_def_ns->rpc_comm, data->server_id);
 
 	rpc_pack_type(desc, msg);
 
@@ -748,7 +749,7 @@ long krg_faf_fstatfs(struct file *file,
 
 	msg.server_fd = data->server_fd;
 
-	desc = rpc_begin(RPC_FAF_FSTATFS, data->server_id);
+	desc = rpc_begin(RPC_FAF_FSTATFS, kddm_def_ns->rpc_comm, data->server_id);
 
 	r = rpc_pack_type(desc, msg);
 	if (r)
@@ -785,7 +786,8 @@ long krg_faf_fsync (struct file *file)
 
 	msg.server_fd = data->server_fd;
 
-	r = rpc_sync(RPC_FAF_FSYNC, data->server_id, &msg, sizeof(msg));
+	r = rpc_sync(RPC_FAF_FSYNC, kddm_def_ns->rpc_comm, data->server_id,
+		     &msg, sizeof(msg));
 
 	return r;
 }
@@ -807,7 +809,7 @@ long krg_faf_flock (struct file *file,
 	msg.server_fd = data->server_fd;
 	msg.cmd = cmd;
 
-	desc = rpc_begin(RPC_FAF_FLOCK, data->server_id);
+	desc = rpc_begin(RPC_FAF_FLOCK, kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc)
 		return -ENOMEM;
 
@@ -850,7 +852,7 @@ static char *__krg_faf_d_path(const struct path *root, const struct file *file,
 	msg.deleted = !!deleted;
 	msg.count = size;
 
-	desc = rpc_begin(RPC_FAF_D_PATH, data->server_id);
+	desc = rpc_begin(RPC_FAF_D_PATH, kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc)
 		return ERR_PTR(-ENOMEM);
 	err = rpc_pack_type(desc, msg);
@@ -982,7 +984,7 @@ long krg_faf_bind (struct file * file,
 	msg.addrlen = addrlen;
 
 	r = -ENOMEM;
-	desc = rpc_begin(RPC_FAF_BIND, data->server_id);
+	desc = rpc_begin(RPC_FAF_BIND, kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc)
 		goto out;
 
@@ -1029,7 +1031,7 @@ long krg_faf_connect (struct file * file,
 
 	msg.addrlen = addrlen;
 
-	desc = rpc_begin(RPC_FAF_CONNECT, data->server_id);
+	desc = rpc_begin(RPC_FAF_CONNECT, kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc) {
 		r = -ENOMEM;
 		goto out;
@@ -1072,7 +1074,8 @@ long krg_faf_listen (struct file * file,
 
 	msg.backlog = backlog;
 
-	r = rpc_sync(RPC_FAF_LISTEN, data->server_id, &msg, sizeof(msg));
+	r = rpc_sync(RPC_FAF_LISTEN, kddm_def_ns->rpc_comm, data->server_id,
+		     &msg, sizeof(msg));
 
 	return r;
 }
@@ -1109,7 +1112,7 @@ long krg_faf_accept(struct file * file,
 		msg.addrlen = 0;
 	}
 
-	desc = rpc_begin(RPC_FAF_ACCEPT, data->server_id);
+	desc = rpc_begin(RPC_FAF_ACCEPT, kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc)
 		goto out_put_fd;
 
@@ -1195,7 +1198,8 @@ long krg_faf_getsockname (struct file * file,
 	if (get_user(msg.addrlen, usockaddr_len))
 		goto out;
 
-	desc = rpc_begin(RPC_FAF_GETSOCKNAME, data->server_id);
+	desc = rpc_begin(RPC_FAF_GETSOCKNAME,
+			 kddm_def_ns->rpc_comm, data->server_id);
 	rpc_pack_type(desc, msg);
 	pack_root(desc);
 
@@ -1228,7 +1232,8 @@ long krg_faf_getpeername (struct file * file,
 	if (get_user(msg.addrlen, usockaddr_len))
 		return -EFAULT;
 
-	desc = rpc_begin(RPC_FAF_GETPEERNAME, data->server_id);
+	desc = rpc_begin(RPC_FAF_GETPEERNAME,
+			 kddm_def_ns->rpc_comm, data->server_id);
 	rpc_pack_type(desc, msg);
 	pack_root(desc);
 	rpc_unpack_type(desc, r);
@@ -1254,7 +1259,8 @@ long krg_faf_shutdown (struct file * file,
 
 	msg.how = how;
 
-	r = rpc_sync(RPC_FAF_SHUTDOWN, data->server_id, &msg, sizeof(msg));
+	r = rpc_sync(RPC_FAF_SHUTDOWN, kddm_def_ns->rpc_comm, data->server_id,
+		     &msg, sizeof(msg));
 
 	return r;
 }
@@ -1277,7 +1283,8 @@ long krg_faf_setsockopt (struct file * file,
 	msg.optval = optval;
 	msg.optlen = optlen;
 
-	desc = rpc_begin(RPC_FAF_SETSOCKOPT, data->server_id);
+	desc = rpc_begin(RPC_FAF_SETSOCKOPT,
+			 kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc) {
 		r = -ENOMEM;
 		goto out;
@@ -1328,7 +1335,8 @@ long krg_faf_getsockopt (struct file * file,
 	msg.optval = optval;
 	msg.optlen = optlen;
 
-	desc = rpc_begin(RPC_FAF_GETSOCKOPT, data->server_id);
+	desc = rpc_begin(RPC_FAF_GETSOCKOPT,
+			 kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc) {
 		r = -ENOMEM;
 		goto out;
@@ -1374,7 +1382,8 @@ ssize_t krg_faf_sendmsg(struct file *file, struct msghdr *msghdr,
 	msg.total_len = total_len;
 	msg.flags = msghdr->msg_flags;
 
-	desc = rpc_begin(RPC_FAF_SENDMSG, data->server_id);
+	desc = rpc_begin(RPC_FAF_SENDMSG,
+			 kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc)
 		return -ENOMEM;
 	err = rpc_pack_type(desc, msg);
@@ -1418,7 +1427,8 @@ ssize_t krg_faf_recvmsg(struct file *file, struct msghdr *msghdr,
 	msg.total_len = total_len;
 	msg.flags = flags;
 
-	desc = rpc_begin(RPC_FAF_RECVMSG, data->server_id);
+	desc = rpc_begin(RPC_FAF_RECVMSG,
+			 kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc)
 		return -ENOMEM;
 	err = rpc_pack_type(desc, msg);
@@ -1479,7 +1489,8 @@ int krg_faf_poll_wait(struct file *file, int wait)
 	msg.objid = file->f_objid;
 	msg.wait = wait;
 
-	desc = rpc_begin(RPC_FAF_POLL_WAIT, data->server_id);
+	desc = rpc_begin(RPC_FAF_POLL_WAIT,
+			 kddm_def_ns->rpc_comm, data->server_id);
 	if (!desc)
 		goto out;
 	err = rpc_pack_type(desc, msg);
@@ -1524,7 +1535,8 @@ void krg_faf_poll_dequeue(struct file *file)
 
 	msg.server_fd = data->server_fd;
 	msg.objid = file->f_objid;
-	err = rpc_async(RPC_FAF_POLL_DEQUEUE, data->server_id,
+	err = rpc_async(RPC_FAF_POLL_DEQUEUE,
+			kddm_def_ns->rpc_comm, data->server_id,
 			&msg, sizeof(msg));
 	if (err)
 		printk("faf_poll: memory leak on server %d!\n", data->server_id);

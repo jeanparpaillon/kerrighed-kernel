@@ -396,7 +396,7 @@ int pidmap_map_add(struct hotplug_context *ctx)
 	BUG_ON(host_node == kerrighed_node_id);
 
 	err = -ENOMEM;
-	desc = rpc_begin(EPM_PIDMAP_STEAL, host_node);
+	desc = rpc_begin(EPM_PIDMAP_STEAL, ctx->ns->rpc_comm, host_node);
 	if (!desc)
 		goto unlock;
 

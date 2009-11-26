@@ -159,6 +159,7 @@ int __rpc_register(enum rpcid rpcid,
 		   unsigned long flags);
 
 struct rpc_desc* rpc_begin_m(enum rpcid rpcid,
+			     struct rpc_communicator *comm,
 			     krgnodemask_t* nodes);
 
 int rpc_cancel(struct rpc_desc* desc);
@@ -229,23 +230,25 @@ int rpc_register(enum rpcid rpcid,
 
 static inline
 struct rpc_desc* rpc_begin(enum rpcid rpcid,
+			   struct rpc_communicator *comm,
 			   kerrighed_node_t node){
 	krgnodemask_t nodes;
 
 	krgnodes_clear(nodes);
 	krgnode_set(node, nodes);
 
-	return rpc_begin_m(rpcid, &nodes);
+	return rpc_begin_m(rpcid, comm, &nodes);
 };
 
 static inline
 int rpc_async_m(enum rpcid rpcid,
+		struct rpc_communicator *comm,
 		krgnodemask_t* nodes,
 		const void* data, size_t size){
 	struct rpc_desc* desc;
 	int err = -ENOMEM;
 
-	desc = rpc_begin_m(rpcid, nodes);
+	desc = rpc_begin_m(rpcid, comm, nodes);
 	if (!desc)
 		goto out;
 
@@ -260,6 +263,7 @@ out:
 
 static inline
 int rpc_async(enum rpcid rpcid,
+	      struct rpc_communicator *comm,
 	      kerrighed_node_t node,
 	      const void* data, size_t size){
 	krgnodemask_t nodes;
@@ -267,11 +271,12 @@ int rpc_async(enum rpcid rpcid,
 	krgnodes_clear(nodes);
 	krgnode_set(node, nodes);
 	
-	return rpc_async_m(rpcid, &nodes, data, size);
+	return rpc_async_m(rpcid, comm, &nodes, data, size);
 };
 
 static inline
 int rpc_sync_m(enum rpcid rpcid,
+	       struct rpc_communicator *comm,
 	       krgnodemask_t* nodes,
 	       const void* data, size_t size){
 	struct rpc_desc *desc;
@@ -279,7 +284,7 @@ int rpc_sync_m(enum rpcid rpcid,
 	int i;
 
 	r = -ENOMEM;
-	desc = rpc_begin_m(rpcid, nodes);
+	desc = rpc_begin_m(rpcid, comm, nodes);
 	if (!desc)
 		goto out;
 
@@ -312,6 +317,7 @@ out:
 
 static inline
 int rpc_sync(enum rpcid rpcid,
+	     struct rpc_communicator *comm,
 	     kerrighed_node_t node,
 	     const void* data, size_t size){
 	krgnodemask_t nodes;
@@ -319,7 +325,7 @@ int rpc_sync(enum rpcid rpcid,
 	krgnodes_clear(nodes);
 	krgnode_set(node, nodes);
 	
-	return rpc_sync_m(rpcid, &nodes, data, size);
+	return rpc_sync_m(rpcid, comm, &nodes, data, size);
 };
 
 void rpc_enable(enum rpcid rpcid);

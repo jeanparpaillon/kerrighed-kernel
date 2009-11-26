@@ -88,7 +88,8 @@ static int do_nodes_add(struct hotplug_context *ctx)
 
 	/* Send request to all members of the current cluster */
 	for_each_online_krgnode(node)
-		rpc_async(NODE_ADD, node, &ctx->node_set, sizeof(ctx->node_set));
+		rpc_async(NODE_ADD, ctx->ns->rpc_comm, node,
+			  &ctx->node_set, sizeof(ctx->node_set));
 
 	printk("kerrighed: [ADD] Adding nodes succeeded.\n");
 

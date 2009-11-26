@@ -422,7 +422,7 @@ static int global_do_chkpt(struct app_kddm_object *obj, int flags)
 	msg.chkpt_sn = obj->chkpt_sn;
 	msg.flags = flags;
 
-	desc = rpc_begin_m(APP_DO_CHKPT, &obj->nodes);
+	desc = rpc_begin_m(APP_DO_CHKPT, kddm_def_ns->rpc_comm, &obj->nodes);
 	err_rpc = rpc_pack_type(desc, msg);
 	if (err_rpc)
 		goto err_rpc;
@@ -642,7 +642,7 @@ int app_cr_exclude(struct cr_mm_region *mm_regions)
 		goto exit_kddmput;
 	}
 
-	desc = rpc_begin_m(APP_EXCL_MM_REGION, &obj->nodes);
+	desc = rpc_begin_m(APP_EXCL_MM_REGION, kddm_def_ns->rpc_comm, &obj->nodes);
 	if (!desc) {
 		r = -ENOMEM;
 		goto exit_kddmput;

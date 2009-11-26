@@ -11,6 +11,7 @@
 #include <linux/sched.h>
 
 #include <net/krgrpc/rpc.h>
+#include <kddm/name_space.h>
 #include <kerrighed/action.h>
 #include <kerrighed/faf.h>
 #include <kerrighed/file.h>
@@ -182,7 +183,8 @@ void check_last_faf_client_close(struct file *file,
 		msg.server_fd = data->server_fd;
 		msg.objid = file->f_objid;
 
-		rpc_async(RPC_FAF_NOTIFY_CLOSE, data->server_id,
+		rpc_async(RPC_FAF_NOTIFY_CLOSE,
+			  kddm_def_ns->rpc_comm, data->server_id,
 			  &msg, sizeof(msg));
 	}
 

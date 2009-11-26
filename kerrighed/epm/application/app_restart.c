@@ -482,7 +482,8 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn, int fl
 	}
 
 	if (!krgnodes_empty(nodes)) {
-		desc = rpc_begin_m(APP_INIT_RESTART, &nodes);
+		desc = rpc_begin_m(APP_INIT_RESTART,
+				   kddm_def_ns->rpc_comm, &nodes);
 
 		r = rpc_pack_type(desc, msg);
 		if (r)
@@ -506,7 +507,8 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn, int fl
 
 		krgnode_set(recovery_node, nodes);
 
-		desc = rpc_begin(APP_INIT_RESTART, recovery_node);
+		desc = rpc_begin(APP_INIT_RESTART,
+				 kddm_def_ns->rpc_comm, recovery_node);
 		r = rpc_pack_type(desc, msg);
 		if (r)
 			goto err_rpc;
@@ -1209,7 +1211,7 @@ static int global_do_restart(struct app_kddm_object *obj,
 	msg.app_id = obj->app_id;
 	msg.requester_task = *requester;
 
-	desc = rpc_begin_m(APP_DO_RESTART, &obj->nodes);
+	desc = rpc_begin_m(APP_DO_RESTART, kddm_def_ns->rpc_comm, &obj->nodes);
 	if (!desc)
 		return -ENOMEM;
 

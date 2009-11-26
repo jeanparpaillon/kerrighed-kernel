@@ -42,7 +42,7 @@ static void do_local_node_remove(struct hotplug_context *ctx)
 	hotplug_remove_notify(ctx, HOTPLUG_NOTIFY_REMOVE_DISTANT);
 
 	printk("...confirm\n");
-	rpc_sync_m(NODE_REMOVE_CONFIRM, &new_online,
+	rpc_sync_m(NODE_REMOVE_CONFIRM, comm, &new_online,
 		   &ctx->node_set, sizeof(ctx->node_set));
 
 	rpc_disable_all();
@@ -134,7 +134,7 @@ static int do_nodes_remove(struct hotplug_context *ctx)
 
 	free_page((unsigned long)page);
 
-	ret = rpc_async_m(NODE_REMOVE, &krgnode_online_map,
+	ret = rpc_async_m(NODE_REMOVE, ctx->ns->rpc_comm, &krgnode_online_map,
 			  &ctx->node_set, sizeof(ctx->node_set));
 	if (ret)
 		printk(KERN_ERR "kerrighed: Removing nodes failed! err=%d\n",
@@ -239,7 +239,9 @@ static int nodes_poweroff(void __user *arg)
 	if (err)
 		return err;
 
-	rpc_async_m(NODE_POWEROFF, &node_set.v, &unused, sizeof(unused));
+	rpc_async_m(NODE_POWEROFF,
+		    current->nsproxy->krg_ns->rpc_comm, &node_set.v,
+		    &unused, sizeof(unused));
 
 	return 0;
 }
@@ -275,7 +277,8 @@ static int nodes_reboot(void __user *arg)
 	if (err)
 		return err;
 
-	rpc_async_m(NODE_REBOOT, &node_set.v,
+	rpc_async_m(NODE_REBOOT,
+		    current->nsproxy->krg_ns->rpc_comm, &node_set.v,
 		    &unused, sizeof(unused));
 	
 	return 0;

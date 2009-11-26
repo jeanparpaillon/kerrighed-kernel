@@ -371,7 +371,8 @@ int kddm_bench(char *buff, int size)
 	for (i = master_node + 1; i <= master_node + 3; i++)
 		krgnode_set(i, nodes);
 
-	rpc_async_m(KDDM_BENCH, &nodes, &master_node, sizeof(int));
+	rpc_async_m(KDDM_BENCH, kddm_def_ns->rpc_comm, &nodes,
+		    &master_node, sizeof(int));
 
 	return do_bench(buff, size, master_node);
 }

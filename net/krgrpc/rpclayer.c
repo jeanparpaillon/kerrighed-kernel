@@ -116,6 +116,7 @@ int __rpc_send(struct rpc_desc* desc,
 }
 
 struct rpc_desc* rpc_begin_m(enum rpcid rpcid,
+			     struct rpc_communicator *comm,
 			     krgnodemask_t* nodes)
 {
 	struct rpc_desc* desc;
@@ -140,8 +141,8 @@ struct rpc_desc* rpc_begin_m(enum rpcid rpcid,
 			goto oom_free_desc_recv;
 	}
 
-	rpc_communicator_get(&static_communicator);
-	desc->comm = &static_communicator;
+	rpc_communicator_get(comm);
+	desc->comm = comm;
 	desc->conn_set = rpc_connection_set_alloc(desc->comm, &desc->nodes);
 	if (IS_ERR(desc->conn_set))
 		goto oom_free_desc_recv;
