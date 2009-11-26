@@ -22,6 +22,7 @@
 #include <kerrighed/signal.h>
 #include <kerrighed/application.h>
 #include <kerrighed/krgnodemask.h>
+#include <kerrighed/namespace.h>
 #include <asm/cputime.h>
 #endif
 #ifdef CONFIG_KRG_SCHED
@@ -126,7 +127,9 @@ int krg_do_notify_parent(struct task_struct *task, struct siginfo *info)
 	req.ptrace = task->ptrace;
 	req.info = *info;
 
-	desc = rpc_begin(PROC_DO_NOTIFY_PARENT, parent_node);
+	desc = rpc_begin(PROC_DO_NOTIFY_PARENT,
+			 task_active_pid_ns(task)->krg_ns->rpc_comm,
+			 parent_node);
 	if (!desc)
 		goto err;
 	err = rpc_pack_type(desc, req);
@@ -387,7 +390,8 @@ int krg_wait_task_zombie(pid_t pid,
 		/* Reaped by another sub-thread */
 		return 0;
 
-	desc = rpc_begin(PROC_WAIT_TASK_ZOMBIE, zombie_location);
+	desc = rpc_begin(PROC_WAIT_TASK_ZOMBIE,
+			 current->nsproxy->krg_ns->rpc_comm, zombie_location);
 	if (!desc) {
 		krg_unlock_pid_location(pid);
 		return -ENOMEM;
@@ -744,7 +748,8 @@ void notify_remote_child_reaper(pid_t zombie_pid)
 		 */
 		return;
 
-	rpc_sync(PROC_NOTIFY_REMOTE_CHILD_REAPER, zombie_location,
+	rpc_sync(PROC_NOTIFY_REMOTE_CHILD_REAPER,
+		 current->nsproxy->krg_ns->rpc_comm, zombie_location,
 		 &msg, sizeof(msg));
 }
 

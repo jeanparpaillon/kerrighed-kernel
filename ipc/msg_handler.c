@@ -266,7 +266,7 @@ long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 	if (r)
 		goto exit_free_buffer;
 
-	desc = rpc_begin(IPC_MSG_SEND, *master_node);
+	desc = rpc_begin(IPC_MSG_SEND, master_set->ns->rpc_comm, *master_node);
 	_kddm_put_object(master_set, index);
 
 	r = rpc_pack_type(desc, msg);
@@ -393,7 +393,7 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 	msg.tgid = tgid;
 	msg.msgsz = msgsz;
 
-	desc = rpc_begin(IPC_MSG_RCV, *master_node);
+	desc = rpc_begin(IPC_MSG_RCV, master_set->ns->rpc_comm, *master_node);
 	_kddm_put_object(master_set, index);
 
 	err = rpc_pack_type(desc, msg);

@@ -1401,7 +1401,8 @@ static int krg_kill_pg_info(int sig, struct siginfo *info, pid_t pgid)
 	if (krgnodes_empty(nodes))
 		goto out_release;
 
-	desc = rpc_begin_m(PROC_KILL_PG_INFO, &nodes);
+	desc = rpc_begin_m(PROC_KILL_PG_INFO,
+			   current->nsproxy->krg_ns->rpc_comm, &nodes);
 
 	make_kill_info_msg(&msg, sig, info, pgid);
 	retval = rpc_pack_type(desc, msg);

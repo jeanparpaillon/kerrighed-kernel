@@ -13,6 +13,7 @@
 #include <kerrighed/krginit.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/pid.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/hotplug.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
@@ -88,7 +89,8 @@ int krg_do_fork(unsigned long clone_flags,
 		goto out_release;
 
 	retval = -ENOMEM;
-	desc = rpc_begin(RPC_EPM_REMOTE_CLONE, distant_node);
+	desc = rpc_begin(RPC_EPM_REMOTE_CLONE,
+			 current->nsproxy->krg_ns->rpc_comm, distant_node);
 	if (!desc)
 		goto out_release;
 
@@ -285,9 +287,11 @@ static void handle_vfork_done(struct rpc_desc *desc, void *data, size_t size)
 void krg_vfork_done(struct completion *vfork_done)
 {
 	struct vfork_done_proxy *proxy = (struct vfork_done_proxy *)vfork_done;
+	struct krg_namespace *ns = find_get_krg_ns();
 
-	rpc_async(PROC_VFORK_DONE, proxy->waiter_node,
+	rpc_async(PROC_VFORK_DONE, ns->rpc_comm, proxy->waiter_node,
 		  &proxy->waiter_vfork_done, sizeof(proxy->waiter_vfork_done));
+	put_krg_ns(ns);
 	vfork_done_proxy_free(proxy);
 }
 

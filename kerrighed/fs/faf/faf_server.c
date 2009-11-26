@@ -993,7 +993,8 @@ static void faf_poll_notify_node(kerrighed_node_t node, unsigned long dvfs_id)
 {
 	int err;
 
-	err = rpc_async(RPC_FAF_POLL_NOTIFY, node, &dvfs_id, sizeof(dvfs_id));
+	err = rpc_async(RPC_FAF_POLL_NOTIFY, kddm_def_ns->rpc_comm, node,
+			&dvfs_id, sizeof(dvfs_id));
 	if (err)
 		printk(KERN_WARNING "faf_poll_notify_node: "
 		       "failed to notify node %d for %lu\n",

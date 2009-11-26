@@ -126,12 +126,14 @@ void handle_hotplug_run_req(struct rpc_desc *desc, void *_msg, size_t size)
 	complete(&ctx->ready);
 }
 
-static int hotplug_run_request(struct hotplug_request *req)
+static
+int
+hotplug_run_request(struct rpc_communicator *comm, struct hotplug_request *req)
 {
 	struct hotplug_run_req_msg msg;
 
 	msg.req_id = req->id;
-	return rpc_async(HOTPLUG_RUN_REQ, req->node, &msg, sizeof(msg));
+	return rpc_async(HOTPLUG_RUN_REQ, comm, req->node, &msg, sizeof(msg));
 }
 
 struct hotplug_start_req_msg {
@@ -155,7 +157,7 @@ int handle_hotplug_start_req(struct rpc_desc *desc, void *_msg, size_t size)
 	mutex_lock(&global_hotplug_req_list_mutex);
 	err = 0;
 	if (list_empty(&global_hotplug_req_list))
-		err = hotplug_run_request(req);
+		err = hotplug_run_request(desc->comm, req);
 	if (!err)
 		list_add_tail(&req->list, &global_hotplug_req_list);
 	mutex_unlock(&global_hotplug_req_list_mutex);
@@ -186,7 +188,7 @@ int hotplug_start_request(struct hotplug_context *ctx)
 		goto unlock;
 
 	err = -ENOMEM;
-	desc = rpc_begin(HOTPLUG_START_REQ, hotplug_coordinator);
+	desc = rpc_begin(HOTPLUG_START_REQ, ctx->ns->rpc_comm, hotplug_coordinator);
 	if (!desc)
 		goto out_check_err;
 	msg.req_id = ctx->id;
@@ -245,7 +247,7 @@ int handle_hotplug_finish_req(struct rpc_desc *desc, void *_msg, size_t size)
 			continue;
 		}
 
-		err = hotplug_run_request(req);
+		err = hotplug_run_request(desc->comm, req);
 		if (err) {
 			printk(KERN_WARNING "kerrighed: Could not run hotplug request from node %d! err = %d\n", req->node, err);
 			printk(KERN_WARNING "kerrighed: Hotplug coordinator hung!\n");
@@ -267,7 +269,7 @@ void hotplug_finish_request(struct hotplug_context *ctx)
 	mutex_lock(&hotplug_coordinator_mutex);
 
 	err = -ENOMEM;
-	desc = rpc_begin(HOTPLUG_FINISH_REQ, hotplug_coordinator);
+	desc = rpc_begin(HOTPLUG_FINISH_REQ, ctx->ns->rpc_comm, hotplug_coordinator);
 	if (!desc)
 		goto unlock;
 	msg.req_id = ctx->id;
@@ -331,14 +333,16 @@ error:
 	goto out;
 }
 
-static int hotplug_coordinator_move(kerrighed_node_t target)
+static
+int
+hotplug_coordinator_move(struct rpc_communicator *comm, kerrighed_node_t target)
 {
 	struct rpc_desc *desc;
 	struct hotplug_request *req, *tmp;
 	struct hotplug_request null_req;
 	int err, ret;
 
-	desc = rpc_begin(HOTPLUG_COORDINATOR_MOVE, target);
+	desc = rpc_begin(HOTPLUG_COORDINATOR_MOVE, comm, target);
 	if (!desc)
 		return -ENOMEM;
 
@@ -397,7 +401,7 @@ static int hotplug_coordinator_reconfigure(struct hotplug_context *ctx)
 
 	if (hotplug_coordinator == kerrighed_node_id
 	    && hotplug_coordinator != new_coordinator) {
-		err = hotplug_coordinator_move(new_coordinator);
+		err = hotplug_coordinator_move(ctx->ns->rpc_comm, new_coordinator);
 		if (err) {
 			printk(KERN_ERR "kerrighed: Failed to move hotplug coordinator! Cluster reconfiguration hung!\n");
 			goto unlock;

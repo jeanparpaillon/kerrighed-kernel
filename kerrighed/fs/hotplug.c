@@ -31,14 +31,14 @@ static int dvfs_remove_local(const krgnodemask_t *nodes)
 	return 0;
 }
 
-static int fs_remove_local(const krgnodemask_t *nodes)
+static int fs_remove_local(struct hotplug_context *ctx)
 {
 	int err;
 
-	err = faf_remove_local(nodes);
+	err = faf_remove_local(ctx);
 	if (err)
 		return err;
-	return dvfs_remove_local(nodes);
+	return dvfs_remove_local(&ctx->node_set.v);
 }
 
 static int fs_notification(struct notifier_block *nb, hotplug_event_t event,
@@ -49,7 +49,7 @@ static int fs_notification(struct notifier_block *nb, hotplug_event_t event,
 
 	switch (event) {
 	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
-		err = fs_remove_local(&ctx->node_set.v);
+		err = fs_remove_local(ctx);
 		break;
 	default:
 		err = 0;

@@ -454,7 +454,8 @@ void krg_do_mmap_region(struct vm_area_struct *vma,
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);
 
-	rpc_sync_m(RPC_MM_MMAP_REGION, &copyset, &msg, sizeof(msg));
+	rpc_sync_m(RPC_MM_MMAP_REGION, kddm_def_ns->rpc_comm, &copyset,
+		   &msg, sizeof(msg));
 }
 
 
@@ -478,7 +479,8 @@ void krg_do_munmap(struct mm_struct *mm,
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);
 
-	rpc_sync_m(RPC_MM_MUNMAP, &copyset, &msg, sizeof(msg));
+	rpc_sync_m(RPC_MM_MUNMAP, kddm_def_ns->rpc_comm, &copyset,
+		   &msg, sizeof(msg));
 }
 
 void krg_do_mremap(struct mm_struct *mm, unsigned long addr,
@@ -507,7 +509,8 @@ void krg_do_mremap(struct mm_struct *mm, unsigned long addr,
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);
 
-	rpc_sync_m(RPC_MM_MREMAP, &copyset, &msg, sizeof(msg));
+	rpc_sync_m(RPC_MM_MREMAP, kddm_def_ns->rpc_comm, &copyset,
+		   &msg, sizeof(msg));
 }
 
 void krg_do_brk(struct mm_struct *mm,
@@ -531,7 +534,8 @@ void krg_do_brk(struct mm_struct *mm,
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);
 
-	rpc_sync_m(RPC_MM_DO_BRK, &copyset, &msg, sizeof(msg));
+	rpc_sync_m(RPC_MM_DO_BRK, kddm_def_ns->rpc_comm, &copyset,
+		   &msg, sizeof(msg));
 }
 
 int krg_expand_stack(struct vm_area_struct *vma,
@@ -554,7 +558,8 @@ int krg_expand_stack(struct vm_area_struct *vma,
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);
 
-	r = rpc_sync_m(RPC_MM_EXPAND_STACK, &copyset, &msg, sizeof(msg));
+	r = rpc_sync_m(RPC_MM_EXPAND_STACK, kddm_def_ns->rpc_comm, &copyset,
+		       &msg, sizeof(msg));
 
 	return r;
 }
@@ -583,7 +588,8 @@ void krg_do_mprotect(struct mm_struct *mm,
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);
 
-	rpc_sync_m(RPC_MM_MPROTECT, &copyset, &msg, sizeof(msg));
+	rpc_sync_m(RPC_MM_MPROTECT, kddm_def_ns->rpc_comm, &copyset,
+		   &msg, sizeof(msg));
 }
 
 

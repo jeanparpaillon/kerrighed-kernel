@@ -12,6 +12,8 @@
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/krgnodemask.h>
+#include <kerrighed/namespace.h>
+#include <kerrighed/hotplug.h>
 #include <net/krgrpc/rpc.h>
 #include <net/krgrpc/rpcid.h>
 
@@ -66,16 +68,16 @@ static int handle_faf_invalidate(struct rpc_desc *desc,
 	return 0;
 }
 
-int faf_remove_local(const krgnodemask_t *nodes)
+int faf_remove_local(struct hotplug_context *ctx)
 {
 	krgnodemask_t to_invalidate;
 	int err;
 
 	remote_sleepers_cancel(&faf_remote_sleepers);
 
-	krgnodes_or(to_invalidate, krgnode_online_map, *nodes);
+	krgnodes_or(to_invalidate, krgnode_online_map, ctx->node_set.v);
 	krgnode_clear(kerrighed_node_id, to_invalidate);
-	err = rpc_sync_m(RPC_FAF_INVALIDATE, &to_invalidate,
+	err = rpc_sync_m(RPC_FAF_INVALIDATE, ctx->ns->rpc_comm, &to_invalidate,
 			 &kerrighed_node_id, sizeof(kerrighed_node_id));
 	if (err)
 		return err;

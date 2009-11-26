@@ -727,7 +727,7 @@ static void cluster_start_worker(struct work_struct *work)
 	}
 	comm = cluster_start_ctx->ns->rpc_comm;
 
-	desc = rpc_begin_m(CLUSTER_START, &cluster_start_ctx->node_set.v);
+	desc = rpc_begin_m(CLUSTER_START, comm, &cluster_start_ctx->node_set.v);
 	if (!desc)
 		goto out_check_comm;
 	err = rpc_pack_type(desc, cluster_start_msg);
@@ -871,7 +871,8 @@ static int cluster_restart(void *arg)
 	if (!capable(CAP_SYS_BOOT))
 		return -EPERM;
 
-	rpc_async_m(NODE_FAIL, &krgnode_online_map,
+	rpc_async_m(NODE_FAIL,
+		    current->nsproxy->krg_ns->rpc_comm, &krgnode_online_map,
 		    &unused, sizeof(unused));
 	
 	return 0;
@@ -979,7 +980,8 @@ static int cluster_stop(void *arg)
 	if (!capable(CAP_SYS_BOOT))
 		return -EPERM;
 
-	rpc_async_m(NODE_FAIL, &krgnode_online_map,
+	rpc_async_m(NODE_FAIL,
+		    current->nsproxy->krg_ns->rpc_comm, &krgnode_online_map,
 		    &unused, sizeof(unused));
 	
 	return 0;
