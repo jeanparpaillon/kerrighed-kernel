@@ -519,6 +519,9 @@ static int _checkpoint_frozen_app(struct checkpoint_info *info)
 	obj = kddm_grab_object_no_ft(kddm_def_ns, APP_KDDM_ID, info->app_id);
 	if (!obj) {
 		r = -ESRCH;
+		ckpt_err(NULL, r,
+			 "Application %ld does not exist. Can not checkpoint it",
+			 info->app_id);
 		goto exit_kddmput;
 	}
 
