@@ -49,6 +49,9 @@ static int save_app_kddm_object(struct app_kddm_object *obj,
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
+		ckpt_err(NULL, r,
+			 "Fail to create file %s/global.bin",
+			 checkpoint_dir);
 		goto exit;
 	}
 
@@ -188,6 +191,10 @@ static int save_local_app(struct app_struct *app)
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
+		ckpt_err(NULL, r,
+			 "Fail to create file %s/node_%u.bin",
+			 app->checkpoint.storage_dir,
+			 kerrighed_node_id);
 		goto exit;
 	}
 

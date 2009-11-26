@@ -23,6 +23,7 @@
 #include <kerrighed/hotplug.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/debug.h>
 #include "ghost.h"
@@ -126,6 +127,12 @@ int checkpoint_task_on_disk(struct epm_action *action,
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
+		ckpt_err(action, r,
+			 "Fail to create file %s/task_%d.bin to "
+			 "checkpoint process %d",
+			 app->checkpoint.storage_dir,
+			 task_pid_knr(task_to_checkpoint),
+			 task_pid_knr(task_to_checkpoint));
 		goto exit;
 	}
 
