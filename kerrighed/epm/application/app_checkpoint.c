@@ -482,6 +482,9 @@ static int _freeze_app(long appid)
 	obj = kddm_grab_object_no_ft(kddm_def_ns, APP_KDDM_ID, appid);
 	if (!obj) {
 		r = -ESRCH;
+		ckpt_err(NULL, r,
+			 "Application %ld does not exist. Can not freeze it",
+			 appid);
 		goto exit_kddmput;
 	}
 
@@ -507,6 +510,9 @@ static int _unfreeze_app(long appid, int signal)
 	obj = kddm_grab_object_no_ft(kddm_def_ns, APP_KDDM_ID, appid);
 	if (!obj) {
 		r = -ESRCH;
+		ckpt_err(NULL, r,
+			 "Application %ld does not exist. Can not unfreeze it",
+			 appid);
 		goto exit_kddmput;
 	}
 
