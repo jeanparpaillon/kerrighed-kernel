@@ -28,6 +28,7 @@
 #include <kerrighed/app_shared.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 
@@ -1039,6 +1040,10 @@ static int cr_export_now_signal_struct(struct epm_action *action,
 {
 	int r;
 	r = export_signal_struct(action, ghost, task);
+	if (r)
+		ckpt_err(action, r,
+			 "Fail to save struct signal_struct of process %d",
+			 task_pid_knr(task));
 	return r;
 }
 
@@ -1053,8 +1058,12 @@ static int cr_import_now_signal_struct(struct epm_action *action,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_signal_struct(action, ghost, fake);
-	if (r)
+	if (r) {
+		ckpt_err(action, r,
+			 "Fail to restore struct signal_struct of process %d",
+			 task_pid_knr(fake));
 		goto err;
+	}
 
 	*returned_data = fake->signal;
 err:
