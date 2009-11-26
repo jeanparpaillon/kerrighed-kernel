@@ -573,7 +573,7 @@ exit_kddmput:
 /*--------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-long get_appid(const struct checkpoint_info *info)
+static long get_appid(const struct checkpoint_info *info)
 {
 	long r;
 
@@ -581,12 +581,18 @@ long get_appid(const struct checkpoint_info *info)
 	if ((info->app_id < 0 || !(info->app_id & GLOBAL_PID_MASK))
 	    || (info->signal < 0 || info->signal >= SIGRTMIN)) {
 		r = -EINVAL;
+		ckpt_err(NULL, r,
+			 "User request contains invalid value(s).");
 		goto exit;
 	}
 
-	if (info->flags & APP_FROM_PID)
+	if (info->flags & APP_FROM_PID) {
 		r = get_appid_from_pid(info->app_id);
-	else
+		if (r < 0)
+			ckpt_err(NULL, r,
+				 "Fail to find an application hosting process %ld.",
+				 info->app_id);
+	} else
 		r = info->app_id;
 
 exit:
