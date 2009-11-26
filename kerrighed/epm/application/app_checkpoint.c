@@ -20,6 +20,7 @@
 #include <kerrighed/app_terminal.h>
 #include <kerrighed/sys/checkpoint.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/physical_fs.h>
 #include <net/krgrpc/rpcid.h>
@@ -629,6 +630,9 @@ int app_chkpt(struct checkpoint_info *info)
        /* check that an application does not try to checkpoint itself */
        if (current->application && current->application->app_id == app_id) {
                r = -EPERM;
+	       ckpt_err(NULL, r,
+			"Application %ld is trying to checkpoint itself.",
+			app_id);
                goto exit;
        }
 
