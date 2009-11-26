@@ -446,6 +446,11 @@ static int export_one_shared_object(ghost_t *ghost,
 				  &this->checkpoint.args);
 
 error:
+	if (r)
+		ckpt_err(NULL, r,
+			 "Fail to checkpoint object of type: %u and key: %lu",
+			 this->index.type, this->index.key);
+
 	return r;
 }
 
@@ -846,6 +851,7 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 	BUG_ON(type == NO_OBJ);
 
 	stmp.index.type = type;
+	stmp.index.key = 0;
 	stmp.ops = s_ops;
 	stmp.restart.data = NULL;
 	stmp.restart.data_size = 0;
@@ -892,6 +898,10 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 	if (r)
 		kfree(s);
 err:
+	if (r)
+		ckpt_err(NULL, r,
+			 "Fail to restore object of type: %u and key: %lu",
+			 type, stmp.index.key);
 	return r;
 }
 
