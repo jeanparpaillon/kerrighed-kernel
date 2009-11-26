@@ -33,6 +33,7 @@
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 #include <kerrighed/application.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/app_shared.h>
 #include <kerrighed/ghost_helpers.h>
 #include "../epm_internal.h"
@@ -585,6 +586,10 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
+		ckpt_err(NULL, r,
+			 "Fail to create file "
+			 "/var/chkpt/%ld/v%d/shared_obj_%u.bin",
+			 app->app_id, chkpt_sn, kerrighed_node_id);
 		goto exit_unset_fs;
 	}
 
@@ -593,6 +598,10 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 
 	if (IS_ERR(user_ghost)) {
 		r = PTR_ERR(user_ghost);
+		ckpt_err(NULL, r,
+			 "Fail to create file "
+			 "/var/chkpt/%ld/v%d/%s/user_info_%u.txt",
+			 app->app_id, chkpt_sn, kerrighed_node_id);
 		goto exit_close_ghost;
 	}
 
@@ -1689,6 +1698,10 @@ static int local_restart_shared_objects(struct rpc_desc *desc,
 
 		if (IS_ERR(ghost)) {
 			r = PTR_ERR(ghost);
+			ckpt_err(NULL, r,
+				 "Fail to open file "
+				 "/var/chkpt/%ld/v%d/shared_obj_%u.bin",
+				 app->app_id, chkpt_sn, kerrighed_node_id);
 			goto err_import;
 		}
 
