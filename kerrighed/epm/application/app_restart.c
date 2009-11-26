@@ -46,6 +46,9 @@ static int restore_app_kddm_object(struct app_kddm_object **app_obj,
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
+		ckpt_err(NULL, r,
+			 "Fail to open file %s/global.bin",
+			 checkpoint_dir);
 		goto err_open;
 	}
 
@@ -229,6 +232,9 @@ static int restore_local_app(long app_id, const char *checkpoint_dir,
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
+		ckpt_err(NULL, r,
+			 "Fail to open file %s/node_%u.bin",
+			 checkpoint_dir, node_id);
 		goto err_open;
 	}
 

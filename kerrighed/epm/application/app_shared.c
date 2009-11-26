@@ -27,6 +27,7 @@
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 #include <kerrighed/application.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/app_shared.h>
 #include "../epm_internal.h"
 #include "app_utils.h"
@@ -509,6 +510,10 @@ static int chkpt_shared_objects(struct app_struct *app)
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
+		ckpt_err(NULL, r,
+			 "Fail to create file %s/shared_obj_%u.bin",
+			 app->checkpoint.storage_dir,
+			 kerrighed_node_id);
 		goto exit_unset_fs;
 	}
 
@@ -1232,6 +1237,10 @@ static int local_restart_shared_objects(struct rpc_desc *desc,
 
 		if (IS_ERR(ghost)) {
 			r = PTR_ERR(ghost);
+			ckpt_err(NULL, r,
+				 "Fail to open file %s/shared_obj_%u.bin",
+				 app->restart.storage_dir,
+				 kerrighed_node_id);
 			goto err_import;
 		}
 
