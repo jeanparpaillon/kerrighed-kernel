@@ -154,6 +154,7 @@ struct task_struct *restart_task(struct epm_action *action,
 struct task_struct *restart_process(struct app_struct *app, pid_t pid)
 {
 	struct epm_action action;
+	struct task_struct *task;
 
 	/* Check if the process has not been already restarted */
 	if (find_task_by_kpid(pid) != NULL)
@@ -163,5 +164,12 @@ struct task_struct *restart_process(struct app_struct *app, pid_t pid)
 	action.restart.shared = CR_LINK_ONLY;
 	action.restart.app = app;
 
-	return restart_task(&action, app, pid);
+	task = restart_task(&action, app, pid);
+
+	if (IS_ERR(task))
+		ckpt_err(&action, PTR_ERR(task),
+			 "Fail to restart process %d",
+			 pid);
+
+	return task;
 }
