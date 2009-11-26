@@ -588,6 +588,9 @@ int app_freeze(struct checkpoint_info *info)
 	/* check that an application does not try to freeze itself */
 	if (current->application && current->application->app_id == app_id) {
 		r = -EPERM;
+		ckpt_err(NULL, r,
+			 "Application %ld is trying to freeze itself.",
+			 app_id);
 		goto exit;
 	}
 
