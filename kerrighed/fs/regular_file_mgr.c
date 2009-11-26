@@ -27,6 +27,7 @@
 #include <kerrighed/ghost_helpers.h>
 #include <kerrighed/regular_file_mgr.h>
 #include <kerrighed/physical_fs.h>
+#include <kerrighed/pid.h>
 #include "mobility.h"
 
 /*****************************************************************************/
@@ -547,6 +548,12 @@ int cr_export_now_regular_file(struct epm_action *action, ghost_t *ghost,
 				args->file_args.file);
 
 error:
+	if (r)
+		ckpt_err(action, r,
+			 "Fail to save file %d of process %d",
+			 args->file_args.index,
+			 task_pid_knr(task));
+
 	return r;
 }
 
@@ -702,6 +709,10 @@ static int cr_import_now_regular_file(struct epm_action *action,
 err_free_desc:
 	kfree(desc);
 error:
+	if (r)
+		ckpt_err(action, r,
+			 "Fail to restore a file of process %d",
+			 task_pid_knr(fake));
 	return r;
 }
 
