@@ -194,7 +194,8 @@ int setup_faf_file_if_needed(struct file *file)
 		unsigned long s_magic = file->f_dentry->d_sb->s_magic;
 
 		if (((s_magic == PROC_SUPER_MAGIC) ||
-		     (s_magic == NFS_SUPER_MAGIC )) &&
+		     (s_magic == NFS_SUPER_MAGIC)  ||
+		     (s_magic == OCFS2_SUPER_MAGIC)) &&
 		    (S_ISREG(i_mode) || S_ISDIR(i_mode) || S_ISLNK(i_mode)))
 			goto exit;
 	}
