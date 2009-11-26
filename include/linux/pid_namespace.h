@@ -6,6 +6,9 @@
 #include <linux/threads.h>
 #include <linux/nsproxy.h>
 #include <linux/kref.h>
+#ifdef CONFIG_KRG_PROC
+#include <kerrighed/namespace.h>
+#endif
 
 struct pidmap {
        atomic_t nr_free;
@@ -31,7 +34,7 @@ struct pid_namespace {
 	struct bsd_acct_struct *bacct;
 #endif
 #ifdef CONFIG_KRG_PROC
-	struct pid_namespace *krg_ns_root;
+	struct krg_namespace *krg_ns;
 	unsigned global:1;
 #endif
 };
@@ -57,9 +60,15 @@ static inline void put_pid_ns(struct pid_namespace *ns)
 }
 
 #ifdef CONFIG_KRG_PROC
+static inline struct pid_namespace *krg_pid_ns_root(struct pid_namespace *ns)
+{
+	return ns->krg_ns->root_nsproxy.pid_ns;
+}
+
 static inline bool is_krg_pid_ns_root(struct pid_namespace *ns)
 {
-	return ns == ns->krg_ns_root;
+	struct krg_namespace *krg_ns = ns->krg_ns;
+	return krg_ns && ns == krg_ns->root_nsproxy.pid_ns;
 }
 
 struct pid_namespace *find_get_krg_pid_ns(void);
@@ -96,6 +105,11 @@ static inline void zap_pid_ns_processes(struct pid_namespace *ns)
 }
 
 #ifdef CONFIG_KRG_PROC
+static inline struct pid_namespace *krg_pid_ns_root(struct pid_namespace *ns)
+{
+	return ns;
+}
+
 static inline bool is_krg_pid_ns_root(struct pid_namespace *ns)
 {
 	return true;

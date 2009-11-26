@@ -908,7 +908,7 @@ pid_t krg_get_real_parent_tgid(struct task_struct *task,
 
 	if (real_parent != baby_sitter) {
 		real_parent_tgid = task_tgid_nr_ns(real_parent, ns);
-	} else if (!ns->krg_ns_root) {
+	} else if (!ns->krg_ns) {
 		/*
 		 * ns is an ancestor of task's root Kerrighed namespace, and
 		 * thus has no names for remote parents.
@@ -971,7 +971,7 @@ struct children_kddm_object *
 krg_parent_children_writelock(struct task_struct *task, pid_t *parent_tgid)
 {
 	struct children_kddm_object *obj;
-	struct pid_namespace *ns = task_active_pid_ns(task)->krg_ns_root;
+	struct pid_namespace *ns = krg_pid_ns_root(task_active_pid_ns(task));
 	pid_t tgid, reaper_tgid;
 
 	BUG_ON(!ns);
@@ -1011,7 +1011,7 @@ struct children_kddm_object *
 krg_parent_children_readlock(struct task_struct *task, pid_t *parent_tgid)
 {
 	struct children_kddm_object *obj;
-	struct pid_namespace *ns = task_active_pid_ns(task)->krg_ns_root;
+	struct pid_namespace *ns = krg_pid_ns_root(task_active_pid_ns(task));
 	pid_t tgid, reaper_tgid;
 
 	BUG_ON(!ns);
@@ -1605,7 +1605,7 @@ void krg_unhash_process(struct task_struct *tsk)
 	pid_t real_parent_tgid;
 	struct children_kddm_object *obj;
 
-	if (!task_active_pid_ns(tsk)->krg_ns_root)
+	if (!task_active_pid_ns(tsk)->krg_ns)
 		return;
 
 	if (tsk->exit_state == EXIT_MIGRATION)

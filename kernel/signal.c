@@ -1181,7 +1181,7 @@ int krg_group_send_sig_info(int sig, struct siginfo *info,
 	int ret;
 
 	ret = __check_kill_permission(sig, info, p,
-				      task_active_pid_ns(p)->krg_ns_root,
+				      krg_pid_ns_root(task_active_pid_ns(p)),
 				      session);
 
 	if (!ret && sig) {

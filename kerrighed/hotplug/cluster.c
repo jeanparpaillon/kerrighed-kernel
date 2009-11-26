@@ -356,7 +356,7 @@ static bool krg_container_may_conflict(struct krg_namespace *ns)
 			continue;
 
 #ifdef CONFIG_KRG_PROC
-		if (task_active_pid_ns(t)->krg_ns_root == ns->root_nsproxy.pid_ns)
+		if (task_active_pid_ns(t)->krg_ns == ns)
 #else
 		nsp = task_nsproxy(t);
 		if (nsp && nsp->krg_ns == ns)
