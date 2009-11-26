@@ -22,6 +22,7 @@
 #include <kddm/kddm.h>
 #include <kddm/object_server.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/action.h>
 #include <kerrighed/libproc.h>
 
@@ -543,6 +544,8 @@ int reserve_pid(pid_t pid)
 	pidmap_map_read_unlock();
 
 out:
+	if (r)
+		ckpt_err(NULL, r, "Fail to reserve pid %d", pid);
 	return r;
 }
 
