@@ -946,6 +946,27 @@ exit:
 	return r;
 }
 
+void do_ckpt_msg(struct epm_action *action, int err, char *fmt, ...)
+{
+	va_list args;
+	char *buffer;
+
+	if (action && action->type != EPM_CHECKPOINT)
+		return;
+
+	va_start(args, fmt);
+	buffer = kvasprintf(GFP_KERNEL, fmt, args);
+	va_end(args);
+
+	if (buffer) {
+		printk("%s\n", buffer);
+		kfree(buffer);
+	} else
+		printk("WARNING: Memory is low\n"
+		       "Chekpoint/Restart operation failed with error %d\n",
+		       err);
+}
+
 /*--------------------------------------------------------------------------*
  *                                                                          *
  *          APPLICATION CHECKPOINT SERVER MANAGEMENT                        *

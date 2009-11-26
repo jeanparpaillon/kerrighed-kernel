@@ -317,4 +317,11 @@ int import_process_set_links(struct epm_action *action, ghost_t *ghost,
 
 #endif /* CONFIG_KRG_SCHED */
 
+void do_ckpt_msg(struct epm_action *action, int err, char *fmt, ...);
+
+#define ckpt_err(ctx, err, fmt, args...) do {				\
+		do_ckpt_msg(ctx, err, "[E @ %s:%d : %d] " fmt, __func__,\
+			    __LINE__, err, ##args);			\
+} while (0)
+
 #endif /* __GHOST_HELPERS_H__ */
