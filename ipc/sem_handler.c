@@ -301,6 +301,7 @@ void krg_ipc_sem_wakeup_process(struct sem_array *sma, struct sem_queue *q,
 				int error)
 {
 	struct ipcsem_wakeup_msg msg;
+	struct rpc_communicator *comm;
 	struct rpc_desc *desc;
 
 	msg.requester = kerrighed_node_id;
@@ -308,7 +309,8 @@ void krg_ipc_sem_wakeup_process(struct sem_array *sma, struct sem_queue *q,
 	msg.pid = remote_sleeper_pid(q); /* q->pid contains the tgid */
 	msg.error = error;
 
-	desc = rpc_begin(IPC_SEM_WAKEUP, q->node);
+	comm = sma->sem_perm.krgops->map_kddm_set->ns->rpc_comm;
+	desc = rpc_begin(IPC_SEM_WAKEUP, comm, q->node);
 	rpc_pack_type(desc, msg);
 	rpc_unpack_type(desc, msg.error);
 	rpc_end(desc, 0);

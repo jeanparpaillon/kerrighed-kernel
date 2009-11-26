@@ -16,6 +16,7 @@
 #include <kerrighed/pid.h>
 #include <kerrighed/task.h>
 #include <kerrighed/workqueue.h>
+#include <kerrighed/namespace.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/hotplug.h>
@@ -524,12 +525,15 @@ static int handle_reserve_pid(struct rpc_desc *desc, void *_msg, size_t size)
 int reserve_pid(long app_id, pid_t pid)
 {
 	int r;
+	struct krg_namespace *ns;
 	kerrighed_node_t orig_node = ORIG_NODE(pid);
 	kerrighed_node_t host_node;
 	struct pid_reservation_msg msg;
 
 	msg.requester = kerrighed_node_id;
 	msg.pid = pid;
+
+	ns = find_get_krg_ns();
 
 	r = pidmap_map_read_lock();
 	if (r)
@@ -549,11 +553,13 @@ int reserve_pid(long app_id, pid_t pid)
 		BUG_ON(host_node == KERRIGHED_NODE_ID_NONE);
 	}
 
-	r = rpc_sync(PROC_RESERVE_PID, host_node, &msg, sizeof(msg));
+	r = rpc_sync(PROC_RESERVE_PID, ns->rpc_comm, host_node,
+		     &msg, sizeof(msg));
 
 	pidmap_map_read_unlock();
 
 out:
+	put_krg_ns(ns);
 	if (r)
 		app_error(__krg_action_to_str(EPM_RESTART), r, app_id,
 			  "Fail to reserve pid %d", pid);
@@ -585,22 +591,29 @@ static int handle_end_pid_reservation(struct rpc_desc *desc, void *_msg,
 int end_pid_reservation(pid_t pid)
 {
 	int r;
+	struct krg_namespace *ns;
 	kerrighed_node_t host_node;
 	struct pid_reservation_msg msg;
 
 	msg.requester = kerrighed_node_id;
 	msg.pid = pid;
 
+	ns = find_get_krg_ns();
+
 	r = pidmap_map_read_lock();
 	if (r)
-		return r;
+		goto out;
 
 	host_node = pidmap_node(ORIG_NODE(pid));
 	BUG_ON(host_node == KERRIGHED_NODE_ID_NONE);
 
-	r = rpc_sync(PROC_END_PID_RESERVATION, host_node, &msg, sizeof(msg));
+	r = rpc_sync(PROC_END_PID_RESERVATION, ns->rpc_comm, host_node,
+		     &msg, sizeof(msg));
 
 	pidmap_map_read_unlock();
+
+out:
+	put_krg_ns(ns);
 
 	return r;
 }
@@ -690,22 +703,29 @@ struct pid_link_task_msg {
 int krg_pid_link_task(pid_t pid)
 {
 	struct pid_link_task_msg msg;
+	struct krg_namespace *ns;
 	kerrighed_node_t host_node;
 	int r;
 
 	msg.requester = kerrighed_node_id;
 	msg.pid = pid;
 
+	ns = find_get_krg_ns();
+
 	r = pidmap_map_read_lock();
 	if (r)
-		return r;
+		goto out;
 
 	host_node = pidmap_node(ORIG_NODE(pid));
 	BUG_ON(host_node == KERRIGHED_NODE_ID_NONE);
 
-	r = rpc_sync(PROC_PID_LINK_TASK, host_node, &msg, sizeof(msg));
+	r = rpc_sync(PROC_PID_LINK_TASK, ns->rpc_comm, host_node,
+		     &msg, sizeof(msg));
 
 	pidmap_map_read_unlock();
+
+out:
+	put_krg_ns(ns);
 
 	return r;
 }

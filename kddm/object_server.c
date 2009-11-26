@@ -55,7 +55,8 @@ static inline void forward_object_server_msg (struct kddm_obj * obj_entry,
 	BUG_ON(prob_owner == kerrighed_node_id);
 
 	msg->req_id = 0;
-	rpc_async(msg_type, prob_owner, _msg, sizeof(msg_server_t));
+	rpc_async(msg_type, set->ns->rpc_comm, prob_owner,
+		  _msg, sizeof(msg_server_t));
 }
 
 

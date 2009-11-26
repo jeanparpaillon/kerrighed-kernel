@@ -10,6 +10,7 @@
 #include <linux/sched.h>
 #include <linux/irqflags.h>
 #include <kerrighed/hotplug.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
@@ -88,7 +89,7 @@ static int nodes_fail(void __user *arg)
 	if (err)
 		return err;
 	
-	rpc_async_m(NODE_FAIL, &node_set.v,
+	rpc_async_m(NODE_FAIL, current->nsproxy->krg_ns->rpc_comm, &node_set.v,
 		    &unused, sizeof(unused));
 	
 	return 0;

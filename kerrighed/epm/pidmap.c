@@ -407,7 +407,7 @@ int pidmap_map_add(struct hotplug_context *ctx)
 	BUG_ON(host_node == kerrighed_node_id);
 
 	err = -ENOMEM;
-	desc = rpc_begin(EPM_PIDMAP_STEAL, host_node);
+	desc = rpc_begin(EPM_PIDMAP_STEAL, ctx->ns->rpc_comm, host_node);
 	if (!desc)
 		goto unlock;
 
@@ -460,13 +460,14 @@ cancel:
 	rpc_cancel(desc);
 }
 
-static int pidmap_inject(kerrighed_node_t node, struct pid_namespace *pidmap_ns,
+static int pidmap_inject(struct hotplug_context *ctx,
+			 kerrighed_node_t node, struct pid_namespace *pidmap_ns,
 			 kerrighed_node_t target)
 {
 	struct rpc_desc *desc;
 	int err;
 
-	desc = rpc_begin(EPM_PIDMAP_INJECT, target);
+	desc = rpc_begin(EPM_PIDMAP_INJECT, ctx->ns->rpc_comm, target);
 	if (!desc)
 		return -ENOMEM;
 
@@ -502,7 +503,7 @@ static int pidmaps_inject(struct hotplug_context *ctx)
 
 		pidmap_ns = foreign_pidmap[node];
 		target = krgnode_next_online_in_ring(target);
-		err = pidmap_inject(node, pidmap_ns, target);
+		err = pidmap_inject(ctx, node, pidmap_ns, target);
 		if (err)
 			return err;
 
@@ -513,7 +514,7 @@ static int pidmaps_inject(struct hotplug_context *ctx)
 	}
 
 	target = krgnode_next_online_in_ring(target);
-	err = pidmap_inject(kerrighed_node_id, ctx->ns->root_nsproxy.pid_ns, target);
+	err = pidmap_inject(ctx, kerrighed_node_id, ctx->ns->root_nsproxy.pid_ns, target);
 	if (err)
 		return err;
 

@@ -28,6 +28,7 @@ struct rpc_desc *krg_remote_syscall_begin(int req, pid_t pid,
 					  const void *msg, size_t size)
 {
 	struct remote_syscall_header hdr;
+	struct krg_namespace *ns;
 	struct rpc_desc *desc;
 	kerrighed_node_t node;
 	int err = -ESRCH;
@@ -35,7 +36,8 @@ struct rpc_desc *krg_remote_syscall_begin(int req, pid_t pid,
 	if (!cluster_started)
 		goto err;
 
-	if (!current->nsproxy->krg_ns)
+	ns = current->nsproxy->krg_ns;
+	if (!ns)
 		goto err;
 
 	if (!is_krg_pid_ns_root(task_active_pid_ns(current)))
@@ -49,7 +51,7 @@ struct rpc_desc *krg_remote_syscall_begin(int req, pid_t pid,
 		goto err;
 
 	err = -ENOMEM;
-	desc = rpc_begin(req, node);
+	desc = rpc_begin(req, ns->rpc_comm, node);
 	if (!desc)
 		goto err_unlock;
 

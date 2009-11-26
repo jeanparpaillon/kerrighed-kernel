@@ -18,6 +18,7 @@
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/hotplug.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/scheduler/pipe.h>
 #include <kerrighed/scheduler/global_config.h>
 #include <kerrighed/scheduler/probe.h>
@@ -483,7 +484,8 @@ ssize_t scheduler_probe_source_attribute_show_remote(struct config_item *item,
 	target = &pipe->probe_source->pipe.config.cg_item;
 
 	r = -ENOMEM;
-	desc = rpc_begin(SCHED_PIPE_SHOW_REMOTE_VALUE, node);
+	desc = rpc_begin(SCHED_PIPE_SHOW_REMOTE_VALUE,
+			 current->nsproxy->krg_ns->rpc_comm, node);
 	if (!desc)
 		goto out;
 

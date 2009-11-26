@@ -35,7 +35,7 @@ int __nodes_add(struct hotplug_context *ctx)
 
 void local_add_done(struct rpc_desc *desc)
 {
-	rpc_async(NODE_ADD_ACK, rpc_desc_get_client(desc), NULL, 0);
+	rpc_async(NODE_ADD_ACK, desc->comm, rpc_desc_get_client(desc), NULL, 0);
 }
 
 static void handle_node_add(struct rpc_desc *rpc_desc, void *data, size_t size)
@@ -130,7 +130,8 @@ static int do_nodes_add(struct hotplug_context *ctx)
 
 	/* Send request to all members of the current cluster */
 	for_each_online_krgnode(node)
-		rpc_async(NODE_ADD, node, &ctx->node_set, sizeof(ctx->node_set));
+		rpc_async(NODE_ADD, ctx->ns->rpc_comm, node,
+			  &ctx->node_set, sizeof(ctx->node_set));
 
 	wait_event(all_added_wqh, atomic_read(&nr_to_wait) == 0);
 	printk("kerrighed: [ADD] Adding nodes succeeded.\n");

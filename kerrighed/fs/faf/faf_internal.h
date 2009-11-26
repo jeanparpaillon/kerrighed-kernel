@@ -13,11 +13,11 @@
 #include <linux/wait.h>
 #include <kerrighed/faf.h>
 #include <kerrighed/sys/types.h>
-#include <kerrighed/krgnodemask.h>
 
 struct epm_action;
 struct dvfs_file_struct;
 struct remote_sleepers_queue;
+struct hotplug_context;
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -49,7 +49,7 @@ void faf_init (void);
 void faf_finalize (void);
 void faf_hotplug_init(void);
 void faf_polled_fd_remove_local(void);
-int faf_remove_local(const krgnodemask_t *nodes);
+int faf_remove_local(struct hotplug_context *ctx);
 
 int check_activate_faf(struct task_struct *tsk, int index, struct file *file,
 		       struct epm_action *action);

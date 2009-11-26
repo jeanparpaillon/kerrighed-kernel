@@ -62,7 +62,8 @@ static void fix_set_manager(void *_set, void *_data)
 
 	kddm_id.set_id = set->id;
 	kddm_id.ns_id = set->ns->id;
-	rpc_sync(REQ_KDDM_CHANGE_MGR, new_kddm_mgr, &kddm_id, sizeof(kddm_id));
+	rpc_sync(REQ_KDDM_CHANGE_MGR, set->ns->rpc_comm, new_kddm_mgr,
+		 &kddm_id, sizeof(kddm_id));
 }
 
 static int add_browse_objects(objid_t objid,
@@ -274,7 +275,7 @@ static void kddm_server_sync(void)
 	kerrighed_node_t node;
 	int dummy, err;
 
-	desc = rpc_begin_m(REQ_KDDM_SERVER_SYNC, &krgnode_kddm_map);
+	desc = rpc_begin_m(REQ_KDDM_SERVER_SYNC, kddm_def_ns->rpc_comm, &krgnode_kddm_map);
 	if (!desc)
 		OOM;
 
@@ -307,7 +308,7 @@ static void object_server_sync(void)
 	kerrighed_node_t node;
 	int dummy, err;
 
-	desc = rpc_begin_m(REQ_OBJECT_SERVER_SYNC, &krgnode_kddm_map);
+	desc = rpc_begin_m(REQ_OBJECT_SERVER_SYNC, kddm_def_ns->rpc_comm, &krgnode_kddm_map);
 	if (!desc)
 		OOM;
 
@@ -340,7 +341,7 @@ static void object_server_may_block_sync(void)
 	kerrighed_node_t node;
 	int dummy, err;
 
-	desc = rpc_begin_m(REQ_OBJECT_SERVER_MAY_BLOCK_SYNC, &krgnode_kddm_map);
+	desc = rpc_begin_m(REQ_OBJECT_SERVER_MAY_BLOCK_SYNC, kddm_def_ns->rpc_comm, &krgnode_kddm_map);
 	if (!desc)
 		OOM;
 

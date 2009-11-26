@@ -299,7 +299,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 		goto out;
 
 	retval = -ENOMEM;
-	desc = rpc_begin(RPC_EPM_MIGRATE, target);
+	desc = rpc_begin(RPC_EPM_MIGRATE, task_active_pid_ns(tsk)->krg_ns->rpc_comm, target);
 	if (!desc)
 		goto err_undo;
 

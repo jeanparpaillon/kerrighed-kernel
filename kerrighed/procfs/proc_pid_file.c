@@ -144,7 +144,8 @@ static int do_environ_read(struct file *file, struct proc_distant_pid_info *task
 	msg.pos = *ppos;
 
 	err = -ENOMEM;
-	desc = rpc_begin(REQ_PROC_PID_ENVIRON, task->prob_node);
+	desc = rpc_begin(REQ_PROC_PID_ENVIRON,
+			 current->nsproxy->krg_ns->rpc_comm, task->prob_node);
 	if (!desc)
 		goto out_err;
 
@@ -364,7 +365,8 @@ static int generic_proc_read(struct proc_distant_pid_info *task,
 	msg.pid = task->pid;
 
 	err = -ENOMEM;
-	desc = rpc_begin(req, task->prob_node);
+	desc = rpc_begin(req, current->nsproxy->krg_ns->rpc_comm,
+			 task->prob_node);
 	if (!desc)
 		goto out_err;
 
@@ -782,7 +784,8 @@ static int generic_proc_show(struct file *file,
 		private = kmalloc(sizeof(*private), GFP_KERNEL);
 		if (!private)
 			goto out_err;
-		desc = rpc_begin(req, task->prob_node);
+		desc = rpc_begin(req, current->nsproxy->krg_ns->rpc_comm,
+				 task->prob_node);
 		if (!desc) {
 			kfree(private);
 			goto out_err;
