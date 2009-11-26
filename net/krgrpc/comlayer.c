@@ -68,6 +68,7 @@ struct tipc_connection {
 	unsigned long recv_seq_id;
 	struct list_head ack_list;
 	int consecutive_recv;
+	int max_consecutive_recv;
 };
 
 static inline struct tipc_connection *to_ll(struct rpc_connection *conn)
@@ -143,7 +144,6 @@ DEFINE_PER_CPU(u32, tipc_send_ref);
 struct tipc_name_seq tipc_seq;
 
 static int ack_cleanup_window_size;
-static int max_consecutive_recv[KERRIGHED_MAX_NODES];
 
 void __rpc_put_raw_data(void *data){
 	kfree_skb((struct sk_buff*)data);
@@ -1220,7 +1220,7 @@ static void tipc_handler(void *usr_handle,
 	}
 
 	// Check if we are receiving lot of packets but sending none
-	if (conn->consecutive_recv >= max_consecutive_recv[h->from])
+	if (conn->consecutive_recv >= conn->max_consecutive_recv)
 		send_acks(conn);
 	conn->consecutive_recv++;
 
@@ -1371,22 +1371,41 @@ void krg_node_reachable(kerrighed_node_t nodeid){
 void krg_node_unreachable(kerrighed_node_t nodeid){
 }
 
-void rpc_enable_lowmem_mode(kerrighed_node_t nodeid){
-	max_consecutive_recv[nodeid] = MAX_CONSECUTIVE_RECV__LOWMEM_MODE;
+void
+rpc_enable_lowmem_mode(struct rpc_communicator *comm, kerrighed_node_t nodeid)
+{
+	struct rpc_connection *conn;
+	struct tipc_connection *ll;
 
-	send_acks(to_ll(static_communicator.conn[nodeid]));
+	conn = rpc_communicator_get_connection(comm, nodeid);
+	ll = to_ll(conn);
+
+	ll->max_consecutive_recv = MAX_CONSECUTIVE_RECV__LOWMEM_MODE;
+	send_acks(ll);
+
+	rpc_connection_put(conn);
 }
 
-void rpc_disable_lowmem_mode(kerrighed_node_t nodeid){
-	max_consecutive_recv[nodeid] = MAX_CONSECUTIVE_RECV;
+void
+rpc_disable_lowmem_mode(struct rpc_communicator *comm, kerrighed_node_t nodeid)
+{
+	struct rpc_connection *conn;
+	struct tipc_connection *ll;
+
+	conn = rpc_communicator_get_connection(comm, nodeid);
+	ll = to_ll(conn);
+	ll->max_consecutive_recv = MAX_CONSECUTIVE_RECV;
+	rpc_connection_put(conn);
 }
 
-void rpc_enable_local_lowmem_mode(void){
+void rpc_enable_local_lowmem_mode(struct rpc_communicator *comm)
+{
 	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE__LOWMEM_MODE;
 	cleanup_not_retx();
 }
 
-void rpc_disable_local_lowmem_mode(void){
+void rpc_disable_local_lowmem_mode(struct rpc_communicator *comm)
+{
 	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE;
 }
 
@@ -1407,6 +1426,7 @@ rpc_connection_alloc_ll(struct rpc_communicator *comm, kerrighed_node_t node)
 	ll->recv_seq_id = 1;
 	INIT_LIST_HEAD(&ll->ack_list);
 	ll->consecutive_recv = 0;
+	ll->max_consecutive_recv = MAX_CONSECUTIVE_RECV;
 
 	return &ll->conn;
 }
@@ -1443,10 +1463,6 @@ int comlayer_init(void)
 	krgcom_wq = create_workqueue("krgcom");
 
 	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE;
-
-	for (i = 0; i < KERRIGHED_MAX_NODES; i++) {
-		max_consecutive_recv[i] = MAX_CONSECUTIVE_RECV;
-	}
 
 	tipc_net_id = kerrighed_session_id;
 
