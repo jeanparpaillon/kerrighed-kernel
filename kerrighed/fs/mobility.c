@@ -32,6 +32,7 @@
 #include "mobility.h"
 #include <kerrighed/regular_file_mgr.h>
 #include <kerrighed/physical_fs.h>
+#include <kerrighed/pid.h>
 #include "file_struct_io_linker.h"
 #ifdef CONFIG_KRG_FAF
 #include <kerrighed/faf.h>
@@ -1575,6 +1576,11 @@ static int cr_export_now_files_struct(struct epm_action *action, ghost_t *ghost,
 {
 	int r;
 	r = export_files_struct(action, ghost, task);
+	if (r)
+		ckpt_err(action, r,
+			 "Fail to save struct files_struct of process %d",
+			 task_pid_knr(task));
+
 	return r;
 }
 
@@ -1586,8 +1592,12 @@ static int cr_import_now_files_struct(struct epm_action *action, ghost_t *ghost,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_files_struct(action, ghost, fake);
-	if (r)
+	if (r) {
+		ckpt_err(action, r,
+			 "Fail to restore struct files_struct of process %d",
+			 fake->pid);
 		goto err;
+	}
 
 	*returned_data = fake->files;
 err:
@@ -1628,6 +1638,11 @@ static int cr_export_now_fs_struct(struct epm_action *action, ghost_t *ghost,
 {
 	int r;
 	r = export_fs_struct(action, ghost, task);
+	if (r)
+		ckpt_err(action, r,
+			 "Fail to save struct fs_struct of process %d",
+			 task_pid_knr(task));
+
 	return r;
 }
 
@@ -1639,8 +1654,12 @@ static int cr_import_now_fs_struct(struct epm_action *action, ghost_t *ghost,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_fs_struct(action, ghost, fake);
-	if (r)
+	if (r) {
+		ckpt_err(action, r,
+			 "Fail to restore struct fs_struct of process %d",
+			 fake->pid);
 		goto err;
+	}
 
 	*returned_data = fake->fs;
 err:
