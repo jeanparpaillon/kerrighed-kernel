@@ -536,6 +536,9 @@ static int _checkpoint_frozen_app(struct checkpoint_info *info)
 
 	if (obj->state != FROZEN) {
 		r = -EPERM;
+		ckpt_err(NULL, r,
+			 "Application %ld is not frozen. Can not checkpoint it",
+			 info->app_id);
 		goto exit_kddmput;
 	}
 
