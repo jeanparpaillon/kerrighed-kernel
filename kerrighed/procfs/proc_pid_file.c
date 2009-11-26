@@ -202,6 +202,9 @@ static ssize_t krg_proc_pid_environ_read(struct file *file, char __user *buf,
 	loff_t pos = *ppos;
 	int ret = -ESRCH;
 
+	if (!current->nsproxy->krg_ns)
+		goto out_no_task;
+
 	/* TODO: if pid is reused in between, we may think the entry is still
 	 * valid! */
 	task->prob_node = krg_lock_pid_location(task->pid);
@@ -256,6 +259,9 @@ static ssize_t krg_proc_info_read(struct file *file, char *buf,
 	struct proc_distant_pid_info *task = get_krg_proc_task(inode);
 
 	length = -ESRCH;
+	if (!current->nsproxy->krg_ns)
+		goto out_no_task;
+
 	/*
 	 * TODO: if pid is reused in between, we may think the entry is still
 	 * valid!
@@ -527,6 +533,9 @@ static ssize_t krg_proc_single_read(struct file *file, char __user *buf,
 	BUG_ON(!is_krg_pid_ns_root(ns));
 
 	length = -ESRCH;
+	if (!current->nsproxy->krg_ns)
+		goto out_no_task;
+
 	/*
 	 * TODO: if pid is reused in between, we may think the entry is still
 	 * valid!
