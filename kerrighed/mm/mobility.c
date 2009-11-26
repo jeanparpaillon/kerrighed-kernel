@@ -35,6 +35,7 @@
 #include <kerrighed/action.h>
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
+#include <kerrighed/pid.h>
 #include "vma_struct.h"
 
 #include "memory_int_linker.h"
@@ -1251,6 +1252,10 @@ static int cr_export_now_mm_struct(struct epm_action *action, ghost_t *ghost,
 {
 	int r;
 	r = export_mm_struct(action, ghost, task);
+	if (r)
+		ckpt_err(action, r,
+			 "Fail to save struct mm_struct of process %d",
+			 task_pid_knr(task));
 	return r;
 }
 
@@ -1263,8 +1268,12 @@ static int cr_import_now_mm_struct(struct epm_action *action, ghost_t *ghost,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_mm_struct(action, ghost, fake);
-	if (r)
+	if (r) {
+		ckpt_err(action, r,
+			 "Fail to restore struct mm_struct of process %d",
+			 task_pid_knr(fake));
 		goto err;
+	}
 
 	*returned_data = fake->mm;
 err:
