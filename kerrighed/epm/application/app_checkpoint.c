@@ -490,6 +490,9 @@ static int _freeze_app(long appid)
 
 	if (obj->state != RUNNING) {
 		r = -EPERM;
+		ckpt_err(NULL, r,
+			 "Application %ld is not running. Can not freeze it",
+			 appid);
 		goto exit_kddmput;
 	}
 
