@@ -941,6 +941,25 @@ exit:
 	return r;
 }
 
+void do_ckpt_msg(struct epm_action *action, int err, char *fmt, ...)
+{
+	va_list args;
+	char *buffer;
+
+	if (action && action->type != EPM_CHECKPOINT)
+		return;
+
+	buffer = kmalloc(1024, GFP_KERNEL);
+
+	va_start(args, fmt);
+	vsnprintf(buffer, 1024, fmt, args);
+	va_end(args);
+
+	printk("%s\n", buffer);
+
+	kfree(buffer);
+}
+
 /*--------------------------------------------------------------------------*
  *                                                                          *
  *          APPLICATION CHECKPOINT SERVER MANAGEMENT                        *
