@@ -31,6 +31,7 @@
 #include <kerrighed/faf_file_mgr.h>
 #include <kerrighed/file.h>
 #include <kerrighed/regular_file_mgr.h>
+#include <kerrighed/pid.h>
 #include "ipc_handler.h"
 #include "krgipc_mobility.h"
 #include "krgshm.h"
@@ -506,6 +507,11 @@ static int cr_export_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 
 	r = cr_export_semundos(ghost, task);
 err:
+	if (r)
+		ckpt_err(action, r,
+			 "Fail to save semundos of process %d",
+			 task_pid_knr(task));
+
 	return r;
 }
 
@@ -539,6 +545,10 @@ static int cr_import_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 
 	*returned_data = (void*)fake->sysvsem.undo_list_id;
 err:
+	if (r)
+		ckpt_err(action, r,
+			 "Fail to restore semundos of process %d",
+			 task_pid_knr(fake));
 	return r;
 }
 
