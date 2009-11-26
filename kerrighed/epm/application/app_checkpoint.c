@@ -20,6 +20,7 @@
 #include <kerrighed/app_terminal.h>
 #include <kerrighed/sys/checkpoint.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/physical_fs.h>
 #include <net/krgrpc/rpcid.h>
@@ -623,25 +624,28 @@ exit:
 
 int app_chkpt(struct checkpoint_info *info)
 {
-       int r = -EPERM;
-       long app_id = get_appid(info);
+	int r = -EPERM;
+	long app_id = get_appid(info);
 
-       if (app_id < 0) {
-               r = app_id;
-               goto exit;
-       }
+	if (app_id < 0) {
+		r = app_id;
+		goto exit;
+	}
 
-       /* check that an application does not try to checkpoint itself */
-       if (current->application && current->application->app_id == app_id) {
-               r = -EPERM;
-               goto exit;
-       }
+	/* check that an application does not try to checkpoint itself */
+	if (current->application && current->application->app_id == app_id) {
+		r = -EPERM;
+		ckpt_err(NULL, r,
+			"Application %ld is trying to checkpoint itself.",
+			app_id);
+		goto exit;
+	}
 
-       info->app_id = app_id;
+	info->app_id = app_id;
 
-       r = _checkpoint_frozen_app(info);
+	r = _checkpoint_frozen_app(info);
 exit:
-       return r;
+	return r;
 }
 
 void application_checkpoint_rpc_init(void)
