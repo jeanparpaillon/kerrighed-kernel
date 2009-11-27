@@ -392,21 +392,21 @@ free_undo:
 static int cr_import_semundos(ghost_t *ghost, struct task_struct *task)
 {
 	int r = 0;
-	struct kddm_set *undo_list_kddm_set;
+	struct kddm_set *undo_list_set;
 	struct semundo_list_object *undo_list;
 	long i, nb_semundo;
 
 	if (task->sysvsem.undo_list_id == UNIQUE_ID_NONE)
 		goto err;
 
-	undo_list_kddm_set = task_undolist_set(task);
-	if (IS_ERR(undo_list_kddm_set)) {
-		r = PTR_ERR(undo_list_kddm_set);
+	undo_list_set = task_undolist_set(task);
+	if (IS_ERR(undo_list_set)) {
+		r = PTR_ERR(undo_list_set);
 		goto err;
 	}
 
 	/* get the list of semaphores for which we have a semundo */
-	undo_list = _kddm_grab_object_no_ft(undo_list_kddm_set,
+	undo_list = _kddm_grab_object_no_ft(undo_list_set,
 					    task->sysvsem.undo_list_id);
 	if (!undo_list) {
 		r = -ENOMEM;
@@ -424,12 +424,12 @@ static int cr_import_semundos(ghost_t *ghost, struct task_struct *task)
 	}
 
 exit_put:
-	_kddm_put_object(undo_list_kddm_set, task->sysvsem.undo_list_id);
+	_kddm_put_object(undo_list_set, task->sysvsem.undo_list_id);
 err:
 	return r;
 
 unimport_semundos:
-	destroy_semundo_proc_list(task, task->sysvsem.undo_list_id);
+	_kddm_remove_frozen_object(undo_list_set, task->sysvsem.undo_list_id);
 	goto err;
 }
 
