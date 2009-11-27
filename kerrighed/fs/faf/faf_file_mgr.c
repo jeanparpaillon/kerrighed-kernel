@@ -208,3 +208,94 @@ struct dvfs_mobility_operations dvfs_mobility_faf_ops = {
 	.file_export = faf_file_export,
 	.file_import = faf_file_import,
 };
+
+int send_faf_file_desc(struct rpc_desc *desc, struct file *file)
+{
+	int r, fdesc_size;
+	void *fdesc;
+
+	if (!file->f_objid) {
+		r = create_kddm_file_object(file);
+		if (r)
+			goto out;
+	}
+
+	if (!(file->f_flags & (O_FAF_SRV|O_FAF_CLT))) {
+		r = setup_faf_file(file);
+		if (r)
+			goto out;
+	}
+
+	r = get_faf_file_krg_desc(file, &fdesc, &fdesc_size);
+	if (r)
+		goto out;
+
+	r = rpc_pack_type(desc, file->f_objid);
+	if (r)
+		goto out_free_fdesc;
+
+	r = rpc_pack_type(desc, fdesc_size);
+	if (r)
+		goto out_free_fdesc;
+
+	r = rpc_pack(desc, 0, fdesc, fdesc_size);
+	if (r)
+		goto out_free_fdesc;
+
+out_free_fdesc:
+	kfree(fdesc);
+
+out:
+	return r;
+}
+
+struct file *rcv_faf_file_desc(struct rpc_desc *desc)
+{
+	int r, first_import;
+	void *fdesc;
+	int fdesc_size;
+	long fobjid;
+	struct dvfs_file_struct *dvfs_file = NULL;
+	struct file *file = NULL;
+
+	r = rpc_unpack_type(desc, fobjid);
+	if (r)
+		goto error;
+
+	r = rpc_unpack_type(desc, fdesc_size);
+	if (r)
+		goto error;
+
+	fdesc = kmalloc(GFP_KERNEL, fdesc_size);
+	if (!fdesc) {
+		r = -ENOMEM;
+		goto error;
+	}
+
+	r = rpc_unpack(desc, 0, fdesc, fdesc_size);
+	if (r)
+		goto err_free_desc;
+
+	/* Check if the file struct is already present */
+	first_import = 0;
+
+	file = begin_import_dvfs_file(fobjid, &dvfs_file);
+
+	if (!file) {
+		file = create_faf_file_from_krg_desc(current, fdesc);
+		first_import = 1;
+	}
+
+	r = end_import_dvfs_file(fobjid, dvfs_file, file, first_import);
+	if (r)
+		goto err_free_desc;
+
+err_free_desc:
+	kfree(fdesc);
+
+error:
+	if (r)
+		file = ERR_PTR(r);
+
+	return file;
+}
