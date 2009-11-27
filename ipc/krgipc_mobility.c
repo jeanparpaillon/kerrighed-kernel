@@ -712,11 +712,8 @@ exit:
 
 static int receive_fd_from_network(struct rpc_desc *desc)
 {
-	int r, fd, fdesc_size, first_import;
-	void *fdesc;
+	int r, fd;
 	struct file *file;
-	unsigned long fobjid;
-	struct dvfs_file_struct *dvfs_file;
 
 	fd = get_unused_fd();
 	if (fd < 0) {
@@ -724,37 +721,11 @@ static int receive_fd_from_network(struct rpc_desc *desc)
 		goto out;
 	}
 
-	r = rpc_unpack_type(desc, fdesc_size);
-	if (r)
-		goto out_put_fd;
-
-	fdesc = kmalloc(fdesc_size, GFP_KERNEL);
-	if (!fdesc) {
-		r = -ENOMEM;
+	file = rcv_faf_file_desc(desc);
+	if (IS_ERR(file)) {
+		r = PTR_ERR(file);
 		goto out_put_fd;
 	}
-
-	r = rpc_unpack(desc, 0, fdesc, fdesc_size);
-	if (r)
-		goto out_put_fd;
-
-	r = rpc_unpack_type(desc, fobjid);
-	if (r)
-		goto out_put_fd;
-
-	file = begin_import_dvfs_file(fobjid, &dvfs_file);
-
-	if (!file) {
-		file = create_faf_file_from_krg_desc(current, fdesc);
-		first_import = 1;
-	}
-
-	kfree(fdesc);
-
-	r = end_import_dvfs_file(fobjid, dvfs_file, file, first_import);
-
-	if (r)
-		goto out_put_fd;
 
 	fd_install(fd, file);
 
@@ -766,42 +737,6 @@ out:
 out_put_fd:
 	put_unused_fd(fd);
 	goto out;
-}
-
-static int send_file_desc(struct rpc_desc *desc, struct file *file)
-{
-	int r, fdesc_size;
-	void *fdesc;
-
-	if (!file->f_objid) {
-		r = create_kddm_file_object(file);
-		if (r)
-			goto out;
-	}
-
-	r = setup_faf_file(file);
-	if (r && r != -EALREADY)
-		goto out;
-
-	get_faf_file_krg_desc(file, &fdesc, &fdesc_size);
-
-	r = rpc_pack_type(desc, fdesc_size);
-	if (r)
-		goto out_free_fdesc;
-
-	r = rpc_pack(desc, 0, fdesc, fdesc_size);
-	if (r)
-		goto out_free_fdesc;
-
-	r = rpc_pack_type(desc, file->f_objid);
-	if (r)
-		goto out_free_fdesc;
-
-out_free_fdesc:
-	kfree(fdesc);
-
-out:
-	return r;
 }
 
 struct msgq_checkpoint_msg
@@ -869,7 +804,7 @@ int __sys_msgq_checkpoint(int msqid, int fd)
 	if (r)
 		goto err_rpc;
 
-	r = send_file_desc(desc, file);
+	r = send_faf_file_desc(desc, file);
 	if (r)
 		goto err_rpc;
 

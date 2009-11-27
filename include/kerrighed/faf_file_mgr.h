@@ -9,6 +9,8 @@
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
 
+struct rpc_desc;
+
 /*--------------------------------------------------------------------------*
  *                                                                          *
  *                            EXTERN VARIABLES                              *
@@ -28,5 +30,9 @@ struct file *create_faf_file_from_krg_desc(struct task_struct *task,
 					   void *_desc);
 
 int get_faf_file_krg_desc(struct file *file, void **desc, int *desc_size);
+
+int send_faf_file_desc(struct rpc_desc *desc, struct file *file);
+
+struct file *rcv_faf_file_desc(struct rpc_desc *desc);
 
 #endif // __FAF_FILE_MGR__
