@@ -394,41 +394,80 @@ exit:
 	return r;
 }
 
-int cr_link_to_local_file(struct epm_action *action, ghost_t *ghost,
-			  struct task_struct *task,
-			  struct file **returned_file,
-			  long key)
+static int cr_link_to_terminal(struct epm_action *action,
+			       struct file **returned_file)
 {
 	int r = 0;
-	struct cr_file_link *file_link;
 
-	/* look in the table to find the new allocated data
-	 imported in import_shared_objects */
+	*returned_file = app_get_restart_terminal(action->restart.app);
 
-	file_link = get_imported_shared_object(action->restart.app,
-					       LOCAL_FILE, key);
-
-	r = __cr_link_to_file(action, ghost, task, file_link, returned_file);
+	BUG_ON(!*returned_file);
 
 	return r;
 }
 
-int cr_link_to_dvfs_file(struct epm_action *action, ghost_t *ghost,
-			 struct task_struct *task,
-			 struct file **returned_file,
-			 long key)
+int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
+		    struct task_struct *task, struct file **returned_file)
 {
-	int r = 0;
+	int r, tty;
+	long key;
+	enum shared_obj_type type;
 	struct cr_file_link *file_link;
 
+	BUG_ON(action->type != EPM_CHECKPOINT);
+
+	/* files are linked while loading files_struct or mm_struct */
+	BUG_ON(action->restart.shared != CR_LOAD_NOW);
+
+	r = ghost_read(ghost, &type, sizeof(enum shared_obj_type));
+	if (r)
+		goto error;
+
+	if (type != LOCAL_FILE
+	    && type != DVFS_FILE
+	    && type != UNSUPPORTED_FILE)
+		goto err_bad_data;
+
+	r = ghost_read(ghost, &key, sizeof(long));
+	if (r)
+		goto error;
+
+	r = ghost_read(ghost, &tty, sizeof(int));
+	if (r)
+		goto error;
+
+	if (tty != 1 && tty != 0)
+		goto err_bad_data;
+
+	if (tty) {
+		BUG_ON(type == UNSUPPORTED_FILE);
+
+		r = cr_link_to_terminal(action, returned_file);
+
+		if (r || *returned_file)
+			goto error;
+	}
+
 	/* look in the table to find the new allocated data
-	 imported in import_shared_objects */
+	 * imported in import_shared_objects */
 
 	file_link = get_imported_shared_object(action->restart.app,
-					       DVFS_FILE, key);
+					       type, key);
 
-	r = __cr_link_to_file(action, ghost, task, file_link, returned_file);
+	if (file_link->desc_type == CR_FILE_NONE) {
+		BUG_ON(type != UNSUPPORTED_FILE);
+		*returned_file = NULL;
+		r = 0;
+	} else
+		r = __cr_link_to_file(action, ghost, task, file_link,
+				      returned_file);
+
+error:
 	return r;
+
+err_bad_data:
+	r = -E_CR_BADDATA;
+	goto error;
 }
 
 /*****************************************************************************/
