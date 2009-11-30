@@ -96,13 +96,11 @@ struct app_struct {
 
 	union {
 		struct {
-			struct file *terminal;
 			char *storage_dir;
 			int flags;
 		} checkpoint;
 
 		struct {
-			struct file *terminal;
 			const char *storage_dir;
 			krgnodemask_t replacing_nodes;
 		} restart;
