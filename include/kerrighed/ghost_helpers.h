@@ -145,9 +145,6 @@ int _cr_add_file_to_shared_table(struct task_struct *task,
 				 int index, struct file *file,
 				 int allow_unsupported);
 
-int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
-		    struct task_struct *task, struct file **returned_file);
-
 int cr_add_pipe_inode_to_shared_table(struct task_struct *task,
 				      struct file *file);
 
