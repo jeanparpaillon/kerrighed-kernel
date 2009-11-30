@@ -316,7 +316,7 @@ error:
 /*****************************************************************************/
 
 enum cr_file_desc_type {
-	CR_FILE_REPLACED_BY_TTY,
+	CR_FILE_REPLACED,
 	CR_FILE_POINTER,
 	CR_FILE_REGULAR_DESC,
 	CR_FILE_FAF_DESC
@@ -343,7 +343,7 @@ static int __cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 		goto exit;
 	}
 
-	BUG_ON(file_link->desc_type == CR_FILE_REPLACED_BY_TTY);
+	BUG_ON(file_link->desc_type == CR_FILE_REPLACED);
 
 	if (file_link->desc_type != CR_FILE_POINTER
 	    && file_link->desc_type != CR_FILE_REGULAR_DESC
@@ -641,7 +641,7 @@ static int prepare_restart_data_replaced_by_tty(void **returned_data,
 	if (!file_link)
 		return -ENOMEM;
 
-	file_link->desc_type = CR_FILE_REPLACED_BY_TTY;
+	file_link->desc_type = CR_FILE_REPLACED;
 
 	*returned_data = file_link;
 
@@ -715,26 +715,21 @@ static int prepare_restart_data_faf_file(struct file *f,
 }
 #endif
 
-static int cr_import_now_file(struct epm_action *action,
-			      ghost_t *ghost,
-			      struct task_struct *fake,
-			      int local_only,
-			      void **returned_data,
-			      size_t *data_size)
+
+/* if *returned_data is not NULL, the file checkpointed must be
+ * replaced. Thus, we just read the ghost.
+ */
+static int __cr_import_now_file(struct epm_action *action,
+				ghost_t *ghost,
+				struct task_struct *fake,
+				int local_only,
+				void **returned_data,
+				size_t *data_size)
 {
-	int r, tty, desc_size;
+	int r, desc_size;
 	struct file *f;
 	void *desc;
 
-	r = ghost_read(ghost, &tty, sizeof(int));
-	if (r)
-		goto error;
-
-	if (tty != 0 && tty != 1) {
-		BUG();
-		r = -E_CR_BADDATA;
-		goto error;
-	}
 
 	/* We need to read the file description from the ghost
 	 * even if we may not use it
@@ -743,14 +738,9 @@ static int cr_import_now_file(struct epm_action *action,
 	if (r)
 		goto error;
 
-	/* the file will be replaced by the current terminal,
-	 * no need to import
-	 */
-	if (tty && action->restart.app->restart.terminal) {
-		r = prepare_restart_data_replaced_by_tty(returned_data,
-							 data_size);
-		goto err_free_desc;
-	}
+	/* File has been substituted at restart-time */
+	if (*returned_data)
+		goto error;
 
 	r = __regular_file_import_from_desc(action, desc, fake, &f);
 	if (r)
@@ -790,12 +780,46 @@ error:
 	return r;
 }
 
+static int cr_import_now_file(struct epm_action *action,
+			      ghost_t *ghost,
+			      struct task_struct *fake,
+			      int local_only,
+			      void **returned_data,
+			      size_t *data_size)
+{
+	int r, tty;
+
+	r = ghost_read(ghost, &tty, sizeof(int));
+	if (r)
+		goto error;
+
+	if (tty != 0 && tty != 1) {
+		BUG();
+		r = -E_CR_BADDATA;
+		goto error;
+	}
+
+	/* the file will be replaced by the current terminal */
+	if (tty && action->restart.app->restart.terminal) {
+		r = prepare_restart_data_replaced_by_tty(returned_data,
+							 data_size);
+		if (r)
+			goto error;
+	}
+
+	r = __cr_import_now_file(action, ghost, fake, local_only,
+				 returned_data, data_size);
+
+error:
+	return r;
+}
+
 static int cr_import_complete_file(struct task_struct *fake, void *_file_link)
 {
 	struct cr_file_link *file_link = _file_link;
 	struct file *file;
 
-	if (file_link->desc_type == CR_FILE_REPLACED_BY_TTY)
+	if (file_link->desc_type == CR_FILE_REPLACED)
 		/* the file has not been imported */
 		return 0;
 
@@ -827,7 +851,7 @@ static int cr_delete_file(struct task_struct *fake, void *_file_link)
 	struct cr_file_link *file_link = _file_link;
 	struct file *file;
 
-	if (file_link->desc_type == CR_FILE_REPLACED_BY_TTY)
+	if (file_link->desc_type == CR_FILE_REPLACED)
 		/* the file has not been imported */
 		return 0;
 
