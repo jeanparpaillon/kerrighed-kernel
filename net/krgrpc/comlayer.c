@@ -828,10 +828,6 @@ static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
 	if (!desc)
 		goto out;
 
-#ifdef CONFIG_KRG_DEBUG
-	desc->debug = h->flags & __RPC_HEADER_FLAGS_DEBUG;
-#endif
-
 	desc->desc_send = rpc_desc_send_alloc();
 	if (!desc->desc_send)
 		goto err_desc_send;
