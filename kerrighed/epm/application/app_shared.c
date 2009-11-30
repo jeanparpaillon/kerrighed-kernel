@@ -897,10 +897,24 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 		is_local = 0;
 	}
 
+	/* Look for already imported object.
+	 *
+	 * It can occur with files replaced at restart time
+	 */
+	s = search_shared_object(&fake->application->shared_objects.root,
+				 stmp.index.type, stmp.index.key);
+	if (s) {
+		stmp.restart.data = s->restart.data;
+		stmp.restart.data_size = s->restart.data_size;
+	}
+
+	/* if stmp.restart.data != NULL, data must be read from the ghost
+	 * but object must not be imported
+	 */
 	r = s_ops->import_now(action, ghost, fake, is_local,
 			      &stmp.restart.data,
 			      &stmp.restart.data_size);
-	if (r)
+	if (r || s)
 		goto err;
 
 	BUG_ON(!stmp.restart.data && type != UNSUPPORTED_FILE);
