@@ -17,7 +17,6 @@
 #include <kerrighed/action.h>
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
-#include <kerrighed/app_terminal.h>
 #include <kerrighed/sys/checkpoint.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/ghost_helpers.h>
@@ -34,8 +33,7 @@
 /*--------------------------------------------------------------------------*/
 
 static int save_app_kddm_object(struct app_kddm_object *obj,
-				const char *checkpoint_dir,
-				int one_terminal)
+				const char *checkpoint_dir)
 {
 	ghost_fs_t oldfs;
 	ghost_t *ghost;
@@ -91,9 +89,6 @@ static int save_app_kddm_object(struct app_kddm_object *obj,
 	if (r)
 		goto err_write;
 	r = ghost_write(ghost, &obj->user_data, sizeof(obj->user_data));
-	if (r)
-		goto err_write;
-	r = ghost_write(ghost, &one_terminal, sizeof(one_terminal));
 	if (r)
 		goto err_write;
 	r = ghost_write(ghost, &magic, sizeof(magic));
@@ -383,10 +378,6 @@ send_res:
 	if (r)
 		goto error;
 
-	r = send_terminal_id(desc, app);
-	if (r)
-		goto error;
-
 error:
 	clear_shared_objects(app);
 	if (app->cred) {
@@ -407,7 +398,7 @@ static int global_do_chkpt(struct app_kddm_object *obj,
 {
 	struct rpc_desc *desc;
 	struct checkpoint_request_msg msg;
-	int r, err_rpc, len, one_terminal;
+	int r, err_rpc, len;
 
 	r = __get_next_chkptsn(obj->app_id, obj->chkpt_sn);
 	if (r < 0)
@@ -455,11 +446,7 @@ static int global_do_chkpt(struct app_kddm_object *obj,
 	if (err_rpc)
 		goto err_rpc;
 
-	r = rcv_terminal_id(desc, obj->nodes, &one_terminal);
-	if (r)
-		goto err_rpc;
-
-	r = save_app_kddm_object(obj, checkpoint_dir, one_terminal);
+	r = save_app_kddm_object(obj, checkpoint_dir);
 	if (r)
 		goto exit;
 

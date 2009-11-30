@@ -13,7 +13,6 @@
 #include "../mobility.h"
 #include <kerrighed/action.h>
 #include <kerrighed/app_shared.h>
-#include <kerrighed/app_terminal.h>
 
 #include "faf_internal.h"
 #include "faf_hooks.h"
