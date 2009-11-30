@@ -72,23 +72,12 @@ int end_import_dvfs_file(unsigned long dvfs_objid,
 			 struct dvfs_file_struct *dvfs_file,
 			 struct file *file, int first_import);
 
-int cr_link_to_local_file(struct epm_action *action, ghost_t *ghost,
-			  struct task_struct *task,
-			  struct file **returned_file,
-			  long key);
-
-int cr_link_to_dvfs_file(struct epm_action *action, ghost_t *ghost,
-			 struct task_struct *task,
-			 struct file **returned_file,
-			 long key);
+int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
+		    struct task_struct *task, struct file **returned_file);
 
 int get_pipe_file_krg_desc(struct file *file, void **desc, int *desc_size);
 
 struct file *reopen_pipe_file_entry_from_krg_desc(struct task_struct *task,
 						  void *_desc);
-
-int cr_export_user_info_file(struct epm_action *action, ghost_t *ghost,
-			     unsigned long key, struct task_struct *task,
-			     union export_args *args);
 
 #endif // __REGULAR_FILE_MGR__
