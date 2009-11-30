@@ -316,6 +316,7 @@ error:
 /*****************************************************************************/
 
 enum cr_file_desc_type {
+	CR_FILE_NONE,
 	CR_FILE_REPLACED,
 	CR_FILE_POINTER,
 	CR_FILE_REGULAR_DESC,
@@ -335,15 +336,14 @@ static int __cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 {
 	int r = 0;
 
-	/* look in the table to find the new allocated data
-	 imported in import_shared_objects */
 	if (!file_link) {
 		BUG();
 		r = -E_CR_BADDATA;
 		goto exit;
 	}
 
-	BUG_ON(file_link->desc_type == CR_FILE_REPLACED);
+	BUG_ON(file_link->desc_type == CR_FILE_NONE
+	       || file_link->desc_type == CR_FILE_REPLACED);
 
 	if (file_link->desc_type != CR_FILE_POINTER
 	    && file_link->desc_type != CR_FILE_REGULAR_DESC
@@ -819,7 +819,8 @@ static int cr_import_complete_file(struct task_struct *fake, void *_file_link)
 	struct cr_file_link *file_link = _file_link;
 	struct file *file;
 
-	if (file_link->desc_type == CR_FILE_REPLACED)
+	if (file_link->desc_type == CR_FILE_NONE
+	    || file_link->desc_type == CR_FILE_REPLACED)
 		/* the file has not been imported */
 		return 0;
 
@@ -851,7 +852,8 @@ static int cr_delete_file(struct task_struct *fake, void *_file_link)
 	struct cr_file_link *file_link = _file_link;
 	struct file *file;
 
-	if (file_link->desc_type == CR_FILE_REPLACED)
+	if (file_link->desc_type == CR_FILE_NONE
+	    || file_link->desc_type == CR_FILE_REPLACED)
 		/* the file has not been imported */
 		return 0;
 
@@ -885,6 +887,42 @@ struct shared_object_operations cr_shared_file_ops = {
 	.export_now        = cr_export_now_file,
 	.export_user_info  = cr_export_user_info_file,
 	.import_now        = cr_import_now_file,
+	.import_complete   = cr_import_complete_file,
+	.delete            = cr_delete_file,
+};
+
+
+static int cr_export_now_unsupported_file(struct epm_action *action, ghost_t *ghost,
+					  struct task_struct *task,
+					  union export_args *args)
+{
+	return 0;
+}
+
+static int cr_import_now_unsupported_file(struct epm_action *action, ghost_t *ghost,
+					  struct task_struct *fake, int local_only,
+					  void ** returned_data,
+					  size_t *data_size)
+{
+	struct cr_file_link *file_link;
+
+	*data_size = sizeof(struct cr_file_link);
+	file_link = kzalloc(*data_size, GFP_KERNEL);
+	if (!file_link)
+		return -ENOMEM;
+
+	file_link->desc_type = CR_FILE_NONE;
+
+	*returned_data = file_link;
+
+	return 0;
+}
+
+struct shared_object_operations cr_shared_unsupported_file_ops = {
+	.restart_data_size = 0,
+	.export_now        = cr_export_now_unsupported_file,
+	.export_user_info  = cr_export_user_info_file,
+	.import_now        = cr_import_now_unsupported_file,
 	.import_complete   = cr_import_complete_file,
 	.delete            = cr_delete_file,
 };
