@@ -652,6 +652,11 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		if (!trylock_page(page))
 			goto keep;
 
+#ifdef CONFIG_KRG_MM
+		if (!PageInjectable(page))
+                        goto activate_locked;
+#endif
+
 		VM_BUG_ON(PageActive(page));
 
 		sc->nr_scanned++;
