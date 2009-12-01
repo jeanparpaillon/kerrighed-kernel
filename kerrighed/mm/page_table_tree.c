@@ -110,17 +110,19 @@ static inline struct page *replace_zero_page(struct mm_struct *mm,
 
 
 
-static inline void init_pte(struct mm_struct *mm,
-			    pte_t *ptep,
-			    struct kddm_set *set,
-			    objid_t objid,
-			    struct vm_area_struct *vma)
+static inline struct kddm_obj *init_pte(struct mm_struct *mm,
+					pte_t *ptep,
+					struct kddm_set *set,
+					objid_t objid,
+					struct vm_area_struct *vma,
+					struct kddm_obj *obj_entry)
 {
-	struct kddm_obj *obj_entry;
 	struct page *page = NULL, *new_page;
+	int obj_entry_used = 0;
 
 	if (!pte_present(*ptep))
-		return;
+		return obj_entry;
+
 	page = pfn_to_page(pte_pfn(*ptep));
 
 	wait_lock_kddm_page(page);
@@ -139,9 +141,16 @@ static inline void init_pte(struct mm_struct *mm,
 	if (page->obj_entry != NULL)
 		goto done;
 
-	obj_entry = alloc_kddm_obj_entry(set, objid);
-	if (!obj_entry)
-		BUG();
+	if (!obj_entry) {
+		obj_entry = alloc_kddm_obj_entry(set, objid);
+		if (!obj_entry)
+			BUG();
+	}
+	else {
+		change_prob_owner(obj_entry,
+				  kddm_io_default_owner(set, objid));
+		obj_entry_used = 1;
+	}
 
 	BUG_ON (kddm_io_default_owner(set, objid) != kerrighed_node_id);
 	obj_entry->object = page;
@@ -152,6 +161,11 @@ static inline void init_pte(struct mm_struct *mm,
 	page->obj_entry = obj_entry;
 done:
 	unlock_kddm_page(page);
+
+	if (obj_entry_used)
+		return NULL;
+	else
+		return obj_entry;
 }
 
 
@@ -261,10 +275,18 @@ static inline void __pt_for_each_pte(struct kddm_set *set,
 				     int(*f)(unsigned long, void*, void*),
 				     void *priv)
 {
-	struct kddm_obj *obj_entry;
+	struct kddm_obj *obj_entry, *new_obj = NULL;
 	unsigned long addr;
 	spinlock_t *ptl;
 	pte_t *ptep;
+
+	/* Pre-allocate obj_entry to avoid allocation when holding
+	 * mm->page_table_lock (gotten by pte_offset_map_lock).
+	 * This lock being taken during page swap, we can face a recursive
+	 * lock if the kernel have to free memory during obj_entry allocaton.
+	 */
+	if (!f)
+		new_obj = alloc_kddm_obj_entry(set, 0);
 
 	ptep = pte_offset_map_lock(mm, pmd, start, &ptl);
 
@@ -284,11 +306,24 @@ retry:
 				CLEAR_OBJECT_LOCKED (obj_entry);
 			}
 		}
-		else
-			init_pte(mm, ptep, set, addr / PAGE_SIZE, priv);
+		else {
+			new_obj = init_pte(mm, ptep, set, addr / PAGE_SIZE,
+			priv,new_obj);
+
+			/* The object has been used, allocate a new one */
+			if (!new_obj) {
+				pte_unmap_unlock(ptep, ptl);
+				new_obj = alloc_kddm_obj_entry(set, 0);
+				ptep = pte_offset_map_lock(mm, pmd, addr,&ptl);
+			}
+		}
+
 		ptep++;
 	}
 	pte_unmap_unlock(ptep - 1, ptl);
+
+	if (new_obj)
+		free_kddm_obj_entry(set, new_obj, 0);
 }
 
 static inline void __pt_for_each_pmd(struct kddm_set *set,
@@ -708,7 +743,7 @@ void kcb_fill_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 	vma = find_vma (mm, addr);
 	BUG_ON ((vma == NULL) || (addr < vma->vm_start));
 
-	init_pte(mm, ptep, mm->anon_vma_kddm_set, addr / PAGE_SIZE, vma);
+	init_pte(mm, ptep, mm->anon_vma_kddm_set, addr / PAGE_SIZE, vma, NULL);
 }
 
 /* Call-back called during page table destruction for each valid pte */
