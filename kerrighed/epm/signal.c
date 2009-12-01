@@ -153,8 +153,10 @@ static int signal_struct_first_touch(struct kddm_obj *obj_entry,
  * to dest is allowed in the import time.
  * @author Pascal Gallard
  */
-static int signal_struct_import_object(struct kddm_obj *obj_entry,
-				       struct rpc_desc *desc)
+static int signal_struct_import_object(struct rpc_desc *desc,
+				       struct kddm_set *set,
+				       struct kddm_obj *obj_entry,
+				       objid_t objid)
 {
 	struct signal_struct_kddm_object *obj = obj_entry->object;
 	struct signal_struct *dest = obj->signal;
@@ -253,7 +255,9 @@ static int signal_struct_import_object(struct kddm_obj *obj_entry,
  * @author Pascal Gallard
  */
 static int signal_struct_export_object(struct rpc_desc *desc,
-				       struct kddm_obj *obj_entry)
+				       struct kddm_set *set,
+				       struct kddm_obj *obj_entry,
+				       objid_t objid)
 {
 	struct signal_struct_kddm_object *obj = obj_entry->object;
 	struct task_struct *tsk;

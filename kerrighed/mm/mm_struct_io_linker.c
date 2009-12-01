@@ -78,7 +78,9 @@ int mm_remove_object (void *object,
  *  @param  obj_entry  Object entry of the object to export.
  */
 int mm_export_object (struct rpc_desc *desc,
-		      struct kddm_obj *obj_entry)
+		      struct kddm_set *set,
+		      struct kddm_obj *obj_entry,
+		      objid_t objid)
 {
 	struct mm_struct *mm;
 	krgsyms_val_t unmap_id, get_unmap_id;
@@ -110,8 +112,10 @@ int mm_export_object (struct rpc_desc *desc,
  *  @param  obj_entry  Object entry of the object to import.
  *  @param  _buffer   Data to import in the object.
  */
-int mm_import_object (struct kddm_obj *obj_entry,
-		      struct rpc_desc *desc)
+int mm_import_object (struct rpc_desc *desc,
+		      struct kddm_set *_set,
+		      struct kddm_obj *obj_entry,
+		      objid_t objid)
 {
 	struct mm_struct *mm;
 	krgsyms_val_t unmap_id, get_unmap_id;

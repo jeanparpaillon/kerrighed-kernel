@@ -33,10 +33,10 @@ extern int memory_remove_page (void *object,
 extern int memory_alloc_object (struct kddm_obj * objEntry,
 				struct kddm_set * kddm, objid_t objid);
 
-extern int memory_import_object (struct kddm_obj *objEntry,
-				 struct rpc_desc *desc);
-extern int memory_export_object (struct rpc_desc *desc,
-				 struct kddm_obj *objEntry);
+extern int memory_import_object (struct rpc_desc *desc, struct kddm_set *set,
+				 struct kddm_obj *objEntry, objid_t objid);
+extern int memory_export_object (struct rpc_desc *desc, struct kddm_set *set,
+				 struct kddm_obj *objEntry, objid_t objid);
 
 extern void map_kddm_page (struct vm_area_struct *vma, unsigned long address,
 			   struct page *page, int write);

@@ -133,7 +133,9 @@ int undolist_invalidate_object (struct kddm_obj * obj_entry,
  *  @param  object    The object to export data from.
  */
 int undolist_export_object (struct rpc_desc *desc,
-			    struct kddm_obj *obj_entry)
+			    struct kddm_set *set,
+			    struct kddm_obj *obj_entry,
+			    objid_t objid)
 {
 	struct semundo_list_object *undo_list;
 	struct semundo_id *un;
@@ -169,8 +171,10 @@ error:
  *  @param  object    The object to import data in.
  *  @param  buffer    Data to import in the object.
  */
-int undolist_import_object (struct kddm_obj *obj_entry,
-			    struct rpc_desc *desc)
+int undolist_import_object (struct rpc_desc *desc,
+			    struct kddm_set *set,
+			    struct kddm_obj *obj_entry,
+			    objid_t objid)
 {
 	struct semundo_list_object *undo_list;
 	struct semundo_id *un, *prev = NULL;

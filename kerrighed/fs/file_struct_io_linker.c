@@ -71,7 +71,9 @@ int file_remove_object (void *object,
  *  @param  obj_entry  Object entry of the object to export.
  */
 int file_export_object (struct rpc_desc *desc,
-			struct kddm_obj *obj_entry)
+			struct kddm_set *set,
+			struct kddm_obj *obj_entry,
+			objid_t objid)
 {
 	struct dvfs_file_struct *dvfs_file;
 
@@ -87,8 +89,10 @@ int file_export_object (struct rpc_desc *desc,
  *  @param  obj_entry  Object entry of the object to import.
  *  @param  _buffer   Data to import in the object.
  */
-int file_import_object (struct kddm_obj *obj_entry,
-			struct rpc_desc *desc)
+int file_import_object (struct rpc_desc *desc,
+			struct kddm_set *set,
+			struct kddm_obj *obj_entry,
+			objid_t objid)
 {
 	struct dvfs_file_struct *dvfs_file, buffer;
 

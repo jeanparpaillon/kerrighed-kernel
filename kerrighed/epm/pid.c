@@ -95,8 +95,10 @@ static int pid_first_touch(struct kddm_obj *obj_entry,
 /*
  * @author Pascal Gallard
  */
-static int pid_import_object(struct kddm_obj *obj_entry,
-			     struct rpc_desc *desc)
+static int pid_import_object(struct rpc_desc *desc,
+			     struct kddm_set *set,
+			     struct kddm_obj *obj_entry,
+			     objid_t objid)
 {
 	struct pid_kddm_object *obj = obj_entry->object;
 
@@ -107,7 +109,9 @@ static int pid_import_object(struct kddm_obj *obj_entry,
  * @author Pascal Gallard
  */
 static int pid_export_object(struct rpc_desc *desc,
-			     struct kddm_obj *obj_entry)
+			     struct kddm_set *set,
+			     struct kddm_obj *obj_entry,
+			     objid_t objid)
 {
 	struct pid_kddm_object *obj = obj_entry->object;
 

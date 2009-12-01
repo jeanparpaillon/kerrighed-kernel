@@ -162,7 +162,9 @@ static int children_first_touch(struct kddm_obj *obj_entry,
 }
 
 static int children_export_object(struct rpc_desc *desc,
-				  struct kddm_obj *obj_entry)
+				  struct kddm_set *set,
+				  struct kddm_obj *obj_entry,
+				  objid_t objid)
 {
 	struct children_kddm_object *obj = obj_entry->object;
 	struct remote_child *child;
@@ -190,8 +192,10 @@ out:
 	return retval;
 }
 
-static int children_import_object(struct kddm_obj *obj_entry,
-				  struct rpc_desc *desc)
+static int children_import_object(struct rpc_desc *desc,
+				  struct kddm_set *set,
+				  struct kddm_obj *obj_entry,
+				  objid_t objid)
 {
 	struct children_kddm_object *obj = obj_entry->object;
 	struct remote_child *child, *next;

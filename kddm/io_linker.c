@@ -360,9 +360,10 @@ int kddm_io_change_state (struct kddm_obj * obj_entry,
  *  @param obj_entry    Object entry to import data into.
  *  @param buffer       Buffer containing data to import.
  */
-int kddm_io_import_object (struct kddm_set *set,
+int kddm_io_import_object (struct rpc_desc *desc,
+                           struct kddm_set *set,
                            struct kddm_obj *obj_entry,
-                           struct rpc_desc *desc)
+                           objid_t objid)
 {
 	struct iolinker_struct *io = set->iolinker;
 	int res;
@@ -372,7 +373,7 @@ int kddm_io_import_object (struct kddm_set *set,
 	might_sleep();
 
 	if (io && io->import_object)
-		res = io->import_object(obj_entry, desc);
+		res = io->import_object(desc, set, obj_entry, objid);
 	else
 		res = rpc_unpack(desc, 0, obj_entry->object, set->obj_size);
 
@@ -388,15 +389,16 @@ int kddm_io_import_object (struct kddm_set *set,
  *  @param obj_entry    Object entry to export data from.
  *  @param desc		RPC descriptor to export data on.
  */
-int kddm_io_export_object (struct kddm_set * set,
-			   struct rpc_desc *desc,
-                           struct kddm_obj *obj_entry)
+int kddm_io_export_object (struct rpc_desc *desc,
+			   struct kddm_set *set,
+                           struct kddm_obj *obj_entry,
+                           objid_t objid)
 {
 	struct iolinker_struct *io = set->iolinker;
 	int res;
 
 	if (io && io->export_object)
-		res = io->export_object(desc, obj_entry);
+		res = io->export_object(desc, set, obj_entry, objid);
 	else
 		res = rpc_pack(desc, 0, obj_entry->object, set->obj_size);
 

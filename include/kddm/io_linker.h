@@ -109,8 +109,10 @@ struct iolinker_struct {
                          objid_t objid, kddm_obj_state_t state);
   int (*alloc_object) (struct kddm_obj * obj_entry, struct kddm_set * set,
                        objid_t objid);
-  int (*import_object) (struct kddm_obj *obj_entry, struct rpc_desc *desc);
-  int (*export_object) (struct rpc_desc *desc, struct kddm_obj *obj_entry);
+  int (*import_object) (struct rpc_desc *desc, struct kddm_set *set,
+			struct kddm_obj *obj_entry, objid_t objid);
+  int (*export_object) (struct rpc_desc *desc, struct kddm_set *set,
+			struct kddm_obj *obj_entry, objid_t objid);
   kerrighed_node_t (*default_owner) (struct kddm_set * set, objid_t objid,
                                      const krgnodemask_t * nodes, int nr_nodes);
   char linker_name[16];
@@ -268,8 +270,8 @@ int kddm_io_change_state (struct kddm_obj * obj_entry,
  *  @param obj_entry    Object entry to import data into.
  *  @param buffer       Buffer containing data to import.
  */
-int kddm_io_import_object (struct kddm_set * set, struct kddm_obj *obj_entry,
-                           struct rpc_desc *desc);
+int kddm_io_import_object (struct rpc_desc *desc, struct kddm_set *set,
+			   struct kddm_obj *obj_entry, objid_t objid);
 
 
 
@@ -280,10 +282,8 @@ int kddm_io_import_object (struct kddm_set * set, struct kddm_obj *obj_entry,
  *  @param obj_entry    Object entry to export data from.
  *  @param buffer       Buffer to export data to.
  */
-int kddm_io_export_object (struct kddm_set * set,
-			   struct rpc_desc *desc,
-                           struct kddm_obj *obj_entry);
-
+int kddm_io_export_object (struct rpc_desc *desc, struct kddm_set *set,
+			   struct kddm_obj *obj_entry, objid_t objid);
 kerrighed_node_t kddm_io_default_owner (struct kddm_set * set, objid_t objid);
 
 /** Request an IO linker to allocate an object.

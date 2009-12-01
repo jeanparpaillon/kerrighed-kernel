@@ -59,16 +59,16 @@ out:
 	return 0;
 }
 
-static int pidmap_map_import_object(struct kddm_obj *obj_entry,
-				    struct rpc_desc *desc)
+static int pidmap_map_import_object(struct rpc_desc *desc, struct kddm_set *set,
+				    struct kddm_obj *obj_entry, objid_t objid)
 {
 	struct pidmap_map *map = obj_entry->object;
 
 	return rpc_unpack_type(desc, map->host);
 }
 
-static int pidmap_map_export_object(struct rpc_desc *desc,
-				    struct kddm_obj *obj_entry)
+static int pidmap_map_export_object(struct rpc_desc *desc, struct kddm_set *set,
+				    struct kddm_obj *obj_entry, objid_t objid)
 {
 	struct pidmap_map *map = obj_entry->object;
 

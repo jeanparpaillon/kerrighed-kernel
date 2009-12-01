@@ -104,8 +104,10 @@ static int task_first_touch(struct kddm_obj *obj_entry,
 /*
  * @author Pascal Gallard
  */
-static int task_import_object(struct kddm_obj *obj_entry,
-			      struct rpc_desc *desc)
+static int task_import_object(struct rpc_desc *desc,
+			      struct kddm_set *set,
+			      struct kddm_obj *obj_entry,
+			      objid_t objid)
 {
 	struct task_kddm_object *dest = obj_entry->object;
 	struct task_kddm_object src;
@@ -192,7 +194,9 @@ static void task_update_object(struct task_kddm_object *obj)
  * @author Pascal Gallard
  */
 static int task_export_object(struct rpc_desc *desc,
-			      struct kddm_obj *obj_entry)
+			      struct kddm_set *set,
+			      struct kddm_obj *obj_entry,
+			      objid_t objid)
 {
 	struct task_kddm_object *src = obj_entry->object;
 	struct task_struct *tsk;

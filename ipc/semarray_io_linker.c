@@ -390,7 +390,9 @@ static inline void __export_semqueues(struct rpc_desc *desc,
  *  @param  object    The object to export data from.
  */
 int semarray_export_object (struct rpc_desc *desc,
-			    struct kddm_obj *obj_entry)
+			    struct kddm_set *set,
+			    struct kddm_obj *obj_entry,
+			    objid_t objid)
 {
 	semarray_object_t *sem_object;
 	struct sem_array *sma;
@@ -572,8 +574,10 @@ static inline void __unimport_semqueues(struct sem_array *sma)
  *  @param  object    The object to import data in.
  *  @param  buffer    Data to import in the object.
  */
-int semarray_import_object (struct kddm_obj *obj_entry,
-			    struct rpc_desc *desc)
+int semarray_import_object (struct rpc_desc *desc,
+			    struct kddm_set *set,
+			    struct kddm_obj *obj_entry,
+			    objid_t objid)
 {
 	semarray_object_t *sem_object;
 	int r = 0;

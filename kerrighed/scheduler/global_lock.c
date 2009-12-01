@@ -25,14 +25,18 @@ static int global_lock_alloc_object(struct kddm_obj *obj_entry,
 
 /* Avoid a useless rpc_pack() ... */
 static int global_lock_export_object(struct rpc_desc *desc,
-				     struct kddm_obj *obj_entry)
+				     struct kddm_set *set,
+				     struct kddm_obj *obj_entry,
+				     objid_t objid)
 {
 	return 0;
 }
 
 /* ... and its useless rpc_unpack() counterpart */
-static int global_lock_import_object(struct kddm_obj *obj_entry,
-				     struct rpc_desc *desc)
+static int global_lock_import_object(struct rpc_desc *desc,
+				     struct kddm_set *set,
+				     struct kddm_obj *obj_entry,
+				     objid_t objid)
 {
 	return 0;
 }

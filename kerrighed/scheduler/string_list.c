@@ -69,8 +69,10 @@ static void string_list_make_empty(struct string_list_object *object)
 	}
 }
 
-static int string_list_import_object(struct kddm_obj *obj_entry,
-				     struct rpc_desc *desc)
+static int string_list_import_object(struct rpc_desc *desc,
+				     struct kddm_set *set,
+				     struct kddm_obj *obj_entry,
+				     objid_t objid)
 {
 	struct string_list_object *obj = obj_entry->object;
 	struct string_list_element *elt;
@@ -106,7 +108,9 @@ out:
 }
 
 static int string_list_export_object(struct rpc_desc *desc,
-				     struct kddm_obj *obj_entry)
+				     struct kddm_set *set,
+				     struct kddm_obj *obj_entry,
+				     objid_t objid)
 {
 	struct string_list_object *obj = obj_entry->object;
 	struct string_list_element *elt;
