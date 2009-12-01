@@ -632,7 +632,6 @@ int object_first_touch_no_wakeup(struct kddm_set * set,
 		kddm_change_obj_state(set, obj_entry, objid, object_state);
 
 		if (object_state & KDDM_OWNER_OBJ) {
-			change_prob_owner(obj_entry, kerrighed_node_id);
 			CLEAR_SET(COPYSET(obj_entry));
 			ADD_TO_SET(COPYSET(obj_entry), kerrighed_node_id);
 			ADD_TO_SET(RMSET(obj_entry), kerrighed_node_id);
@@ -789,7 +788,6 @@ void ack_change_object_owner(struct kddm_set * set,
 	msgToServer.new_owner = kerrighed_node_id;
 
 	obj_entry->master_obj = *master_info;
-	change_prob_owner(obj_entry, kerrighed_node_id);
 	kddm_change_obj_state(set, obj_entry, objid, READ_OWNER);
 
 	rpc_async(CHANGE_OWNERSHIP_ACK, dest_node,

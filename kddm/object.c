@@ -109,6 +109,9 @@ static void change_object_state (struct kddm_set *set,
 		atomic_inc(&nr_copy_objects);
 		atomic_inc(&set->nr_copies);
 	}
+
+	if (new_state & KDDM_OWNER_OBJ)
+		change_prob_owner(obj_entry, kerrighed_node_id);
 }
 
 
@@ -350,7 +353,6 @@ void kddm_insert_object(struct kddm_set * set,
 	kddm_change_obj_state(set, obj_entry, objid, objectState);
 
 	if (objectState & KDDM_OWNER_OBJ) {
-		change_prob_owner(obj_entry, kerrighed_node_id);
 		CLEAR_SET(COPYSET(obj_entry));
 		ADD_TO_SET(COPYSET(obj_entry), kerrighed_node_id);
 		ADD_TO_SET(RMSET(obj_entry), kerrighed_node_id);
