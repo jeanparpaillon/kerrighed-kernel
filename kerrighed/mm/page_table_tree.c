@@ -118,6 +118,7 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 					struct kddm_obj *obj_entry)
 {
 	struct page *page = NULL, *new_page;
+	unsigned long addr = objid * PAGE_SIZE;
 	int obj_entry_used = 0;
 
 	if (!pte_present(*ptep))
@@ -130,8 +131,7 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 	if (!PageAnon(page)) {
 		if (!(page == ZERO_PAGE(NULL)))
 			goto done;
-		new_page = replace_zero_page(mm, vma, page, ptep,
-					     objid * PAGE_SIZE);
+		new_page = replace_zero_page(mm, vma, page, ptep, addr);
 		/* new_page is returned locked */
 		unlock_kddm_page(page);
 		page = new_page;
@@ -390,10 +390,11 @@ int kddm_pt_invalidate (struct kddm_set *set,
 			struct page *page)
 {
 	struct mm_struct *mm = set->obj_set;
+	unsigned long addr = objid * PAGE_SIZE;
 	spinlock_t *ptl;
 	pte_t *ptep;
 
-	ptep = get_locked_pte(mm, objid * PAGE_SIZE, &ptl);
+	ptep = get_locked_pte(mm, addr, &ptl);
 	if (!ptep)
 		return -ENOMEM;
 
@@ -406,7 +407,7 @@ int kddm_pt_invalidate (struct kddm_set *set,
 	if (atomic_dec_and_test(&page->_kddm_count))
 		page->obj_entry = NULL;
 
-	unmap_page(mm, objid * PAGE_SIZE, page, ptep);
+	unmap_page(mm, addr, page, ptep);
 
 	set_pte_obj_entry(ptep, obj_entry);
 
@@ -456,21 +457,21 @@ static struct kddm_obj *kddm_pt_get_obj_entry (struct kddm_set *set,
 					       struct kddm_obj *new_obj)
 {
 	struct mm_struct *mm = set->obj_set;
+	unsigned long addr = objid * PAGE_SIZE;
 	struct kddm_obj *obj_entry;
 	spinlock_t *ptl;
 	pte_t *ptep;
 
-	ptep = get_locked_pte(mm, objid * PAGE_SIZE, &ptl);
+	ptep = get_locked_pte(mm, addr, &ptl);
 	if (!ptep)
 		return ERR_PTR(-ENOMEM);
 
-	obj_entry = get_obj_entry_from_pte(mm, objid * PAGE_SIZE, ptep,
-					   new_obj);
+	obj_entry = get_obj_entry_from_pte(mm, addr, ptep, new_obj);
 
 	pte_unmap_unlock(ptep, ptl);
 
 	if (obj_entry == new_obj)
-		check_create_vma(mm, objid * PAGE_SIZE);
+		check_create_vma(mm, addr);
 
 	return obj_entry;
 }
@@ -520,6 +521,7 @@ static void kddm_pt_insert_object(struct kddm_set * set,
 				  struct kddm_obj *obj_entry)
 {
 	struct mm_struct *mm = set->obj_set;
+	unsigned long addr = objid * PAGE_SIZE;
 	spinlock_t *ptl;
 	pte_t *ptep;
 	struct page *page = obj_entry->object;
@@ -528,15 +530,15 @@ static void kddm_pt_insert_object(struct kddm_set * set,
 	BUG_ON(page->obj_entry && page->obj_entry != obj_entry);
 
 	/* Insert the object in the page table */
-	ptep = get_locked_pte(mm, objid * PAGE_SIZE, &ptl);
+	ptep = get_locked_pte(mm, addr, &ptl);
 	if (!ptep)
 		BUG();
 
-	__kddm_pt_insert_object (mm, page, objid * PAGE_SIZE, ptep, obj_entry);
+	__kddm_pt_insert_object (mm, page, addr, ptep, obj_entry);
 
 	pte_unmap_unlock(ptep, ptl);
 
-	add_page_anon_rmap (mm, page, objid * PAGE_SIZE);
+	add_page_anon_rmap (mm, page, addr);
 }
 
 
@@ -620,6 +622,7 @@ static void kddm_pt_remove_obj_entry (struct kddm_set *set,
 				      objid_t objid)
 {
 	struct mm_struct *mm = set->obj_set;
+	unsigned long addr = objid * PAGE_SIZE;
 	struct kddm_obj *obj_entry;
 	spinlock_t *ptl = NULL;
 	struct page *page;
@@ -630,17 +633,17 @@ static void kddm_pt_remove_obj_entry (struct kddm_set *set,
 		return;
 
 	if (!pte_present(*ptep)) {
-		pte_clear(mm, objid * PAGE_SIZE, ptep);
+		pte_clear(mm, addr, ptep);
 		goto done;
 	}
 
-	obj_entry = get_obj_entry_from_pte(mm, objid * PAGE_SIZE, ptep, NULL);
+	obj_entry = get_obj_entry_from_pte(mm, addr, ptep, NULL);
 	page = obj_entry->object;
 
 	if (atomic_dec_and_test(&page->_kddm_count))
 		page->obj_entry = NULL;
 
-	unmap_page(mm, objid * PAGE_SIZE, page, ptep);
+	unmap_page(mm, addr, page, ptep);
 done:
 	pte_unmap_unlock(ptep, ptl);
 }
