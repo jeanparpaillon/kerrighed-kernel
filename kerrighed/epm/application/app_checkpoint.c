@@ -560,8 +560,8 @@ long get_appid(const struct checkpoint_info *info)
 	long r;
 
 	/* check if user is stupid ;-) */
-	if (info->app_id < 0 ||
-	    (info->signal < 0 || info->signal >= SIGRTMIN)) {
+	if ((info->app_id < 0 || !(info->app_id & GLOBAL_PID_MASK))
+	    || (info->signal < 0 || info->signal >= SIGRTMIN)) {
 		r = -EINVAL;
 		goto exit;
 	}
