@@ -221,9 +221,11 @@ static int flush_page(struct page *page,
 
        BUG_ON(page->index == 0);
 
-       BUG_ON (mm->anon_vma_kddm_set == NULL);
-
        pte_unmap_unlock(pte, ptl);
+
+       /* Check if the KDDM has not been destroyed since the page selection */
+       if (mm->anon_vma_kddm_set == NULL)
+	       return SWAP_FAIL;
 
        /* mm_id == 0 means the mm is being freed */
        if (mm->mm_id == 0)
