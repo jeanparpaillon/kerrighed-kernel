@@ -732,6 +732,13 @@ static void write_msg(struct console *con, const char *msg, unsigned int len)
 	spin_unlock_irqrestore(&target_list_lock, flags);
 }
 
+void nc_write_msg(const char *msg)
+{
+       write_msg (NULL, msg, strlen(msg));
+}
+
+EXPORT_SYMBOL(nc_write_msg);
+
 static struct console netconsole = {
 	.name	= "netcon",
 	.flags	= CON_ENABLED,
