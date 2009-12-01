@@ -463,6 +463,13 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 				      returned_file);
 
 error:
+	if (r)
+		ckpt_err(NULL, r,
+			 "Fail to relink process %d of application %ld"
+			 " to file %d:%lu",
+			 task_pid_knr(task), action->restart.app->app_id,
+			 type, key);
+
 	return r;
 
 err_bad_data:
