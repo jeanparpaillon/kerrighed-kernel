@@ -82,6 +82,9 @@ int cluster_barrier(struct cluster_barrier *barrier,
 	struct rpc_desc *desc;
 	int err = 0;
 
+	BUG_ON (!__krgnode_isset(kerrighed_node_id, nodes));
+	BUG_ON (!__krgnode_isset(master, nodes));
+
 	spin_lock(&barrier->lock);
 	barrier->id.toggle = (barrier->id.toggle + 1) % 2;
 	id = barrier->id;
