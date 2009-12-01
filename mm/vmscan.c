@@ -606,10 +606,10 @@ static int check_injection_flow(void)
 	if ((rpc_consumed_bytes() / PAGE_SIZE) < limit)
 		return 0;
 
-	if (!current_is_kswapd())
-		return 1;
-
-	limit = limit / 2;
+	if (current_is_kswapd())
+		limit = limit / 2;
+	else
+		limit = 4 * limit / 5;
 
 	while ((rpc_consumed_bytes() / PAGE_SIZE) > limit) {
 		schedule();
