@@ -607,6 +607,14 @@ void handle_object_receive (struct rpc_desc* desc,
 	obj_entry = get_alloc_kddm_obj_entry (msg->ns_id, msg->set_id,
 					      msg->objid, &set);
 
+	if (!obj_entry) {
+		if (msg->flags & KDDM_SYNC_OBJECT) {
+			res = -EINVAL;
+			rpc_pack_type(desc, res);
+		}
+		return;
+	}
+
 	if (msg->object_state & KDDM_OWNER_OBJ) {
 		DUP2_SET(&master_info.rmset, &obj_entry->master_obj.rmset);
 		ADD_TO_SET(RMSET(obj_entry), desc->client);
