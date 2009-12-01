@@ -87,7 +87,12 @@ try_again:
 	case WRITE_GHOST:
 	case WRITE_OWNER:
 		/* Local copy is the only one. Let's inject it ! */
- send_copy:
+send_copy:
+		if (dest == KERRIGHED_NODE_ID_NONE) {
+			res = -ENOSPC;
+			break;
+		}
+
 		if (object_frozen_or_pinned(obj_entry, set)) {
 			__sleep_on_kddm_obj(set, obj_entry, objid, 0);
 			goto try_again;
