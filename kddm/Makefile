@@ -14,5 +14,11 @@ obj-$(CONFIG_KRG_EPM) += mobility.o
 
 obj-$(CONFIG_KRG_KDDM_DEBUG) += debug_kddm.o
 
+extra-y := kddm_set.nr
+
+include $(srctree)/scripts/nrenum.include
+
+$(obj)/kddm_set.nr: $(srctree)/include/kddm/kddm_set.h FORCE
+	$(call if_changed,nrenum)
 
 EXTRA_CFLAGS += -Wall -Werror

@@ -1,0 +1,60 @@
+#!/bin/sh
+
+IN="$1"
+OUT="$2"
+
+SIN=`echo $IN | sed -n 's/\\//\\\\\\//g;p'`
+
+$CPP $LINUXINCLUDE $KBUILD_CPPFLAGS "$IN" | tac | $AWK "
+/^#.*$SIN. 2/ { exit; }
+!/^#/ { print \$0; }
+" | tac | sed -n 's/,/ , /g;s/\;/ \; /g;s/{/ { /g;s/}/ } /g;p' | tr '\n' ' ' | $AWK '
+BEGIN { ORS = " "; }
+{
+	for (i = 0; i < NF; i++) {
+		if ($i == "{")
+			level++;
+		else if ($i == "}")
+			level--;
+
+		if (in_enum == 1 && $i == "}") {
+			in_enum = 0;
+			print "}";
+		}
+
+		if (in_enum) {
+			print $i;
+			continue;
+		}
+
+		if (level == 0 && $i == "enum")
+			prev_enum = 1;
+		else {
+			if (enum_name != "") {
+				if ($i == "{") {
+					in_enum = 1;
+					print "enum", enum_name, "{";
+				}
+			}
+			enum_name = "";
+			if (prev_enum == 1) {
+				if ($i == "{") {
+					in_enum = 1;
+					print "enum {";
+				} else
+					enum_name = $i;
+			}
+			prev_enum = 0;
+		}
+	}
+}' | sed -n 's/{/{\n/g;s/}/\n}/g;s/} /}\n/g;s/,/\n/g;p' | $AWK '
+/enum .*{/ { print $0; nr = 0; }
+/}/ { print $0; }
+!/{/ && !/}/ {
+	if (NF > 1)
+		nr = $3
+	if (NF > 0) {
+		print nr, "\t", $1;
+		nr++;
+	}
+}' > "$OUT"
