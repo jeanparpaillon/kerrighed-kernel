@@ -1026,39 +1026,47 @@ static int import_mm_counters(struct epm_action *action,
 			      ghost_t *ghost,
 			      struct mm_struct* mm)
 {
-	struct mm_struct src_mm;
+	struct mm_struct *src_mm;
 	int r;
 
-	r = ghost_read(ghost, &src_mm, sizeof(struct mm_struct));
-	if (r)
+	r = -ENOMEM;
+	src_mm = allocate_mm();
+	if (!src_mm)
 		goto err;
 
-	mm->mmap_base = src_mm.mmap_base;
-	mm->task_size = src_mm.task_size;
-	mm->def_flags = src_mm.def_flags;
-	mm->start_code = src_mm.start_code;
-	mm->end_code = src_mm.end_code;
-	mm->start_data = src_mm.start_data;
-	mm->end_data = src_mm.end_data;
-	mm->start_brk = src_mm.start_brk;
-	mm->start_stack = src_mm.start_stack;
-	mm->arg_start = src_mm.arg_start;
-	mm->arg_end = src_mm.arg_end;
-	mm->env_start = src_mm.env_start;
-	mm->env_end = src_mm.env_end;
-	mm->cached_hole_size = src_mm.cached_hole_size;
-	mm->free_area_cache = src_mm.free_area_cache;
-	mm->mm_tasks = src_mm.mm_tasks;
-	mm->hiwater_rss = src_mm.hiwater_rss;
-	mm->hiwater_vm = src_mm.hiwater_vm;
-	mm->total_vm = src_mm.total_vm;
-	mm->locked_vm = src_mm.locked_vm;
-	mm->shared_vm = src_mm.shared_vm;
-	mm->exec_vm = src_mm.exec_vm;
-	mm->stack_vm = src_mm.stack_vm;
-	mm->reserved_vm = src_mm.reserved_vm;
-	mm->brk = src_mm.brk;
-	mm->flags = src_mm.flags;
+	r = ghost_read(ghost, src_mm, sizeof(struct mm_struct));
+	if (r)
+		goto out_free_mm;
+
+	mm->mmap_base = src_mm->mmap_base;
+	mm->task_size = src_mm->task_size;
+	mm->def_flags = src_mm->def_flags;
+	mm->start_code = src_mm->start_code;
+	mm->end_code = src_mm->end_code;
+	mm->start_data = src_mm->start_data;
+	mm->end_data = src_mm->end_data;
+	mm->start_brk = src_mm->start_brk;
+	mm->start_stack = src_mm->start_stack;
+	mm->arg_start = src_mm->arg_start;
+	mm->arg_end = src_mm->arg_end;
+	mm->env_start = src_mm->env_start;
+	mm->env_end = src_mm->env_end;
+	mm->cached_hole_size = src_mm->cached_hole_size;
+	mm->free_area_cache = src_mm->free_area_cache;
+	mm->mm_tasks = src_mm->mm_tasks;
+	mm->hiwater_rss = src_mm->hiwater_rss;
+	mm->hiwater_vm = src_mm->hiwater_vm;
+	mm->total_vm = src_mm->total_vm;
+	mm->locked_vm = src_mm->locked_vm;
+	mm->shared_vm = src_mm->shared_vm;
+	mm->exec_vm = src_mm->exec_vm;
+	mm->stack_vm = src_mm->stack_vm;
+	mm->reserved_vm = src_mm->reserved_vm;
+	mm->brk = src_mm->brk;
+	mm->flags = src_mm->flags;
+
+out_free_mm:
+	free_mm(src_mm);
 err:
 	return r;
 }
