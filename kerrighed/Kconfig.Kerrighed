@@ -66,12 +66,6 @@ config KRG_HOTPLUG
 	help
 	  Support for nodes management
 
-config KRG_HOTPLUG_ADD
-	bool "KerHotplug: Add support"
-	depends on KRG_HOTPLUG
-	help
-	  Support node addition
-
 config KRG_HOTPLUG_DEL
 	bool "KerHotplug: removal support"
 	depends on KRG_HOTPLUG
