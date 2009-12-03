@@ -642,18 +642,19 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 
 		cond_resched();
 
-#ifdef CONFIG_KRG_MM
-		check_injection_flow();
-#endif
-
 		page = lru_to_page(page_list);
 		list_del(&page->lru);
+
+#ifdef CONFIG_KRG_MM
+		if (page->obj_entry)
+			check_injection_flow();
+#endif
 
 		if (!trylock_page(page))
 			goto keep;
 
 #ifdef CONFIG_KRG_MM
-		if (!PageInjectable(page))
+		if (page->obj_entry && !PageInjectable(page))
                         goto activate_locked;
 #endif
 
