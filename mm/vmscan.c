@@ -712,7 +712,10 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 			unlock_page(page);
 			if (put_page_testzero(page))
 				goto free_it;
-			BUG();
+			printk ("WARNING: page %p has count %d\n", page,
+				page_count(page));
+			nr_reclaimed++;
+			continue;
 		}
 #endif
 		/*
