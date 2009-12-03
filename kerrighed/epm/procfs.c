@@ -83,6 +83,22 @@ static int proc_app_unfreeze(void __user *arg)
 	return sys_app_unfreeze(&ckpt_info);
 }
 
+static int copy_user_array(void **array, const void __user *from, int len)
+{
+	int res = 0;
+
+	*array = kmalloc(len, GFP_KERNEL);
+	if (!array)
+		return -ENOMEM;
+
+	if (copy_from_user(*array, from, len)) {
+		kfree(*array);
+		res = -EFAULT;
+	}
+
+	return res;
+}
+
 /**
  *  /proc function call to checkpoint an application.
  *  @author Matthieu Fertré
@@ -98,25 +114,20 @@ static int proc_app_chkpt(void __user *arg)
 	if (copy_from_user(&ckpt_info, arg, sizeof(ckpt_info)))
 		return -EFAULT;
 
-	storage_dir = kmalloc(ckpt_info.storage_dir_len, GFP_KERNEL);
-	if (!storage_dir)
-		return -ENOMEM;
+	res = copy_user_array((void**)&storage_dir, ckpt_info.storage_dir.path,
+			      ckpt_info.storage_dir.len);
+	if (res)
+		goto out;
 
-	if (copy_from_user(storage_dir, ckpt_info.storage_dir,
-			   ckpt_info.storage_dir_len * sizeof(char))) {
-		res = -EFAULT;
-		goto err_fault;
-	}
-
-	ckpt_info.storage_dir = storage_dir;
+	ckpt_info.storage_dir.path = storage_dir;
 
 	res = sys_app_chkpt(&ckpt_info);
 
 	if (copy_to_user(arg, &ckpt_info, sizeof(ckpt_info)))
 		res = -EFAULT;
 
-err_fault:
 	kfree(storage_dir);
+out:
 	return res;
 }
 
@@ -136,17 +147,14 @@ static int proc_app_restart(void __user *arg)
 	if (copy_from_user(&restart_req, arg, sizeof(restart_req)))
 		return -EFAULT;
 
-	storage_dir = kmalloc(restart_req.storage_dir_len, GFP_KERNEL);
-	if (!storage_dir)
-		return -ENOMEM;
+	/* get the storage _dir */
+	res = copy_user_array((void**)&storage_dir,
+			      restart_req.storage_dir.path,
+			      restart_req.storage_dir.len);
+	if (res)
+		goto error;
 
-	if (copy_from_user(storage_dir, restart_req.storage_dir,
-			   restart_req.storage_dir_len * sizeof(char))) {
-		res = -EFAULT;
-		goto err_fault;
-	}
-
-	restart_req.storage_dir = storage_dir;
+	restart_req.storage_dir.path = storage_dir;
 
 	res = sys_app_restart(&restart_req);
 
@@ -157,6 +165,7 @@ static int proc_app_restart(void __user *arg)
 
 err_fault:
 	kfree(storage_dir);
+error:
 	return res;
 }
 
