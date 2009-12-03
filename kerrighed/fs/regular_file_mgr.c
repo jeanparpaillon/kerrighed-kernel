@@ -410,8 +410,7 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 		goto error;
 
 	if (type != LOCAL_FILE
-	    && type != DVFS_FILE
-	    && type != UNSUPPORTED_FILE)
+	    && type != DVFS_FILE)
 		goto err_bad_data;
 
 	r = ghost_read(ghost, &key, sizeof(long));
@@ -425,7 +424,6 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 					       type, key);
 
 	if (file_link->desc_type == CR_FILE_NONE) {
-		BUG_ON(type != UNSUPPORTED_FILE);
 		*returned_file = NULL;
 		r = 0;
 	} else
@@ -543,12 +541,20 @@ static int cr_export_now_file(struct epm_action *action, ghost_t *ghost,
 			      struct task_struct *task,
 			      union export_args *args)
 {
-	int r;
+	int r, supported;
 
-	r = regular_file_export(action, ghost, task,
-				args->file_args.index,
-				args->file_args.file);
+	supported = can_checkpoint_file(args->file_args.file);
 
+	r = ghost_write(ghost, &supported, sizeof(supported));
+	if (r)
+		goto error;
+
+	if (supported)
+		r = regular_file_export(action, ghost, task,
+					args->file_args.index,
+					args->file_args.file);
+
+error:
 	if (r)
 		ckpt_err(action, r,
 			 "Fail to save file %d of process %d",
@@ -634,6 +640,25 @@ err_free_page:
 	free_page ((unsigned long) tmp);
 exit:
 	return r;
+}
+
+
+static int prepare_restart_data_unsupported_file(void **returned_data,
+						 size_t *data_size)
+{
+	struct cr_file_link *file_link;
+
+	*data_size = sizeof(struct cr_file_link);
+	file_link = kzalloc(*data_size, GFP_KERNEL);
+	if (!file_link)
+		return -ENOMEM;
+
+	file_link->desc_type = CR_FILE_NONE;
+	file_link->desc = NULL;
+
+	*returned_data = file_link;
+
+	return 0;
 }
 
 static int prepare_restart_data_local_file(struct file *f,
@@ -754,10 +779,19 @@ static int cr_import_now_file(struct epm_action *action,
 			      void **returned_data,
 			      size_t *data_size)
 {
-	int r, desc_size;
+	int r, desc_size, supported;
 	struct file *f;
 	void *desc;
 
+	r = ghost_read(ghost, &supported, sizeof(supported));
+	if (r)
+		goto error;
+
+	if (!supported) {
+		r = prepare_restart_data_unsupported_file(returned_data,
+							  data_size);
+		goto error;
+	}
 
 	/* We need to read the file description from the ghost
 	 * even if we may not use it
@@ -858,42 +892,6 @@ struct shared_object_operations cr_shared_file_ops = {
 	.export_now        = cr_export_now_file,
 	.export_user_info  = cr_export_user_info_file,
 	.import_now        = cr_import_now_file,
-	.import_complete   = cr_import_complete_file,
-	.delete            = cr_delete_file,
-};
-
-
-static int cr_export_now_unsupported_file(struct epm_action *action, ghost_t *ghost,
-					  struct task_struct *task,
-					  union export_args *args)
-{
-	return 0;
-}
-
-static int cr_import_now_unsupported_file(struct epm_action *action, ghost_t *ghost,
-					  struct task_struct *fake, int local_only,
-					  void ** returned_data,
-					  size_t *data_size)
-{
-	struct cr_file_link *file_link;
-
-	*data_size = sizeof(struct cr_file_link);
-	file_link = kzalloc(*data_size, GFP_KERNEL);
-	if (!file_link)
-		return -ENOMEM;
-
-	file_link->desc_type = CR_FILE_NONE;
-
-	*returned_data = file_link;
-
-	return 0;
-}
-
-struct shared_object_operations cr_shared_unsupported_file_ops = {
-	.restart_data_size = 0,
-	.export_now        = cr_export_now_unsupported_file,
-	.export_user_info  = cr_export_user_info_file,
-	.import_now        = cr_import_now_unsupported_file,
 	.import_complete   = cr_import_complete_file,
 	.delete            = cr_delete_file,
 };

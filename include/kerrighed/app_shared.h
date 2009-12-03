@@ -46,7 +46,6 @@ enum shared_obj_type {
 	/* file descriptors */
 	LOCAL_FILE,
 	DVFS_FILE,
-	UNSUPPORTED_FILE,
 
 	/* other objects */
 	FILES_STRUCT,
