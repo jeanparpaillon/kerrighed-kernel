@@ -1189,7 +1189,7 @@ static unsigned long shrink_inactive_list(unsigned long max_scan,
 #ifdef CONFIG_KRG_MM
 		__mod_zone_page_state(zone, NR_ACTIVE_KDDM,
 						-count[LRU_ACTIVE_KDDM]);
-		__mod_zone_page_state(zone, NR_INACTIVE_ANON,
+		__mod_zone_page_state(zone, NR_INACTIVE_KDDM,
 						-count[LRU_INACTIVE_KDDM]);
 #endif
 
