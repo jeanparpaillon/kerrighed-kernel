@@ -139,3 +139,16 @@ char *get_filename(struct file *file, char *buffer)
 
 	return filename;
 }
+
+int can_checkpoint_file(const struct file *file)
+{
+	if (is_socket(file)) {
+		printk("Checkpoint of socket file is not supported\n");
+		return 0;
+	} else if (is_named_pipe(file)) {
+		printk("Checkpoint of FIFO file (nammed pipe) is not supported\n");
+		return 0;
+	}
+
+	return 1;
+}
