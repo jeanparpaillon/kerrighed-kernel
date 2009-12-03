@@ -233,20 +233,25 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 			    objid_t objid,
 			    int cluster_wide_remove)
 {
+	kerrighed_node_t default_owner = kddm_io_default_owner(set, objid);
 	BUG_ON (object_frozen(obj_entry, set));
 
 	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
-	/* Check if we are in a flush case i.e. cluster_wide_remove == 0 */
+	/* Check if we are in a flush case i.e. cluster_wide_remove == 0
+	 * or if we have a pending request on the object. In both cases, can
+	 * cannot remove the object entry.
+	 */
 	if ((!cluster_wide_remove) ||
 	    atomic_read (&obj_entry->sleeper_count)) {
-		if (cluster_wide_remove &&
-		    (kddm_io_default_owner(set, objid) == kerrighed_node_id))
-			kddm_change_obj_state (set, obj_entry, objid,
-					       INV_OWNER);
-		else
-			kddm_change_obj_state (set, obj_entry, objid,
-					       INV_COPY);
+
+		if (cluster_wide_remove && (default_owner == kerrighed_node_id))
+			kddm_change_obj_state(set, obj_entry, objid, INV_OWNER);
+		else {
+			kddm_change_obj_state(set, obj_entry, objid, INV_COPY);
+			if (cluster_wide_remove)
+				change_prob_owner(obj_entry, default_owner);
+		}
 
 		wake_up (&obj_entry->waiting_tsk);
 		kddm_io_remove_object_and_unlock (obj_entry, set, objid);
