@@ -446,7 +446,7 @@ err:
 }
 
 static int global_init_restart(struct app_kddm_object **app_obj, long *app_id,
-			       char *checkpoint_dir, int *one_terminal)
+			       const char *checkpoint_dir, int *one_terminal)
 {
 	struct app_kddm_object *obj;
 	struct rpc_desc *desc;

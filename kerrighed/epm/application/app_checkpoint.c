@@ -570,7 +570,7 @@ static int _checkpoint_frozen_app(struct checkpoint_info *info)
 
 	prev_chkpt_sn = obj->chkpt_sn;
 
-	r = global_do_chkpt(obj, info->storage_dir, info->flags);
+	r = global_do_chkpt(obj, info->storage_dir.path, info->flags);
 
 	info->chkpt_sn = obj->chkpt_sn;
 	if (r)
