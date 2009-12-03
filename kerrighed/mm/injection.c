@@ -155,10 +155,13 @@ static void do_notify_mem(unsigned long unused)
 
 
 
-void krg_notify_mem(void)
+void krg_notify_mem(int mem_usage)
 {
 	long free_pages, cache_pages;
-	int old_val, mem_usage = -1;
+	int old_val;
+
+	if (mem_usage)
+		goto set_mem_usage;
 
 	free_pages = nr_free_pages();
 
@@ -170,15 +173,17 @@ void krg_notify_mem(void)
 		if (cache_pages < low_mem_limit)
 			mem_usage = OUT_OF_MEM;
 		else
-			mem_usage = LOW_MEM;
+			if (atomic_read(&mem_usage_notified) != OUT_OF_MEM)
+				mem_usage = LOW_MEM;
 	}
 
 	if (free_pages > low_mem_limit + low_mem_limit_delta)
 		mem_usage = FREE_MEM;
 
-	if (mem_usage == -1)
+	if (!mem_usage)
 		return;
 
+set_mem_usage:
 	old_val = atomic_xchg(&mem_usage_notified, mem_usage);
 
 	if (old_val == mem_usage)
@@ -283,6 +288,8 @@ int try_to_flush_page(struct page *page)
         struct anon_vma *anon_vma;
         struct vm_area_struct *vma;
 	int ret = SWAP_AGAIN;
+
+	krg_notify_mem(OUT_OF_MEM);
 
 	anon_vma = page_lock_anon_vma(page);
         if (!anon_vma)

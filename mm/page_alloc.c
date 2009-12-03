@@ -1490,7 +1490,7 @@ __alloc_pages_internal(gfp_t gfp_mask, unsigned int order,
 	lockdep_trace_alloc(gfp_mask);
 
 #ifdef CONFIG_KRG_MM
-	krg_notify_mem();
+	krg_notify_mem(0);
 #endif
 	might_sleep_if(wait);
 
@@ -1732,7 +1732,7 @@ void __pagevec_free(struct pagevec *pvec)
 void __free_pages(struct page *page, unsigned int order)
 {
 #ifdef CONFIG_KRG_MM
-	krg_notify_mem();
+	krg_notify_mem(0);
 #endif
 	if (put_page_testzero(page)) {
 		if (order == 0)
