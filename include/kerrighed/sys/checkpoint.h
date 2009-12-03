@@ -11,6 +11,12 @@
 #define APP_FROM_PID			1
 #define CKPT_W_UNSUPPORTED_FILE		2
 
+struct cstr
+{
+	size_t len; /* including the final \0 */
+	const char *path;
+};
+
 struct checkpoint_info
 {
 	long app_id;
@@ -21,8 +27,7 @@ struct checkpoint_info
 
 	int signal;
 
-	size_t storage_dir_len;
-	char *storage_dir;
+	struct cstr storage_dir;
 };
 
 #define GET_RESTART_CMD_PTS 1
@@ -33,8 +38,7 @@ struct restart_request
 	pid_t root_pid;
 	int flags;
 
-	size_t storage_dir_len;
-	char *storage_dir;
+	struct cstr storage_dir;
 };
 
 struct app_userdata_request
