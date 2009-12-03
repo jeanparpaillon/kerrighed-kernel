@@ -305,6 +305,44 @@ void mosix_load_balancer_update_node_set(struct scheduler_policy *policy,
 		__expell_all(lb, new_set);
 }
 
+static
+kerrighed_node_t
+mosix_load_balancer_new_task_node(struct scheduler_policy *policy,
+				  struct task_struct *parent)
+{
+	struct mosix_load_balancer *lb = to_mosix_load_balancer(policy);
+	struct scheduler *s = scheduler_policy_get_scheduler(policy);
+	krgnodemask_t nodes;
+	kerrighed_node_t node = KERRIGHED_NODE_ID_NONE;
+	unsigned long current_load;
+	int ret;
+
+	if (!s)
+		goto out;
+
+	ret = scheduler_port_get_value(&lb->ports[PORT_LOCAL_LOAD],
+				       &current_load, 1, NULL, 0);
+	if (ret < 1)
+		goto out_put_scheduler;
+
+	scheduler_get_node_set(s, &nodes);
+
+	lb_lock(lb);
+	if (krgnode_isset(kerrighed_node_id, nodes)) {
+		node = __find_target_node(lb, &nodes, current_load, 0);
+		if (node == KERRIGHED_NODE_ID_NONE)
+			node = kerrighed_node_id;
+	} else {
+		node = __find_target_node(lb, &nodes, ULONG_MAX, 0);
+	}
+	lb_unlock(lb);
+
+out_put_scheduler:
+	scheduler_put(s);
+out:
+	return node;
+}
+
 /* scheduler_policy_attributes */
 
 static
@@ -397,6 +435,7 @@ static struct scheduler_policy_operations mosix_load_balancer_ops = {
 	.new = mosix_load_balancer_new,
 	.destroy = mosix_load_balancer_destroy,
 	.update_node_set = mosix_load_balancer_update_node_set,
+	.new_task_node = mosix_load_balancer_new_task_node,
 };
 
 static SCHEDULER_POLICY_TYPE(mosix_load_balancer, "mosix_load_balancer",
