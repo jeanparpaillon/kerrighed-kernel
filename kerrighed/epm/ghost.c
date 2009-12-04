@@ -17,6 +17,8 @@
 #include <linux/delayacct.h>
 #include <linux/nsproxy.h>
 #include <linux/utsname.h>
+#include <linux/iocontext.h>
+#include <linux/ioprio.h>
 #include <linux/list.h>
 #include <linux/rcupdate.h>
 #include <net/net_namespace.h>
@@ -344,15 +346,16 @@ static int export_rt_mutexes(struct epm_action *action,
 static int export_io_context(struct epm_action *action,
 			     ghost_t *ghost, struct task_struct *task)
 {
-	int err = 0;
+#ifdef CONFIG_BLOCK
+	struct io_context *ioc = task->io_context;
 
-	if (action->type != EPM_REMOTE_CLONE) {
-		/* TODO */
-		if (task->io_context)
-			err = -EBUSY;
-	}
+	if (!ioc)
+		return 0;
 
-	return err;
+	return ghost_write(ghost, &ioc->ioprio, sizeof(ioc->ioprio));
+#else
+	return 0;
+#endif
 }
 
 static int export_last_siginfo(struct epm_action *action,
@@ -463,7 +466,6 @@ static int export_task(struct epm_action *action,
 	    || (r = export_cpu_timers(action, ghost, task))
 	    || (r = export_notifier(action, ghost, task))
 	    || (r = export_rt_mutexes(action, ghost, task))
-	    || (r = export_io_context(action, ghost, task))
 	    || (r = export_last_siginfo(action, ghost, task))
 	    || (r = export_pi_state(action, ghost, task))
 	    || (r = export_mempolicy(action, ghost, task)))
@@ -590,6 +592,10 @@ static int export_task(struct epm_action *action,
 	if (r)
 		GOTO_ERROR;
 
+	r = export_io_context(action, ghost, task);
+	if (r)
+		GOTO_ERROR;
+
 #undef ERROR_LABEL
 #undef GOTO_ERROR
 
@@ -679,7 +685,7 @@ static void unimport_last_siginfo(struct task_struct *task)
 
 static void unimport_io_context(struct task_struct *task)
 {
-	/* TODO */
+	put_io_context(task->io_context);
 }
 
 static void unimport_rt_mutexes(struct task_struct *task)
@@ -801,6 +807,7 @@ static void unimport_preempt_notifiers(struct task_struct *task)
 static void unimport_task(struct epm_action *action,
 			  struct task_struct *ghost_task)
 {
+	unimport_io_context(ghost_task);
 	unimport_exec_ids(ghost_task);
 	unimport_delays(ghost_task);
 #ifdef CONFIG_KRG_IPC
@@ -839,7 +846,6 @@ static void unimport_task(struct epm_action *action,
 	unimport_mempolicy(NULL);
 	unimport_pi_state(NULL);
 	unimport_last_siginfo(NULL);
-	unimport_io_context(NULL);
 	unimport_rt_mutexes(NULL);
 	unimport_notifier(NULL);
 	unimport_cpu_timers(NULL);
@@ -1173,7 +1179,31 @@ static int import_rt_mutexes(struct epm_action *action,
 static int import_io_context(struct epm_action *action,
 			     ghost_t *ghost, struct task_struct *task)
 {
-	/* TODO */
+#ifdef CONFIG_BLOCK
+	struct io_context *ioc;
+	unsigned short ioprio;
+	int err;
+
+	if (!task->io_context)
+		return 0;
+
+	err = ghost_read(ghost, &ioprio, sizeof(ioprio));
+	if (err)
+		return err;
+
+	if (!ioprio_valid(ioprio)) {
+		task->io_context = NULL;
+		return 0;
+	}
+
+	ioc = alloc_io_context(GFP_KERNEL, -1);
+	if (!ioc)
+		return -ENOMEM;
+	ioc->ioprio = ioprio;
+
+	task->io_context = ioc;
+#endif
+
 	return 0;
 }
 
@@ -1341,7 +1371,6 @@ static struct task_struct *import_task(struct epm_action *action,
 	       || import_cpu_timers(action, ghost, NULL)
 	       || import_notifier(action, ghost, NULL)
 	       || import_rt_mutexes(action, ghost, NULL)
-	       || import_io_context(action, ghost, NULL)
 	       || import_last_siginfo(action, ghost, NULL)
 	       || import_pi_state(action, ghost, NULL)
 	       || import_mempolicy(action, ghost, NULL));
@@ -1439,7 +1468,6 @@ static struct task_struct *import_task(struct epm_action *action,
 		task->backing_dev_info = NULL;
 	else
 		BUG_ON(task->backing_dev_info);
-	BUG_ON(task->io_context);
 	BUG_ON(task->last_siginfo);
 #ifdef CONFIG_FUTEX
 	INIT_LIST_HEAD(&task->pi_state_list);
@@ -1563,8 +1591,14 @@ static struct task_struct *import_task(struct epm_action *action,
 	if (retval)
 		goto err_exec_ids;
 
+	retval = import_io_context(action, ghost, task);
+	if (retval)
+		goto err_io_context;
+
 	return task;
 
+err_io_context:
+	unimport_exec_ids(task);
 err_exec_ids:
 	unimport_delays(task);
 err_delays:
@@ -1632,7 +1666,6 @@ err_alloc_task:
 	unimport_mempolicy(NULL);
 	unimport_pi_state(NULL);
 	unimport_last_siginfo(NULL);
-	unimport_io_context(NULL);
 	unimport_rt_mutexes(NULL);
 	unimport_notifier(NULL);
 	unimport_cpu_timers(NULL);
