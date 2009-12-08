@@ -141,8 +141,11 @@ out:
 static int proc_app_restart(void __user *arg)
 {
 	int res;
+	unsigned int i = 0;
 	struct restart_request restart_req;
+	size_t file_str_len;
 	char *storage_dir;
+	struct cr_subst_file *files = NULL;
 
 	if (copy_from_user(&restart_req, arg, sizeof(restart_req)))
 		return -EFAULT;
@@ -154,16 +157,68 @@ static int proc_app_restart(void __user *arg)
 	if (res)
 		goto error;
 
-	restart_req.storage_dir.path = storage_dir;
-
-	res = sys_app_restart(&restart_req);
-
-	if (copy_to_user(arg, &restart_req, sizeof(restart_req))) {
-		res = -EFAULT;
-		goto err_fault;
+	/* let's say that a user can not substitute more that 256 files */
+	if (restart_req.substitution.nr > 256) {
+		res = -E2BIG;
+		goto err_free_storage;
 	}
 
-err_fault:
+	/* first basic check about files subsitution args */
+	if (!restart_req.substitution.nr) {
+		if (!restart_req.substitution.files)
+			goto call_restart;
+
+		res = -EINVAL;
+		goto err_free_storage;
+	}
+
+	/* get the list of files to replace */
+	res = copy_user_array((void**)&files,
+			      restart_req.substitution.files,
+			      restart_req.substitution.nr *
+			      sizeof(struct cr_subst_file));
+	if (res)
+		goto err_free_storage;
+
+	file_str_len = sizeof(kerrighed_node_t)*2 + sizeof(unsigned long)*2;
+
+	for (i = 0; i < restart_req.substitution.nr; i++) {
+
+		if (strlen(restart_req.substitution.files[i].file_id)
+		    == file_str_len)
+			res = copy_user_array(
+				(void**)&files[i].file_id,
+				restart_req.substitution.files[i].file_id,
+				file_str_len + 1);
+		else
+			res = -EINVAL;
+
+		if (res) {
+			files[i].file_id = NULL;
+			goto err_free_files;
+		}
+	}
+
+	restart_req.storage_dir.path = storage_dir;
+	restart_req.substitution.files = files;
+
+call_restart:
+	/* call the restart */
+	res = sys_app_restart(&restart_req);
+	if (res)
+		goto err_free_files;
+
+	if (copy_to_user(arg, &restart_req, sizeof(restart_req)))
+		res = -EFAULT;
+
+err_free_files:
+	for (i = 0; i < restart_req.substitution.nr; i++) {
+		if (!files[i].file_id)
+			break;
+
+		kfree(files[i].file_id);
+	}
+err_free_storage:
 	kfree(storage_dir);
 error:
 	return res;

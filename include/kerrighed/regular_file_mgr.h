@@ -77,6 +77,14 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 
 int get_pipe_file_krg_desc(struct file *file, void **desc, int *desc_size);
 
+int get_regular_file_krg_desc(struct file *file, void **desc,
+			      int *desc_size);
+
+int prepare_restart_data_shared_file(struct file *f,
+				     int local_only,
+				     void *fdesc, int fdesc_size,
+				     void **returned_data, size_t *data_size);
+
 struct file *reopen_pipe_file_entry_from_krg_desc(struct task_struct *task,
 						  void *_desc);
 

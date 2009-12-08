@@ -1,15 +1,15 @@
+#include <linux/types.h>
+
 #ifndef CHECKPOINT_TYPES_H
 #define CHECKPOINT_TYPES_H
-
-#include <linux/types.h>
 
 #define E_CR_APPBUSY     1000
 #define E_CR_PIDBUSY     1001
 #define E_CR_TASKDEAD    1002
 #define E_CR_BADDATA     1003
 
-#define APP_FROM_PID			1
-#define CKPT_W_UNSUPPORTED_FILE		2
+#define APP_FROM_PID		1
+#define CKPT_W_UNSUPPORTED_FILE	2
 
 struct cstr
 {
@@ -32,6 +32,18 @@ struct checkpoint_info
 
 #define GET_RESTART_CMD_PTS 1
 
+struct cr_subst_file
+{
+	int fd;
+	char *file_id;
+};
+
+struct cr_subst_files_array
+{
+	unsigned int nr;
+	struct cr_subst_file *files;
+};
+
 struct restart_request
 {
 	long app_id;
@@ -39,6 +51,8 @@ struct restart_request
 	int flags;
 
 	struct cstr storage_dir;
+
+	struct cr_subst_files_array substitution;
 };
 
 struct app_userdata_request
