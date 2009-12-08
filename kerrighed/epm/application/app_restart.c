@@ -1205,7 +1205,7 @@ static int global_do_restart(struct app_kddm_object *obj,
 	if (r)
 		goto error;
 
-	r = global_restart_shared(desc, obj);
+	r = global_restart_shared(desc, obj, req);
 	if (r)
 		goto error;
 
@@ -1291,8 +1291,8 @@ int app_restart(struct restart_request *req, const task_identity_t *requester)
 	req->app_id = 0; /* sanitize app_id */
 
 	/* recreate the app_kddm_obj and the struct app_struct */
-	r = global_init_restart(&obj, &req->app_id, req->storage_dir,
-				  &one_terminal);
+	r = global_init_restart(&obj, &req->app_id, req->storage_dir.path,
+				&one_terminal);
 	if (r)
 		goto exit;
 

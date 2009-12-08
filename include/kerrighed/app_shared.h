@@ -27,7 +27,8 @@ int local_chkpt_shared(struct rpc_desc *desc,
 		       struct app_struct *app);
 
 int global_restart_shared(struct rpc_desc *desc,
-			  struct app_kddm_object *obj);
+			  struct app_kddm_object *obj,
+			  struct restart_request *req);
 
 int local_restart_shared(struct rpc_desc *desc,
 			 struct app_struct *app,
