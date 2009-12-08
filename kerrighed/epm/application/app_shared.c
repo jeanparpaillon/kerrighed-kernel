@@ -12,6 +12,7 @@
  *  Copyright (C) 2007-2008 Matthieu Fertré - INRIA
  */
 
+#include <linux/file.h>
 #include <linux/rbtree.h>
 #include <linux/sched.h>
 #include <linux/stat.h>
@@ -22,7 +23,11 @@
 #include <linux/mnt_namespace.h>
 #include <linux/pid_namespace.h>
 #include <net/net_namespace.h>
+#include <kerrighed/faf.h>
+#include <kerrighed/faf_file_mgr.h>
+#include <kerrighed/file.h>
 #include <kerrighed/namespace.h>
+#include <kerrighed/regular_file_mgr.h>
 #include <kerrighed/task.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
@@ -1242,6 +1247,345 @@ error:
 
 /*--------------------------------------------------------------------------*/
 
+struct substitution_file {
+	struct shared_index index;
+	kerrighed_node_t node;
+	size_t data_size;
+	void *data;
+	struct file *file;
+};
+
+static void clear_one_substitution_file(struct rb_node *node,
+					struct rb_root *files)
+{
+	struct shared_index *idx =
+		container_of(node, struct shared_index, node);
+
+	struct substitution_file *this =
+		container_of(idx, struct substitution_file, index);
+
+	rb_erase(node, files);
+
+	if (this->data_size)
+		kfree(this->data);
+
+	fput(this->file);
+
+	kfree(this);
+}
+
+static void clear_substitution_files(struct rb_root *files)
+{
+	struct rb_node *node;
+
+	while ((node = rb_first(files)))
+		clear_one_substitution_file(node, files);
+}
+
+static int send_substitution_files(struct rpc_desc *desc,
+				   struct rb_root *substitution_files)
+{
+	enum shared_obj_type end = NO_OBJ;
+	struct rb_node *node;
+	int r;
+
+	for (node = rb_first(substitution_files);
+	     node ; node = rb_next(node)) {
+		struct substitution_file *this;
+		struct shared_index *idx;
+
+		idx = container_of(node, struct shared_index, node);
+		this = container_of(idx, struct substitution_file, index);
+
+		r = rpc_pack_type(desc, idx->type);
+		if (r)
+			goto err_pack;
+
+		r = rpc_pack_type(desc, idx->key);
+		if (r)
+			goto err_pack;
+
+		r = rpc_pack_type(desc, this->node);
+		if (r)
+			goto err_pack;
+
+		r = rpc_pack_type(desc, this->data_size);
+		if (r)
+			goto err_pack;
+
+		if (this->data_size)
+			r = rpc_pack(desc, 0, this->data,
+				     this->data_size);
+		else
+			r = rpc_pack_type(desc, this->data);
+
+		if (r)
+			goto err_pack;
+	}
+	r = rpc_pack_type(desc, end);
+
+err_pack:
+	return r;
+}
+
+static int rcv_substitution_files(struct rpc_desc *desc,
+				  struct app_struct *app)
+{
+	int r;
+	struct shared_index index;
+	kerrighed_node_t node;
+	size_t data_size;
+	void *data;
+
+	r = rpc_unpack_type(desc, index.type);
+	if (r)
+		goto error;
+
+	while (index.type != NO_OBJ) {
+		struct shared_object *obj;
+
+		if (index.type != DVFS_FILE
+		    && index.type != UNSUPPORTED_FILE
+		    && index.type != LOCAL_FILE) {
+			r = -EINVAL;
+			goto error;
+		}
+
+		r = rpc_unpack_type(desc, index.key);
+		if (r)
+			goto error;
+
+		r = rpc_unpack_type(desc, node);
+		if (r)
+			goto error;
+
+		r = rpc_unpack_type(desc, data_size);
+		if (r)
+			goto error;
+
+		obj = kmalloc(sizeof(struct shared_object) + data_size,
+			      GFP_KERNEL);
+
+		if (!obj) {
+			r = -ENOMEM;
+			goto error;
+		}
+
+		if (data_size) {
+			data = &obj[1];
+			r = rpc_unpack(desc, 0, data, data_size);
+		}
+		else
+			r = rpc_unpack_type(desc, data);
+
+		if (r) {
+			kfree(obj);
+			goto error;
+		}
+
+		if (node == KERRIGHED_NODE_ID_NONE
+		    || krgnode_isset(node, app->restart.replacing_nodes)) {
+
+			/* the object is useful on this node, add it */
+			obj->index.type = index.type;
+			obj->index.key = index.key;
+
+			obj->restart.locality = SHARED_SLAVE;
+			obj->restart.data = data;
+			obj->ops = get_shared_ops(obj->index.type);
+
+			/* try to add it */
+			r = insert_shared_index(&app->shared_objects.root,
+						&obj->index);
+			if (r) {
+				kfree(obj);
+				goto error;
+			}
+		} else
+			/* object is useless here
+			 * one day, with a good implementation of rpc_pack_to,
+			 * this code path may disappear
+			 */
+			kfree(obj);
+
+		/* next ! */
+		r = rpc_unpack_type(desc, index.type);
+		if (r)
+			goto error;
+	}
+
+error:
+	return r;
+}
+
+static int __insert_one_substitution_file(struct rb_root *files,
+					  enum shared_obj_type type,
+					  unsigned long key,
+					  kerrighed_node_t node,
+					  size_t data_size,
+					  void *data,
+					  struct file *file)
+{
+	int r;
+	struct substitution_file *obj;
+
+	obj = kmalloc(sizeof(struct substitution_file), GFP_KERNEL);
+	if (!obj) {
+		r = -ENOMEM;
+		goto error;
+	}
+
+	obj->index.type = type;
+	obj->index.key = key;
+	obj->node = node;
+	obj->data_size = data_size;
+	obj->data = data;
+	obj->file = file;
+
+	r = insert_shared_index(files, &obj->index);
+	if (r)
+		kfree(obj);
+
+error:
+	return r;
+}
+
+static int insert_one_substitution_file(struct rb_root *files,
+					enum shared_obj_type type,
+					unsigned long key,
+					kerrighed_node_t node,
+					int fd)
+{
+	int r, fdesc_size;
+	size_t file_link_size;
+	struct file *file;
+	void *fdesc, *cr_file_link;
+
+	if (type != LOCAL_FILE
+	    && type != DVFS_FILE
+	    && type != UNSUPPORTED_FILE) {
+		r = -EINVAL;
+		goto error;
+	}
+
+	file = fget(fd);
+	if (!file) {
+		r = -EINVAL;
+		goto error;
+	}
+
+	if (!file->f_objid) {
+		r = create_kddm_file_object(file);
+		if (r)
+			goto err_put_file;
+	}
+
+	r = setup_faf_file_if_needed(file);
+	if (r)
+		goto err_put_file;
+
+	if (file->f_flags & (O_FAF_SRV|O_FAF_CLT))
+		r = get_faf_file_krg_desc(file, &fdesc, &fdesc_size);
+	else
+		r = get_regular_file_krg_desc(file, &fdesc, &fdesc_size);
+
+	if (r)
+		goto err_put_file;
+
+	r = prepare_restart_data_shared_file(file, 0, fdesc, fdesc_size,
+					     &cr_file_link, &file_link_size);
+	if (r)
+		goto err_free_desc;
+
+	r = __insert_one_substitution_file(files, type, key, node,
+					   file_link_size, cr_file_link, file);
+	if (r)
+		goto err_free_file_link;
+
+error:
+	return r;
+
+err_free_file_link:
+	kfree(cr_file_link);
+err_free_desc:
+	kfree(fdesc);
+err_put_file:
+	fput(file);
+	goto error;
+}
+
+static int parse_file_identifier(char *str, enum shared_obj_type *type,
+				 unsigned long *key, kerrighed_node_t *node)
+{
+	int r, nodelen, keylen, len;
+	char saved_c;
+
+	nodelen = sizeof(*node)*2;
+	keylen = sizeof(*key)*2;
+	len = strlen(str);
+
+	if (len != nodelen + keylen)
+		goto err_invalid;
+
+	/* read the key */
+	r = sscanf(str + nodelen, "%lX", key);
+	if (r != 1)
+		goto err_invalid;
+
+	/* read the node */
+	saved_c = str[nodelen];
+	str[nodelen] = '\0';
+
+	r = sscanf(str, "%hX", node);
+
+	str[nodelen]= saved_c;
+
+	if (r != 1)
+		goto err_invalid;
+
+	r = 0;
+
+	if (*node == KERRIGHED_NODE_ID_NONE)
+		*type = DVFS_FILE;
+	else
+		*type = LOCAL_FILE;
+
+out:
+	return r;
+
+err_invalid:
+	r = -EINVAL;
+	goto out;
+}
+
+static int insert_substitution_files(struct rb_root *files,
+				     struct restart_request *req)
+{
+	int i, r = 0;
+	enum shared_obj_type type;
+	unsigned long key;
+	kerrighed_node_t node;
+
+	for (i = 0; i < req->substitution.nr; i++) {
+
+		r = parse_file_identifier(req->substitution.files[i].file_id,
+					  &type, &key, &node);
+		if (r)
+			goto error;
+
+		r = insert_one_substitution_file(
+			files, type, key, node,
+			req->substitution.files[i].fd);
+		if (r)
+			goto error;
+	}
+
+error:
+	return r;
+}
+
+/*--------------------------------------------------------------------------*/
+
 int local_restart_shared_complete(struct app_struct *app,
 				  struct task_struct *fake)
 {
@@ -1363,14 +1707,19 @@ int local_restart_shared(struct rpc_desc *desc,
 		goto err_ghost_fs;
 	}
 
-	/* 1) restore pipes and files */
+	/* 1) get files replaced by coordinator */
+	r = rcv_substitution_files(desc, app);
+	if (r)
+		goto err_ghost_offset;
+
+	/* 2) restore pipes and files */
 	r = local_restart_shared_objects(desc, app, fake,
 					 PIPE_INODE, UNSUPPORTED_FILE,
 					 ghost_offsets);
 	if (r)
 		goto err_ghost_offset;
 
-	/* 2) restore other objects */
+	/* 3) restore other objects */
 	r = local_restart_shared_objects(desc, app, fake,
 					 FILES_STRUCT, SIGNAL_STRUCT,
 					 ghost_offsets);
@@ -1432,9 +1781,20 @@ err_rpc:
 }
 
 int global_restart_shared(struct rpc_desc *desc,
-			  struct app_kddm_object *obj)
+			  struct app_kddm_object *obj,
+			  struct restart_request *req)
 {
 	int r = 0;
+	struct rb_root substitute_files = RB_ROOT;
+
+	r = insert_substitution_files(&substitute_files, req);
+	if (r)
+		goto error;
+
+	/* send list of files replaced at restart time by coordinator */
+	r = send_substitution_files(desc, &substitute_files);
+	if (r)
+		goto error;
 
 	/* manage shared pipes and files */
 	r = global_restart_shared_objects(desc, obj);
@@ -1447,6 +1807,7 @@ int global_restart_shared(struct rpc_desc *desc,
 		goto error;
 
 error:
+	clear_substitution_files(&substitute_files);
 	if (r)
 		ckpt_err(NULL, r,
 			 "Fail to restore shared objects of application %ld",

@@ -146,8 +146,8 @@ int check_flush_file (struct epm_action *action,
  *  @return   0 if everything ok.
  *            Negative value otherwise.
  */
-static int get_regular_file_krg_desc(struct file *file, void **desc,
-				     int *desc_size)
+int get_regular_file_krg_desc(struct file *file, void **desc,
+			      int *desc_size)
 {
 	char *tmp, *file_name;
 	struct regular_file_krg_desc *data;
@@ -753,7 +753,14 @@ static int prepare_restart_data_faf_file(struct file *f,
 	file_link->desc = &file_link[1];
 	file_link->desc_type = CR_FILE_FAF_DESC;
 	file_link->dvfs_objid = f->f_objid;
-	fill_faf_file_krg_desc(file_link->desc, f);
+
+	if (f->f_flags & O_FAF_SRV)
+		fill_faf_file_krg_desc(file_link->desc, f);
+	else {
+		BUG_ON(!(f->f_flags & O_FAF_CLT));
+		*(faf_client_data_t*)file_link->desc =
+			*(faf_client_data_t*)f->private_data;
+	}
 
 	*returned_data = file_link;
 
@@ -761,6 +768,39 @@ static int prepare_restart_data_faf_file(struct file *f,
 }
 #endif
 
+int prepare_restart_data_shared_file(struct file *f,
+				     int local_only,
+				     void *fdesc, int fdesc_size,
+				     void **returned_data, size_t *data_size)
+{
+	int r;
+
+	if (!local_only) {
+		/* get a new dvfs objid */
+		r = create_kddm_file_object(f);
+		if (r)
+			goto error;
+
+#ifdef CONFIG_KRG_FAF
+		r = setup_faf_file_if_needed(f);
+		if (r)
+			goto error;
+
+		if (f->f_flags & (O_FAF_CLT | O_FAF_SRV))
+			r = prepare_restart_data_faf_file(f, returned_data,
+							  data_size);
+		else
+#endif
+			r = prepare_restart_data_dvfs_file(f, fdesc, fdesc_size,
+							   returned_data,
+							   data_size);
+	} else
+		r = prepare_restart_data_local_file(f, returned_data,
+						    data_size);
+
+error:
+	return r;
+}
 
 /* if *returned_data is not NULL, the file checkpointed must be
  * replaced. Thus, we just read the ghost.
@@ -792,29 +832,8 @@ static int __cr_import_now_file(struct epm_action *action,
 	if (r)
 		goto err_free_desc;
 
-	if (!local_only) {
-		/* get a new dvfs objid
-		 */
-		r = create_kddm_file_object(f);
-		if (r)
-			goto err_free_desc;
-
-#ifdef CONFIG_KRG_FAF
-		r = setup_faf_file_if_needed(f);
-		if (r)
-			goto err_free_desc;
-
-		if (f->f_flags & (O_FAF_CLT | O_FAF_SRV))
-			r = prepare_restart_data_faf_file(f, returned_data,
-							  data_size);
-		else
-#endif
-			r = prepare_restart_data_dvfs_file(f, desc, desc_size,
-							   returned_data,
-							   data_size);
-	} else
-		r = prepare_restart_data_local_file(f, returned_data,
-						    data_size);
+	r = prepare_restart_data_shared_file(f, local_only, desc, desc_size,
+					     returned_data, data_size);
 
 err_free_desc:
 	kfree(desc);
