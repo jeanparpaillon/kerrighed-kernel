@@ -66,6 +66,8 @@ int __must_check ghost_write(ghost_t *ghost, const void *buff, size_t length)
 	return r ;
 }
 
+#define ghost_write_type(ghost, v) ghost_write(ghost, &v, sizeof(v))
+
 /** Generic function to write a character string to a ghost.
  *  @author Matthieu Fertré
  *
@@ -115,6 +117,8 @@ int __must_check ghost_read(ghost_t *ghost, void *buff, size_t length)
 
 	return r ;
 }
+
+#define ghost_read_type(ghost, v) ghost_read(ghost, &v, sizeof(v))
 
 /** Generic function to read a character string from a ghost.
  *
