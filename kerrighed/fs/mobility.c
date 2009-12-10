@@ -484,7 +484,7 @@ int _cr_add_file_to_shared_table(struct task_struct *task,
 				 int index, struct file *file,
 				 int allow_unsupported)
 {
-	int r;
+	int r, force;
 	long key;
 	enum shared_obj_type type;
 	enum object_locality locality;
@@ -498,9 +498,14 @@ int _cr_add_file_to_shared_table(struct task_struct *task,
 	args.file_args.index = index;
 	args.file_args.file = file;
 
+	if (index == -1)
+		force = 0;
+	else
+		force = 1;
+
 	r = add_to_shared_objects_list(task->application,
 				       type, key, locality, task,
-				       &args);
+				       &args, force);
 
 	if (r == -ENOKEY) /* the file was already in the list */
                r = 0;
@@ -582,7 +587,7 @@ static int cr_export_later_files_struct(ghost_t *ghost,
 
 	r = add_to_shared_objects_list(task->application,
 				       FILES_STRUCT, key, LOCAL_ONLY,
-				       task, NULL);
+				       task, NULL, 0);
 	if (r)
 		goto err_add;
 
@@ -716,7 +721,7 @@ static int cr_export_later_fs_struct(struct epm_action *action,
 
 	r = add_to_shared_objects_list(task->application,
 				       FS_STRUCT, key, LOCAL_ONLY, task,
-				       NULL);
+				       NULL, 0);
 
 	if (r == -ENOKEY) /* the fs_struct was already in the list */
 		r = 0;

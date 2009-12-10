@@ -13,6 +13,7 @@
  */
 
 #include <linux/file.h>
+#include <linux/list.h>
 #include <linux/rbtree.h>
 #include <linux/sched.h>
 #include <linux/stat.h>
@@ -207,19 +208,13 @@ static int insert_shared_index(struct rb_root *root, struct shared_index *idx)
 
 /*--------------------------------------------------------------------------*/
 
-struct exporting {
-	struct task_struct *task;
-	struct list_head next;
-	union export_args args;
-}
-
 struct shared_object {
 	struct shared_index index;
 	struct shared_object_operations *ops;
 
 	union {
 		struct {
-			struct exporting export;
+			struct export_obj_info export;
 			enum object_locality locality;
 		} checkpoint;
 		struct {
@@ -270,7 +265,8 @@ int add_to_shared_objects_list(struct app_struct *app,
 			       unsigned long key,
 			       enum object_locality locality,
 			       struct task_struct *exporting_task,
-			       union export_args *args)
+			       union export_args *args,
+			       int force)
 {
 	int r;
 	struct shared_object_operations *s_ops;
@@ -291,9 +287,35 @@ int add_to_shared_objects_list(struct app_struct *app,
 	if (r) {
 		/* shared object is already in the list */
 		kfree(s);
+
+		/* we should record additionnal info about exporting task */
+		if (force) {
+			struct export_obj_info *export;
+
+			s = search_shared_object(&app->shared_objects.root,
+						 type, key);
+			BUG_ON(!s);
+
+			export = kmalloc(sizeof(struct export_obj_info),
+					 GFP_KERNEL);
+			if (!export) {
+				kfree(s);
+				goto err_unlock;
+			}
+
+			export->task = exporting_task;
+			if (args)
+				export->args = *args;
+			list_add_tail(&export->next,
+				      &s->checkpoint.export.next);
+			r = 0;
+		}
 #ifdef CONFIG_KRG_DEBUG
-		s = search_shared_object(&app->shared_objects.root, type, key);
-		BUG_ON(!s);
+		else {
+			s = search_shared_object(&app->shared_objects.root,
+						 type, key);
+			BUG_ON(!s);
+		}
 #endif
 	} else {
 		/* the object was not in the list, finishing initialization */
@@ -306,7 +328,7 @@ int add_to_shared_objects_list(struct app_struct *app,
 
 		s->checkpoint.locality = locality;
 	}
-
+err_unlock:
 	spin_unlock(&app->shared_objects.lock);
 
 	return r;
@@ -320,6 +342,16 @@ static void clear_one_shared_object(struct rb_node *node,
 
 	struct shared_object *this =
 		container_of(idx, struct shared_object, index);
+
+	struct list_head *tmp, *element;
+	struct export_obj_info *export;
+
+	/* this is called only after checkpoint, we can safely to that */
+	list_for_each_safe(element, tmp, &this->checkpoint.export.next) {
+		export = list_entry(element, struct export_obj_info, next);
+		list_del(element);
+		kfree(export);
+	}
 
 	rb_erase(node, &app->shared_objects.root);
 	kfree(this);
@@ -462,8 +494,7 @@ static int export_one_shared_object(ghost_t *ghost,
 	if (this->ops->export_user_info)
 		r = this->ops->export_user_info(action, user_ghost,
 						this->index.key,
-						this->checkpoint.export.task,
-						&this->checkpoint.export.args);
+						&this->checkpoint.export);
 
 error:
 	if (r)

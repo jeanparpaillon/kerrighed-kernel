@@ -464,7 +464,7 @@ static int cr_export_later_mm_struct(struct epm_action *action,
 
 	r = add_to_shared_objects_list(task->application,
 				       MM_STRUCT, key, LOCAL_ONLY, task,
-				       NULL);
+				       NULL, 0);
 
 	if (r == -ENOKEY) { /* the mm_struct was already in the list */
 		r = 0;
