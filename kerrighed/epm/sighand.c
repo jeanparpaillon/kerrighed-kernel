@@ -118,10 +118,16 @@ static int sighand_struct_import_object(struct rpc_desc *desc,
 {
 	struct sighand_struct_kddm_object *obj = obj_entry->object;
 	struct sighand_struct *dest;
-	struct sighand_struct tmp;
+	struct sighand_struct *tmp;
 	int retval;
 
-	retval = rpc_unpack_type(desc, tmp);
+	tmp = kmem_cache_alloc(sighand_cachep, GFP_KERNEL);
+	if (!tmp)
+		return -ENOMEM;
+
+	retval = rpc_unpack_type(desc, tmp->count);
+	if (likely(!retval))
+		retval = rpc_unpack_type(desc, tmp->action);
 	if (likely(!retval))
 		retval = rpc_unpack_type(desc, obj->count);
 
@@ -130,10 +136,12 @@ static int sighand_struct_import_object(struct rpc_desc *desc,
 		spin_lock_irq(&dest->siglock);
 		/* This is safe since all changes are protected by grab, and
 		 * no thread can hold a grab during import */
-		atomic_set(&dest->count, atomic_read(&tmp.count));
-		memcpy(dest->action, tmp.action, sizeof(dest->action));
+		atomic_set(&dest->count, atomic_read(&tmp->count));
+		memcpy(dest->action, tmp->action, sizeof(dest->action));
 		spin_unlock_irq(&dest->siglock);
 	}
+
+	kmem_cache_free(sighand_cachep, tmp);
 
 	return retval;
 }
@@ -152,7 +160,9 @@ static int sighand_struct_export_object(struct rpc_desc *desc,
 	int retval;
 
 	src = obj->sighand;
-	retval = rpc_pack_type(desc, *src);
+	retval = rpc_pack_type(desc, src->count);
+	if (likely(!retval))
+		retval = rpc_pack_type(desc, src->action);
 	if (likely(!retval))
 		retval = rpc_pack_type(desc, obj->count);
 
