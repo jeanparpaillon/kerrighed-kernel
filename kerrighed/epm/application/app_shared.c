@@ -207,14 +207,19 @@ static int insert_shared_index(struct rb_root *root, struct shared_index *idx)
 
 /*--------------------------------------------------------------------------*/
 
+struct exporting {
+	struct task_struct *task;
+	struct list_head next;
+	union export_args args;
+}
+
 struct shared_object {
 	struct shared_index index;
 	struct shared_object_operations *ops;
 
 	union {
 		struct {
-			struct task_struct *exporting_task;
-			union export_args args;
+			struct exporting export;
 			enum object_locality locality;
 		} checkpoint;
 		struct {
@@ -293,9 +298,12 @@ int add_to_shared_objects_list(struct app_struct *app,
 	} else {
 		/* the object was not in the list, finishing initialization */
 		s->ops = s_ops;
-		s->checkpoint.exporting_task = exporting_task;
+
+		s->checkpoint.export.task = exporting_task;
 		if (args)
-			s->checkpoint.args = *args;
+			s->checkpoint.export.args = *args;
+		INIT_LIST_HEAD(&s->checkpoint.export.next);
+
 		s->checkpoint.locality = locality;
 	}
 
@@ -445,8 +453,8 @@ static int export_one_shared_object(ghost_t *ghost,
 		goto error;
 
 	r = this->ops->export_now(action, ghost,
-				  this->checkpoint.exporting_task,
-				  &this->checkpoint.args);
+				  this->checkpoint.export.task,
+				  &this->checkpoint.export.args);
 
 	if (r)
 		goto error;
@@ -454,8 +462,8 @@ static int export_one_shared_object(ghost_t *ghost,
 	if (this->ops->export_user_info)
 		r = this->ops->export_user_info(action, user_ghost,
 						this->index.key,
-						this->checkpoint.exporting_task,
-						&this->checkpoint.args);
+						this->checkpoint.export.task,
+						&this->checkpoint.export.args);
 
 error:
 	if (r)
