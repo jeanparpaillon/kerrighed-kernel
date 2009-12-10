@@ -68,6 +68,11 @@ union export_args {
 	struct file_export_args file_args;
 };
 
+struct export_obj_info {
+	struct task_struct *task;
+	struct list_head next;
+	union export_args args;
+};
 
 enum object_locality {
 	LOCAL_ONLY,
@@ -81,7 +86,8 @@ int add_to_shared_objects_list(struct app_struct *app,
 			       unsigned long key,
 			       enum object_locality locality,
 			       struct task_struct* exporting_task,
-			       union export_args *args);
+			       union export_args *args,
+			       int force);
 
 void *get_imported_shared_object(struct app_struct *app,
 				 enum shared_obj_type type,
@@ -96,7 +102,7 @@ struct shared_object_operations {
 	 * userspace
 	 */
 	int (*export_user_info) (struct epm_action *, ghost_t *, unsigned long,
-				 struct task_struct *, union export_args *);
+				 struct export_obj_info *);
 
 	int (*import_now) (struct epm_action *, ghost_t *, struct task_struct *,
 			   int, void  **, size_t *);

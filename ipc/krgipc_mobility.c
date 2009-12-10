@@ -286,7 +286,7 @@ static int cr_export_later_sysv_sem(struct epm_action *action,
 	if (task->sysvsem.undo_list_id != UNIQUE_ID_NONE) {
 		r = add_to_shared_objects_list(task->application, SEMUNDO_LIST,
 					       key, SHARED_ANY, task,
-					       NULL);
+					       NULL, 0);
 
 		if (r == -ENOKEY) /* the semundo list was already in the list */
 			r = 0;

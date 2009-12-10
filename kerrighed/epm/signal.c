@@ -768,7 +768,7 @@ static int cr_export_later_signal_struct(struct epm_action *action,
 
 	r = add_to_shared_objects_list(task->application,
 				       SIGNAL_STRUCT, key, LOCAL_ONLY,
-				       task, NULL);
+				       task, NULL, 0);
 
 	if (r == -ENOKEY) /* the signal_struct was already in the list */
 		r = 0;

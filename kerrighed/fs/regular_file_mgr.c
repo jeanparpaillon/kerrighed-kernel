@@ -565,19 +565,20 @@ error:
 }
 
 int cr_export_user_info_file(struct epm_action *action, ghost_t *ghost,
-			     unsigned long key, struct task_struct *task,
-			     union export_args *args)
+			     unsigned long key, struct export_obj_info *export)
 {
-	int r, keylen, nodelen;
+	int r, index, keylen, nodelen;
 	char *tmp, *file_name;
 	struct file *file;
+	struct task_struct *task;
+	struct export_obj_info *_export;
 	kerrighed_node_t file_node;
 
 	/* do not export info about mapped file */
-	if (args->file_args.index == -1)
+	if (export->args.file_args.index == -1)
 		return 0;
 
-	file = args->file_args.file;
+	file = export->args.file_args.file;
 
 	tmp = (char *) __get_free_page (GFP_KERNEL);
 	if (!tmp) {
@@ -631,10 +632,26 @@ int cr_export_user_info_file(struct epm_action *action, ghost_t *ghost,
 	nodelen = sizeof(file_node)*2;
 	keylen = sizeof(key)*2;
 
-	r = ghost_printf(ghost, "|%0*hX%0*lX|%s|%d:%d\n",
-			 nodelen, file_node, keylen, key,
-			 file_name, task_pid_knr(task), args->file_args.index);
+	task = export->task;
+	index = export->args.file_args.index;
 
+	r = ghost_printf(ghost, "|%0*hX%0*lX|%s|%d:%d",
+			 nodelen, file_node, keylen, key,
+			 file_name, task_pid_knr(task), index);
+	if (r)
+		goto err_free_page;
+
+	list_for_each_entry(_export, &export->next, next) {
+		task = _export->task;
+		index = _export->args.file_args.index;
+
+		r = ghost_printf(ghost, ",%d:%d",
+				 task_pid_knr(task), index);
+		if (r)
+			goto err_free_page;
+	}
+
+	r = ghost_printf(ghost, "\n");
 
 err_free_page:
 	free_page ((unsigned long) tmp);

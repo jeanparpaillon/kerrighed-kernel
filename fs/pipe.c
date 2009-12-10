@@ -1140,7 +1140,7 @@ int cr_add_pipe_inode_to_shared_table(struct task_struct *task,
 	key = (long)file->f_path.dentry->d_inode;
 
 	r = add_to_shared_objects_list(task->application, PIPE_INODE, key,
-				       LOCAL_ONLY, task, &args);
+				       LOCAL_ONLY, task, &args, 0);
 	if (r == -ENOKEY) /* the inode was already in the list */
 		r = 0;
 
