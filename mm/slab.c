@@ -3842,6 +3842,81 @@ const char *kmem_cache_name(struct kmem_cache *cachep)
 EXPORT_SYMBOL_GPL(kmem_cache_name);
 
 /*
+ * Calculate the upper bound of pages required to sequentially allocate
+ * @objects objects from @cachep.
+ */
+unsigned kmem_alloc_estimate(struct kmem_cache *cachep,
+		gfp_t flags, int objects)
+{
+	/*
+	 * (1) memory for objects,
+	 */
+	unsigned nr_slabs = DIV_ROUND_UP(objects, cachep->num);
+	unsigned nr_pages = nr_slabs << cachep->gfporder;
+
+	/*
+	 * (2) memory for each per-cpu queue (nr_cpu_ids),
+	 * (3) memory for each per-node alien queues (nr_cpu_ids), and
+	 * (4) some amount of memory for the slab management structures
+	 *
+	 * XXX: truely account these
+	 */
+	nr_pages += 1 + ilog2(nr_pages);
+
+	return nr_pages;
+}
+
+/*
+ * Calculate the upper bound of pages required to sequentially allocate
+ * @count objects of @size bytes from kmalloc given @flags.
+ */
+unsigned kmalloc_estimate_objs(size_t size, gfp_t flags, int count)
+{
+	struct kmem_cache *s = kmem_find_general_cachep(size, flags);
+	if (!s)
+		return 0;
+
+	return kmem_alloc_estimate(s, flags, count);
+}
+EXPORT_SYMBOL_GPL(kmalloc_estimate_objs);
+
+/*
+ * Calculate the upper bound of pages requires to sequentially allocate @bytes
+ * from kmalloc in an unspecified number of allocations of nonuniform size.
+ */
+unsigned kmalloc_estimate_bytes(gfp_t flags, size_t bytes)
+{
+	unsigned long pages;
+	struct cache_sizes *csizep = malloc_sizes;
+
+	/*
+	 * multiply by two, in order to account the worst case slack space
+	 * due to the power-of-two allocation sizes.
+	 */
+	pages = DIV_ROUND_UP(2 * bytes, PAGE_SIZE);
+
+	/*
+	 * add the kmem_cache overhead of each possible kmalloc cache
+	 */
+	for (csizep = malloc_sizes; csizep->cs_cachep; csizep++) {
+		struct kmem_cache *s;
+
+#ifdef CONFIG_ZONE_DMA
+		if (unlikely(flags & __GFP_DMA))
+			s = csizep->cs_dmacachep;
+		else
+#endif
+			s = csizep->cs_cachep;
+
+		if (s)
+			pages += kmem_alloc_estimate(s, flags, 0);
+	}
+
+	return pages;
+}
+EXPORT_SYMBOL_GPL(kmalloc_estimate_bytes);
+
+/*
  * This initializes kmem_list3 or resizes various caches for all nodes.
  */
 static int alloc_kmemlist(struct kmem_cache *cachep)

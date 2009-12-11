@@ -693,6 +693,73 @@ int slab_is_available(void)
 	return slob_ready;
 }
 
+static __slob_estimate(unsigned size, unsigned align, unsigned objects)
+{
+	unsigned nr_pages;
+
+	size = SLOB_UNIT * SLOB_UNITS(size + align - 1);
+
+	if (size <= PAGE_SIZE) {
+		nr_pages = DIV_ROUND_UP(objects, PAGE_SIZE / size);
+	} else {
+		nr_pages = objects << get_order(size);
+	}
+
+	return nr_pages;
+}
+
+/*
+ * Calculate the upper bound of pages required to sequentially allocate
+ * @objects objects from @cachep.
+ */
+unsigned kmem_alloc_estimate(struct kmem_cache *c, gfp_t flags, int objects)
+{
+	unsigned size = c->size;
+
+	if (c->flags & SLAB_DESTROY_BY_RCU)
+		size += sizeof(struct slob_rcu);
+
+	return __slob_estimate(size, c->align, objects);
+}
+
+/*
+ * Calculate the upper bound of pages required to sequentially allocate
+ * @count objects of @size bytes from kmalloc given @flags.
+ */
+unsigned kmalloc_estimate_objs(size_t size, gfp_t flags, int count)
+{
+	unsigned align = max(ARCH_KMALLOC_MINALIGN, ARCH_SLAB_MINALIGN);
+
+	return __slob_estimate(size, align, count);
+}
+EXPORT_SYMBOL_GPL(kmalloc_estimate_objs);
+
+/*
+ * Calculate the upper bound of pages requires to sequentially allocate @bytes
+ * from kmalloc in an unspecified number of allocations of nonuniform size.
+ */
+unsigned kmalloc_estimate_bytes(gfp_t flags, size_t bytes)
+{
+	unsigned long pages;
+
+	/*
+	 * Multiply by two, in order to account the worst case slack space
+	 * due to the power-of-two allocation sizes.
+	 *
+	 * While not true for slob, it cannot do worse than that for sequential
+	 * allocations.
+	 */
+	pages = DIV_ROUND_UP(2 * bytes, PAGE_SIZE);
+
+	/*
+	 * Our power of two series starts at PAGE_SIZE, so add one page.
+	 */
+	pages++;
+
+	return pages;
+}
+EXPORT_SYMBOL_GPL(kmalloc_estimate_bytes);
+
 void __init kmem_cache_init(void)
 {
 	slob_ready = 1;

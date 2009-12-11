@@ -2443,6 +2443,42 @@ const char *kmem_cache_name(struct kmem_cache *s)
 }
 EXPORT_SYMBOL(kmem_cache_name);
 
+/*
+ * Calculate the upper bound of pages required to sequentially allocate
+ * @objects objects from @cachep.
+ *
+ * We should use s->min_objects because those are the least efficient.
+ */
+unsigned kmem_alloc_estimate(struct kmem_cache *s, gfp_t flags, int objects)
+{
+	unsigned long pages;
+	struct kmem_cache_order_objects x;
+
+	if (WARN_ON(!s) || WARN_ON(!oo_objects(s->min)))
+		return 0;
+
+	x = s->min;
+	pages = DIV_ROUND_UP(objects, oo_objects(x)) << oo_order(x);
+
+	/*
+	 * Account the possible additional overhead if the slab holds more that
+	 * one object. Use s->max_objects because that's the worst case.
+	 */
+	x = s->oo;
+	if (oo_objects(x) > 1) {
+		/*
+		 * Account the possible additional overhead if per cpu slabs
+		 * are currently empty and have to be allocated. This is very
+		 * unlikely but a possible scenario immediately after
+		 * kmem_cache_shrink.
+		 */
+		pages += num_possible_cpus() << oo_order(x);
+	}
+
+	return pages;
+}
+EXPORT_SYMBOL_GPL(kmem_alloc_estimate);
+
 static void list_slab_objects(struct kmem_cache *s, struct page *page,
 							const char *text)
 {
@@ -2839,6 +2875,57 @@ void kfree(const void *x)
 	slab_free(page->slab, page, object, _RET_IP_);
 }
 EXPORT_SYMBOL(kfree);
+
+/*
+ * Calculate the upper bound of pages required to sequentially allocate
+ * @count objects of @size bytes from kmalloc given @flags.
+ */
+unsigned kmalloc_estimate_objs(size_t size, gfp_t flags, int count)
+{
+	struct kmem_cache *s = get_slab(size, flags);
+	if (!s)
+		return 0;
+
+	return kmem_alloc_estimate(s, flags, count);
+
+}
+EXPORT_SYMBOL_GPL(kmalloc_estimate_objs);
+
+/*
+ * Calculate the upper bound of pages requires to sequentially allocate @bytes
+ * from kmalloc in an unspecified number of allocations of nonuniform size.
+ */
+unsigned kmalloc_estimate_bytes(gfp_t flags, size_t bytes)
+{
+	int i;
+	unsigned long pages;
+
+	/*
+	 * multiply by two, in order to account the worst case slack space
+	 * due to the power-of-two allocation sizes.
+	 */
+	pages = DIV_ROUND_UP(2 * bytes, PAGE_SIZE);
+
+	/*
+	 * add the kmem_cache overhead of each possible kmalloc cache
+	 */
+	for (i = 1; i < PAGE_SHIFT; i++) {
+		struct kmem_cache *s;
+
+#ifdef CONFIG_ZONE_DMA
+		if (unlikely(flags & SLUB_DMA))
+			s = dma_kmalloc_cache(i, flags);
+		else
+#endif
+			s = &kmalloc_caches[i];
+
+		if (s)
+			pages += kmem_alloc_estimate(s, flags, 0);
+	}
+
+	return pages;
+}
+EXPORT_SYMBOL_GPL(kmalloc_estimate_bytes);
 
 /*
  * kmem_cache_shrink removes empty slabs from the partial lists and sorts
