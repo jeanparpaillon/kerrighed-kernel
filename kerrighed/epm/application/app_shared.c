@@ -1447,6 +1447,7 @@ static int __insert_one_substitution_file(struct rb_root *files,
 					  struct file *file)
 {
 	int r;
+	struct shared_index *idx;
 	struct substitution_file *obj;
 
 	obj = kmalloc(sizeof(struct substitution_file), GFP_KERNEL);
@@ -1462,10 +1463,18 @@ static int __insert_one_substitution_file(struct rb_root *files,
 	obj->data = data;
 	obj->file = file;
 
-	r = insert_shared_index(files, &obj->index);
-	if (r)
+	idx = __insert_shared_index(files, &obj->index);
+	if (idx != &obj->index) {
+		/* a substitution is already registered for this key */
 		kfree(obj);
 
+		obj = container_of(idx, struct substitution_file, index);
+		if (obj->file == file)
+			r = -EALREADY;
+		else
+			r = -ENOKEY;
+	} else
+		r = 0;
 error:
 	return r;
 }
@@ -1518,8 +1527,14 @@ static int insert_one_substitution_file(struct rb_root *files,
 
 	r = __insert_one_substitution_file(files, type, key, node,
 					   file_link_size, cr_file_link, file);
-	if (r)
+	if (r) {
+		if (r == -EALREADY)
+			/* the same file substitution has already
+			 * been registered */
+			r = 0;
+
 		goto err_free_file_link;
+	}
 
 error:
 	return r;
