@@ -241,7 +241,9 @@ static inline int gfp_to_alloc_flags(gfp_t gfp_mask)
 	if (wait)
 		alloc_flags |= ALLOC_CPUSET;
 	if (likely(!(gfp_mask & __GFP_NOMEMALLOC))) {
-		if (!in_irq() && (p->flags & PF_MEMALLOC))
+		if (gfp_mask & __GFP_MEMALLOC)
+			alloc_flags |= ALLOC_NO_WATERMARKS;
+		else if (!in_irq() && (p->flags & PF_MEMALLOC))
 			alloc_flags |= ALLOC_NO_WATERMARKS;
 		else if (!in_interrupt() &&
 			 unlikely(test_thread_flag(TIF_MEMDIE)))
