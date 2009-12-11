@@ -240,6 +240,13 @@ static inline int gfp_to_alloc_flags(gfp_t gfp_mask)
 		alloc_flags |= ALLOC_HIGH;
 	if (wait)
 		alloc_flags |= ALLOC_CPUSET;
+	if (likely(!(gfp_mask & __GFP_NOMEMALLOC))) {
+		if (!in_irq() && (p->flags & PF_MEMALLOC))
+			alloc_flags |= ALLOC_NO_WATERMARKS;
+		else if (!in_interrupt() &&
+			 unlikely(test_thread_flag(TIF_MEMDIE)))
+			alloc_flags |= ALLOC_NO_WATERMARKS;
+	}
 
 	return alloc_flags;
 }
