@@ -461,12 +461,16 @@ void destroy_shared_objects(struct app_struct *app,
 
 /*--------------------------------------------------------------------------*/
 
-static int export_one_shared_object(ghost_t *ghost,
-				    ghost_t *user_ghost,
-				    struct epm_action *action,
-				    struct shared_object *this)
+static int __export_one_shared_object_kernel(ghost_t *ghost,
+					     struct epm_action *action,
+					     struct shared_object *this)
 {
-	int r;
+	int r = 0;
+
+	if (this->checkpoint.locality != SHARED_MASTER
+	    && this->checkpoint.locality != LOCAL_ONLY)
+		/* nothing to do, we are not responsible of this object */
+		goto error;
 
 	r = ghost_write(ghost, &this->index.type,
 			sizeof(enum shared_obj_type));
@@ -475,9 +479,6 @@ static int export_one_shared_object(ghost_t *ghost,
 	r = ghost_write(ghost, &this->index.key, sizeof(long));
 	if (r)
 		goto error;
-
-	BUG_ON(this->checkpoint.locality != LOCAL_ONLY
-	       && this->checkpoint.locality != SHARED_MASTER);
 
 	r = ghost_write(ghost, &this->checkpoint.locality,
 			sizeof(enum object_locality));
@@ -488,6 +489,24 @@ static int export_one_shared_object(ghost_t *ghost,
 				  this->checkpoint.export.task,
 				  &this->checkpoint.export.args);
 
+error:
+	return r;
+}
+
+static int export_one_shared_object(ghost_t *ghost,
+				    ghost_t *user_ghost,
+				    struct epm_action *action,
+				    struct shared_object *this)
+{
+	int r;
+
+	BUG_ON(!this->ops->export_user_info &&
+	       this->checkpoint.locality == SHARED_SLAVE);
+	BUG_ON(this->checkpoint.locality != LOCAL_ONLY
+	       && this->checkpoint.locality != SHARED_MASTER
+	       && this->checkpoint.locality != SHARED_SLAVE);
+
+	r = __export_one_shared_object_kernel(ghost, action, this);
 	if (r)
 		goto error;
 
@@ -800,7 +819,7 @@ static int rcv_full_dist_objects_list(struct rpc_desc *desc,
 		node = search_node(&app->shared_objects.root,
 				   s.index.type, s.index.key);
 
-		if (s.master_node == kerrighed_node_id) {
+		if (node) {
 			struct shared_index *idx;
 			struct shared_object *obj;
 
@@ -809,11 +828,13 @@ static int rcv_full_dist_objects_list(struct rpc_desc *desc,
 
 			if (krgnode_is_unique(kerrighed_node_id, s.nodes))
 				obj->checkpoint.locality = LOCAL_ONLY;
-			else
+			else if (s.master_node == kerrighed_node_id)
 				obj->checkpoint.locality = SHARED_MASTER;
-
-		} else if (node)
-			clear_one_shared_object(node, app);
+			else if (obj->ops->export_user_info)
+				obj->checkpoint.locality = SHARED_SLAVE;
+			else
+				clear_one_shared_object(node, app);
+		}
 
 		/* next ! */
 		r = rpc_unpack_type(desc, s.index.type);
