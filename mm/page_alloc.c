@@ -120,6 +120,8 @@ static char * const zone_names[MAX_NR_ZONES] = {
 
 static DEFINE_SPINLOCK(min_free_lock);
 int min_free_kbytes = 1024;
+static DEFINE_MUTEX(var_free_mutex);
+int var_free_kbytes;
 
 unsigned long __meminitdata nr_kernel_pages;
 unsigned long __meminitdata nr_all_pages;
@@ -1250,7 +1252,7 @@ int zone_watermark_ok(struct zone *z, int order, unsigned long mark,
 	if (alloc_flags & ALLOC_HARDER)
 		min -= min / 4;
 
-	if (free_pages <= min + z->lowmem_reserve[classzone_idx])
+	if (free_pages <= min+z->lowmem_reserve[classzone_idx]+z->pages_emerg)
 		return 0;
 	for (o = 0; o < order; o++) {
 		/* At the next order, this order's pages become unavailable */
@@ -1478,7 +1480,7 @@ __alloc_pages_internal(gfp_t gfp_mask, unsigned int order,
 	struct reclaim_state reclaim_state;
 	struct task_struct *p = current;
 	int do_retry;
-	int alloc_flags;
+	int alloc_flags = 0;
 	unsigned long did_some_progress;
 	unsigned long pages_reclaimed = 0;
 
@@ -1668,8 +1670,8 @@ nofail_alloc:
 nopage:
 	if (!(gfp_mask & __GFP_NOWARN) && printk_ratelimit()) {
 		printk(KERN_WARNING "%s: page allocation failure."
-			" order:%d, mode:0x%x\n",
-			p->comm, order, gfp_mask);
+			" order:%d, mode:0x%x, alloc_flags:0x%x, pflags:0x%x\n",
+			p->comm, order, gfp_mask, alloc_flags, p->flags);
 		dump_stack();
 		show_mem();
 	}
@@ -1945,9 +1947,9 @@ void show_free_areas(void)
 			"\n",
 			zone->name,
 			K(zone_page_state(zone, NR_FREE_PAGES)),
-			K(zone->pages_min),
-			K(zone->pages_low),
-			K(zone->pages_high),
+			K(zone->pages_emerg + zone->pages_min),
+			K(zone->pages_emerg + zone->pages_low),
+			K(zone->pages_emerg + zone->pages_high),
 			K(zone_page_state(zone, NR_ACTIVE_ANON)),
 			K(zone_page_state(zone, NR_INACTIVE_ANON)),
 			K(zone_page_state(zone, NR_ACTIVE_FILE)),
@@ -4241,7 +4243,7 @@ static void calculate_totalreserve_pages(void)
 			}
 
 			/* we treat pages_high as reserved pages. */
-			max += zone->pages_high;
+			max += zone->pages_high + zone->pages_emerg;
 
 			if (max > zone->present_pages)
 				max = zone->present_pages;
@@ -4298,7 +4300,8 @@ static void setup_per_zone_lowmem_reserve(void)
  */
 void __setup_per_zone_pages_min(void)
 {
-	unsigned long pages_min = min_free_kbytes >> (PAGE_SHIFT - 10);
+	unsigned pages_min = min_free_kbytes >> (PAGE_SHIFT - 10);
+	unsigned pages_emerg = var_free_kbytes >> (PAGE_SHIFT - 10);
 	unsigned long lowmem_pages = 0;
 	struct zone *zone;
 	unsigned long flags;
@@ -4310,11 +4313,13 @@ void __setup_per_zone_pages_min(void)
 	}
 
 	for_each_zone(zone) {
-		u64 tmp;
+		u64 tmp, tmp_emerg;
 
 		spin_lock_irqsave(&zone->lock, flags);
 		tmp = (u64)pages_min * zone->present_pages;
 		do_div(tmp, lowmem_pages);
+		tmp_emerg = (u64)pages_emerg * zone->present_pages;
+		do_div(tmp_emerg, lowmem_pages);
 		if (is_highmem(zone)) {
 			/*
 			 * __GFP_HIGH and PF_MEMALLOC allocations usually don't
@@ -4333,12 +4338,14 @@ void __setup_per_zone_pages_min(void)
 			if (min_pages > 128)
 				min_pages = 128;
 			zone->pages_min = min_pages;
+			zone->pages_emerg = 0;
 		} else {
 			/*
 			 * If it's a lowmem zone, reserve a number of pages
 			 * proportionate to the zone's size.
 			 */
 			zone->pages_min = tmp;
+			zone->pages_emerg = tmp_emerg;
 		}
 
 		zone->pages_low   = zone->pages_min + (tmp >> 2);
@@ -4399,6 +4406,63 @@ void setup_per_zone_pages_min(void)
 	__setup_per_zone_pages_min();
 	spin_unlock_irqrestore(&min_free_lock, flags);
 }
+
+static void __adjust_memalloc_reserve(int pages)
+{
+	var_free_kbytes += pages << (PAGE_SHIFT - 10);
+	BUG_ON(var_free_kbytes < 0);
+	__setup_per_zone_pages_min();
+}
+
+static int test_reserve_limits(void)
+{
+	struct zone *zone;
+	int node;
+
+	for_each_zone(zone)
+		wakeup_kswapd(zone, 0);
+
+	for_each_online_node(node) {
+		struct page *page = alloc_pages_node(node, GFP_KERNEL, 0);
+		if (!page)
+			return -ENOMEM;
+
+		__free_page(page);
+	}
+
+	return 0;
+}
+
+/**
+ *	adjust_memalloc_reserve - adjust the memalloc reserve
+ *	@pages: number of pages to add
+ *
+ *	It adds a number of pages to the memalloc reserve; if
+ *	the number was positive it kicks reclaim into action to
+ *	satisfy the higher watermarks.
+ *
+ *	returns -ENOMEM when it failed to satisfy the watermarks.
+ */
+int adjust_memalloc_reserve(int pages)
+{
+	int err = 0;
+
+	mutex_lock(&var_free_mutex);
+	__adjust_memalloc_reserve(pages);
+	if (pages > 0) {
+		err = test_reserve_limits();
+		if (err) {
+			__adjust_memalloc_reserve(-pages);
+			goto unlock;
+		}
+	}
+	printk(KERN_DEBUG "Emergency reserve: %d\n", var_free_kbytes);
+
+unlock:
+	mutex_unlock(&var_free_mutex);
+	return err;
+}
+EXPORT_SYMBOL_GPL(adjust_memalloc_reserve);
 
 /*
  * Initialise min_free_kbytes.
