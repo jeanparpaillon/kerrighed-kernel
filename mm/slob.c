@@ -68,6 +68,7 @@
 #include <linux/list.h>
 #include <trace/kmemtrace.h>
 #include <asm/atomic.h>
+#include "internal.h"
 
 /*
  * slob_block has a field 'units', which indicates size of block if +ve,
@@ -190,6 +191,11 @@ struct slob_rcu {
 static DEFINE_SPINLOCK(slob_lock);
 
 /*
+ * tracks the reserve state for the allocator.
+ */
+static int slob_reserve;
+
+/*
  * Encode the given size and next info into a free slob block s.
  */
 static void set_slob(slob_t *s, slobidx_t size, slob_t *next)
@@ -239,7 +245,7 @@ static int slob_last(slob_t *s)
 
 static void *slob_new_pages(gfp_t gfp, int order, int node)
 {
-	void *page;
+	struct page *page;
 
 #ifdef CONFIG_NUMA
 	if (node != -1)
@@ -250,6 +256,8 @@ static void *slob_new_pages(gfp_t gfp, int order, int node)
 
 	if (!page)
 		return NULL;
+
+	slob_reserve = page->reserve;
 
 	return page_address(page);
 }
@@ -323,6 +331,11 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 	slob_t *b = NULL;
 	unsigned long flags;
 
+	if (unlikely(slob_reserve)) {
+		if (!(gfp_to_alloc_flags(gfp) & ALLOC_NO_WATERMARKS))
+			goto grow;
+	}
+
 	if (size < SLOB_BREAK1)
 		slob_list = &free_slob_small;
 	else if (size < SLOB_BREAK2)
@@ -361,6 +374,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 	}
 	spin_unlock_irqrestore(&slob_lock, flags);
 
+grow:
 	/* Not enough space: must allocate a new page */
 	if (!b) {
 		b = slob_new_pages(gfp & ~__GFP_ZERO, 0, node);

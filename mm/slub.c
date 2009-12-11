@@ -27,6 +27,8 @@
 #include <linux/memory.h>
 #include <linux/math64.h>
 #include <linux/fault-inject.h>
+#include "internal.h"
+
 
 /*
  * Lock order:
@@ -1108,7 +1110,8 @@ static void setup_object(struct kmem_cache *s, struct page *page,
 		s->ctor(object);
 }
 
-static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
+static
+struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node, int *reserve)
 {
 	struct page *page;
 	void *start;
@@ -1121,6 +1124,8 @@ static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
 		flags & (GFP_RECLAIM_MASK | GFP_CONSTRAINT_MASK), node);
 	if (!page)
 		goto out;
+
+	*reserve = page->reserve;
 
 	inc_slabs_node(s, page_to_nid(page), page->objects);
 	page->slab = s;
@@ -1507,10 +1512,20 @@ static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 {
 	void **object;
 	struct page *new;
+	int reserve;
 
 	/* We handle __GFP_ZERO in the caller */
 	gfpflags &= ~__GFP_ZERO;
 
+	if (unlikely(c->reserve)) {
+		/*
+		 * If the current slab is a reserve slab and the current
+		 * allocation context does not allow access to the reserves we
+		 * must force an allocation to test the current levels.
+		 */
+		if (!(gfp_to_alloc_flags(gfpflags) & ALLOC_NO_WATERMARKS))
+			goto grow_slab;
+	}
 	if (!c->page)
 		goto new_slab;
 
@@ -1524,8 +1539,8 @@ load_freelist:
 	object = c->page->freelist;
 	if (unlikely(!object))
 		goto another_slab;
-	if (unlikely(SLABDEBUG && PageSlubDebug(c->page)))
-		goto debug;
+	if (unlikely(PageSlubDebug(c->page) || c->reserve))
+		goto slow_path;
 
 	c->freelist = object[c->offset];
 	c->page->inuse = c->page->objects;
@@ -1547,16 +1562,18 @@ new_slab:
 		goto load_freelist;
 	}
 
+grow_slab:
 	if (gfpflags & __GFP_WAIT)
 		local_irq_enable();
 
-	new = new_slab(s, gfpflags, node);
+	new = new_slab(s, gfpflags, node, &reserve);
 
 	if (gfpflags & __GFP_WAIT)
 		local_irq_disable();
 
 	if (new) {
 		c = get_cpu_slab(s, smp_processor_id());
+		c->reserve = reserve;
 		stat(c, ALLOC_SLAB);
 		if (c->page)
 			flush_slab(s, c);
@@ -1566,9 +1583,20 @@ new_slab:
 		goto load_freelist;
 	}
 	return NULL;
-debug:
-	if (!alloc_debug_processing(s, c->page, object, addr))
+
+slow_path:
+	if (PageSlubDebug(c->page) &&
+			!alloc_debug_processing(s, c->page, object, addr))
 		goto another_slab;
+
+	/*
+	 * Avoid the slub fast path in slab_alloc() by not setting
+	 * c->freelist and the fast path in slab_free() by making
+	 * node_match() fail by setting c->node to -1.
+	 *
+	 * We use this for for debug and reserve checks which need
+	 * to be done for each allocation.
+	 */
 
 	c->page->inuse++;
 	c->page->freelist = object[c->offset];
@@ -2109,10 +2137,11 @@ static void early_kmem_cache_node_alloc(gfp_t gfpflags, int node)
 	struct page *page;
 	struct kmem_cache_node *n;
 	unsigned long flags;
+	int reserve;
 
 	BUG_ON(kmalloc_caches->size < sizeof(struct kmem_cache_node));
 
-	page = new_slab(kmalloc_caches, gfpflags, node);
+	page = new_slab(kmalloc_caches, gfpflags, node, &reserve);
 
 	BUG_ON(!page);
 	if (page_to_nid(page) != node) {
