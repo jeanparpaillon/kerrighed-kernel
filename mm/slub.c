@@ -2776,6 +2776,7 @@ void *__kmalloc(size_t size, gfp_t flags)
 }
 EXPORT_SYMBOL(__kmalloc);
 
+#ifdef CONFIG_NUMA
 static void *kmalloc_large_node(size_t size, gfp_t flags, int node)
 {
 	struct page *page = alloc_pages_node(node, flags | __GFP_COMP,
@@ -2787,7 +2788,6 @@ static void *kmalloc_large_node(size_t size, gfp_t flags, int node)
 		return NULL;
 }
 
-#ifdef CONFIG_NUMA
 void *__kmalloc_node(size_t size, gfp_t flags, int node)
 {
 	struct kmem_cache *s;
