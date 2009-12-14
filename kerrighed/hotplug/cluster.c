@@ -9,6 +9,7 @@
 #include <linux/mutex.h>
 #include <linux/completion.h>
 #include <linux/string.h>
+#include <linux/capability.h>
 #include <linux/limits.h>
 #include <linux/kthread.h>
 #include <linux/syscalls.h>
@@ -705,6 +706,9 @@ static int cluster_start(void *arg)
 	struct __hotplug_node_set __node_set;
 	struct hotplug_context *ctx;
 
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
 	if (copy_from_user(&__node_set, arg, sizeof(__node_set)))
 		return -EFAULT;
 
@@ -805,6 +809,9 @@ static int cluster_restart(void *arg)
 {
 	int unused;
 
+	if (!capable(CAP_SYS_BOOT))
+		return -EPERM;
+
 	rpc_async_m(NODE_FAIL, &krgnode_online_map,
 		    &unused, sizeof(unused));
 	
@@ -815,6 +822,9 @@ static int cluster_stop(void *arg)
 {
 	int unused;
 	
+	if (!capable(CAP_SYS_BOOT))
+		return -EPERM;
+
 	rpc_async_m(NODE_FAIL, &krgnode_online_map,
 		    &unused, sizeof(unused));
 	
