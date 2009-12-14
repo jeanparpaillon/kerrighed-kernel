@@ -12,6 +12,7 @@
 #define __MM_INTERNAL_H
 
 #include <linux/mm.h>
+#include <linux/hardirq.h>
 
 void free_pgtables(struct mmu_gather *tlb, struct vm_area_struct *start_vma,
 		unsigned long floor, unsigned long ceiling);
@@ -218,6 +219,30 @@ static inline struct page *mem_map_next(struct page *iter,
 #else
 #define __paginginit __init
 #endif
+
+#define ALLOC_NO_WATERMARKS	0x01 /* don't check watermarks at all */
+#define ALLOC_WMARK_MIN		0x02 /* use pages_min watermark */
+#define ALLOC_WMARK_LOW		0x04 /* use pages_low watermark */
+#define ALLOC_WMARK_HIGH	0x08 /* use pages_high watermark */
+#define ALLOC_HARDER		0x10 /* try to alloc harder */
+#define ALLOC_HIGH		0x20 /* __GFP_HIGH set */
+#define ALLOC_CPUSET		0x40 /* check for correct cpuset */
+
+static inline int gfp_to_alloc_flags(gfp_t gfp_mask)
+{
+	const gfp_t wait = gfp_mask & __GFP_WAIT;
+	struct task_struct *p = current;
+	int alloc_flags = ALLOC_WMARK_MIN;
+
+	if ((unlikely(rt_task(p)) && !in_interrupt()) || !wait)
+		alloc_flags |= ALLOC_HARDER;
+	if (gfp_mask & __GFP_HIGH)
+		alloc_flags |= ALLOC_HIGH;
+	if (wait)
+		alloc_flags |= ALLOC_CPUSET;
+
+	return alloc_flags;
+}
 
 /* Memory initialisation debug and verification */
 enum mminit_level {
