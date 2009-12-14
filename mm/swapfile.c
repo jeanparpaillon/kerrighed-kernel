@@ -107,10 +107,12 @@ static int discard_swap(struct swap_info_struct *si)
 				continue;
 		}
 
-		err = blkdev_issue_discard(si->bdev, start_block,
+		if (si->bdev) {
+			err = blkdev_issue_discard(si->bdev, start_block,
 						nr_blocks, GFP_KERNEL);
-		if (err)
-			break;
+			if (err)
+				break;
+		}
 
 		cond_resched();
 	}
@@ -146,9 +148,11 @@ static void discard_swap_cluster(struct swap_info_struct *si,
 
 			start_block <<= PAGE_SHIFT - 9;
 			nr_blocks <<= PAGE_SHIFT - 9;
-			if (blkdev_issue_discard(si->bdev, start_block,
+			if (si->bdev) {
+				if (blkdev_issue_discard(si->bdev, start_block,
 							nr_blocks, GFP_NOIO))
-				break;
+					break;
+			}
 		}
 
 		lh = se->list.next;
@@ -1878,12 +1882,14 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 		goto bad_swap;
 	}
 
-	if (blk_queue_nonrot(bdev_get_queue(p->bdev))) {
-		p->flags |= SWP_SOLIDSTATE;
-		p->cluster_next = 1 + (random32() % p->highest_bit);
+	if (p->bdev) {
+		if (blk_queue_nonrot(bdev_get_queue(p->bdev))) {
+			p->flags |= SWP_SOLIDSTATE;
+			p->cluster_next = 1 + (random32() % p->highest_bit);
+		}
+		if (discard_swap(p) == 0)
+			p->flags |= SWP_DISCARDABLE;
 	}
-	if (discard_swap(p) == 0)
-		p->flags |= SWP_DISCARDABLE;
 
 	mutex_lock(&swapon_mutex);
 	spin_lock(&swap_lock);
