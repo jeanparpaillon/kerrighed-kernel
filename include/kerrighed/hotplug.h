@@ -27,6 +27,13 @@ typedef enum {
 	HOTPLUG_NOTIFY_FAIL,
 } hotplug_event_t;
 
+enum {
+	HOTPLUG_NODE_INVALID,
+	HOTPLUG_NODE_POSSIBLE,
+	HOTPLUG_NODE_PRESENT,
+	HOTPLUG_NODE_ONLINE
+};
+
 struct hotplug_node_set {
 	int subclusterid;
 	krgnodemask_t v;

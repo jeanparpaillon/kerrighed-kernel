@@ -864,9 +864,14 @@ static int cluster_nodes(void __user *arg)
 		goto out;
 
 	for (bcl = 0; bcl < KERRIGHED_MAX_NODES; bcl++) {
-		state = 0;
-		if (krgnode_present(bcl) && universe[bcl].state)
-			state = 1;
+		if (krgnode_online(bcl))
+			state = HOTPLUG_NODE_ONLINE;
+		else if (krgnode_present(bcl))
+			state = HOTPLUG_NODE_PRESENT;
+		else if (krgnode_possible(bcl))
+			state = HOTPLUG_NODE_POSSIBLE;
+		else
+			state = HOTPLUG_NODE_INVALID;
 		if (__put_user(state, &unodes[bcl]))
 			goto out;
 	}
