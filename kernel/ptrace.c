@@ -426,7 +426,9 @@ int ptrace_detach(struct task_struct *child, unsigned int data)
 	if (child->ptrace) {
 		child->exit_code = data;
 		dead = __ptrace_detach(current, child);
+#ifdef CONFIG_KRG_EPM
 		krg_set_child_ptraced(parent_children_obj, child, 0);
+#endif
 		if (!child->exit_state)
 			wake_up_process(child);
 	}
