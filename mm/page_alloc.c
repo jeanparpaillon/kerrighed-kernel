@@ -1556,6 +1556,11 @@ rebalance:
 			&& !in_interrupt()) {
 		if (!(gfp_mask & __GFP_NOMEMALLOC)) {
 nofail_alloc:
+			/*
+			 * break out mempolicy boundaries
+			 */
+			zonelist = node_zonelist(numa_node_id(), gfp_mask);
+
 			/* go through the zonelist yet again, ignoring mins */
 			page = get_page_from_freelist(gfp_mask, nodemask, order,
 				zonelist, high_zoneidx, ALLOC_NO_WATERMARKS);
