@@ -588,10 +588,14 @@ static int cr_export_later_files_struct(ghost_t *ghost,
 	r = add_to_shared_objects_list(task->application,
 				       FILES_STRUCT, key, LOCAL_ONLY,
 				       task, NULL, 0);
-	if (r)
-		goto err_add;
+	if (r && r != -ENOKEY)
+		goto err;
 
-	/* now we need to check the files to see if they are shared */
+	/*
+	 * we need to check the files to see if they are shared even if
+	 * the files_struct itself is shared. These is needed to export
+	 * valid information to user to help file substitution.
+	 */
 	rcu_read_lock();
 	fdt = files_fdtable(task->files);
 
@@ -599,9 +603,6 @@ static int cr_export_later_files_struct(ghost_t *ghost,
 	r = cr_add_files_to_shared_table(task, fdt, last_open_fd);
 	rcu_read_unlock();
 
-err_add:
-	if (r == -ENOKEY)
-		r = 0;
 err:
 	return r;
 }
