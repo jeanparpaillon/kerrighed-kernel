@@ -1222,6 +1222,14 @@ static void destroy_swap_extents(struct swap_info_struct *sis)
 		list_del(&se->list);
 		kfree(se);
 	}
+
+	if (sis->flags & SWP_FILE) {
+		struct file *swap_file = sis->swap_file;
+		struct address_space *mapping = swap_file->f_mapping;
+
+		sis->flags &= ~SWP_FILE;
+		mapping->a_ops->swapoff(swap_file);
+	}
 }
 
 /*
@@ -1296,7 +1304,9 @@ add_swap_extent(struct swap_info_struct *sis, unsigned long start_page,
  */
 static int setup_swap_extents(struct swap_info_struct *sis, sector_t *span)
 {
-	struct inode *inode;
+	struct file *swap_file = sis->swap_file;
+	struct address_space *mapping = swap_file->f_mapping;
+	struct inode *inode = mapping->host;
 	unsigned blocks_per_page;
 	unsigned long page_no;
 	unsigned blkbits;
@@ -1307,10 +1317,19 @@ static int setup_swap_extents(struct swap_info_struct *sis, sector_t *span)
 	int nr_extents = 0;
 	int ret;
 
-	inode = sis->swap_file->f_mapping->host;
 	if (S_ISBLK(inode->i_mode)) {
 		ret = add_swap_extent(sis, 0, sis->max, 0);
 		*span = sis->pages;
+		goto done;
+	}
+
+	if (mapping->a_ops->swapon) {
+		ret = mapping->a_ops->swapon(swap_file);
+		if (!ret) {
+			sis->flags |= SWP_FILE;
+			ret = add_swap_extent(sis, 0, sis->max, 0);
+			*span = sis->pages;
+		}
 		goto done;
 	}
 
@@ -1996,6 +2015,13 @@ struct swap_info_struct *
 get_swap_info_struct(unsigned type)
 {
 	return &swap_info[type];
+}
+
+struct swap_info_struct *page_swap_info(struct page *page)
+{
+	swp_entry_t swap = { .val = page_private(page) };
+	BUG_ON(!PageSwapCache(page));
+	return &swap_info[swp_type(swap)];
 }
 
 /*
