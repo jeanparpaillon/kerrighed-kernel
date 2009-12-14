@@ -106,16 +106,53 @@ static void nfs_context_set_write_error(struct nfs_open_context *ctx, int error)
 	set_bit(NFS_CONTEXT_ERROR_WRITE, &ctx->flags);
 }
 
-static struct nfs_page *nfs_page_find_request_locked(struct page *page)
+static struct nfs_page *
+__nfs_page_find_request_locked(struct nfs_inode *nfsi, struct page *page, int get)
 {
 	struct nfs_page *req = NULL;
 
-	if (PagePrivate(page)) {
+	if (PagePrivate(page))
 		req = (struct nfs_page *)page_private(page);
-		if (req != NULL)
-			kref_get(&req->wb_kref);
-	}
+	else if (unlikely(PageSwapCache(page)))
+		req = radix_tree_lookup(&nfsi->nfs_page_tree, page_file_index(page));
+
+	if (get && req)
+		kref_get(&req->wb_kref);
+
 	return req;
+}
+
+static inline struct nfs_page *
+nfs_page_find_request_locked(struct nfs_inode *nfsi, struct page *page)
+{
+	return __nfs_page_find_request_locked(nfsi, page, 1);
+}
+
+static int __nfs_page_has_request(struct page *page)
+{
+	struct inode *inode = page_file_mapping(page)->host;
+	struct nfs_page *req = NULL;
+
+	spin_lock(&inode->i_lock);
+	req = __nfs_page_find_request_locked(NFS_I(inode), page, 0);
+	spin_unlock(&inode->i_lock);
+
+	/*
+	 * hole here plugged by the caller holding onto PG_locked
+	 */
+
+	return req != NULL;
+}
+
+static inline int nfs_page_has_request(struct page *page)
+{
+	if (PagePrivate(page))
+		return 1;
+
+	if (unlikely(PageSwapCache(page)))
+		return __nfs_page_has_request(page);
+
+	return 0;
 }
 
 static struct nfs_page *nfs_page_find_request(struct page *page)
@@ -124,7 +161,7 @@ static struct nfs_page *nfs_page_find_request(struct page *page)
 	struct nfs_page *req = NULL;
 
 	spin_lock(&inode->i_lock);
-	req = nfs_page_find_request_locked(page);
+	req = nfs_page_find_request_locked(NFS_I(inode), page);
 	spin_unlock(&inode->i_lock);
 	return req;
 }
@@ -228,7 +265,7 @@ static int nfs_page_async_flush(struct nfs_pageio_descriptor *pgio,
 
 	spin_lock(&inode->i_lock);
 	for(;;) {
-		req = nfs_page_find_request_locked(page);
+		req = nfs_page_find_request_locked(NFS_I(inode), page);
 		if (req == NULL) {
 			spin_unlock(&inode->i_lock);
 			return 0;
@@ -366,8 +403,14 @@ static int nfs_inode_add_request(struct inode *inode, struct nfs_page *req)
 		if (nfs_have_delegation(inode, FMODE_WRITE))
 			nfsi->change_attr++;
 	}
-	SetPagePrivate(req->wb_page);
-	set_page_private(req->wb_page, (unsigned long)req);
+	/*
+	 * Swap-space should not get truncated. Hence no need to plug the race
+	 * with invalidate/truncate.
+	 */
+	if (likely(!PageSwapCache(req->wb_page))) {
+		SetPagePrivate(req->wb_page);
+		set_page_private(req->wb_page, (unsigned long)req);
+	}
 	nfsi->npages++;
 	kref_get(&req->wb_kref);
 	radix_tree_tag_set(&nfsi->nfs_page_tree, req->wb_index,
@@ -389,8 +432,10 @@ static void nfs_inode_remove_request(struct nfs_page *req)
 	BUG_ON (!NFS_WBACK_BUSY(req));
 
 	spin_lock(&inode->i_lock);
-	set_page_private(req->wb_page, 0);
-	ClearPagePrivate(req->wb_page);
+	if (likely(!PageSwapCache(req->wb_page))) {
+		set_page_private(req->wb_page, 0);
+		ClearPagePrivate(req->wb_page);
+	}
 	radix_tree_delete(&nfsi->nfs_page_tree, req->wb_index);
 	nfsi->npages--;
 	if (!nfsi->npages) {
@@ -601,7 +646,7 @@ static struct nfs_page *nfs_try_to_update_request(struct inode *inode,
 	spin_lock(&inode->i_lock);
 
 	for (;;) {
-		req = nfs_page_find_request_locked(page);
+		req = nfs_page_find_request_locked(NFS_I(inode), page);
 		if (req == NULL)
 			goto out_unlock;
 
@@ -1508,7 +1553,7 @@ int nfs_wb_page_cancel(struct inode *inode, struct page *page)
 		if (ret < 0)
 			goto out;
 	}
-	if (!PagePrivate(page))
+	if (!nfs_page_has_request(page))
 		return 0;
 	ret = nfs_sync_mapping_wait(page_file_mapping(page), &wbc, FLUSH_INVALIDATE);
 out:
