@@ -471,6 +471,18 @@ static int nfs_launder_page(struct page *page)
 	return nfs_wb_page(inode, page);
 }
 
+#ifdef CONFIG_NFS_SWAP
+static int nfs_swapon(struct file *file)
+{
+	return xs_swapper(NFS_CLIENT(file->f_mapping->host)->cl_xprt, 1);
+}
+
+static int nfs_swapoff(struct file *file)
+{
+	return xs_swapper(NFS_CLIENT(file->f_mapping->host)->cl_xprt, 0);
+}
+#endif
+
 const struct address_space_operations nfs_file_aops = {
 	.readpage = nfs_readpage,
 	.readpages = nfs_readpages,
@@ -483,6 +495,12 @@ const struct address_space_operations nfs_file_aops = {
 	.releasepage = nfs_release_page,
 	.direct_IO = nfs_direct_IO,
 	.launder_page = nfs_launder_page,
+#ifdef CONFIG_NFS_SWAP
+	.swapon = nfs_swapon,
+	.swapoff = nfs_swapoff,
+	.swap_out = nfs_swap_out,
+	.swap_in = nfs_readpage,
+#endif
 };
 
 /*
