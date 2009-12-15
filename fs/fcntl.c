@@ -350,7 +350,8 @@ SYSCALL_DEFINE3(fcntl, unsigned int, fd, unsigned int, cmd, unsigned long, arg)
 		goto out;
 
 #ifdef CONFIG_KRG_FAF
-	if ((filp->f_flags & O_FAF_CLT) && (cmd != F_DUPFD)) {
+	if ((filp->f_flags & O_FAF_CLT)
+	    && (cmd != F_DUPFD) && (cmd != F_GETFD)) {
 		err = krg_faf_fcntl(filp, cmd, arg);
 		fput(filp);
 		goto out;
