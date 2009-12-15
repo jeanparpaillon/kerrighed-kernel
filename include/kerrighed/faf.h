@@ -7,6 +7,7 @@
 
 struct file;
 struct kstat;
+struct statfs;
 
 off_t krg_faf_lseek(struct file *file, off_t offset,
 		    unsigned int origin);
@@ -23,6 +24,7 @@ long krg_faf_fcntl64(struct file *file, unsigned int cmd,
 long krg_faf_ioctl(struct file *file, unsigned int cmd,
 		   unsigned long arg);
 long krg_faf_fstat(struct file *file, struct kstat *stat);
+long krg_faf_fstatfs(struct file *file, struct statfs *statfs);
 long krg_faf_fsync(struct file *file);
 long krg_faf_flock(struct file *file, unsigned int cmd);
 char *krg_faf_d_path(struct file *file, char *buffer, int size);

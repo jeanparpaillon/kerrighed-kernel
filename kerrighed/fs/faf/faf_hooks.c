@@ -12,6 +12,7 @@
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
 #include <linux/poll.h>
+#include <linux/statfs.h>
 #include <linux/types.h>
 #include <kerrighed/faf.h>
 #include <asm/uaccess.h>
@@ -464,6 +465,48 @@ long krg_faf_fstat (struct file *file,
 	*statbuf = buffer;
 
 	return r;
+}
+
+/** Kerrighed kernel hook for FAF fstat function.
+ *  @author Matthieu Fertré
+ *
+ *  @param file          File to do an fcntl to.
+ *  @param statbuf       Kernel buffer to store file stats.
+ */
+long krg_faf_fstatfs(struct file *file,
+		     struct statfs *statfsbuf)
+{
+	struct statfs buffer;
+	faf_client_data_t *data = file->private_data;
+	struct faf_statfs_msg msg;
+	long r;
+	enum rpc_error err;
+	struct rpc_desc *desc;
+
+	msg.server_fd = data->server_fd;
+
+	desc = rpc_begin(RPC_FAF_FSTATFS, data->server_id);
+
+	r = rpc_pack_type(desc, msg);
+	if (r)
+		goto exit;
+
+	err = rpc_unpack_type(desc, r);
+	if (err)
+		goto err_rpc;
+
+	if (!r)
+		err = rpc_unpack_type(desc, buffer);
+
+	rpc_end(desc, 0);
+
+	*statfsbuf = buffer;
+
+exit:
+	return r;
+err_rpc:
+	r = -EPIPE;
+	goto exit;
 }
 
 /** Kerrighed kernel hook for FAF fsync function.

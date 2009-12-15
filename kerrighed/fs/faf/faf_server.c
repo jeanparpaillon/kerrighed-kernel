@@ -18,6 +18,7 @@
 #include <linux/eventpoll.h>
 #include <linux/list.h>
 #include <linux/hash.h>
+#include <linux/statfs.h>
 
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
@@ -302,6 +303,33 @@ void handle_faf_fstat (struct rpc_desc* desc,
 
 	rpc_pack_type(desc, r);
 	rpc_pack_type(desc, statbuf);
+}
+
+/** Handler for doing an FSTATFS in a FAF open file.
+ *  @author Matthieu Fertré
+ *
+ *  @param from    Node sending the request
+ *  @param msgIn   Request message
+ */
+static void handle_faf_fstatfs(struct rpc_desc* desc,
+			       void *msgIn, size_t size)
+{
+	struct statfs statbuf;
+	struct faf_statfs_msg *msg = msgIn;
+	long r;
+	int err_rpc;
+
+	r = sys_fstatfs(msg->server_fd, &statbuf);
+
+	err_rpc = rpc_pack_type(desc, r);
+	if (err_rpc)
+		goto err_rpc;
+
+	if (!r)
+		err_rpc = rpc_pack_type(desc, statbuf);
+err_rpc:
+	if (err_rpc)
+		rpc_cancel(desc);
 }
 
 /** Handler for seeking in a FAF open file.
@@ -1116,6 +1144,7 @@ void faf_server_init (void)
 #endif
 
 	rpc_register_void(RPC_FAF_FSTAT, handle_faf_fstat, 0);
+	rpc_register_void(RPC_FAF_FSTATFS, handle_faf_fstatfs, 0);
 	rpc_register_int(RPC_FAF_FSYNC, handle_faf_fsync, 0);
 	rpc_register_int(RPC_FAF_FLOCK, handle_faf_flock, 0);
 	rpc_register_void(RPC_FAF_LSEEK, handle_faf_lseek, 0);

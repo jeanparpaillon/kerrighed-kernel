@@ -170,7 +170,14 @@ SYSCALL_DEFINE2(fstatfs, unsigned int, fd, struct statfs __user *, buf)
 	file = fget(fd);
 	if (!file)
 		goto out;
+
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT)
+		error = krg_faf_fstatfs(file, &tmp);
+	else
+#endif
 	error = vfs_statfs_native(file->f_path.dentry, &tmp);
+
 	if (!error && copy_to_user(buf, &tmp, sizeof(tmp)))
 		error = -EFAULT;
 	fput(file);

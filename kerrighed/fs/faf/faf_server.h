@@ -30,6 +30,10 @@ struct faf_stat_msg {
 	long flags;
 };
 
+struct faf_statfs_msg {
+	int server_fd;
+};
+
 struct faf_ctl_msg {
 	int server_fd;
 	unsigned int cmd;
