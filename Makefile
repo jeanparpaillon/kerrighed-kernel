@@ -549,8 +549,8 @@ KBUILD_CFLAGS	+= -fomit-frame-pointer
 endif
 
 ifdef CONFIG_DEBUG_INFO
-KBUILD_CFLAGS	+= -g
-KBUILD_AFLAGS	+= -gdwarf-2
+KBUILD_CFLAGS	+= -g -gdwarf-2 -g3
+KBUILD_AFLAGS	+= -gdwarf-2 -g3
 endif
 
 ifdef CONFIG_FUNCTION_TRACER
