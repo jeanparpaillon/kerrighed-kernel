@@ -2,6 +2,9 @@
 #define _LINUX_MSG_H
 
 #include <linux/ipc.h>
+#ifdef CONFIG_KRG_IPC
+#include <kerrighed/sys/types.h>
+#endif
 
 /* ipcs ctl commands */
 #define MSG_STAT 11
@@ -101,7 +104,7 @@ struct msg_queue {
 	struct list_head q_senders;
 
 #ifdef CONFIG_KRG_IPC
-	int is_master;
+	kerrighed_node_t master_node;
 #endif
 };
 

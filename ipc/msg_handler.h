@@ -14,6 +14,8 @@ struct kddm_set;
 
 struct kddm_set *krgipc_ops_master_set(struct krgipc_ops *ipcops);
 
+int krg_msg_flush_set(struct ipc_namespace *ns);
+
 void msg_handler_init(void);
 void msg_handler_finalize(void);
 

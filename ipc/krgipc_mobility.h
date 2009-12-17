@@ -13,3 +13,9 @@ int import_full_sysv_sem(ghost_t *ghost);
 int export_full_sysv_shm(ghost_t *ghost, int shmid);
 
 int import_full_sysv_shm(ghost_t *ghost);
+
+int export_full_all_msgs(ghost_t * ghost, struct msg_queue *msq);
+
+int import_full_all_msgs(ghost_t *ghost, struct ipc_namespace *ns,
+			 struct msg_queue *msq);
+
