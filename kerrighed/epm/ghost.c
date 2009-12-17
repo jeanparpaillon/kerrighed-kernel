@@ -1249,8 +1249,10 @@ static int import_delays(struct epm_action *action,
 	}
 
 	err = ghost_read(ghost, delays, sizeof(*delays));
-	if (err)
+	if (err) {
+		kmem_cache_free(delayacct_cache, delays);
 		goto out;
+	}
 	spin_lock_init(&delays->lock);
 
 	task->delays = delays;

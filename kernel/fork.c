@@ -1664,6 +1664,9 @@ bad_fork_cleanup_policy:
 bad_fork_cleanup_cgroup:
 #endif
 	cgroup_exit(p, cgroup_callbacks_done);
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current)
+#endif
 	delayacct_tsk_free(p);
 	if (p->binfmt)
 		module_put(p->binfmt->module);
