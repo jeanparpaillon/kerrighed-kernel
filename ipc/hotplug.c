@@ -11,6 +11,7 @@
 #include <kerrighed/hotplug.h>
 #include "util.h"
 #include "ipc_handler.h"
+#include "msg_handler.h"
 #include "krgmsg.h"
 
 static struct cluster_barrier *barrier;
@@ -38,6 +39,9 @@ static int ipc_remove_local(struct hotplug_context *ctx)
 	BUG_ON(!ns);
 
 	/* TODO: flush IPC Objects */
+
+	err = krg_msg_flush_set(ns);
+	BUG_ON(err);
 
 	put_ipc_ns(ns);
 

@@ -141,8 +141,11 @@ int krg_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 	}
 
 	msq_object->local_msq = msq;
-	msq_object->local_msq->is_master = 1;
+	msq_object->local_msq->master_node = kerrighed_node_id;
 	msq_object->mobile_msq.q_perm.id = -1;
+	INIT_LIST_HEAD(&msq_object->mobile_msq.q_messages);
+	INIT_LIST_HEAD(&msq_object->mobile_msq.q_receivers);
+	INIT_LIST_HEAD(&msq_object->mobile_msq.q_senders);
 
 	_kddm_set_object(msg_ids(ns).krgops->data_kddm_set, index, msq_object);
 
@@ -498,6 +501,109 @@ exit_put_ns:
 /*                              INITIALIZATION                               */
 /*                                                                           */
 /*****************************************************************************/
+
+static int ipc_flusher(struct kddm_set *set, objid_t objid,
+		       struct kddm_obj *obj_entry, void *data)
+{
+	kerrighed_node_t node;
+
+	/*
+	 * TODO: choose a better node to flush to.
+	 * This may be done looking at the processes blocked.
+	 */
+	node = first_krgnode(krgnode_online_map);
+
+	return node;
+}
+
+static int flush_one_msg_queue(struct ipc_namespace *ns, struct msg_queue *msq)
+{
+	int index;
+	struct kddm_set *data_set, *node_set;
+	kerrighed_node_t dest;
+
+	index = ipcid_to_idx(msq->q_perm.id);
+	data_set = msg_ids(ns).krgops->data_kddm_set;
+	node_set = krgipc_ops_master_set(msg_ids(ns).krgops);
+
+	dest = first_krgnode(krgnode_online_map);
+
+	if (msq->master_node == kerrighed_node_id) {
+		msq_object_t *msq_object;
+		kerrighed_node_t *master_node;
+
+		msq_object = _kddm_grab_object_no_ft(data_set, index);
+		BUG_ON(!msq_object);
+		_kddm_put_object(data_set, index);
+
+		master_node = _kddm_grab_object_no_ft(node_set, index);
+		BUG_ON(!master_node);
+		*master_node = dest;
+		_kddm_put_object(node_set, index);
+	}
+
+	_kddm_flush_object(data_set, index, dest);
+	_kddm_flush_object(node_set, index, dest);
+
+	return 0;
+}
+
+static int flush_msg_queues(struct ipc_namespace *ns)
+{
+	struct kern_ipc_perm *perm;
+	struct msg_queue *msq;
+	struct ipc_ids *ids;
+	struct msgkrgops *msgops;
+	kerrighed_node_t node;
+	int err, total, in_use, next_id;
+
+	node = first_krgnode(krgnode_online_map);
+
+	ids = &msg_ids(ns);
+	msgops = container_of(ids->krgops, struct msgkrgops, krgops);
+
+	in_use = ids->in_use;
+
+	err = 0;
+
+	for (total = 0, next_id = 0; total < in_use; next_id++) {
+		perm = idr_find(&ids->ipcs_idr, next_id);
+		if (!perm)
+			continue;
+
+		msq = container_of(perm, struct msg_queue, q_perm);
+		err = flush_one_msg_queue(ns, msq);
+		if (err)
+			goto error;
+
+		total++;
+	}
+
+error:
+	return err;
+}
+
+int krg_msg_flush_set(struct ipc_namespace *ns)
+{
+	int err;
+	struct msgkrgops *msgops;
+
+	down_write(&msg_ids(ns).rw_mutex);
+
+	msgops = container_of(msg_ids(ns).krgops, struct msgkrgops, krgops);
+
+	err = flush_msg_queues(ns);
+	if (err)
+		goto error;
+
+	_kddm_flush_set(msgops->krgops.map_kddm_set, ipc_flusher, NULL);
+	_kddm_flush_set(msgops->krgops.key_kddm_set, ipc_flusher, NULL);
+	_kddm_flush_set(msgops->master_kddm_set, ipc_flusher, NULL);
+
+error:
+	up_write(&msg_ids(ns).rw_mutex);
+	return err;
+}
 
 int krg_msg_init_ns(struct ipc_namespace *ns)
 {

@@ -12,11 +12,14 @@
 #include <linux/ipc.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
-
+#include <kddm/object_server.h>
+#include <kerrighed/ghost.h>
+#include <kerrighed/network_ghost.h>
 #include "ipc_handler.h"
 #include "msg_io_linker.h"
 #include "util.h"
 #include "krgmsg.h"
+#include "krgipc_mobility.h"
 
 struct kmem_cache *msq_object_cachep;
 
@@ -46,7 +49,6 @@ static struct msg_queue *create_local_msq(struct ipc_namespace *ns,
 	if (retval)
 		goto err_security_free;
 
-	msq->is_master = 0;
 	INIT_LIST_HEAD(&msq->q_messages);
 	INIT_LIST_HEAD(&msq->q_receivers);
 	INIT_LIST_HEAD(&msq->q_senders);
@@ -98,6 +100,7 @@ static void update_local_msq (struct msg_queue *local_msq,
 	local_msq->q_qbytes = received_msq->q_qbytes;
 	local_msq->q_lspid = received_msq->q_lspid;
 	local_msq->q_lrpid = received_msq->q_lrpid;
+	local_msq->master_node = received_msq->master_node;
 
 	/* Do not modify the list_head else you will loose
 	   information on master node */
@@ -122,6 +125,10 @@ int msq_alloc_object (struct kddm_obj * obj_entry,
 		return -ENOMEM;
 
 	msq_object->local_msq = NULL;
+	INIT_LIST_HEAD(&msq_object->mobile_msq.q_messages);
+	INIT_LIST_HEAD(&msq_object->mobile_msq.q_receivers);
+	INIT_LIST_HEAD(&msq_object->mobile_msq.q_senders);
+
 	obj_entry->object = msq_object;
 
 	return 0;
@@ -147,8 +154,6 @@ int msq_first_touch (struct kddm_obj * obj_entry,
 
 	return 0;
 }
-
-
 
 /** Insert a new msg_queue id in local structures.
  *  @author Matthieu Fertré
@@ -194,6 +199,15 @@ int msq_insert_object (struct kddm_obj * obj_entry,
 		put_ipc_ns(ns);
 	}
 
+	if (msq_object->local_msq->master_node == kerrighed_node_id)
+		/*
+		 * A kddm flush operation *MAY* be in progress.
+		 * Current node may become master of a message queue that is
+		 * leaving another node that is leaving the cluster
+		 */
+		list_splice(&msq_object->mobile_msq.q_messages,
+			    &msq_object->local_msq->q_messages);
+
 	return r;
 }
 
@@ -235,7 +249,7 @@ int msq_remove_object(void *object, struct kddm_set *set, objid_t objid)
 	if (msq_object) {
 		msq = msq_object->local_msq;
 		local_msg_lock(ns, msq->q_perm.id);
-		if (msq->is_master)
+		if (msq->master_node == kerrighed_node_id)
 			local_master_freeque(ns, &msq->q_perm);
 		else
 			delete_local_msq(ns, msq);
@@ -269,7 +283,24 @@ int msq_export_object (struct rpc_desc *desc,
 	msq_object->mobile_msq = *msq_object->local_msq;
 
 	r = rpc_pack(desc, 0, msq_object, sizeof(msq_object_t));
+	if (r)
+		goto exit;
 
+	if (flags & KDDM_IO_FLUSH) {
+		ghost_t *ghost;
+
+		ghost = create_network_ghost(GHOST_WRITE, desc);
+		if (IS_ERR(ghost)) {
+			r = PTR_ERR(ghost);
+			goto exit;
+		}
+
+		r = export_full_all_msgs(ghost, msq_object->local_msq);
+
+		ghost_close(ghost);
+	}
+
+exit:
 	return r;
 }
 
@@ -288,7 +319,6 @@ int msq_import_object (struct rpc_desc *desc,
 		       int flags)
 {
 	msq_object_t *msq_object, buffer;
-	struct msg_queue *msq;
 	int r;
 
 	msq_object = obj_entry->object;
@@ -299,8 +329,41 @@ int msq_import_object (struct rpc_desc *desc,
 
 	msq_object->mobile_msq = buffer.mobile_msq;
 
-	if (msq_object->local_msq) {
-		msq = msq_object->local_msq;
+	INIT_LIST_HEAD(&msq_object->mobile_msq.q_messages);
+
+	if (flags & KDDM_IO_FLUSH) {
+		ghost_t *ghost;
+		struct ipc_namespace *ns;
+
+		msq_object->mobile_msq.master_node = kerrighed_node_id;
+
+		ghost = create_network_ghost(GHOST_READ, desc);
+		if (IS_ERR(ghost)) {
+			r = PTR_ERR(ghost);
+			goto error;
+		}
+
+/* 		if (msq_object->local_msq) { */
+/* 			ns = msq_object->local_msq->q_perm.krgops->ns; */
+/* 			get_ipc_ns(ns); */
+/* 		} else */
+			ns = find_get_krg_ipcns();
+
+		BUG_ON(!ns);
+
+		msq_object->mobile_msq.q_qnum = 0;
+		msq_object->mobile_msq.q_cbytes = 0;
+
+		r = import_full_all_msgs(ghost, ns, &msq_object->mobile_msq);
+
+		BUG_ON(msq_object->mobile_msq.q_receivers.next !=
+		       msq_object->mobile_msq.q_receivers.prev);
+		BUG_ON(msq_object->mobile_msq.q_senders.next !=
+		       msq_object->mobile_msq.q_senders.prev);
+
+		put_ipc_ns(ns);
+
+		ghost_close(ghost);
 	}
 
 error:
