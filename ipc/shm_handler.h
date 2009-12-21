@@ -13,6 +13,8 @@
 
 extern struct iolinker_struct shm_memory_linker;
 
+int krg_shm_flush_set(struct ipc_namespace *ns);
+
 void shm_handler_finalize(void);
 void shm_handler_init(void);
 
