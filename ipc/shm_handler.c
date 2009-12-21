@@ -194,6 +194,37 @@ void krg_ipc_shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
 /*                                                                           */
 /*****************************************************************************/
 
+static int ipc_flusher(struct kddm_set *set, objid_t objid,
+		       struct kddm_obj *obj_entry, void *data)
+{
+	kerrighed_node_t node;
+
+	/*
+	 * TODO: choose a better node to flush to.
+	 * This may be done looking at the processes blocked.
+	 */
+	node = first_krgnode(krgnode_online_map);
+
+	return node;
+}
+
+int krg_shm_flush_set(struct ipc_namespace *ns)
+{
+	struct krgipc_ops *shmops;
+
+	down_write(&sem_ids(ns).rw_mutex);
+
+	shmops = shm_ids(ns).krgops;
+
+	_kddm_flush_set(shmops->data_kddm_set, ipc_flusher, NULL);
+	_kddm_flush_set(shmops->map_kddm_set, ipc_flusher, NULL);
+	_kddm_flush_set(shmops->key_kddm_set, ipc_flusher, NULL);
+
+	up_write(&sem_ids(ns).rw_mutex);
+
+	return 0;
+}
+
 int krg_shm_init_ns(struct ipc_namespace *ns)
 {
 	int r;
