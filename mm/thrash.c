@@ -30,6 +30,11 @@ void grab_swap_token(void)
 {
 	int current_interval;
 
+#ifdef CONFIG_KRG_MM
+	if (!current->mm)
+		return;
+#endif
+
 	global_faults++;
 
 	current_interval = global_faults - current->mm->faultstamp;
