@@ -8,10 +8,12 @@
 
 #include <linux/cluster_barrier.h>
 #include <linux/hashtable.h>
+#include <linux/unique_id.h>
 #include <net/krgrpc/rpc.h>
 
 #include <kerrighed/types.h>
 #include <kerrighed/hotplug.h>
+#include <kerrighed/krginit.h>
 
 #define TABLE_SIZE 128
 
