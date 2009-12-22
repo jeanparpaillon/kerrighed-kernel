@@ -817,6 +817,16 @@ long do_msgsnd(int msqid, long mtype, void __user *mtext,
 #endif
 		ss_del(&s);
 
+#if defined(CONFIG_KRG_IPC) && defined(CONFIG_KRG_EPM)
+		if (krg_action_any_pending(current)) {
+#ifdef CONFIG_KRG_DEBUG
+			printk("%s:%d - action kerrighed! --> need replay!!\n",
+			       __PRETTY_FUNCTION__, __LINE__);
+#endif
+			err = -ERESTARTSYS;
+			goto out_unlock_free;
+		}
+#endif
 		if (signal_pending(current)) {
 			err = -ERESTARTNOHAND;
 			goto out_unlock_free;
