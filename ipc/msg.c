@@ -44,6 +44,9 @@
 #include "util.h"
 #ifdef CONFIG_KRG_IPC
 #include "krgmsg.h"
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/action.h>
+#endif
 #endif
 
 /*
@@ -1069,6 +1072,17 @@ long do_msgrcv(int msqid, long *pmtype, void __user *mtext,
 			goto out_unlock;
 
 		list_del(&msr_d.r_list);
+
+#if defined(CONFIG_KRG_IPC) && defined(CONFIG_KRG_EPM)
+		if (krg_action_any_pending(current)) {
+#ifdef CONFIG_KRG_DEBUG
+			printk("%s:%d - action kerrighed! --> need replay!!\n",
+			       __PRETTY_FUNCTION__, __LINE__);
+#endif
+			msg = ERR_PTR(-ERESTARTSYS);
+			goto out_unlock;
+		}
+#endif
 		if (signal_pending(current)) {
 			msg = ERR_PTR(-ERESTARTNOHAND);
 out_unlock:
