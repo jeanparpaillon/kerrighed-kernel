@@ -6,6 +6,7 @@
  */
 #include <linux/fs.h>
 #include <linux/file.h>
+#include <linux/namei.h>
 #include <linux/socket.h>
 #include <linux/sched.h>
 #include <linux/wait.h>
@@ -594,6 +595,39 @@ err_cancel:
 		err = -EPIPE;
 	buff = ERR_PTR(err);
 	goto out_end;
+}
+
+int krg_faf_do_path_lookup(struct file *file,
+			   const char *name,
+			   unsigned int flags,
+			   struct nameidata *nd)
+{
+	char *tmp = (char *) __get_free_page (GFP_KERNEL);
+	char *path;
+	int len, err = 0;
+
+	path = faf_d_path(file, tmp, PAGE_SIZE);
+
+	if (IS_ERR(path)) {
+		err = PTR_ERR(path);
+		goto exit;
+	}
+
+	len = strlen (path);
+	if ((len >= 10) && (strcmp (path + len - 10, " (deleted)") == 0))
+		len -= 10;
+
+	if (likely(path != tmp)) {
+		strncpy(tmp, path, PAGE_SIZE);
+		path = tmp;
+	}
+
+	strncpy(&path[len], name, PAGE_SIZE - len);
+
+	err = path_lookup(path, flags, nd);
+exit:
+	free_page ((unsigned long) tmp);
+	return err;
 }
 
 long krg_faf_bind (struct file * file,
