@@ -203,9 +203,10 @@ struct msgsnd_msg
 {
 	kerrighed_node_t requester;
 	int msqid;
-	long mtype;
 	int msgflg;
+	long mtype;
 	pid_t tgid;
+	size_t msgsz;
 };
 
 long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
@@ -221,18 +222,6 @@ long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 	int index;
 	struct msgsnd_msg msg;
 
-	msg.requester = kerrighed_node_id;
-	msg.msqid = msqid;
-	msg.mtype = mtype;
-	msg.msgflg = msgflg;
-	msg.tgid = tgid;
-
-	buffer = kmalloc(msgsz, GFP_KERNEL);
-	r = copy_from_user(buffer, mtext, msgsz);
-	if (r)
-		goto exit;
-
-	/* TODO: manage ipc namespace */
 	index = ipcid_to_idx(msqid);
 
 	master_set = krgipc_ops_master_set(msg_ids(ns).krgops);
@@ -253,12 +242,33 @@ long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 		goto exit;
 	}
 
+	msg.requester = kerrighed_node_id;
+	msg.msqid = msqid;
+	msg.mtype = mtype;
+	msg.msgflg = msgflg;
+	msg.tgid = tgid;
+	msg.msgsz = msgsz;
+
+	buffer = kmalloc(msgsz, GFP_KERNEL);
+	if (!buffer) {
+		r = -ENOMEM;
+		goto exit;
+	}
+
+	r = copy_from_user(buffer, mtext, msgsz);
+	if (r)
+		goto exit_free_buffer;
+
 	desc = rpc_begin(IPC_MSG_SEND, *master_node);
 	_kddm_put_object(master_set, index);
 
-	rpc_pack_type(desc, msg);
-	rpc_pack_type(desc, msgsz);
-	rpc_pack(desc, 0, buffer, msgsz);
+	r = rpc_pack_type(desc, msg);
+	if (r)
+		goto exit_rpc;
+
+	r = rpc_pack(desc, 0, buffer, msgsz);
+	if (r)
+		goto exit_rpc;
 
 	err = rpc_unpack(desc, RPC_FLAGS_INTR, &r, sizeof(r));
 	if (err == RPC_EINTR) {
@@ -267,16 +277,16 @@ long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 		r = -EINTR;
 	}
 
+exit_rpc:
 	rpc_end(desc, 0);
-
-exit:
+exit_free_buffer:
 	kfree(buffer);
+exit:
 	return r;
 }
 
 static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 {
-	size_t msgsz;
 	void *mtext;
 	long r;
 	sigset_t sigset, oldsigset;
@@ -286,25 +296,30 @@ static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 	ns = find_get_krg_ipcns();
 	BUG_ON(!ns);
 
-	rpc_unpack_type(desc, msgsz);
+	mtext = kmalloc(msg->msgsz, GFP_KERNEL);
+	if (!mtext) {
+		r = -ENOMEM;
+		goto exit_put_ns;
+	}
 
-	mtext = kmalloc(msgsz, GFP_KERNEL);
-
-	rpc_unpack(desc, 0, mtext, msgsz);
+	r = rpc_unpack(desc, 0, mtext, msg->msgsz);
+	if (r)
+		goto exit_free_text;
 
 	sigfillset(&sigset);
 	sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
 
-	r = __do_msgsnd(msg->msqid, msg->mtype, mtext, msgsz, msg->msgflg,
+	r = __do_msgsnd(msg->msqid, msg->mtype, mtext, msg->msgsz, msg->msgflg,
 			ns, msg->tgid);
 
 	sigprocmask(SIG_SETMASK, &oldsigset, NULL);
 	flush_signals(current);
 
-	rpc_pack_type(desc, r);
+	r = rpc_pack_type(desc, r);
 
+exit_free_text:
 	kfree(mtext);
-
+exit_put_ns:
 	put_ipc_ns(ns);
 }
 
@@ -312,9 +327,10 @@ struct msgrcv_msg
 {
 	kerrighed_node_t requester;
 	int msqid;
-	long msgtyp;
 	int msgflg;
+	long msgtyp;
 	pid_t tgid;
+	size_t msgsz;
 };
 
 long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
@@ -330,11 +346,6 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 	int retval;
 	int index;
 	struct msgrcv_msg msg;
-	msg.requester = kerrighed_node_id;
-	msg.msqid = msqid;
-	msg.msgtyp = msgtyp;
-	msg.msgflg = msgflg;
-	msg.tgid = tgid;
 
 	/* TODO: manage ipc namespace */
 	index = ipcid_to_idx(msqid);
@@ -356,20 +367,40 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 		return r;
 	}
 
+	msg.requester = kerrighed_node_id;
+	msg.msqid = msqid;
+	msg.msgtyp = msgtyp;
+	msg.msgflg = msgflg;
+	msg.tgid = tgid;
+	msg.msgsz = msgsz;
+
 	desc = rpc_begin(IPC_MSG_RCV, *master_node);
 	_kddm_put_object(master_set, index);
 
-	rpc_pack_type(desc, msg);
-	rpc_pack_type(desc, msgsz);
+	r = rpc_pack_type(desc, msg);
+	if (r)
+		goto exit;
 
 	err = rpc_unpack(desc, RPC_FLAGS_INTR, &r, sizeof(r));
 	if (!err) {
 		if (r > 0) {
 			/* get the real msg type */
-			rpc_unpack(desc, 0, pmtype, sizeof(long));
+			err = rpc_unpack(desc, 0, pmtype, sizeof(long));
+			if (err)
+				goto err_rpc;
 
 			buffer = kmalloc(r, GFP_KERNEL);
-			rpc_unpack(desc, 0, buffer, r);
+			if (!buffer) {
+				r = -ENOMEM;
+				goto exit;
+			}
+
+			err = rpc_unpack(desc, 0, buffer, r);
+			if (err) {
+				kfree(buffer);
+				goto err_rpc;
+			}
+
 			retval = copy_to_user(mtext, buffer, r);
 			kfree(buffer);
 			if (retval)
@@ -381,18 +412,23 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 		rpc_signal(desc, next_signal(&current->pending,
 				     &current->blocked));
 		r = -EINTR;
-	}
+	} else
+		r = -EPIPE;
 
+exit:
 	rpc_end(desc, 0);
 	return r;
+
+err_rpc:
+	r = -EPIPE;
+	goto exit;
 }
 
 static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 {
-	size_t msgsz;
 	void *mtext;
-	long r;
-	long pmtype;
+	long msgsz, pmtype;
+	int r;
 	struct msgrcv_msg *msg = _msg;
 	sigset_t sigset, oldsigset;
 	struct ipc_namespace *ns;
@@ -400,27 +436,34 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 	ns = find_get_krg_ipcns();
 	BUG_ON(!ns);
 
-	rpc_unpack_type(desc, msgsz);
-
-	mtext = kmalloc(msgsz, GFP_KERNEL);
+	mtext = kmalloc(msg->msgsz, GFP_KERNEL);
+	if (!mtext)
+		goto exit_put_ns;
 
 	sigfillset(&sigset);
 	sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
 
-	r = __do_msgrcv(msg->msqid, &pmtype, mtext, msgsz,
-			msg->msgtyp, msg->msgflg, ns, msg->tgid);
+	msgsz = __do_msgrcv(msg->msqid, &pmtype, mtext, msg->msgsz,
+			    msg->msgtyp, msg->msgflg, ns, msg->tgid);
 
 	sigprocmask(SIG_SETMASK, &oldsigset, NULL);
 	flush_signals(current);
 
-	rpc_pack_type(desc, r);
-	if (r > 0) {
-		rpc_pack_type(desc, pmtype); /* send the real type of msg */
-		rpc_pack(desc, 0, mtext, r);
-	}
+	r = rpc_pack_type(desc, msgsz);
+	if (r || msgsz <= 0)
+		goto exit_free_text;
 
+	r = rpc_pack_type(desc, pmtype); /* send the real type of msg */
+	if (r)
+		goto exit_free_text;
+
+	r = rpc_pack(desc, 0, mtext, msgsz);
+	if (r)
+		goto exit_free_text;
+
+exit_free_text:
 	kfree(mtext);
-
+exit_put_ns:
 	put_ipc_ns(ns);
 }
 
