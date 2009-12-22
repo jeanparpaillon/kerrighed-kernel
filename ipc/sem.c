@@ -89,6 +89,9 @@
 #ifdef CONFIG_KRG_IPC
 #include <linux/random.h>
 #include <kerrighed/pid.h>
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/action.h>
+#endif
 #include "krgsem.h"
 #endif
 
@@ -1487,6 +1490,18 @@ SYSCALL_DEFINE4(semtimedop, int, semid, struct sembuf __user *, tsops,
 #endif
 		goto out_free;
 	}
+
+#if defined(CONFIG_KRG_IPC) && defined(CONFIG_KRG_EPM)
+	if (krg_action_any_pending(current)) {
+#ifdef CONFIG_KRG_DEBUG
+		printk("%s:%d - action kerrighed! --> need replay!!\n",
+		       __PRETTY_FUNCTION__, __LINE__);
+#endif
+		list_del(&queue.list);
+		error = -ERESTARTSYS;
+		goto out_unlock_free;
+	}
+#endif
 
 	/*
 	 * If queue.status != -EINTR we are woken up by another process
