@@ -17,8 +17,8 @@
 #include <kerrighed/krgsyms.h>
 #include <kerrighed/mm.h>
 #include <kerrighed/hotplug.h>
+#include <kerrighed/page_table_tree.h>
 #include <kddm/kddm.h>
-#include "page_table_tree.h"
 #include "mm_struct.h"
 #include "memory_int_linker.h"
 #include "memory_io_linker.h"

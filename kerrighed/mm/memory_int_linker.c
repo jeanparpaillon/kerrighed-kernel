@@ -16,13 +16,13 @@
 #include <linux/rmap.h>
 #include <linux/acct.h>
 #include <kerrighed/pid.h>
+#include <kerrighed/page_table_tree.h>
 #include <asm/tlb.h>
 
 #include <kddm/kddm.h>
 #include "memory_int_linker.h"
 #include "memory_io_linker.h"
 #include "mm_struct.h"
-#include "page_table_tree.h"
 
 
 struct vm_operations_struct null_vm_ops = {};
