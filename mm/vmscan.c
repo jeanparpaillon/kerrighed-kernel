@@ -599,6 +599,7 @@ void putback_lru_page(struct page *page)
 }
 #endif /* CONFIG_UNEVICTABLE_LRU */
 
+#ifdef CONFIG_KRG_MM
 static int check_injection_flow(void)
 {
 	long i = 0, limit = RPC_MAX_PAGES;
@@ -618,6 +619,7 @@ static int check_injection_flow(void)
 
 	return 0;
 }
+#endif
 
 /*
  * shrink_page_list() returns the number of reclaimed pages
