@@ -23,24 +23,6 @@ struct dvfs_file_struct;
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
- *                                  TYPES                                   *
- *                                                                          *
- *--------------------------------------------------------------------------*/
-
-typedef struct faf_client_data {
-	kerrighed_node_t server_id;
-	int server_fd;
-	unsigned long f_flags;
-	fmode_t f_mode;
-	loff_t f_pos;
-	wait_queue_head_t poll_wq;
-	unsigned int poll_revents;
-	umode_t i_mode;
-	unsigned int is_named_pipe:1;
-} faf_client_data_t;
-
-/*--------------------------------------------------------------------------*
- *                                                                          *
  *                              EXTERN FUNCTIONS                            *
  *                                                                          *
  *--------------------------------------------------------------------------*/
