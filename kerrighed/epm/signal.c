@@ -156,7 +156,8 @@ static int signal_struct_first_touch(struct kddm_obj *obj_entry,
 static int signal_struct_import_object(struct rpc_desc *desc,
 				       struct kddm_set *set,
 				       struct kddm_obj *obj_entry,
-				       objid_t objid)
+				       objid_t objid,
+				       int flags)
 {
 	struct signal_struct_kddm_object *obj = obj_entry->object;
 	struct signal_struct *dest = obj->signal;
@@ -257,7 +258,8 @@ static int signal_struct_import_object(struct rpc_desc *desc,
 static int signal_struct_export_object(struct rpc_desc *desc,
 				       struct kddm_set *set,
 				       struct kddm_obj *obj_entry,
-				       objid_t objid)
+				       objid_t objid,
+				       int _flags)
 {
 	struct signal_struct_kddm_object *obj = obj_entry->object;
 	struct task_struct *tsk;

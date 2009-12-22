@@ -113,7 +113,8 @@ static int sighand_struct_first_touch(struct kddm_obj *obj_entry,
 static int sighand_struct_import_object(struct rpc_desc *desc,
 					struct kddm_set *set,
 					struct kddm_obj *obj_entry,
-					objid_t objid)
+					objid_t objid,
+					int flags)
 {
 	struct sighand_struct_kddm_object *obj = obj_entry->object;
 	struct sighand_struct *dest;
@@ -143,7 +144,8 @@ static int sighand_struct_import_object(struct rpc_desc *desc,
 static int sighand_struct_export_object(struct rpc_desc *desc,
 					struct kddm_set *set,
 					struct kddm_obj *obj_entry,
-					objid_t objid)
+					objid_t objid,
+					int flags)
 {
 	struct sighand_struct_kddm_object *obj = obj_entry->object;
 	struct sighand_struct *src;

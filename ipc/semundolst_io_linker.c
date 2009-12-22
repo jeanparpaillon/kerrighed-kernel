@@ -135,7 +135,8 @@ int undolist_invalidate_object (struct kddm_obj * obj_entry,
 int undolist_export_object (struct rpc_desc *desc,
 			    struct kddm_set *set,
 			    struct kddm_obj *obj_entry,
-			    objid_t objid)
+			    objid_t objid,
+			    int flags)
 {
 	struct semundo_list_object *undo_list;
 	struct semundo_id *un;
@@ -174,7 +175,8 @@ error:
 int undolist_import_object (struct rpc_desc *desc,
 			    struct kddm_set *set,
 			    struct kddm_obj *obj_entry,
-			    objid_t objid)
+			    objid_t objid,
+			    int flags)
 {
 	struct semundo_list_object *undo_list;
 	struct semundo_id *un, *prev = NULL;

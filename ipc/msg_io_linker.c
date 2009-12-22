@@ -254,7 +254,8 @@ int msq_remove_object(void *object, struct kddm_set *set, objid_t objid)
 int msq_export_object (struct rpc_desc *desc,
 		       struct kddm_set *set,
 		       struct kddm_obj *obj_entry,
-		       objid_t objid)
+		       objid_t objid,
+		       int flags)
 {
 	msq_object_t *msq_object;
 	int r;
@@ -278,7 +279,8 @@ int msq_export_object (struct rpc_desc *desc,
 int msq_import_object (struct rpc_desc *desc,
 		       struct kddm_set *set,
 		       struct kddm_obj *obj_entry,
-		       objid_t objid)
+		       objid_t objid,
+		       int flags)
 {
 	msq_object_t *msq_object, buffer;
 	struct msg_queue *msq;

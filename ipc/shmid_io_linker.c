@@ -233,7 +233,8 @@ int shmid_remove_object (void *object,
 int shmid_export_object (struct rpc_desc *desc,
 			 struct kddm_set *set,
 			 struct kddm_obj *obj_entry,
-			 objid_t objid)
+			 objid_t objid,
+			 int flags)
 {
 	shmid_object_t *shp_object;
 
@@ -255,7 +256,8 @@ int shmid_export_object (struct rpc_desc *desc,
 int shmid_import_object (struct rpc_desc *desc,
 			 struct kddm_set *set,
 			 struct kddm_obj *obj_entry,
-			 objid_t objid)
+			 objid_t objid,
+			 int flags)
 {
 	shmid_object_t *shp_object, buffer;
 	struct shmid_kernel *shp;

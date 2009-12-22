@@ -54,7 +54,8 @@ int memory_alloc_object (struct kddm_obj * obj_entry,
 int memory_import_object (struct rpc_desc *desc,
 			  struct kddm_set *set,
 			  struct kddm_obj *obj_entry,
-			  objid_t objid)
+			  objid_t objid,
+			  int flags)
 {
 	struct page *page = obj_entry->object;
 	char *data;
@@ -76,7 +77,8 @@ int memory_import_object (struct rpc_desc *desc,
 int memory_export_object (struct rpc_desc *desc,
 			  struct kddm_set *set,
 			  struct kddm_obj *obj_entry,
-			  objid_t objid)
+			  objid_t objid,
+			  int flags)
 {
 	struct page *page = (struct page *)obj_entry->object;
 	char *data;

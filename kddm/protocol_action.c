@@ -114,7 +114,7 @@ static inline int send_msg_to_object_receiver(kerrighed_node_t dest,
 	}
 
 	if (!(flags & KDDM_NO_DATA)) {
-		err = kddm_io_export_object(desc, set, obj_entry, objid);
+		err = kddm_io_export_object(desc, set, obj_entry, objid, flags);
 		if (err)
 			goto err_cancel;
 	}

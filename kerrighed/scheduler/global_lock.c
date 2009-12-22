@@ -27,7 +27,8 @@ static int global_lock_alloc_object(struct kddm_obj *obj_entry,
 static int global_lock_export_object(struct rpc_desc *desc,
 				     struct kddm_set *set,
 				     struct kddm_obj *obj_entry,
-				     objid_t objid)
+				     objid_t objid,
+				     int flags)
 {
 	return 0;
 }
@@ -36,7 +37,8 @@ static int global_lock_export_object(struct rpc_desc *desc,
 static int global_lock_import_object(struct rpc_desc *desc,
 				     struct kddm_set *set,
 				     struct kddm_obj *obj_entry,
-				     objid_t objid)
+				     objid_t objid,
+				     int flags)
 {
 	return 0;
 }

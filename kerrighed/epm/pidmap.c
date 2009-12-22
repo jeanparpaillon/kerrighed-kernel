@@ -60,7 +60,8 @@ out:
 }
 
 static int pidmap_map_import_object(struct rpc_desc *desc, struct kddm_set *set,
-				    struct kddm_obj *obj_entry, objid_t objid)
+				    struct kddm_obj *obj_entry, objid_t objid,
+				    int flags)
 {
 	struct pidmap_map *map = obj_entry->object;
 
@@ -68,7 +69,8 @@ static int pidmap_map_import_object(struct rpc_desc *desc, struct kddm_set *set,
 }
 
 static int pidmap_map_export_object(struct rpc_desc *desc, struct kddm_set *set,
-				    struct kddm_obj *obj_entry, objid_t objid)
+				    struct kddm_obj *obj_entry, objid_t objid,
+				    int flags)
 {
 	struct pidmap_map *map = obj_entry->object;
 

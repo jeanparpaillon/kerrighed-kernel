@@ -363,7 +363,8 @@ int kddm_io_change_state (struct kddm_obj * obj_entry,
 int kddm_io_import_object (struct rpc_desc *desc,
                            struct kddm_set *set,
                            struct kddm_obj *obj_entry,
-                           objid_t objid)
+                           objid_t objid,
+			   int flags)
 {
 	struct iolinker_struct *io = set->iolinker;
 	int res;
@@ -373,7 +374,7 @@ int kddm_io_import_object (struct rpc_desc *desc,
 	might_sleep();
 
 	if (io && io->import_object)
-		res = io->import_object(desc, set, obj_entry, objid);
+		res = io->import_object(desc, set, obj_entry, objid, flags);
 	else
 		res = rpc_unpack(desc, 0, obj_entry->object, set->obj_size);
 
@@ -392,13 +393,14 @@ int kddm_io_import_object (struct rpc_desc *desc,
 int kddm_io_export_object (struct rpc_desc *desc,
 			   struct kddm_set *set,
                            struct kddm_obj *obj_entry,
-                           objid_t objid)
+                           objid_t objid,
+			   int flags)
 {
 	struct iolinker_struct *io = set->iolinker;
 	int res;
 
 	if (io && io->export_object)
-		res = io->export_object(desc, set, obj_entry, objid);
+		res = io->export_object(desc, set, obj_entry, objid, flags);
 	else
 		res = rpc_pack(desc, 0, obj_entry->object, set->obj_size);
 

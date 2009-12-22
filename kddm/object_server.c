@@ -669,7 +669,8 @@ void handle_object_receive (struct rpc_desc* desc,
 		res = kddm_io_alloc_object (obj_entry, set, msg->objid);
 		BUG_ON(res != 0);
 
-		kddm_io_import_object (desc, set, obj_entry, msg->objid);
+		kddm_io_import_object (desc, set, obj_entry, msg->objid,
+				       msg->flags);
 
 		kddm_obj_path_lock(set, msg->objid);
 
