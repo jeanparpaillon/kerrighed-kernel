@@ -251,10 +251,10 @@ static void bad_page(struct page *page)
 		current->comm, page_to_pfn(page));
 #ifdef CONFIG_KRG_MM
 	printk(KERN_ALERT
-	        "page:%p flags:%p count:%d mapcount:%d mapping:%p index:%lx kddm_count:%d\n",
+	        "page:%p flags:%p count:%d mapcount:%d mapping:%p index:%lx kddm_count:%d obj_entry:%p\n",
 	       page, (void *)page->flags, page_count(page),
 	       page_mapcount(page), page->mapping, page->index,
-	       page_kddm_count(page));
+	       page_kddm_count(page), page->obj_entry);
 #else
 	printk(KERN_ALERT
 	        "page:%p flags:%p count:%d mapcount:%d mapping:%p index:%lx\n",
@@ -505,6 +505,7 @@ static inline int free_pages_check(struct page *page)
 		(page->mapping != NULL)  |
 		(page_count(page) != 0)  |
 #ifdef CONFIG_KRG_MM
+		(page->obj_entry != NULL) |
 		(page_kddm_count(page) != 0) |
 #endif
 		(page->flags & PAGE_FLAGS_CHECK_AT_FREE))) {
