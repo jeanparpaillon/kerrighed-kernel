@@ -112,7 +112,8 @@ static inline int __handle_invalidation_ack (kerrighed_node_t sender,
 			  BUG_ON (dest == 1);
 
 			  obj_entry = send_copy_on_write_and_inv (
-				  set, obj_entry, msg->objid, dest, 0);
+				  set, obj_entry, msg->objid, dest,
+				  KDDM_IO_FLUSH);
 
 			  /* Wake up the set_flush function */
 

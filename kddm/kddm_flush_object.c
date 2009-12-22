@@ -99,7 +99,7 @@ send_copy:
 		}
 
 		send_copy_on_write(set, obj_entry, objid, dest,
-				   KDDM_REMOVE_ON_ACK);
+				   KDDM_REMOVE_ON_ACK | KDDM_IO_FLUSH);
 		res = 0;
 		goto exit_no_unlock;
 

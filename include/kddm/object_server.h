@@ -32,7 +32,7 @@
 #define KDDM_DONT_KILL         0x00000020
 #define KDDM_NEED_OBJ_RM_ACK2  0x00000040
 #define KDDM_NO_FREEZE         0x00000080
-#define KDDM_CREATE_ON_FT      0x00000100
+#define KDDM_IO_FLUSH          0x00000100
 #define KDDM_SYNC_OBJECT       0x00000200
 #define KDDM_NO_DATA           0x00000400
 #define KDDM_TRY_GRAB          0x00000800
