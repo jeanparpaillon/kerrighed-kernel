@@ -34,6 +34,9 @@
 #include <linux/device_cgroup.h>
 #include <linux/fs_struct.h>
 #include <asm/uaccess.h>
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
 
 #define ACC_MODE(x) ("\000\004\002\006"[(x)&O_ACCMODE])
 
@@ -1050,6 +1053,20 @@ static int do_path_lookup(int dfd, const char *name,
 		if (!file)
 			goto out_fail;
 
+#ifdef CONFIG_KRG_FAF
+		if (file->f_flags & O_FAF_CLT) {
+			faf_client_data_t *data = file->private_data;
+
+			retval = -ENOTDIR;
+			if (!S_ISDIR(data->i_mode))
+				goto fput_fail;
+
+			retval = krg_faf_do_path_lookup(file, name, flags, nd);
+
+			fput_light(file, fput_needed);
+			return retval;
+		}
+#endif
 		dentry = file->f_path.dentry;
 
 		retval = -ENOTDIR;
