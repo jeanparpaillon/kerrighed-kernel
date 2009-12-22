@@ -211,9 +211,11 @@ int memory_remove_page (void *object,
                         objid_t objid)
 {
 	struct page *page = (struct page *) object;
-	struct kddm_obj *obj_entry = page->obj_entry;
+	struct kddm_obj *obj_entry;
 
 	if (page) {
+		obj_entry = page->obj_entry;
+
 		/* Invalidate page table entry */
 		kddm_pt_invalidate (set, objid, obj_entry, page);
 
