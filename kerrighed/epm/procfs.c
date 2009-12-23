@@ -121,10 +121,14 @@ static int proc_app_chkpt(void __user *arg)
 
 	ckpt_info.storage_dir.path = storage_dir;
 
+	printk("> version: %d\n", ckpt_info.chkpt_sn);
+
 	res = sys_app_chkpt(&ckpt_info);
 
 	if (copy_to_user(arg, &ckpt_info, sizeof(ckpt_info)))
 		res = -EFAULT;
+
+	printk("< version: %d\n", ckpt_info.chkpt_sn);
 
 	kfree(storage_dir);
 out:

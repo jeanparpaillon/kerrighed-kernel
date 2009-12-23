@@ -416,11 +416,17 @@ static int global_do_chkpt(struct app_kddm_object *obj,
 	if (r)
 		goto exit;
 
+	printk("%s:%d - version: %d\n", __PRETTY_FUNCTION__, __LINE__,
+	       obj->chkpt_sn);
+
 	r = __get_next_chkptsn(obj->app_id, obj->chkpt_sn);
 	if (r < 0)
 		goto exit;
 
 	obj->chkpt_sn = r;
+
+	printk("%s:%d - version: %d\n", __PRETTY_FUNCTION__, __LINE__,
+	       obj->chkpt_sn);
 
 	/* prepare message */
 	msg.requester = kerrighed_node_id;
@@ -568,12 +574,17 @@ static int _checkpoint_frozen_app(struct checkpoint_info *info)
 	}
 
 	prev_chkpt_sn = obj->chkpt_sn;
+	printk("%s:%d - version: %d\n", __PRETTY_FUNCTION__, __LINE__,
+	       prev_chkpt_sn);
 
 	r = global_do_chkpt(obj, info->storage_dir.path, info->flags);
 
 	info->chkpt_sn = obj->chkpt_sn;
 	if (r)
 		obj->chkpt_sn = prev_chkpt_sn;
+
+	printk("%s:%d - version: %d\n", __PRETTY_FUNCTION__, __LINE__,
+	       info->chkpt_sn);
 
 exit_kddmput:
 	kddm_put_object(kddm_def_ns, APP_KDDM_ID, info->app_id);
