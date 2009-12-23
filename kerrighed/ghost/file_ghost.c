@@ -17,6 +17,9 @@
 #ifdef CONFIG_KRG_FAF
 #include <kerrighed/faf.h>
 #endif
+#ifdef CONFIG_KRG_DEBUG
+#include <linux/namei.h>
+#endif
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -183,6 +186,58 @@ void unset_ghost_fs(const ghost_fs_t *oldfs)
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
+#ifdef CONFIG_KRG_DEBUG
+void create_dir_over_nfs(const char *filename)
+{
+	int error, len;
+	struct nameidata nd;
+	struct path prev_root;
+	char *copy, *delim, *tmp;
+
+	copy = (char *)__get_free_page(GFP_KERNEL);
+	if (!copy)
+		goto out;
+
+	strncpy(copy, filename, PAGE_SIZE);
+
+	chroot_to_physical_root(&prev_root);
+	tmp = copy;
+
+	while (1) {
+		delim = strchr(tmp, '/');
+		if (!delim)
+			goto end_of_path;
+
+		*delim = '\0';
+		len = strlen(copy);
+		if (len) {
+			error = path_lookup(copy, 0, &nd);
+			if (!error)
+				path_put(&nd.path);
+			else if (error = -ENOENT) {
+				/* TODO: check we are over NFS */
+				error = sys_mkdir(copy, S_IRWXUGO|S_ISVTX);
+				if (error && error != -EEXIST)
+					goto out_free_page;
+			} else
+				goto out_free_page;
+		}
+		*delim = '/';
+		tmp = delim + 1;
+	}
+
+end_of_path:
+	error = path_lookup(filename, 0, &nd);
+	if (!error)
+		path_put(&nd.path);
+out_free_page:
+	free_page((unsigned long) tmp);
+	chroot_to_prev_root(&prev_root);
+out:
+	return;
+}
+#endif
+
 char *get_chkpt_filebase(const char *fmt_path, ...)
 {
 	char *filename;
@@ -267,6 +322,11 @@ ghost_t *create_file_ghost(int access, const char *fmt_path, ...)
 	va_start(args, fmt_path);
 	vsnprintf(filename, PATH_MAX, fmt_path, args);
 	va_end(args);
+
+#ifdef CONFIG_KRG_DEBUG
+	if (access & GHOST_WRITE)
+		create_dir_over_nfs(filename);
+#endif
 
 	if (access & GHOST_WRITE)/* fail if already exists */
 		file = filp_open(filename, O_CREAT|O_EXCL|O_WRONLY,
