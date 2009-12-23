@@ -392,6 +392,18 @@ error:
 	}
 }
 
+static int checkpoint_dir_exists(const char *dirname)
+{
+	struct nameidata nd;
+	int error;
+
+	error = path_lookup(dirname, 0, &nd);
+	if (!error)
+		path_put(&nd.path);
+
+	return error;
+}
+
 static int global_do_chkpt(struct app_kddm_object *obj,
 			   const char *checkpoint_dir,
 			   int flags)
@@ -399,6 +411,10 @@ static int global_do_chkpt(struct app_kddm_object *obj,
 	struct rpc_desc *desc;
 	struct checkpoint_request_msg msg;
 	int r, err_rpc, len;
+
+	r = checkpoint_dir_exists(checkpoint_dir);
+	if (r)
+		goto exit;
 
 	r = __get_next_chkptsn(obj->app_id, obj->chkpt_sn);
 	if (r < 0)
