@@ -176,6 +176,10 @@ int app_set_userdata(__u64 user_data);
 
 int app_get_userdata(long _appid, int flags, __u64 *user_data);
 
+int app_cr_disable(void);
+
+int app_cr_enable(void);
+
 /*--------------------------------------------------------------------------*/
 
 void application_cr_server_init(void);

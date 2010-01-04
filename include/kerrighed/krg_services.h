@@ -143,6 +143,10 @@
 #define KSYS_APP_GET_USERDATA          _IOW(KERRIGHED_PROC_MAGIC, \
                                             EPM_PROC_BASE + 7, \
                                             struct app_userdata_request)
+#define KSYS_APP_CR_DISABLE		_IO(KERRIGHED_PROC_MAGIC, \
+					   EPM_PROC_BASE + 8)
+#define KSYS_APP_CR_ENABLE		_IO(KERRIGHED_PROC_MAGIC, \
+					   EPM_PROC_BASE + 9)
 
 /*
  * IPC related kerrighed syscalls

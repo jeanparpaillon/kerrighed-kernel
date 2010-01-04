@@ -946,6 +946,78 @@ exit:
 	return r;
 }
 
+int app_cr_disable(void)
+{
+	int r = 0;
+	struct app_kddm_object *obj;
+
+	if (!can_be_checkpointed(current)) {
+		r = -EPERM;
+		goto exit;
+	}
+
+	if (!current->application) {
+		r = create_application(current);
+		if (r)
+			goto exit;
+	}
+
+	obj = kddm_grab_object_no_ft(kddm_def_ns, APP_KDDM_ID,
+				     current->application->app_id);
+	if (!obj) {
+		r = -ESRCH;
+		goto exit_kddmput;
+	}
+
+	if (obj->state == APP_RUNNING_CS)
+		r = -EALREADY;
+	else if (obj->state == APP_RUNNING)
+		obj->state = APP_RUNNING_CS;
+	else
+		BUG();
+
+exit_kddmput:
+	kddm_put_object(kddm_def_ns, APP_KDDM_ID, current->application->app_id);
+exit:
+	return r;
+}
+
+int app_cr_enable(void)
+{
+	int r = 0;
+	struct app_kddm_object *obj;
+
+	if (!can_be_checkpointed(current)) {
+		r = -EPERM;
+		goto exit;
+	}
+
+	if (!current->application) {
+		r = create_application(current);
+		if (r)
+			goto exit;
+	}
+
+	obj = kddm_grab_object_no_ft(kddm_def_ns, APP_KDDM_ID,
+				     current->application->app_id);
+	if (!obj) {
+		r = -ESRCH;
+		goto exit_kddmput;
+	}
+
+	if (obj->state == APP_RUNNING)
+		r = -EALREADY;
+	else if (obj->state == APP_RUNNING_CS)
+		obj->state = APP_RUNNING;
+	else
+		BUG();
+
+exit_kddmput:
+	kddm_put_object(kddm_def_ns, APP_KDDM_ID, current->application->app_id);
+exit:
+	return r;
+}
+
 void do_ckpt_msg(struct epm_action *action, int err, char *fmt, ...)
 {
 	va_list args;

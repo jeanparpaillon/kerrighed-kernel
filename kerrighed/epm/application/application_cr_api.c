@@ -77,3 +77,22 @@ int sys_app_get_userdata(struct app_userdata_request *data_req)
 	return app_get_userdata(data_req->app_id, data_req->flags,
 				&data_req->user_data);
 }
+
+/**
+ *  System call function to disable use of checkpoint for current application
+ *  @author Matthieu Fertré
+ */
+int sys_app_cr_disable(void)
+{
+	return app_cr_disable();
+}
+
+/**
+ *  System call function to enable again use of checkpoint for
+ *  current application
+ *  @author Matthieu Fertré
+ */
+int sys_app_cr_enable(void)
+{
+	return app_cr_enable();
+}

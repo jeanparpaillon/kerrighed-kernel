@@ -166,6 +166,16 @@ static int proc_app_get_userdata(void __user *arg)
 	return res;
 }
 
+static int proc_app_cr_disable(void __user *arg)
+{
+	return sys_app_cr_disable();
+}
+
+static int proc_app_cr_enable(void __user *arg)
+{
+	return sys_app_cr_enable();
+}
+
 int epm_procfs_start(void)
 {
 	int r;
@@ -209,8 +219,19 @@ int epm_procfs_start(void)
 	if (r)
 		goto unreg_app_set_userdata;
 
+	r = register_proc_service(KSYS_APP_CR_DISABLE, proc_app_cr_disable);
+	if (r)
+		goto unreg_app_get_userdata;
+
+	r = register_proc_service(KSYS_APP_CR_ENABLE, proc_app_cr_enable);
+	if (r)
+		goto unreg_app_cr_disable;
+
 	return 0;
 
+unreg_app_cr_disable:
+	unregister_proc_service(KSYS_APP_CR_DISABLE);
+unreg_app_get_userdata:
 	unregister_proc_service(KSYS_APP_GET_USERDATA);
 unreg_app_set_userdata:
 	unregister_proc_service(KSYS_APP_SET_USERDATA);
@@ -240,6 +261,8 @@ void epm_procfs_exit(void)
 	unregister_proc_service(KSYS_APP_RESTART);
 	unregister_proc_service(KSYS_APP_SET_USERDATA);
 	unregister_proc_service(KSYS_APP_GET_USERDATA);
+	unregister_proc_service(KSYS_APP_CR_DISABLE);
+	unregister_proc_service(KSYS_APP_CR_ENABLE);
 
 	procfs_deltree(proc_epm);
 }
