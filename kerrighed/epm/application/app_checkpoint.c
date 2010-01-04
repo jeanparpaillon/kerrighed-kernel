@@ -476,6 +476,14 @@ static int _freeze_app(long appid)
 		goto exit_kddmput;
 	}
 
+	if (obj->state == APP_RUNNING_CS) {
+		r = -EAGAIN;
+		ckpt_err(NULL, r,
+			 "Application %ld is in critical section. Can not freeze it",
+			 appid);
+		goto exit_kddmput;
+	}
+
 	if (obj->state != APP_RUNNING) {
 		r = -EPERM;
 		ckpt_err(NULL, r,
