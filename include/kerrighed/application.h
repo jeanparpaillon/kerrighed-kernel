@@ -65,7 +65,9 @@ typedef struct task_and_state {
 typedef enum {
 	APP_FROZEN,
 	APP_RESTARTED,
-	APP_RUNNING
+	APP_RUNNING,
+	APP_RUNNING_CS /* Application is running but is in a critical section:
+			* Checkpoint is forbidden. */
 } app_state_t;
 
 struct app_kddm_object {
