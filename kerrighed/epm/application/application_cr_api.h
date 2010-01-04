@@ -38,7 +38,7 @@ int sys_app_unfreeze(struct checkpoint_info *info);
 int sys_app_chkpt(struct checkpoint_info *info);
 
 /**
- *  System call function to restart an application.
+ *  System call function to restart an application
  *  @author Matthieu Fertré
  */
 int sys_app_restart(struct restart_request *req);
@@ -54,5 +54,18 @@ int sys_app_set_userdata(__u64 data);
  *  @author Matthieu Fertré
  */
 int sys_app_get_userdata(struct app_userdata_request *data_req);
+
+/**
+ *  System call function to disable use of checkpoint for current application
+ *  @author Matthieu Fertré
+ */
+int sys_app_cr_disable(void);
+
+/**
+ *  System call function to enable again use of checkpoint for
+ *  current application
+ *  @author Matthieu Fertré
+ */
+int sys_app_cr_enable(void);
 
 #endif /* __APPLICATION_CR_API_H__ */
