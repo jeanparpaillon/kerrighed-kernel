@@ -55,7 +55,7 @@ static int app_alloc_object(struct kddm_obj *obj_entry,
 
 	a->app_id = 0;
 	a->chkpt_sn = 0;
-	a->state = RUNNING;
+	a->state = APP_RUNNING;
 	a->user_data = 0;
 	obj_entry->object = a;
 
@@ -718,9 +718,9 @@ static int global_continue(struct app_kddm_object *obj)
 	msg.requester = kerrighed_node_id;
 	msg.app_id = obj->app_id;
 
-	BUG_ON(obj->state != RESTARTED && obj->state != FROZEN);
+	BUG_ON(obj->state != APP_RESTARTED && obj->state != APP_FROZEN);
 
-	if (obj->state == RESTARTED)
+	if (obj->state == APP_RESTARTED)
 		msg.first_run = 1;
 	else
 		msg.first_run = 0;
@@ -860,8 +860,8 @@ int global_unfreeze(struct app_kddm_object *obj, int signal)
 {
 	int r;
 
-	if (obj->state != FROZEN
-	    && obj->state != RESTARTED) {
+	if (obj->state != APP_FROZEN
+	    && obj->state != APP_RESTARTED) {
 		r = -EPERM;
 		goto err;
 	}
@@ -876,7 +876,7 @@ int global_unfreeze(struct app_kddm_object *obj, int signal)
 	if (r)
 		goto err;
 
-	obj->state = RUNNING;
+	obj->state = APP_RUNNING;
 err:
 	return r;
 }

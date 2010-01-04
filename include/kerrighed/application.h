@@ -63,9 +63,9 @@ typedef struct task_and_state {
 } task_state_t;
 
 typedef enum {
-	FROZEN,
-	RESTARTED,
-	RUNNING
+	APP_FROZEN,
+	APP_RESTARTED,
+	APP_RUNNING
 } app_state_t;
 
 struct app_kddm_object {

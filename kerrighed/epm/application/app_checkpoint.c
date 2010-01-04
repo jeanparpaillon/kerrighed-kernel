@@ -486,7 +486,7 @@ static int _freeze_app(long appid)
 		goto exit_kddmput;
 	}
 
-	if (obj->state != RUNNING) {
+	if (obj->state != APP_RUNNING) {
 		r = -EPERM;
 		ckpt_err(NULL, r,
 			 "Application %ld is not running. Can not freeze it",
@@ -496,7 +496,7 @@ static int _freeze_app(long appid)
 
 	r = global_stop(obj);
 	if (!r)
-		obj->state = FROZEN;
+		obj->state = APP_FROZEN;
 
 exit_kddmput:
 	kddm_put_object(kddm_def_ns, APP_KDDM_ID, appid);
@@ -517,7 +517,7 @@ static int _unfreeze_app(long appid, int signal)
 		goto exit_kddmput;
 	}
 
-	if (obj->state == RUNNING) {
+	if (obj->state == APP_RUNNING) {
 		r = -EPERM;
 		ckpt_err(NULL, r,
 			 "Application %ld is running. Can not unfreeze it",
@@ -547,7 +547,7 @@ static int _checkpoint_frozen_app(struct checkpoint_info *info)
 		goto exit_kddmput;
 	}
 
-	if (obj->state != FROZEN) {
+	if (obj->state != APP_FROZEN) {
 		r = -EPERM;
 		ckpt_err(NULL, r,
 			 "Application %ld is not frozen. Can not checkpoint it",

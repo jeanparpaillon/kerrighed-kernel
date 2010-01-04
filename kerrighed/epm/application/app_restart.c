@@ -1270,7 +1270,7 @@ int app_restart(struct restart_request *req, const task_identity_t *requester)
 	if (r)
 		goto exit;
 
-	obj->state = RESTARTED;
+	obj->state = APP_RESTARTED;
 
 exit:
 	if (req->app_id) {
