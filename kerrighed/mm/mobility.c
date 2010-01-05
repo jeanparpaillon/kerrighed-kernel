@@ -89,11 +89,17 @@ void free_ghost_mm (struct task_struct *tsk)
 /*                                                                           */
 /*****************************************************************************/
 
-
+static int is_page_excluded_from_checkpoint(struct app_struct *app,
+					    struct mm_struct *mm,
+					    unsigned long addr)
+{
+	return 0;
+}
 
 /** Export one physical page of a process.
- *  @author Renaud Lottiaux
+ *  @author Renaud Lottiaux, Matthieu Fertré
  *
+ *  @param app      Application hosting task(s) related to the vma.
  *  @param ghost    Ghost where data should be stored.
  *  @param vma      The memory area hosting the page.
  *  @param addr     Virtual address of the page.
@@ -102,31 +108,31 @@ void free_ghost_mm (struct task_struct *tsk)
  *           0 if no page has been exported.
  *           Negative value otherwise.
  */
-static int export_one_page (ghost_t *ghost, struct vm_area_struct *vma,
-			    unsigned long addr)
+static int export_one_page(struct app_struct *app, ghost_t *ghost,
+			   struct vm_area_struct *vma, unsigned long addr)
 {
 	struct kddm_set *set = NULL;
 	unsigned long pfn;
 	spinlock_t *ptl;
 	struct page *page = NULL;
-	char *page_addr ;
+	char *page_addr;
 	objid_t objid = 0;
-	pgprot_t prot ;
+	pgprot_t prot;
 	pte_t *pte;
 	int put_page = 0;
 	int nr_exported = 0;
+	int page_excluded = 0;
 	int r;
 
-	pte = get_locked_pte (vma->vm_mm, addr, &ptl);
-	if (pte && pte_present (*pte)) {
+	pte = get_locked_pte(vma->vm_mm, addr, &ptl);
+	if (pte && pte_present(*pte)) {
 		pfn = pte_pfn(*pte);
 		page = pfn_to_page(pfn);
 		prot = pte_pgprot(*pte);
 		pte_unmap_unlock(pte, ptl);
 		if (!page || !PageAnon(page))
 			goto exit;
-	}
-	else {
+	} else {
 		if (pte)
 			pte_unmap_unlock(pte, ptl);
 
@@ -138,26 +144,34 @@ static int export_one_page (ghost_t *ghost, struct vm_area_struct *vma,
 			prot = vma->vm_page_prot;
 			put_page = 1;
 		}
-		if (page == NULL)
+		if (!page)
 			goto exit;
 	}
 
 	page_addr = (char *)kmap(page);
 
 	/* Export the virtual address of the page */
-	r = ghost_write (ghost, &addr, sizeof (unsigned long));
+	r = ghost_write(ghost, &addr, sizeof (unsigned long));
 	if (r)
 		goto unmap;
 
 	/* Export the page protection */
-	r = ghost_write (ghost, &prot, sizeof(pgprot_t));
+	r = ghost_write(ghost, &prot, sizeof(pgprot_t));
 	if (r)
 		goto unmap;
 
-	/* Export the physical page content */
-	r = ghost_write (ghost, (void*)page_addr, PAGE_SIZE);
+	/* Export the physical page content unless it has been
+	 * excluded from the chekpoint by the programmer */
+	page_excluded = is_page_excluded_from_checkpoint(app, vma->vm_mm, addr);
+	r = ghost_write_type(ghost, page_excluded);
 	if (r)
 		goto unmap;
+
+	if (!page_excluded) {
+		r = ghost_write(ghost, (void*)page_addr, PAGE_SIZE);
+		if (r)
+			goto unmap;
+	}
 
 unmap:
 	kunmap(page);
@@ -170,11 +184,10 @@ exit:
 	return nr_exported;
 }
 
-
-
 /** Export the physical pages hosted by a VMA.
- *  @author Renaud Lottiaux
+ *  @author Renaud Lottiaux, Matthieu Fertré
  *
+ *  @param app      Application hosting task(s) related to the vma.
  *  @param ghost    Ghost where data should be stored.
  *  @param tsk      Task to export memory pages from.
  *  @param vma      The VMA to export pages from.
@@ -182,17 +195,18 @@ exit:
  *  @return  0 if everything ok.
  *           Negative value otherwise.
  */
-static int export_vma_pages (ghost_t *ghost, struct vm_area_struct *vma)
+static int export_vma_pages(struct app_struct *app, ghost_t *ghost,
+			    struct vm_area_struct *vma)
 {
-	unsigned long addr ;
-	int nr_pages_sent = 0 ;
+	unsigned long addr;
+	int nr_pages_sent = 0;
 	int r;
 
 	if (!anon_vma(vma))
 		goto done;
 
 	for (addr = vma->vm_start; addr < vma->vm_end; addr += PAGE_SIZE) {
-		r = export_one_page (ghost, vma, addr);
+		r = export_one_page(app, ghost, vma, addr);
 		if (r < 0)
 			goto out;
 		nr_pages_sent += r;
@@ -211,34 +225,33 @@ out:
 	return r;
 }
 
-
-
 /** This function exports the physical memory pages of a process
  *  @author Renaud Lottiaux, Matthieu Fertré
  *
+ *  @param app         Application hosting task(s) related to the mm_struct.
  *  @param ghost       Ghost where pages should be stored.
  *  @param mm          mm_struct to export memory pages to.
  *
  *  @return  0 if everything ok.
  *           Negative value otherwise.
  */
-int export_process_pages(struct epm_action *action,
+int export_process_pages(struct app_struct *app,
 			 ghost_t * ghost,
                          struct mm_struct *mm)
 {
 	struct vm_area_struct *vma;
 	int r = 0;
 
-	BUG_ON (mm == NULL);
+	BUG_ON(!app);
+	BUG_ON(!mm);
 
 	/* Export process VMAs */
 	vma = mm->mmap;
-	BUG_ON (vma == NULL);
+	BUG_ON(!vma);
 
-	while (vma != NULL) {
-
+	while (vma) {
 		if (vma->vm_ops != &special_mapping_vmops) {
-			r = export_vma_pages (ghost, vma);
+			r = export_vma_pages(app, ghost, vma);
 			if (r)
 				goto out;
 		}
@@ -253,11 +266,6 @@ int export_process_pages(struct epm_action *action,
 out:
 	return r;
 }
-
-
-
-
-
 
 /** Export one VMA into the ghost.
  *  @author Renaud Lottiaux
@@ -592,7 +600,7 @@ up_mmap_sem:
 		goto out;
 
 	if (action->type == EPM_CHECKPOINT) {
-		r = export_process_pages(action, ghost, mm);
+		r = export_process_pages(tsk->application, ghost, mm);
 		if (r)
 			goto out;
 	}
@@ -614,21 +622,20 @@ exit_put_mm:
 /*                                                                           */
 /*****************************************************************************/
 
-
-
-int import_vma_pages (ghost_t * ghost,
-                      struct mm_struct *mm,
-                      struct vm_area_struct *vma)
+int import_vma_pages(ghost_t *ghost,
+		     struct mm_struct *mm,
+		     struct vm_area_struct *vma)
 {
 	void *page_addr;
 	unsigned long address = 0;
 	int nr_pages_received = 0;
 	int nr_pages_sent;
+	int page_excluded;
 	pgd_t *pgd;
 	pgprot_t prot;
 	int r;
 
-	BUG_ON (vma == NULL);
+	BUG_ON(!vma);
 
 	while (1) {
 		struct page *new_page = NULL;
@@ -636,47 +643,54 @@ int import_vma_pages (ghost_t * ghost,
 		pmd_t *pmd;
 		pte_t *pte;
 
-		r = ghost_read (ghost, &address, sizeof (unsigned long));
+		r = ghost_read(ghost, &address, sizeof(unsigned long));
 		if (r)
 			goto err_read;
 
 		if (address == 0)   /* We have reach the last VMA Page. */
 			break;
 
-		r = ghost_read (ghost, &prot, sizeof (pgprot_t));
+		r = ghost_read(ghost, &prot, sizeof(pgprot_t));
 		if (r)
 			goto err_read;
 
-		new_page = alloc_page (GFP_HIGHUSER);
+		new_page = alloc_page(GFP_HIGHUSER);
 
-		BUG_ON (new_page == 0);
+		BUG_ON(!new_page);
 
-		pgd = pgd_offset (mm, address);
-		pud = pud_alloc (mm, pgd, address);
-		pmd = pmd_alloc (mm, pud, address);
+		pgd = pgd_offset(mm, address);
+		pud = pud_alloc(mm, pgd, address);
+		pmd = pmd_alloc(mm, pud, address);
 		BUG_ON(!pmd);
 
-		pte = pte_alloc_map (mm, pmd, address);
+		pte = pte_alloc_map(mm, pmd, address);
 		BUG_ON(!pte);
-		set_pte (pte, mk_pte (new_page, prot));
+		set_pte (pte, mk_pte(new_page, prot));
 
-		BUG_ON (unlikely(anon_vma_prepare(vma)));
+		BUG_ON(unlikely(anon_vma_prepare(vma)));
 
 		page_add_new_anon_rmap(new_page, vma, address);
 
-		page_addr = kmap (new_page);
-		r = ghost_read (ghost, page_addr, PAGE_SIZE);
+		page_addr = kmap(new_page);
+
+		r = ghost_read_type(ghost, page_excluded);
 		if (r)
 			goto err_read;
 
+		if (!page_excluded) {
+			r = ghost_read (ghost, page_addr, PAGE_SIZE);
+			if (r)
+				goto err_read;
+		}
+
 		nr_pages_received++;
 
-		kunmap (new_page);
+		kunmap(new_page);
 	}
 
-	r = ghost_read (ghost, &nr_pages_sent, sizeof (int));
+	r = ghost_read(ghost, &nr_pages_sent, sizeof (int));
 
-	BUG_ON (nr_pages_sent != nr_pages_received);
+	BUG_ON(nr_pages_sent != nr_pages_received);
 
 err_read:
 	return r;
@@ -699,15 +713,15 @@ int import_process_pages(struct epm_action *action,
 	struct vm_area_struct *vma;
 	int r = 0;
 
-	BUG_ON (mm == NULL);
+	BUG_ON(!mm);
 
 	vma = mm->mmap;
-	BUG_ON (vma == NULL);
+	BUG_ON(!vma);
 
-	while (vma != NULL) {
+	while (vma) {
 
 		if (vma->vm_ops != &special_mapping_vmops) {
-			r = import_vma_pages (ghost, mm, vma);
+			r = import_vma_pages(ghost, mm, vma);
 			if (r)
 				goto exit;
 		}
@@ -718,7 +732,7 @@ int import_process_pages(struct epm_action *action,
 		int magic;
 
 		r = ghost_read(ghost, &magic, sizeof(int));
-		BUG_ON (!r && magic != 962134);
+		BUG_ON(!r && magic != 962134);
 	}
 exit:
 	return r;
