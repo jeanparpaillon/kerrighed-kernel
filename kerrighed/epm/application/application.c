@@ -333,6 +333,8 @@ void set_task_chkpt_result(struct task_struct *task, int result)
 	if (!app)
 		return;
 
+	spin_lock(&app->lock);
+
 	list_for_each_safe(element, tmp, &app->tasks) {
 		t = list_entry(element, task_state_t, next_task);
 		if (task == t->task)
@@ -342,6 +344,8 @@ void set_task_chkpt_result(struct task_struct *task, int result)
 		    t->chkpt_result == PCUS_STOP_IN_PROGRESS)
 			done_for_all_tasks = 0;
 	}
+
+	spin_unlock(&app->lock);
 
 	if (done_for_all_tasks)
 		complete(&app->tasks_chkpted);
