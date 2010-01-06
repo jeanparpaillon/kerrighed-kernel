@@ -300,6 +300,8 @@ static inline int __local_do_chkpt(struct app_struct *app)
 	/* Checkpoint all local processes involved in the checkpoint */
 	init_completion(&app->tasks_chkpted);
 
+	spin_lock(&app->lock);
+
 	list_for_each_entry(tsk, &app->tasks, next_task) {
 		tmp = tsk->task;
 
@@ -312,6 +314,8 @@ static inline int __local_do_chkpt(struct app_struct *app)
 		BUG_ON(tmp == current);
 		__chkpt_task_req(tmp);
 	}
+
+	spin_unlock(&app->lock);
 
 	wait_for_completion(&app->tasks_chkpted);
 	r = get_local_tasks_chkpt_result(app);
