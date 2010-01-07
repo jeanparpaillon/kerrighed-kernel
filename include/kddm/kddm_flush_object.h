@@ -26,4 +26,6 @@ int kddm_flush_object(struct kddm_ns *ns, kddm_set_id_t set_id, objid_t objid,
 int _kddm_flush_object(struct kddm_set *set, objid_t objid,
 		       kerrighed_node_t dest);
 
+unsigned kddm_flush_object_estimate(int nr);
+
 #endif

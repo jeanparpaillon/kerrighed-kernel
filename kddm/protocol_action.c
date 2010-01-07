@@ -137,6 +137,15 @@ err_cancel:
 
 
 
+static unsigned send_msg_to_object_receiver_estimate(int nr)
+{
+	return rpc_desc_estimate(1, nr)
+		+ rpc_pack_estimate(sizeof(msg_object_receiver_t), 1, nr)
+		+ rpc_pack_estimate(sizeof(masterObj_t), 1, nr);
+}
+
+
+
 /** Request to synchronize the given object.
  *  @author Renaud Lottiaux
  *
@@ -369,6 +378,11 @@ struct kddm_obj *send_copy_on_write_and_inv(struct kddm_set *set,
 						INV_COPY);
 
 	return obj_entry;
+}
+
+unsigned send_copy_on_write_estimate(int nr)
+{
+	return send_msg_to_object_receiver_estimate(nr);
 }
 
 /** Send an object read copy to the given node.

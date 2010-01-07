@@ -146,3 +146,10 @@ int kddm_flush_object(struct kddm_ns *ns, kddm_set_id_t set_id, objid_t objid,
 	return res;
 }
 EXPORT_SYMBOL(kddm_flush_object);
+
+
+
+unsigned kddm_flush_object_estimate(int nr)
+{
+	return send_copy_on_write_estimate(nr);
+}

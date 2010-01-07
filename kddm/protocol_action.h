@@ -64,6 +64,8 @@ struct kddm_obj *send_copy_on_write_and_inv (struct kddm_set *set,
 					     kerrighed_node_t dest_node,
 					     int flags);
 
+unsigned send_copy_on_write_estimate(int nr);
+
 
 /** Send an object read copy to the given node.
  *  @author Renaud Lottiaux
