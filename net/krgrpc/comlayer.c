@@ -139,6 +139,8 @@ static int ack_cleanup_window_size;
 static int consecutive_recv[KERRIGHED_MAX_NODES];
 static int max_consecutive_recv[KERRIGHED_MAX_NODES];
 
+static krgnodemask_t nodes_requiring_nack;
+
 void __rpc_put_raw_data(void *data){
 	kfree_skb((struct sk_buff*)data);
 }
@@ -259,6 +261,16 @@ void tipc_send_ack_worker(struct work_struct *work)
 		err = send_iovec(node, ARRAY_SIZE(iov), iov);
 		if (!err)
 			krgnode_clear(node, nodes_requiring_ack);
+	}
+
+	h.rpcid = RPC_NACK;
+
+	for_each_krgnode_mask(node, nodes_requiring_nack) {
+		err = send_iovec(node, ARRAY_SIZE(iov), iov);
+		if (!err)
+			krgnode_clear(node, nodes_requiring_nack);
+		else
+			queue_delayed_work(krgcom_wq, &tipc_ack_work, 1);
 	}
 }
 
@@ -1159,6 +1171,20 @@ static void tipc_handler(void *usr_handle,
 	if (h->rpcid == RPC_ACK)
 		goto exit;
 
+	/* Peer dropped valid packets. Force resend. */
+	if (h->rpcid == RPC_NACK) {
+		int cpuid;
+
+		for_each_online_cpu(cpuid) {
+			struct tx_engine *engine = &per_cpu(tipc_tx_engine,
+							    cpuid);
+			queue_delayed_work_on(cpuid, krgcom_wq,
+					      &engine->reachable_work, 0);
+		}
+
+		goto exit;
+	}
+
 	// Check if we are not receiving an already received packet
 	if (h->link_seq_id < rpc_link_recv_seq_id[h->from]) {
 		krgnode_set(h->from, nodes_requiring_ack);
@@ -1172,6 +1198,13 @@ static void tipc_handler(void *usr_handle,
 		queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
 	}
 	consecutive_recv[h->from]++;
+
+	/* Drop packets using memory reserves */
+	if (skb_emergency(__buf)) {
+		krgnode_set(h->from, nodes_requiring_nack);
+		queue_delayed_work(krgcom_wq, &tipc_ack_work, 1);
+		goto exit;
+	}
 
 	// Is-it the next ordered message ?
 	if (h->link_seq_id > rpc_link_recv_seq_id[h->from]) {
