@@ -248,9 +248,6 @@ void tipc_send_ack_worker(struct work_struct *work)
 	kerrighed_node_t node;
 	int err;
 
-	if (next_krgnode(0, nodes_requiring_ack) > KERRIGHED_MAX_NODES)
-		return;
-
 	h.from = kerrighed_node_id;
 	h.rpcid = RPC_ACK;
 	h.flags = 0;
