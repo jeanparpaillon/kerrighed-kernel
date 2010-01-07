@@ -29,6 +29,8 @@
 
 #include "rpc_internal.h"
 
+#define TIPC_MAX_H_SIZE 60 /* matches MAX_H_SIZE in net/tipc/tipc_msg.h */
+
 #define TIPC_KRG_SERVER_TYPE (1+TIPC_RESERVED_TYPES)
 
 #define ACK_CLEANUP_WINDOW_SIZE 100
@@ -229,6 +231,13 @@ static int __rpc_tx_elem_send(struct rpc_tx_elem *elem, int link_seq_index,
 
 out:
 	return err;
+}
+
+static unsigned __rpc_tx_elem_estimate(size_t size, int nr_dest, int nr)
+{
+	return (size ? kmalloc_estimate_objs(size, GFP_ATOMIC, nr) : 0)
+		+ kmem_alloc_estimate(rpc_tx_elem_cachep, GFP_ATOMIC, nr)
+		+ kmalloc_estimate_objs(sizeof(long) * nr_dest, GFP_ATOMIC, nr);
 }
 
 static
@@ -549,6 +558,13 @@ static struct rpc_tx_elem *next_emergency_send_buf(struct rpc_desc *desc)
 	return buf;
 }
 
+unsigned __rpc_emergency_send_buf_estimate(int nr_dest, int nr)
+{
+	return kmalloc_estimate_objs(sizeof(struct rpc_tx_elem *) * MAX_EMERGENCY_SEND,
+				     GFP_ATOMIC, nr)
+		+ __rpc_send_ll_estimate(0, nr_dest, MAX_EMERGENCY_SEND * nr);
+}
+
 int __rpc_send_ll(struct rpc_desc* desc,
 			 krgnodemask_t *nodes,
 			 unsigned long seq_id,
@@ -642,6 +658,19 @@ int __rpc_send_ll(struct rpc_desc* desc,
 	}
 	preempt_enable();
 	return 0;
+}
+
+unsigned __rpc_send_ll_estimate(size_t size, int nr_dest, int nr)
+{
+	unsigned elem, tipc;
+
+	elem = __rpc_tx_elem_estimate(size, nr_dest, nr);
+	/* Rough estimate for buffers allocated by TIPC */
+	tipc = kmalloc_estimate_objs(size + sizeof(struct __rpc_header)
+				     + TIPC_MAX_H_SIZE + LL_MAX_HEADER,
+				     GFP_ATOMIC, nr_dest * nr);
+
+	return elem + tipc;
 }
 
 inline

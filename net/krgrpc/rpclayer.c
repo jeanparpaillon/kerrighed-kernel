@@ -156,6 +156,16 @@ oom:
 	return NULL;
 }
 
+unsigned rpc_desc_estimate(int nr_dest, int nr)
+{
+	return kmem_alloc_estimate(rpc_desc_cachep, GFP_ATOMIC, nr)
+		+ kmem_alloc_estimate(rpc_desc_send_cachep, GFP_ATOMIC, nr)
+		+ kmem_alloc_estimate(rpc_desc_recv_cachep, GFP_ATOMIC,
+				      nr_dest * nr)
+		+ __rpc_emergency_send_buf_estimate(nr_dest, nr);
+
+}
+
 inline
 int __rpc_end_pack(struct rpc_desc* desc)
 {
@@ -420,6 +430,11 @@ int rpc_wait_pack(struct rpc_desc* desc, int seq_id)
 	}
 
 	return seq_id;
+}
+
+unsigned rpc_pack_estimate(size_t size, int nr_dest, int nr)
+{
+	return __rpc_send_ll_estimate(size, nr_dest, nr);
 }
 
 static void __rpc_signal_dequeue_pending(struct rpc_desc *desc,

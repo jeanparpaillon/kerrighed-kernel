@@ -166,12 +166,14 @@ void rpc_new_desc_id_lock(void);
 void rpc_new_desc_id_unlock(void);
 int __rpc_emergency_send_buf_alloc(struct rpc_desc *desc, size_t size);
 void __rpc_emergency_send_buf_free(struct rpc_desc *desc);
+unsigned __rpc_emergency_send_buf_estimate(int nr_dest, int nr);
 int __rpc_send_ll(struct rpc_desc* desc,
 		  krgnodemask_t *nodes,
 		  unsigned long seq_id,
 		  int __flags,
 		  const void* data, size_t size,
 		  int rpc_flags);
+unsigned __rpc_send_ll_estimate(size_t size, int nr_dest, int nr);
 
 void __rpc_put_raw_data(void *raw);
 void __rpc_get_raw_data(void *raw);

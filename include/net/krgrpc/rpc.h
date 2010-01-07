@@ -137,12 +137,14 @@ int __rpc_register(enum rpcid rpcid,
 
 struct rpc_desc* rpc_begin_m(enum rpcid rpcid,
 			     krgnodemask_t* nodes);
+unsigned rpc_desc_estimate(int nr_dest, int nr);
 
 int rpc_cancel(struct rpc_desc* desc);
 
 int rpc_pack(struct rpc_desc* desc, int flags, const void* data, size_t size);
 int rpc_wait_pack(struct rpc_desc* desc, int seq_id);
 int rpc_cancel_pack(struct rpc_desc* desc);
+unsigned rpc_pack_estimate(size_t size, int nr_dest, int nr);
 
 int rpc_forward(struct rpc_desc* desc, kerrighed_node_t node);
 
