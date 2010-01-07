@@ -19,6 +19,8 @@ extern kerrighed_subsession_t kerrighed_subsession_id;
 extern int kerrighed_init_flags;
 extern struct rw_semaphore kerrighed_init_sem;
 
+extern struct kobject *krgsys;
+
 #define SET_KRG_INIT_FLAGS(p) kerrighed_init_flags |= (1<<p)
 #define CLR_KRG_INIT_FLAGS(p) kerrighed_init_flags &= ~(1<<p)
 #define ISSET_KRG_INIT_FLAGS(p) (kerrighed_init_flags & (1<<p))

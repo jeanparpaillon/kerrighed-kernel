@@ -15,6 +15,9 @@
 
 extern int node_mem_usage[KERRIGHED_MAX_NODES];
 
+unsigned injection_slot_consume(unsigned slots);
+void injection_slot_release(unsigned slots);
+
 void mm_injection_init (void);
 void mm_injection_finalize (void);
 

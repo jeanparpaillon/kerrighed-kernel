@@ -12,8 +12,12 @@
 #include <linux/mm_inline.h>
 #include <asm/tlbflush.h>
 #include <linux/module.h>
+#include <linux/kobject.h>
+#include <linux/sysfs.h>
+#include <linux/mutex.h>
 #include <kerrighed/sys/types.h>
 
+#include <net/sock.h>
 #include <net/krgrpc/rpc.h>
 #include <net/krgrpc/rpcid.h>
 #include <kddm/kddm.h>
@@ -21,6 +25,14 @@
 #include <kerrighed/dynamic_node_info_linker.h>
 #include "injection.h"
 #include "mm_struct.h"
+
+static struct kobject *krgmmsys;
+
+static unsigned injection_slots;
+static unsigned injection_slots_prev;
+static DEFINE_MUTEX(injection_slots_mutex);
+static unsigned injection_slots_used;
+static DEFINE_SPINLOCK(injection_slots_lock);
 
 kerrighed_node_t last_chosen_node = KERRIGHED_NODE_ID_NONE;
 
@@ -314,6 +326,145 @@ exit:
 
 
 
+static unsigned injection_estimate(unsigned slots)
+{
+	return kddm_flush_object_estimate(slots)
+		+ rpc_pack_estimate(PAGE_SIZE, 1, slots);
+}
+
+static int do_injection_slots_set(unsigned slots)
+{
+	int nr_socks;
+	long nr_pages;
+	int ret;
+
+	if (!injection_slots_prev && slots)
+		nr_socks = 1;
+	else if (injection_slots_prev && !slots)
+		nr_socks = -1;
+	else
+		nr_socks = 0;
+
+	nr_pages = (long)injection_estimate(slots)
+		- (long)injection_estimate(injection_slots_prev);
+	printk("kerrighed: Reserving %ld pages for injection\n", nr_pages);
+
+	ret = sk_adjust_memalloc(nr_socks, nr_pages);
+	if (!ret)
+		injection_slots_prev = slots;
+
+	return ret;
+}
+
+static int injection_slots_set(unsigned slots)
+{
+	bool decrease_now;
+	int ret;
+
+	mutex_lock(&injection_slots_mutex);
+
+	ret = 0;
+	if (slots > injection_slots_prev) {
+		ret = do_injection_slots_set(slots);
+		if (!ret) {
+			spin_lock(&injection_slots_lock);
+			injection_slots = slots;
+			spin_unlock(&injection_slots_lock);
+		}
+	} else if (slots < injection_slots_prev) {
+		spin_lock(&injection_slots_lock);
+		injection_slots = slots;
+		decrease_now = injection_slots_used <= slots;
+		spin_unlock(&injection_slots_lock);
+		if (decrease_now)
+			do_injection_slots_set(slots);
+	} else {
+		spin_lock(&injection_slots_lock);
+		injection_slots = slots;
+		spin_unlock(&injection_slots_lock);
+	}
+
+	mutex_unlock(&injection_slots_mutex);
+
+	return ret;
+}
+
+unsigned injection_slot_consume(unsigned slots)
+{
+	unsigned consumed;
+
+	spin_lock(&injection_slots_lock);
+	if (injection_slots_used < injection_slots) {
+		consumed = min(slots, injection_slots - injection_slots_used);
+		injection_slots_used += consumed;
+	} else {
+		consumed = 0;
+	}
+	spin_unlock(&injection_slots_lock);
+
+	return consumed;
+}
+
+void injection_slot_release(unsigned slots)
+{
+	bool decrease_now;
+
+	mutex_lock(&injection_slots_mutex);
+
+	spin_lock(&injection_slots_lock);
+	BUG_ON(slots > injection_slots_used);
+	injection_slots_used -= slots;
+	decrease_now = injection_slots_used <= injection_slots
+	    && injection_slots < injection_slots_prev;
+	spin_unlock(&injection_slots_lock);
+
+	if (decrease_now)
+		do_injection_slots_set(injection_slots);
+
+	mutex_unlock(&injection_slots_mutex);
+}
+
+static ssize_t injection_slots_show(struct kobject *obj,
+				    struct kobj_attribute *attr,
+				    char *page)
+{
+	return sprintf(page, "%u\n", injection_slots);
+}
+
+static ssize_t injection_slots_store(struct kobject *obj,
+				     struct kobj_attribute *attr,
+				     const char *page, size_t count)
+{
+	unsigned long val;
+	char *end;
+	ssize_t ret;
+
+	val = simple_strtoul(page, &end, 0);
+	if (end - page < count - 1
+	    || ((end - page) == count - 1 && *end != 0)
+	    || val > UINT_MAX)
+		return -EINVAL;
+
+	ret = injection_slots_set(val);
+
+	return ret ? ret : count;
+}
+
+static struct kobj_attribute injection_slots_attr =
+	__ATTR(injection_slots, 0644,
+	       injection_slots_show, injection_slots_store);
+
+static struct attribute *attrs[] = {
+	&injection_slots_attr.attr,
+	NULL,
+};
+
+static struct attribute_group attr_group = {
+	.attrs = attrs,
+};
+
+
+
 /*****************************************************************************/
 /*                                                                           */
 /*                              INITIALIZATION                               */
@@ -340,6 +491,8 @@ static inline void init_low_mem_limit(void)
 
 void mm_injection_init (void)
 {
+	unsigned long nr_pages, max_pages;
+	unsigned slots;
 	int i;
 
 	tasklet_init(&notify_tasklet, do_notify_mem, 0);
@@ -350,6 +503,24 @@ void mm_injection_init (void)
 
 	for (i = 0; i < KERRIGHED_MAX_NODES; i++)
 		node_mem_usage[i] = FREE_MEM;
+
+	krgmmsys = kobject_create_and_add("mm", krgsys);
+	if (!krgmmsys)
+		panic("Could not create kerrighed/mm sysfs directory!\n");
+
+	if (sysfs_create_group(krgmmsys, &attr_group))
+		panic("Could not create kerrighed/mm/ sysfs entries!\n");
+
+	/* Reserve approx 1% of memory for injection, or enough for 10 slots */
+	max_pages = totalram_pages / 100;
+	slots = 200;
+	nr_pages = injection_estimate(slots);
+	slots = slots * max_pages / nr_pages;
+	if (slots < 10)
+		slots = 10;
+	if (injection_slots_set(slots))
+		panic("Could not reserve memory for injection!\n");
+	printk("kerrighed: reserved memory for %u injection slots\n", slots);
 }
 
 
