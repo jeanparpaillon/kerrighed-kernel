@@ -16,6 +16,8 @@
 #include <linux/netdevice.h>
 #include <linux/list.h>
 #include <linux/slab.h>
+#include <linux/reserve.h>
+#include <net/sock.h>
 #include <net/tipc/tipc.h>
 #include <net/tipc/tipc_plugin_port.h>
 #include <net/tipc/tipc_plugin_if.h>
@@ -140,6 +142,8 @@ static int consecutive_recv[KERRIGHED_MAX_NODES];
 static int max_consecutive_recv[KERRIGHED_MAX_NODES];
 
 static krgnodemask_t nodes_requiring_nack;
+
+static struct mem_reserve tipc_rx_reserve;
 
 void __rpc_put_raw_data(void *data){
 	kfree_skb((struct sk_buff*)data);
@@ -1353,6 +1357,27 @@ void rpc_disable_local_lowmem_mode(void){
 	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE;
 }
 
+static inline long tipc_link_rx_estimate(void)
+{
+	/*
+	 * 1 for the final skb, 1 for the possible fragments before re-assembly,
+	 * 1 for extra headers, skb internals, etc.
+	 */
+	return DIV_ROUND_UP(3 * TIPC_MAX_USER_MSG_SIZE, PAGE_SIZE);
+}
+
+int comlayer_add(const krgnodemask_t *vector)
+{
+	long nr_pages = tipc_link_rx_estimate() * __krgnodes_weight(vector);
+	return mem_reserve_pages_add(&tipc_rx_reserve, nr_pages);
+}
+
+void comlayer_remove(const krgnodemask_t *vector)
+{
+	long nr_pages = tipc_link_rx_estimate() * __krgnodes_weight(vector);
+	mem_reserve_pages_add(&tipc_rx_reserve, -nr_pages);
+}
+
 int comlayer_init(void)
 {
 	int res = 0;
@@ -1434,6 +1459,8 @@ int comlayer_init(void)
 	};
 
 	lockdep_on();
+
+	mem_reserve_init(&tipc_rx_reserve, "TIPC RX queues", &net_skb_reserve);
 
 	return 0;
 	

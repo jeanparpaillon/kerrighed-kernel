@@ -181,6 +181,9 @@ void __rpc_get_raw_data(void *raw);
 void __rpc_synchro_free(struct rpc_desc *desc);
 int rpc_synchro_lookup(struct rpc_desc* desc);
 
+int comlayer_add(const krgnodemask_t *vector);
+void comlayer_remove(const krgnodemask_t *vector);
+
 int comlayer_init(void);
 void comlayer_enable(void);
 int thread_pool_init(void);
