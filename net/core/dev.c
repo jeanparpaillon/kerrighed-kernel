@@ -2214,6 +2214,7 @@ static int skb_emergency_protocol(struct sk_buff *skb)
 		case __constant_htons(ETH_P_IP):
 		case __constant_htons(ETH_P_IPV6):
 		case __constant_htons(ETH_P_8021Q):
+		case __constant_htons(ETH_P_TIPC):
 			break;
 
 		default:
