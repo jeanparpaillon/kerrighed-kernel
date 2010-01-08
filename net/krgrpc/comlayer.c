@@ -1158,7 +1158,8 @@ static void tipc_handler(void *usr_handle,
 	if (h->link_ack_id > rpc_link_send_ack_id[h->from]){
 		rpc_link_send_ack_id[h->from] = h->link_ack_id;
 		if(rpc_link_send_ack_id[h->from] - last_cleanup_ack[h->from]
-			> ack_cleanup_window_size){
+			> ack_cleanup_window_size
+		   || skb_emergency(__buf)) {
 			int cpuid;
 			last_cleanup_ack[h->from] = h->link_ack_id;
 			for_each_online_cpu(cpuid){
