@@ -141,7 +141,8 @@ unsigned rpc_desc_estimate(int nr_dest, int nr);
 
 int rpc_cancel(struct rpc_desc* desc);
 
-int rpc_pack(struct rpc_desc* desc, int flags, const void* data, size_t size);
+int rpc_pack_cb(struct rpc_desc *desc, int flags, const void *data, size_t size,
+		void (*ack_cb)(void *), void *cb_data);
 int rpc_wait_pack(struct rpc_desc* desc, int seq_id);
 int rpc_cancel_pack(struct rpc_desc* desc);
 unsigned rpc_pack_estimate(size_t size, int nr_dest, int nr);
@@ -205,6 +206,12 @@ int rpc_register(enum rpcid rpcid,
 	return __rpc_register(rpcid, RPC_TARGET_NODE, RPC_HANDLER_KTHREAD,
 			      NULL, h, flags);
 };
+
+static inline
+int rpc_pack(struct rpc_desc *desc, int flags, const void *data, size_t size)
+{
+	return rpc_pack_cb(desc, flags, data, size, NULL, NULL);
+}
 
 static inline
 struct rpc_desc* rpc_begin(enum rpcid rpcid,

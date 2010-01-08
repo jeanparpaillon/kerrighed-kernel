@@ -101,7 +101,13 @@ struct __rpc_header {
 
 struct rpc_desc_elem {
 	unsigned long seq_id;
-	void* raw;
+	union {
+		struct {
+			void (*ack_cb)(void *);
+			void *cb_data;
+		};		/* pack only */
+		void *raw;	/* unpack only */
+	};
 	void* data;
 	size_t size;
 	struct list_head list_desc_elem;
@@ -112,6 +118,8 @@ struct rpc_tx_elem {
 	krgnodemask_t nodes;
 	kerrighed_node_t index;
 	kerrighed_node_t link_seq_index;
+	void (*ack_cb)(void *);
+	void *cb_data;
 	void *data;
 	struct iovec iov[2];
 	struct __rpc_header h;
@@ -172,7 +180,9 @@ int __rpc_send_ll(struct rpc_desc* desc,
 		  unsigned long seq_id,
 		  int __flags,
 		  const void* data, size_t size,
-		  int rpc_flags);
+		  int rpc_flags,
+		  void (*ack_cb)(void *),
+		  void *cb_data);
 unsigned __rpc_send_ll_estimate(size_t size, int nr_dest, int nr);
 
 void __rpc_put_raw_data(void *raw);

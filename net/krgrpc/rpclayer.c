@@ -50,7 +50,9 @@ inline
 int __rpc_send(struct rpc_desc* desc,
 		      unsigned long seq_id, int __flags,
 		      const void* data, size_t size,
-		      int rpc_flags)
+		      int rpc_flags,
+		      void (*ack_cb)(void *),
+		      void *cb_data)
 {
 	int err = 0;
 
@@ -74,7 +76,8 @@ int __rpc_send(struct rpc_desc* desc,
 			err = __rpc_send_ll(desc, &desc->nodes,
 					    seq_id,
 					    __flags, data, size,
-					    rpc_flags | RPC_FLAGS_NEW_DESC_ID);
+					    rpc_flags | RPC_FLAGS_NEW_DESC_ID,
+					    ack_cb, cb_data);
 			if (err) {
 				__hashtable_remove(desc_clt, desc->desc_id);
 				rpc_new_desc_id_unlock();
@@ -86,7 +89,8 @@ int __rpc_send(struct rpc_desc* desc,
 			err = __rpc_send_ll(desc, &desc->nodes,
 					    seq_id,
 					    __flags, data, size,
-					    rpc_flags);
+					    rpc_flags,
+					    ack_cb, cb_data);
 		break;
 
 	case RPC_RQ_SRV: {
@@ -97,7 +101,8 @@ int __rpc_send(struct rpc_desc* desc,
 
 		err = __rpc_send_ll(desc, &nodes, seq_id,
 				    __flags, data, size,
-				    rpc_flags);
+				    rpc_flags,
+				    ack_cb, cb_data);
 		break;
 	}
 
@@ -185,7 +190,9 @@ int __rpc_end_pack(struct rpc_desc* desc)
 			if (!(desc->desc_send->flags & RPC_FLAGS_CLOSED)) {
 				err = __rpc_send(desc, descelem->seq_id, 0,
 						 descelem->data, descelem->size,
-						 0);
+						 0,
+						 descelem->ack_cb,
+						 descelem->cb_data);
 				if (err)
 					rpc_cancel_pack(desc);
 			}
@@ -320,7 +327,7 @@ int rpc_cancel_pack(struct rpc_desc* desc)
 	err = __rpc_send(desc, seq_id,
 			 __RPC_HEADER_FLAGS_CANCEL_PACK,
 			 0, 0,
-			 RPC_FLAGS_EMERGENCY_BUF);
+			 RPC_FLAGS_EMERGENCY_BUF, NULL, NULL);
 
 	/*
 	 * if RPC_FLAGS_EMERGENCY_BUF was used too many times, then
@@ -366,7 +373,8 @@ int rpc_forward(struct rpc_desc* desc, kerrighed_node_t node){
 	return 0;
 }
 
-int rpc_pack(struct rpc_desc* desc, int flags, const void* data, size_t size)
+int rpc_pack_cb(struct rpc_desc* desc, int flags, const void* data, size_t size,
+		void (*ack_cb)(void *), void *cb_data)
 {
 	int err = -EPIPE;
 
@@ -381,6 +389,8 @@ int rpc_pack(struct rpc_desc* desc, int flags, const void* data, size_t size)
 		if (!descelem)
 			goto out;
 
+		descelem->ack_cb = ack_cb;
+		descelem->cb_data = cb_data;
 		descelem->data = (void *) data;
 		descelem->size = size;
 		descelem->seq_id = atomic_inc_return(&desc->desc_send->seq_id);
@@ -392,7 +402,7 @@ int rpc_pack(struct rpc_desc* desc, int flags, const void* data, size_t size)
 
 	err = __rpc_send(desc, atomic_inc_return(&desc->desc_send->seq_id), 0,
 			 data, size,
-			 0);
+			 0, ack_cb, cb_data);
 	if (err)
 		/* Allow caller to retry or cancel */
 		atomic_dec(&desc->desc_send->seq_id);
@@ -418,7 +428,9 @@ int rpc_wait_pack(struct rpc_desc* desc, int seq_id)
 			if (!(desc->desc_send->flags & RPC_FLAGS_CLOSED))
 				err = __rpc_send(desc, descelem->seq_id, 0,
 						 descelem->data, descelem->size,
-						 0);
+						 0,
+						 descelem->ack_cb,
+						 descelem->cb_data);
 			if (err) {
 				seq_id = last_seq_id;
 				break;
@@ -802,7 +814,7 @@ int rpc_signal(struct rpc_desc* desc, int sigid)
 	return __rpc_send(desc, atomic_read(&desc->desc_send->seq_id),
 			  __RPC_HEADER_FLAGS_SIGNAL,
 			  &sigid, sizeof(sigid),
-			  0);
+			  0, NULL, NULL);
 }
 
 int __rpc_signalack(struct rpc_desc* desc)
@@ -814,7 +826,7 @@ int __rpc_signalack(struct rpc_desc* desc)
 	return __rpc_send(desc, atomic_read(&desc->desc_send->seq_id),
 			  __RPC_HEADER_FLAGS_SIGNAL | __RPC_HEADER_FLAGS_SIGACK,
 			  &v, sizeof(v),
-			  0);
+			  0, NULL, NULL);
 }
 
 void rpc_free_buffer(struct rpc_data *rpc_data)

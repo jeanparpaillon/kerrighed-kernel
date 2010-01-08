@@ -480,8 +480,13 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 
 	next_iter:
 		if(need_to_free){
+			void (*ack_cb)(void *) = iter->ack_cb;
+			void *cb_data = iter->cb_data;
+
 			list_del(&iter->tx_queue);
 			__rpc_tx_elem_free(iter);
+			if (ack_cb)
+				ack_cb(cb_data);
 		}
 	}
 
@@ -583,7 +588,8 @@ int __rpc_send_ll(struct rpc_desc* desc,
 			 unsigned long seq_id,
 			 int __flags,
 			 const void* data, size_t size,
-			 int rpc_flags)
+			 int rpc_flags,
+			 void (*ack_cb)(void *), void *cb_data)
 {
 	struct rpc_tx_elem* elem;
 	struct tx_engine *engine;
@@ -605,6 +611,9 @@ int __rpc_send_ll(struct rpc_desc* desc,
 	}
 	if (rpc_flags & RPC_FLAGS_NEW_DESC_ID)
 		rpc_new_desc_id_unlock();
+
+	elem->ack_cb = ack_cb;
+	elem->cb_data = cb_data;
 
 	elem->h.from = kerrighed_node_id;
 	elem->h.client = desc->client;
