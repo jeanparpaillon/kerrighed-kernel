@@ -15,7 +15,7 @@ int krg_ipc_sem_copy_semundo(unsigned long clone_flags,
 
 struct sem_undo *krg_ipc_sem_find_undo(struct sem_array* sma);
 
-void krg_ipc_sem_exit_sem(struct task_struct * tsk);
+void krg_ipc_sem_exit_sem(struct ipc_namespace *ns, struct task_struct * tsk);
 
 int newary(struct ipc_namespace *ns, struct ipc_params *params);
 

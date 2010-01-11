@@ -646,25 +646,22 @@ void destroy_semundo_proc_list(struct task_struct *task,
 }
 
 
-void krg_ipc_sem_exit_sem(struct task_struct * task)
+void krg_ipc_sem_exit_sem(struct ipc_namespace *ns,
+			  struct task_struct * task)
 {
 	struct kddm_set *undo_list_kddm_set;
 	unique_id_t undo_list_id;
 	struct semundo_list_object * undo_list;
 	struct semundo_id * undo_id, *next;
-	struct ipc_namespace *ns;
 
 	if (task->sysvsem.undo_list_id == UNIQUE_ID_NONE)
 		return;
 
-	undo_list_kddm_set = task_undolist_set(task);
+	undo_list_kddm_set = krgipc_ops_undolist_set(sem_ids(ns).krgops);
 	if (IS_ERR(undo_list_kddm_set)) {
 		BUG();
 		return;
 	}
-
-	ns = task_nsproxy(task)->ipc_ns;
-	BUG_ON(!ns);
 
 	undo_list_id = task->sysvsem.undo_list_id;
 

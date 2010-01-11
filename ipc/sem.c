@@ -1714,11 +1714,21 @@ void exit_sem(struct task_struct *tsk)
 #ifdef CONFIG_KRG_IPC
 void exit_sem(struct task_struct *tsk)
 {
-	struct ipc_namespace *ns;
+	struct ipc_namespace *ipcns;
+	struct nsproxy *ns;
 
-	ns = task_nsproxy(tsk)->ipc_ns;
-	if (is_krg_ipc(&sem_ids(ns)))
-		krg_ipc_sem_exit_sem(tsk);
+	ns = task_nsproxy(tsk);
+	if (!ns) { /* it happens when cleaning a failing fork */
+		if (krg_current)
+			ns = task_nsproxy(krg_current);
+		else
+			ns = task_nsproxy(current);
+	}
+
+	ipcns = ns->ipc_ns;
+
+	if (is_krg_ipc(&sem_ids(ipcns)))
+		krg_ipc_sem_exit_sem(ipcns, tsk);
 
 	/* let call __exit_sem in case process has been created
 	 * before the Kerrighed loading
