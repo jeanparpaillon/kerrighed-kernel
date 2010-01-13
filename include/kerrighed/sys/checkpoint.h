@@ -60,4 +60,13 @@ struct app_userdata_request
 	__u64 user_data;
 };
 
+struct cr_mm_region
+{
+	pid_t pid;
+	unsigned long addr;
+	size_t size;
+
+	struct cr_mm_region *next;
+};
+
 #endif

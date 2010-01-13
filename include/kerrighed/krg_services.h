@@ -147,6 +147,10 @@
 					   EPM_PROC_BASE + 8)
 #define KSYS_APP_CR_ENABLE		_IO(KERRIGHED_PROC_MAGIC, \
 					   EPM_PROC_BASE + 9)
+#define KSYS_APP_CR_EXCLUDE		_IOW(KERRIGHED_PROC_MAGIC,	\
+					     EPM_PROC_BASE + 10,	\
+					     struct cr_mm_region)
+
 
 /*
  * IPC related kerrighed syscalls

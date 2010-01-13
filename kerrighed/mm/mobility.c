@@ -28,7 +28,7 @@
 #include <asm/pgtable.h>
 #include <kerrighed/krgsyms.h>
 #include <kerrighed/krginit.h>
-#include <net/krgrpc/rpcid.h>
+#include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/ghost_helpers.h>
@@ -36,6 +36,7 @@
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
 #include <kerrighed/pid.h>
+#include <kerrighed/sys/checkpoint.h>
 #include "vma_struct.h"
 
 #include "memory_int_linker.h"
@@ -89,11 +90,103 @@ void free_ghost_mm (struct task_struct *tsk)
 /*                                                                           */
 /*****************************************************************************/
 
+struct cr_mm_region_excluded {
+	struct cr_mm_region region;
+	struct mm_struct *mm;
+};
+
+static int is_page_contained_in_mm_region(struct cr_mm_region *region,
+					  unsigned long addr)
+{
+	if (region->addr <= addr
+	    && addr + PAGE_SIZE <= region->addr + region->size)
+		return 1;
+
+	return 0;
+}
+
 static int is_page_excluded_from_checkpoint(struct app_struct *app,
 					    struct mm_struct *mm,
 					    unsigned long addr)
 {
+	struct cr_mm_region *mm_region;
+	struct cr_mm_region_excluded *mm_excl_region;
+
+	mm_region = app->checkpoint.first_mm_region;
+
+	while (mm_region) {
+
+		mm_excl_region = container_of(mm_region,
+					      struct cr_mm_region_excluded,
+					      region);
+
+		if (mm == mm_excl_region->mm
+		    && is_page_contained_in_mm_region(
+			    &mm_excl_region->region, addr))
+			return 1;
+
+		mm_region = mm_region->next;
+	}
+
 	return 0;
+}
+
+static int __cr_exclude_mm_region(struct app_struct *app, struct mm_struct *mm,
+				  unsigned long addr, size_t size)
+{
+	struct cr_mm_region_excluded *mm_region;
+
+	mm_region = kmalloc(sizeof(struct cr_mm_region_excluded), GFP_KERNEL);
+	if (!mm_region)
+		return -ENOMEM;
+
+	mm_region->mm = mm;
+	mm_region->region.addr = addr;
+	mm_region->region.size = size;
+
+	/* we don't care about order */
+	if (app->checkpoint.first_mm_region)
+		mm_region->region.next = app->checkpoint.first_mm_region;
+	else
+		mm_region->region.next = NULL;
+
+	app->checkpoint.first_mm_region = &mm_region->region;
+
+	return 0;
+}
+
+int cr_exclude_mm_region(struct app_struct *app, pid_t pid,
+			 unsigned long addr, size_t size)
+{
+	task_state_t *t;
+
+	list_for_each_entry(t, &app->tasks, next_task) {
+		if (task_pid_knr(t->task) == pid)
+			return __cr_exclude_mm_region(app, t->task->mm,
+						      addr, size);
+	}
+
+	return 0; /* process is not on this node, simply ignore */
+}
+
+void cr_free_mm_exclusions(struct app_struct *app)
+{
+	struct cr_mm_region_excluded *mm_region;
+	struct cr_mm_region *element;
+
+	element = app->checkpoint.first_mm_region;
+
+	while (element) {
+		mm_region = container_of(element,
+					 struct cr_mm_region_excluded,
+					 region);
+
+		element = mm_region->region.next;
+
+		kfree(mm_region);
+	}
+
+	app->checkpoint.first_mm_region = NULL;
 }
 
 /** Export one physical page of a process.

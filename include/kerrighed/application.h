@@ -100,6 +100,8 @@ struct app_struct {
 		struct {
 			char *storage_dir;
 			int flags;
+
+			struct cr_mm_region *first_mm_region;
 		} checkpoint;
 
 		struct {

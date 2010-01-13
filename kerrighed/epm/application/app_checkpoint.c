@@ -383,6 +383,8 @@ send_res:
 		goto error;
 
 error:
+	cr_free_mm_exclusions(app);
+
 	clear_shared_objects(app);
 	if (app->cred) {
 		app->cred = NULL;
@@ -576,6 +578,90 @@ exit_kddmput:
 	return r;
 }
 
+static void handle_cr_exclude(struct rpc_desc *desc, void *_msg, size_t size)
+{
+	struct app_struct *app;
+	struct cr_mm_region mm_region;
+	int r;
+	long *app_id = _msg;
+
+	app = find_local_app(*app_id);
+
+	do {
+		r = rpc_unpack(desc, 0, &mm_region, sizeof(struct cr_mm_region));
+		if (r)
+			goto error;
+
+		r = cr_exclude_mm_region(app, mm_region.pid, mm_region.addr,
+					 mm_region.size);
+		if (r)
+			goto error;
+
+	} while (mm_region.next);
+
+out:
+	return;
+error:
+	rpc_cancel(desc);
+	goto out;
+}
+
+int app_cr_exclude(struct cr_mm_region *mm_regions)
+{
+	long app_id;
+	struct app_kddm_object *obj;
+	struct rpc_desc *desc;
+	struct cr_mm_region *element;
+	int r;
+
+	if (!mm_regions)
+		return -EINVAL;
+
+	app_id = get_appid_from_pid(task_pid_knr(current));
+	if (app_id < 0)
+		return app_id;
+
+	obj = kddm_grab_object_no_ft(kddm_def_ns, APP_KDDM_ID, app_id);
+	if (!obj) {
+		r = -ESRCH;
+		ckpt_err(NULL, r,
+			 "Application %ld does not exist. Can not checkpoint it",
+			 app_id);
+		goto exit_kddmput;
+	}
+
+	if (obj->state != APP_RUNNING) {
+		r = -EPERM;
+		ckpt_err(NULL, r,
+			 "Application %ld is not running. Can not checkpoint it",
+			 app_id);
+		goto exit_kddmput;
+	}
+
+	desc = rpc_begin_m(APP_EXCL_MM_REGION, &obj->nodes);
+
+	r = rpc_pack_type(desc, app_id);
+	if (r)
+		goto exit_rpc;
+
+	element = mm_regions;
+	while (element) {
+		r = rpc_pack(desc, 0, element, sizeof(struct cr_mm_region));
+		if (r)
+			goto exit_rpc;
+
+		element = element->next;
+	}
+
+	rpc_end(desc, 0);
+exit_kddmput:
+	kddm_put_object(kddm_def_ns, APP_KDDM_ID, app_id);
+	return r;
+exit_rpc:
+	rpc_cancel(desc);
+	goto exit_kddmput;
+}
+
 /*--------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -679,4 +765,5 @@ exit:
 void application_checkpoint_rpc_init(void)
 {
 	rpc_register_void(APP_DO_CHKPT, handle_do_chkpt, 0);
+	rpc_register_void(APP_EXCL_MM_REGION, handle_cr_exclude, 0);
 }

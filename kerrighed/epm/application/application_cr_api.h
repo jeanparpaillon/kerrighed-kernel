@@ -68,4 +68,7 @@ int sys_app_cr_disable(void);
  */
 int sys_app_cr_enable(void);
 
+
+int sys_app_cr_exclude(struct cr_mm_region *mm_regions);
+
 #endif /* __APPLICATION_CR_API_H__ */

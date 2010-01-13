@@ -114,6 +114,7 @@ static int proc_app_chkpt(void __user *arg)
 	if (copy_from_user(&ckpt_info, arg, sizeof(ckpt_info)))
 		return -EFAULT;
 
+	/* get the storage dir */
 	res = copy_user_array((void**)&storage_dir, ckpt_info.storage_dir.path,
 			      ckpt_info.storage_dir.len);
 	if (res)
@@ -263,6 +264,55 @@ static int proc_app_cr_enable(void __user *arg)
 	return sys_app_cr_enable();
 }
 
+static int proc_app_cr_exclude(void __user *arg)
+{
+	struct cr_mm_region *first, *element, *next;
+	int r;
+
+	first = kzalloc(sizeof(struct cr_mm_region*), GFP_KERNEL);
+	if (!first)
+		return -ENOMEM;
+
+	if (copy_from_user(first, arg, sizeof(struct cr_mm_region))) {
+		r = -EFAULT;
+		goto error;
+	}
+
+	element = first;
+	while (element->next) {
+
+		element->next = NULL;
+
+		next = kzalloc(sizeof(struct cr_mm_region*), GFP_KERNEL);
+		if (!next) {
+			r = -ENOMEM;
+			goto error;
+		}
+
+		element->next = next;
+
+		if (copy_from_user(next, arg, sizeof(struct cr_mm_region))) {
+			r = -EFAULT;
+			next->next = NULL;
+			goto error;
+		}
+
+		element = next;
+	}
+
+	r = sys_app_cr_exclude(first);
+
+error:
+	element = first;
+	while (element) {
+		next = element->next;
+		kfree(element);
+		element = next;
+	}
+
+	return r;
+}
+
 int epm_procfs_start(void)
 {
 	int r;
@@ -314,8 +364,14 @@ int epm_procfs_start(void)
 	if (r)
 		goto unreg_app_cr_disable;
 
+	r = register_proc_service(KSYS_APP_CR_EXCLUDE, proc_app_cr_exclude);
+	if (r)
+		goto unreg_app_cr_enable;
+
 	return 0;
 
+unreg_app_cr_enable:
+	unregister_proc_service(KSYS_APP_CR_ENABLE);
 unreg_app_cr_disable:
 	unregister_proc_service(KSYS_APP_CR_DISABLE);
 unreg_app_get_userdata:
@@ -350,6 +406,7 @@ void epm_procfs_exit(void)
 	unregister_proc_service(KSYS_APP_GET_USERDATA);
 	unregister_proc_service(KSYS_APP_CR_DISABLE);
 	unregister_proc_service(KSYS_APP_CR_ENABLE);
+	unregister_proc_service(KSYS_APP_CR_EXCLUDE);
 
 	procfs_deltree(proc_epm);
 }
