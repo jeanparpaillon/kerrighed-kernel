@@ -184,6 +184,7 @@ void comlayer_enable(void);
 int thread_pool_init(void);
 int rpclayer_init(void);
 int rpc_monitor_init(void);
+int rpc_hotplug_init(void);
 
 #define rpc_link_seq_id(p, node) \
   __asm__ __volatile__( \

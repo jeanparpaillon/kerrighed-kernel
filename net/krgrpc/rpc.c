@@ -314,7 +314,11 @@ int init_rpc(void)
 	res = rpc_monitor_init();
 	if(res)
 		return res;
-	
+
+	res = rpc_hotplug_init();
+	if (res)
+		return res;
+
 	printk("RPC initialisation done\n");
 	
 	return 0;
