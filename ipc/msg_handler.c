@@ -11,6 +11,7 @@
 #include <linux/ipc_namespace.h>
 #include <linux/msg.h>
 #include <linux/syscalls.h>
+#include <linux/remote_sleep.h>
 
 #include <kddm/kddm.h>
 #include <net/krgrpc/rpc.h>
@@ -218,7 +219,7 @@ long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 	kerrighed_node_t* master_node;
 	void *buffer;
 	long r;
-	enum rpc_error err;
+	int err;
 	int index;
 	struct msgsnd_msg msg;
 
@@ -270,12 +271,13 @@ long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 	if (r)
 		goto exit_rpc;
 
-	err = rpc_unpack(desc, RPC_FLAGS_INTR, &r, sizeof(r));
-	if (err == RPC_EINTR) {
-		rpc_signal(desc, next_signal(&current->pending,
-					     &current->blocked));
-		r = -EINTR;
-	}
+	r = unpack_remote_sleep_res_prepare(desc);
+	if (r)
+		goto exit_rpc;
+
+	err = unpack_remote_sleep_res_type(desc, r);
+	if (err)
+		r = err;
 
 exit_rpc:
 	rpc_end(desc, 0);
@@ -289,7 +291,6 @@ static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 {
 	void *mtext;
 	long r;
-	sigset_t sigset, oldsigset;
 	struct msgsnd_msg *msg = _msg;
 	struct ipc_namespace *ns;
 
@@ -306,14 +307,14 @@ static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 	if (r)
 		goto exit_free_text;
 
-	sigfillset(&sigset);
-	sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
+	r = remote_sleep_prepare(desc);
+	if (r)
+		goto exit_free_text;
 
 	r = __do_msgsnd(msg->msqid, msg->mtype, mtext, msg->msgsz, msg->msgflg,
 			ns, msg->tgid);
 
-	sigprocmask(SIG_SETMASK, &oldsigset, NULL);
-	flush_signals(current);
+	remote_sleep_finish();
 
 	r = rpc_pack_type(desc, r);
 
@@ -381,7 +382,11 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 	if (r)
 		goto exit;
 
-	err = rpc_unpack(desc, RPC_FLAGS_INTR, &r, sizeof(r));
+	r = unpack_remote_sleep_res_prepare(desc);
+	if (r)
+		goto exit;
+
+	err = unpack_remote_sleep_res_type(desc, r);
 	if (!err) {
 		if (r > 0) {
 			/* get the real msg type */
@@ -406,14 +411,9 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 			if (retval)
 				r = retval;
 		}
-	} else if (err == RPC_EINTR) {
-		/* If we have been interrupted by a signal, we forward it
-		   to the rpc handler */
-		rpc_signal(desc, next_signal(&current->pending,
-				     &current->blocked));
-		r = -EINTR;
-	} else
-		r = -EPIPE;
+	} else {
+		r = err;
+	}
 
 exit:
 	rpc_end(desc, 0);
@@ -430,7 +430,6 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 	long msgsz, pmtype;
 	int r;
 	struct msgrcv_msg *msg = _msg;
-	sigset_t sigset, oldsigset;
 	struct ipc_namespace *ns;
 
 	ns = find_get_krg_ipcns();
@@ -440,14 +439,14 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 	if (!mtext)
 		goto exit_put_ns;
 
-	sigfillset(&sigset);
-	sigprocmask(SIG_UNBLOCK, &sigset, &oldsigset);
+	r = remote_sleep_prepare(desc);
+	if (r)
+		goto exit_free_text;
 
 	msgsz = __do_msgrcv(msg->msqid, &pmtype, mtext, msg->msgsz,
 			    msg->msgtyp, msg->msgflg, ns, msg->tgid);
 
-	sigprocmask(SIG_SETMASK, &oldsigset, NULL);
-	flush_signals(current);
+	remote_sleep_finish();
 
 	r = rpc_pack_type(desc, msgsz);
 	if (r || msgsz <= 0)
