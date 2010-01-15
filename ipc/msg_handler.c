@@ -199,6 +199,8 @@ void krg_ipc_msg_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 
 /*****************************************************************************/
 
+DEFINE_REMOTE_SLEEPERS_QUEUE(msg_remote_sleepers);
+
 struct msgsnd_msg
 {
 	kerrighed_node_t requester;
@@ -292,6 +294,7 @@ static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 	long r;
 	struct msgsnd_msg *msg = _msg;
 	struct ipc_namespace *ns;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
 
 	ns = find_get_krg_ipcns();
 	BUG_ON(!ns);
@@ -306,15 +309,19 @@ static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 	if (r)
 		goto exit_free_text;
 
-	r = remote_sleep_prepare(desc);
-	if (r)
+	r = remote_sleep_prepare(desc, &msg_remote_sleepers, &wait);
+	if (r) {
+		if (r == -ERESTARTSYS)
+			goto pack_res;
 		goto exit_free_text;
+	}
 
 	r = __do_msgsnd(msg->msqid, msg->mtype, mtext, msg->msgsz, msg->msgflg,
 			ns, msg->tgid);
 
-	remote_sleep_finish();
+	remote_sleep_finish(&msg_remote_sleepers, &wait);
 
+pack_res:
 	r = rpc_pack_type(desc, r);
 
 exit_free_text:
@@ -431,6 +438,7 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 	int r;
 	struct msgrcv_msg *msg = _msg;
 	struct ipc_namespace *ns;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
 
 	ns = find_get_krg_ipcns();
 	BUG_ON(!ns);
@@ -439,15 +447,21 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 	if (!mtext)
 		goto exit_put_ns;
 
-	r = remote_sleep_prepare(desc);
-	if (r)
+	r = remote_sleep_prepare(desc, &msg_remote_sleepers, &wait);
+	if (r) {
+		if (r == -ERESTARTSYS) {
+			msgsz = -ERESTARTSYS;
+			goto pack_res;
+		}
 		goto exit_free_text;
+	}
 
 	msgsz = __do_msgrcv(msg->msqid, &pmtype, mtext, msg->msgsz,
 			    msg->msgtyp, msg->msgflg, ns, msg->tgid);
 
-	remote_sleep_finish();
+	remote_sleep_finish(&msg_remote_sleepers, &wait);
 
+pack_res:
 	r = rpc_pack_type(desc, msgsz);
 	if (r || msgsz <= 0)
 		goto exit_free_text;
