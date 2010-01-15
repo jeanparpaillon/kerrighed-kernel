@@ -10,7 +10,6 @@
 #include <linux/syscalls.h>
 #include <linux/socket.h>
 #include <linux/sched.h>
-#include <linux/signal.h>
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
 #include <linux/proc_fs.h>
@@ -19,6 +18,7 @@
 #include <linux/list.h>
 #include <linux/hash.h>
 #include <linux/statfs.h>
+#include <linux/remote_sleep.h>
 
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
@@ -80,13 +80,11 @@ void handle_faf_read (struct rpc_desc* desc,
 	char *buf = NULL;
 	long buf_size = PAGE_SIZE;
 	ssize_t to_read, r;
-	int dummy = 0;
 
-	current->sighand->action[SIGINT - 1].sa.sa_handler = SIG_DFL;
-	r = rpc_pack_type(desc, dummy);
+	r = remote_sleep_prepare(desc);
 	if (r) {
 		rpc_cancel(desc);
-		goto ignore;
+		return;
 	}
 
 	r = -ENOMEM;
@@ -120,8 +118,7 @@ exit:
 	if (buf)
 		kfree (buf);
 
-ignore:
-	ignore_signals(current);
+	remote_sleep_finish();
 }
 
 /** Handler for writing in a FAF open file.
@@ -138,12 +135,12 @@ void handle_faf_write (struct rpc_desc* desc,
 	char *buf = NULL;
 	ssize_t buf_size = PAGE_SIZE;
 	ssize_t r, nr_received = -ENOMEM;
-	int dummy = 0;
 
-	current->sighand->action[SIGINT - 1].sa.sa_handler = SIG_DFL;
-	r = rpc_pack_type(desc, dummy);
-	if (r)
-		goto cancel;
+	r = remote_sleep_prepare(desc);
+	if (r) {
+		rpc_cancel(desc);
+		return;
+	}
 
 	buf = kmalloc (PAGE_SIZE, GFP_KERNEL);
 	if (buf == NULL)
@@ -172,12 +169,11 @@ void handle_faf_write (struct rpc_desc* desc,
 err:
 	rpc_pack_type(desc, nr_received);
 	if (nr_received < 0)
-cancel:
 		rpc_cancel(desc);
 	if (buf)
 		kfree (buf);
 
-	ignore_signals(current);
+	remote_sleep_finish();
 
 	return;
 }

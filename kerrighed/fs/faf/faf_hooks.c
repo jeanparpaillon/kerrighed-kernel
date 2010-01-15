@@ -15,6 +15,7 @@
 #include <linux/poll.h>
 #include <linux/statfs.h>
 #include <linux/types.h>
+#include <linux/remote_sleep.h>
 #include <kerrighed/faf.h>
 #include <asm/uaccess.h>
 
@@ -32,46 +33,6 @@
 #include "ruaccess.h"
 
 static DEFINE_MUTEX(faf_poll_mutex);
-
-static int unpack_res_prepare(struct rpc_desc *desc)
-{
-	int dummy, err;
-
-	err = rpc_unpack_type(desc, dummy);
-	if (err > 0)
-		err = -EPIPE;
-	return err;
-}
-
-/** Unpack the result value from a distant FAF operation with respect to
- *  distant signals.
- *  @author Renaud Lottiaux
- *
- *  @param desc     The RPC descriptor to get the value from.
- */
-static ssize_t unpack_res (struct rpc_desc* desc)
-{
-	int err, flags = RPC_FLAGS_INTR;
-	ssize_t r;
-
-retry:
-	err = rpc_unpack(desc, flags, &r, sizeof(r));
-	switch(err) {
-	  case RPC_EOK:
-		  break;
-	  case RPC_EINTR:
-		  BUG_ON(flags != RPC_FLAGS_INTR);
-		  rpc_signal(desc, SIGINT);
-		  /* We do not need to explicitly receive SIGACK, since the
-		   * server will return the result anyway. */
-		  flags = 0;
-		  goto retry;
-	  default:
-		  BUG();
-	}
-
-	return r;
-}
 
 /** Kerrighed kernel hook for FAF lseek function.
  *  @author Renaud Lottiaux
@@ -172,12 +133,14 @@ ssize_t krg_faf_read (struct file * file,
 	/* Send read request */
 	rpc_pack_type(desc, msg);
 
-	nr = unpack_res_prepare(desc);
+	nr = unpack_remote_sleep_res_prepare(desc);
 	if (nr)
 		goto err;
 
 	/* Get number of bytes to receive */
-	nr = unpack_res(desc);
+	err = unpack_remote_sleep_res_type(desc, nr);
+	if (err)
+		nr = err;
 	while (nr > 0) {
 		/* Receive file data */
 		rpc_unpack(desc, 0, kbuff, nr);
@@ -187,7 +150,9 @@ ssize_t krg_faf_read (struct file * file,
 			goto err;
 		}
 		received += nr;
-		nr = unpack_res(desc);
+		err = unpack_remote_sleep_res_type(desc, nr);
+		if (err)
+			nr = err;
 	}
 	if (nr == 0)
 		nr = received;
@@ -232,7 +197,7 @@ ssize_t krg_faf_write (struct file * file,
 	/* Send write request */
 	rpc_pack_type(desc, msg);
 
-	r = unpack_res_prepare(desc);
+	r = unpack_remote_sleep_res_prepare(desc);
 	if (r)
 		goto err;
 
@@ -250,8 +215,10 @@ ssize_t krg_faf_write (struct file * file,
 		to_send -= buf_size;
 		offset += buf_size;
 	}
-	r = unpack_res(desc);
-	if (r == -EPIPE)
+	err = unpack_remote_sleep_res_type(desc, r);
+	if (err)
+		r = err;
+	else if (r == -EPIPE)
 		send_sig(SIGPIPE, current, 0);
 
 err:
