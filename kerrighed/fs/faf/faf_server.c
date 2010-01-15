@@ -35,6 +35,8 @@
 #include "ruaccess.h"
 
 
+DEFINE_REMOTE_SLEEPERS_QUEUE(faf_remote_sleepers);
+
 /* Just a hint that must be > 0 */
 #define FAF_POLL_NR_FD 1
 static int faf_poll_epfd = -1;
@@ -184,18 +186,18 @@ void handle_faf_read(struct rpc_desc* desc, void *msgIn, size_t size)
 	struct file *file = NULL;
 	char *buf = NULL;
 	long buf_size = PAGE_SIZE;
-	ssize_t to_read, r;
-	loff_t fpos;
+	ssize_t to_read = msg->count;
+	loff_t fpos = msg->pos;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
+	ssize_t r;
 	int err;
 
-	err = remote_sleep_prepare(desc);
-	if (err) {
-		rpc_cancel(desc);
-		return;
+	r = remote_sleep_prepare(desc, &faf_remote_sleepers, &wait);
+	if (r) {
+		if (r == -ERESTARTSYS)
+			goto error_nofinish;
+		goto cancel_nofinish;
 	}
-
-	to_read = msg->count;
-	fpos = msg->pos;
 
 	r = -ENOMEM;
 	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
@@ -230,6 +232,8 @@ void handle_faf_read(struct rpc_desc* desc, void *msgIn, size_t size)
 	}
 
 error:
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
+error_nofinish:
 	/*
 	 * Pack the end of transmission mark (0)
 	 * or the error returned by vfs_read()
@@ -238,23 +242,23 @@ error:
 		r = 0;
 	err = rpc_pack_type(desc, r);
 	if (err)
-		goto cancel;
+		goto cancel_nofinish;
 
 	/* send the updated file position */
 	err = rpc_pack_type(desc, fpos);
 	if (err)
-		goto cancel;
+		goto cancel_nofinish;
 
 out:
 	if (buf)
 		kfree(buf);
 	if (file)
 		fput(file);
-
-	remote_sleep_finish();
 	return;
 
 cancel:
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
+cancel_nofinish:
 	rpc_cancel(desc);
 	goto out;
 }
@@ -269,21 +273,20 @@ void handle_faf_write(struct rpc_desc* desc, void *msgIn, size_t size)
 {
 	struct faf_rw_msg *msg = msgIn;
 	struct file *file = NULL;
-	long to_recv;
+	long to_recv = msg->count;
+	loff_t fpos = msg->pos;
 	char *buf = NULL;
 	ssize_t buf_size = PAGE_SIZE;
 	ssize_t r, nr_received = -ENOMEM;
-	loff_t fpos;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
 	int err;
 
-	r = remote_sleep_prepare(desc);
-	if (r) {
-		rpc_cancel(desc);
-		return;
+	nr_received = remote_sleep_prepare(desc, &faf_remote_sleepers, &wait);
+	if (nr_received) {
+		if (nr_received == -ERESTARTSYS)
+			goto error_nofinish;
+		goto cancel_nofinish;
 	}
-
-	to_recv = msg->count;
-	fpos = msg->pos;
 
 	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!buf)
@@ -320,25 +323,27 @@ void handle_faf_write(struct rpc_desc* desc, void *msgIn, size_t size)
 	}
 
 error:
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
+error_nofinish:
 	err = rpc_pack_type(desc, nr_received);
 	if (err)
-		goto cancel;
+		goto cancel_nofinish;
 
 	/* send the updated file position */
 	err = rpc_pack_type(desc, fpos);
 	if (err)
-		goto cancel;
+		goto cancel_nofinish;
 
 out:
 	if (buf)
 		kfree(buf);
 	if (file)
 		fput(file);
-
-	remote_sleep_finish();
 	return;
 
 cancel:
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
+cancel_nofinish:
 	rpc_cancel(desc);
 	goto out;
 }
@@ -350,6 +355,9 @@ static void handle_faf_readv(struct rpc_desc *desc, void *__msg, size_t size)
 	struct file *file;
 	struct iovec *iov;
 	int iovcnt, err;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
+
+	ret.pos = msg->pos;
 
 	err = alloc_iov(&iov, &iovcnt, msg->count);
 	if (err) {
@@ -357,19 +365,25 @@ static void handle_faf_readv(struct rpc_desc *desc, void *__msg, size_t size)
 		iov = NULL;
 	}
 
-	err = remote_sleep_prepare(desc);
-	if (err)
+	err = remote_sleep_prepare(desc, &faf_remote_sleepers, &wait);
+	if (err) {
+		if (err == -ERESTARTSYS) {
+			if (iov)
+				ret.ret = err;
+			goto pack_res;
+		}
 		goto cancel;
+	}
 
-	ret.pos = msg->pos;
 	if (iov) {
 		file = fget(msg->server_fd);
 		ret.ret = vfs_readv(file, iov, iovcnt, &ret.pos);
 		fput(file);
 	}
 
-	remote_sleep_finish();
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
 
+pack_res:
 	err = rpc_pack_type(desc, ret);
 	if (err)
 		goto cancel;
@@ -398,6 +412,9 @@ static void handle_faf_writev(struct rpc_desc *desc, void *__msg, size_t size)
 	struct file *file;
 	struct iovec *iov;
 	int iovcnt, err;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
+
+	ret.pos = msg->pos;
 
 	err = alloc_iov(&iov, &iovcnt, msg->count);
 	if (!err) {
@@ -409,19 +426,25 @@ static void handle_faf_writev(struct rpc_desc *desc, void *__msg, size_t size)
 		iov = NULL;
 	}
 
-	err = remote_sleep_prepare(desc);
-	if (err)
+	err = remote_sleep_prepare(desc, &faf_remote_sleepers, &wait);
+	if (err) {
+		if (err == -ERESTARTSYS) {
+			if (iov)
+				ret.ret = err;
+			goto pack_res;
+		}
 		goto cancel;
+	}
 
-	ret.pos = msg->pos;
 	if (iov) {
 		file = fget(msg->server_fd);
 		ret.ret = vfs_writev(file, iov, iovcnt, &ret.pos);
 		fput(file);
 	}
 
-	remote_sleep_finish();
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
 
+pack_res:
 	err = rpc_pack_type(desc, ret);
 	if (err)
 		goto cancel;
@@ -495,6 +518,8 @@ void handle_faf_ioctl(struct rpc_desc *desc,
 		      void *msgIn, size_t size)
 {
 	struct faf_ctl_msg *msg = msgIn;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
+	bool do_ioctl = true;
 	struct prev_root prev_root;
 	const struct cred *old_cred;
 	long r;
@@ -506,15 +531,22 @@ void handle_faf_ioctl(struct rpc_desc *desc,
 		return;
 	}
 
-	err = remote_sleep_prepare(desc);
-	if (err)
-		goto out_err;
+	err = remote_sleep_prepare(desc, &faf_remote_sleepers, &wait);
+	if (err) {
+		if (err == -ERESTARTSYS) {
+			r = err;
+			do_ioctl = false;
+		} else {
+			goto out_err;
+		}
+	}
 
 	err = prepare_ruaccess(desc);
 	if (err)
 		goto out_sleep_finish;
 
-	r = sys_ioctl(msg->server_fd, msg->cmd, msg->arg);
+	if (do_ioctl)
+		r = sys_ioctl(msg->server_fd, msg->cmd, msg->arg);
 
 	err = cleanup_ruaccess(desc);
 	if (err)
@@ -523,7 +555,7 @@ void handle_faf_ioctl(struct rpc_desc *desc,
 	err = rpc_pack_type(desc, r);
 
 out_sleep_finish:
-	remote_sleep_finish();
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
 	if (err)
 		goto out_err;
 
@@ -549,6 +581,7 @@ void handle_faf_fcntl (struct rpc_desc* desc,
 	struct faf_ctl_msg *msg = msgIn;
 	const struct cred *old_cred;
 	unsigned long arg;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
 	long r;
 	int err;
 
@@ -560,17 +593,22 @@ void handle_faf_fcntl (struct rpc_desc* desc,
 	old_cred = unpack_override_creds(desc);
 	if (IS_ERR(old_cred))
 		goto cancel;
-	err = remote_sleep_prepare(desc);
+	err = remote_sleep_prepare(desc, &faf_remote_sleepers, &wait);
 	if (err) {
 		revert_creds(old_cred);
+		if (err == -ERESTARTSYS) {
+			r = err;
+			goto out_pack_res;
+		}
 		goto cancel;
 	}
 
 	r = sys_fcntl (msg->server_fd, msg->cmd, arg);
 
-	remote_sleep_finish();
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
 	revert_creds(old_cred);
 
+out_pack_res:
 	err = rpc_pack_type(desc, r);
 	if (unlikely(err))
 		goto cancel;
@@ -599,6 +637,7 @@ void handle_faf_fcntl64 (struct rpc_desc* desc,
 	struct faf_ctl_msg *msg = msgIn;
 	const struct cred *old_cred;
 	unsigned long arg;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
 	long r;
 	int err;
 
@@ -610,17 +649,22 @@ void handle_faf_fcntl64 (struct rpc_desc* desc,
 	old_cred = unpack_override_creds(desc);
 	if (IS_ERR(old_cred))
 		goto cancel;
-	err = remote_sleep_prepare(desc);
+	err = remote_sleep_prepare(desc, &faf_remote_sleepers, &wait);
 	if (err) {
 		revert_creds(old_cred);
+		if (err == -ERESTARTSYS) {
+			r = err;
+			goto out_pack_res;
+		}
 		goto cancel;
 	}
 
 	r = sys_fcntl64 (msg->server_fd, msg->cmd, arg);
 
-	remote_sleep_finish();
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
 	revert_creds(old_cred);
 
+out_pack_res:
 	err = rpc_pack_type(desc, r);
 	if (unlikely(err))
 		goto cancel;
@@ -747,6 +791,7 @@ void handle_faf_flock(struct rpc_desc *desc,
                       void *msgIn, size_t size)
 {
 	struct faf_ctl_msg *msg = msgIn;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
 	const struct cred *old_cred;
 	long r = -EINVAL;
 	int err;
@@ -754,17 +799,20 @@ void handle_faf_flock(struct rpc_desc *desc,
 	old_cred = unpack_override_creds(desc);
 	if (IS_ERR(old_cred))
 		goto cancel;
-	r = remote_sleep_prepare(desc);
+	r = remote_sleep_prepare(desc, &faf_remote_sleepers, &wait);
 	if (r) {
 		revert_creds(old_cred);
+		if (r == -ERESTARTSYS)
+			goto out_pack_res;
 		goto cancel;
 	}
 
 	r = sys_flock (msg->server_fd, msg->cmd);
 
-	remote_sleep_finish();
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
 	revert_creds(old_cred);
 
+out_pack_res:
 	err = rpc_pack_type(desc, r);
 	if (err)
 		goto cancel;
@@ -1222,9 +1270,10 @@ void handle_faf_connect(struct rpc_desc *desc,
 			void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
 	struct prev_root prev_root;
 	const struct cred *old_cred;
-	int r, err;
+	int r;
 
 	r = unpack_context(desc, &prev_root, &old_cred);
 	if (r) {
@@ -1232,17 +1281,20 @@ void handle_faf_connect(struct rpc_desc *desc,
 		return;
 	}
 
-	r = remote_sleep_prepare(desc);
-	if (r)
+	r = remote_sleep_prepare(desc, &faf_remote_sleepers, &wait);
+	if (r) {
+		if (r == -ERESTARTSYS)
+			goto out_pack_res;
 		goto cancel;
+	}
 
 	r = sys_connect(msg->server_fd,
 			(struct sockaddr *)&msg->sa, msg->addrlen);
 
-	remote_sleep_finish();
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
 
-	err = rpc_pack_type(desc, r);
-	if (err)
+out_pack_res:
+	if (rpc_pack_type(desc, r))
 		goto cancel;
 
 out:
@@ -1270,18 +1322,23 @@ void handle_faf_accept (struct rpc_desc *desc,
 		        void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
 	int err, r;
 	struct file *file;
 
-	r = remote_sleep_prepare(desc);
-	if (r)
+	r = remote_sleep_prepare(desc, &faf_remote_sleepers, &wait);
+	if (r) {
+		if (r == -ERESTARTSYS)
+			goto pack_res;
 		goto err_cancel;
+	}
 
 	r = sys_accept(msg->server_fd,
 		       (struct sockaddr *)&msg->sa, &msg->addrlen);
 
-	remote_sleep_finish();
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
 
+pack_res:
 	err = rpc_pack_type(desc, r);
 	if (err)
 		goto err_close_file;
@@ -1465,6 +1522,7 @@ void handle_faf_sendmsg(struct rpc_desc *desc,
 			void *msgIn, size_t size)
 {
 	struct faf_sendmsg_msg *msg = msgIn;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
 	ssize_t r;
 	int err;
 	struct msghdr msghdr;
@@ -1475,14 +1533,20 @@ void handle_faf_sendmsg(struct rpc_desc *desc,
 		return;
 	}
 
-	err = remote_sleep_prepare(desc);
-	if (err)
+	err = remote_sleep_prepare(desc, &faf_remote_sleepers, &wait);
+	if (err) {
+		if (err == -ERESTARTSYS) {
+			r = err;
+			goto out_pack_res;
+		}
 		goto cancel;
+	}
 
 	r = sys_sendmsg (msg->server_fd, &msghdr, msg->flags);
 
-	remote_sleep_finish();
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
 
+out_pack_res:
 	err = rpc_pack_type(desc, r);
 	if (err)
 		goto cancel;
@@ -1501,6 +1565,7 @@ void handle_faf_recvmsg(struct rpc_desc *desc,
 			void *msgIn, size_t size)
 {
 	struct faf_sendmsg_msg *msg = msgIn;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
 	ssize_t r;
 	int err;
 	struct msghdr msghdr;
@@ -1511,14 +1576,20 @@ void handle_faf_recvmsg(struct rpc_desc *desc,
 		return;
 	}
 
-	err = remote_sleep_prepare(desc);
-	if (err)
+	err = remote_sleep_prepare(desc, &faf_remote_sleepers, &wait);
+	if (err) {
+		if (err == -ERESTARTSYS) {
+			r = err;
+			goto out_pack_res;
+		}
 		goto cancel;
+	}
 
 	r = sys_recvmsg(msg->server_fd, &msghdr, msg->flags);
 
-	remote_sleep_finish();
+	remote_sleep_finish(&faf_remote_sleepers, &wait);
 
+out_pack_res:
 	err = rpc_pack_type(desc, r);
 	if (err)
 		goto cancel;
