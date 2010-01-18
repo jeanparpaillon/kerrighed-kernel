@@ -6,6 +6,7 @@
 #include <linux/ipc_namespace.h>
 #include <linux/msg.h>
 #include <linux/semaphore.h>
+#include <linux/remote_sleep.h>
 #include <kddm/kddm_flush_object.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/hotplug.h>
@@ -27,6 +28,8 @@ static int ipc_remove_local(struct hotplug_context *ctx)
 	kerrighed_node_t master;
 
 	printk("ipc_remove_local...\n");
+
+	remote_sleepers_cancel(&msg_remote_sleepers);
 
 	down_write(&krgipcmsg_rwsem);
 
@@ -55,6 +58,8 @@ static int ipc_remove_local(struct hotplug_context *ctx)
 
 out:
 	up_write(&krgipcmsg_rwsem);
+
+	remote_sleepers_enable(&msg_remote_sleepers);
 
 	return err;
 }
