@@ -1379,6 +1379,11 @@ int global_restart_shared(struct rpc_desc *desc,
 		goto error;
 
 error:
+	if (r)
+		ckpt_err(NULL, r,
+			 "Fail to restore shared objects of application %ld",
+			 obj->app_id);
+
 	return r;
 }
 
