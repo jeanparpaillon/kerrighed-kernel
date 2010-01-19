@@ -1,5 +1,8 @@
 #include <kerrighed/ghost.h>
 
+struct msg_queue;
+struct ipc_namespace;
+
 int __sys_msgq_checkpoint(int msqid, int fd);
 
 void handle_msg_checkpoint(struct rpc_desc *desc, void *_msg, size_t size);
