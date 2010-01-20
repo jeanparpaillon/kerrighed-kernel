@@ -89,11 +89,17 @@ void free_ghost_mm (struct task_struct *tsk)
 /*                                                                           */
 /*****************************************************************************/
 
-
+static int is_page_excluded_from_checkpoint(struct app_struct *app,
+					    struct mm_struct *mm,
+					    unsigned long addr)
+{
+	return 0;
+}
 
 /** Export one physical page of a process.
- *  @author Renaud Lottiaux
+ *  @author Renaud Lottiaux, Matthieu Fertré
  *
+ *  @param app      Application hosting task(s) related to the vma.
  *  @param ghost    Ghost where data should be stored.
  *  @param vma      The memory area hosting the page.
  *  @param addr     Virtual address of the page.
@@ -102,8 +108,8 @@ void free_ghost_mm (struct task_struct *tsk)
  *           0 if no page has been exported.
  *           Negative value otherwise.
  */
-static int export_one_page (ghost_t *ghost, struct vm_area_struct *vma,
-			    unsigned long addr)
+static int export_one_page(struct app_struct *app, ghost_t *ghost,
+			   struct vm_area_struct *vma, unsigned long addr)
 {
 	struct kddm_set *set = NULL;
 	unsigned long pfn;
@@ -115,6 +121,7 @@ static int export_one_page (ghost_t *ghost, struct vm_area_struct *vma,
 	pte_t *pte;
 	int put_page = 0;
 	int nr_exported = 0;
+	int page_excluded = 0;
 	int r;
 
 	pte = get_locked_pte(vma->vm_mm, addr, &ptl);
@@ -153,10 +160,18 @@ static int export_one_page (ghost_t *ghost, struct vm_area_struct *vma,
 	if (r)
 		goto unmap;
 
-	/* Export the physical page content */
-	r = ghost_write (ghost, (void*)page_addr, PAGE_SIZE);
+	/* Export the physical page content unless it has been
+	 * excluded from the chekpoint by the programmer */
+	page_excluded = is_page_excluded_from_checkpoint(app, vma->vm_mm, addr);
+	r = ghost_write_type(ghost, page_excluded);
 	if (r)
 		goto unmap;
+
+	if (!page_excluded) {
+		r = ghost_write(ghost, (void*)page_addr, PAGE_SIZE);
+		if (r)
+			goto unmap;
+	}
 
 unmap:
 	kunmap(page);
@@ -169,11 +184,10 @@ exit:
 	return nr_exported;
 }
 
-
-
 /** Export the physical pages hosted by a VMA.
- *  @author Renaud Lottiaux
+ *  @author Renaud Lottiaux, Matthieu Fertré
  *
+ *  @param app      Application hosting task(s) related to the vma.
  *  @param ghost    Ghost where data should be stored.
  *  @param tsk      Task to export memory pages from.
  *  @param vma      The VMA to export pages from.
@@ -181,7 +195,8 @@ exit:
  *  @return  0 if everything ok.
  *           Negative value otherwise.
  */
-static int export_vma_pages (ghost_t *ghost, struct vm_area_struct *vma)
+static int export_vma_pages(struct app_struct *app, ghost_t *ghost,
+			    struct vm_area_struct *vma)
 {
 	unsigned long addr;
 	int nr_pages_sent = 0;
@@ -191,7 +206,7 @@ static int export_vma_pages (ghost_t *ghost, struct vm_area_struct *vma)
 		goto done;
 
 	for (addr = vma->vm_start; addr < vma->vm_end; addr += PAGE_SIZE) {
-		r = export_one_page (ghost, vma, addr);
+		r = export_one_page(app, ghost, vma, addr);
 		if (r < 0)
 			goto out;
 		nr_pages_sent += r;
@@ -213,20 +228,22 @@ out:
 /** This function exports the physical memory pages of a process
  *  @author Renaud Lottiaux, Matthieu Fertré
  *
+ *  @param app         Application hosting task(s) related to the mm_struct.
  *  @param ghost       Ghost where pages should be stored.
  *  @param mm          mm_struct to export memory pages to.
  *
  *  @return  0 if everything ok.
  *           Negative value otherwise.
  */
-int export_process_pages(struct epm_action *action,
+int export_process_pages(struct app_struct *app,
 			 ghost_t * ghost,
                          struct mm_struct *mm)
 {
 	struct vm_area_struct *vma;
 	int r = 0;
 
-	BUG_ON (mm == NULL);
+	BUG_ON(!app);
+	BUG_ON(!mm);
 
 	/* Export process VMAs */
 	vma = mm->mmap;
@@ -234,7 +251,7 @@ int export_process_pages(struct epm_action *action,
 
 	while (vma) {
 		if (vma->vm_ops != &special_mapping_vmops) {
-			r = export_vma_pages (ghost, vma);
+			r = export_vma_pages(app, ghost, vma);
 			if (r)
 				goto out;
 		}
@@ -583,7 +600,7 @@ up_mmap_sem:
 		goto out;
 
 	if (action->type == EPM_CHECKPOINT) {
-		r = export_process_pages(action, ghost, mm);
+		r = export_process_pages(tsk->application, ghost, mm);
 		if (r)
 			goto out;
 	}
@@ -613,6 +630,7 @@ int import_vma_pages(ghost_t *ghost,
 	unsigned long address = 0;
 	int nr_pages_received = 0;
 	int nr_pages_sent;
+	int page_excluded;
 	pgd_t *pgd;
 	pgprot_t prot;
 	int r;
@@ -653,10 +671,17 @@ int import_vma_pages(ghost_t *ghost,
 
 		page_add_new_anon_rmap(new_page, vma, address);
 
-		page_addr = kmap (new_page);
-		r = ghost_read (ghost, page_addr, PAGE_SIZE);
+		page_addr = kmap(new_page);
+
+		r = ghost_read_type(ghost, page_excluded);
 		if (r)
 			goto err_read;
+
+		if (!page_excluded) {
+			r = ghost_read (ghost, page_addr, PAGE_SIZE);
+			if (r)
+				goto err_read;
+		}
 
 		nr_pages_received++;
 
