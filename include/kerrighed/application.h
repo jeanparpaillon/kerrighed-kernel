@@ -101,6 +101,8 @@ struct app_struct {
 		struct {
 			struct file *terminal;
 			int flags;
+
+			struct cr_mm_region *first_mm_region;
 		} checkpoint;
 
 		struct {

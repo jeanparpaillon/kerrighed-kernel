@@ -96,3 +96,8 @@ int sys_app_cr_enable(void)
 {
 	return app_cr_enable();
 }
+
+int sys_app_cr_exclude(struct cr_mm_region *mm_regions)
+{
+	return app_cr_exclude(mm_regions);
+}

@@ -14,6 +14,8 @@ int app_unfreeze(struct checkpoint_info *info);
 
 int app_chkpt(struct checkpoint_info *info);
 
+int app_cr_exclude(struct cr_mm_region *mm_regions);
+
 void application_checkpoint_rpc_init(void);
 
 #endif /* __APPLICATION_CHECKPOINT_H__ */

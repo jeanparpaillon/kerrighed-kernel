@@ -57,6 +57,11 @@ void unimport_mm_struct(struct task_struct *task);
  */
 void free_ghost_mm (struct task_struct *task);
 
+int cr_exclude_mm_region(struct app_struct *app, pid_t pid,
+			 unsigned long addr, size_t size);
+
+void cr_free_mm_exclusions(struct app_struct *app);
+
 /* FS */
 
 /** Export an files structure into a ghost.
