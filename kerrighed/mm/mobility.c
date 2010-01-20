@@ -109,24 +109,23 @@ static int export_one_page (ghost_t *ghost, struct vm_area_struct *vma,
 	unsigned long pfn;
 	spinlock_t *ptl;
 	struct page *page = NULL;
-	char *page_addr ;
+	char *page_addr;
 	objid_t objid = 0;
-	pgprot_t prot ;
+	pgprot_t prot;
 	pte_t *pte;
 	int put_page = 0;
 	int nr_exported = 0;
 	int r;
 
-	pte = get_locked_pte (vma->vm_mm, addr, &ptl);
-	if (pte && pte_present (*pte)) {
+	pte = get_locked_pte(vma->vm_mm, addr, &ptl);
+	if (pte && pte_present(*pte)) {
 		pfn = pte_pfn(*pte);
 		page = pfn_to_page(pfn);
 		prot = pte_pgprot(*pte);
 		pte_unmap_unlock(pte, ptl);
 		if (!page || !PageAnon(page))
 			goto exit;
-	}
-	else {
+	} else {
 		if (pte)
 			pte_unmap_unlock(pte, ptl);
 
@@ -138,19 +137,19 @@ static int export_one_page (ghost_t *ghost, struct vm_area_struct *vma,
 			prot = vma->vm_page_prot;
 			put_page = 1;
 		}
-		if (page == NULL)
+		if (!page)
 			goto exit;
 	}
 
 	page_addr = (char *)kmap(page);
 
 	/* Export the virtual address of the page */
-	r = ghost_write (ghost, &addr, sizeof (unsigned long));
+	r = ghost_write(ghost, &addr, sizeof (unsigned long));
 	if (r)
 		goto unmap;
 
 	/* Export the page protection */
-	r = ghost_write (ghost, &prot, sizeof(pgprot_t));
+	r = ghost_write(ghost, &prot, sizeof(pgprot_t));
 	if (r)
 		goto unmap;
 
@@ -184,8 +183,8 @@ exit:
  */
 static int export_vma_pages (ghost_t *ghost, struct vm_area_struct *vma)
 {
-	unsigned long addr ;
-	int nr_pages_sent = 0 ;
+	unsigned long addr;
+	int nr_pages_sent = 0;
 	int r;
 
 	if (!anon_vma(vma))
@@ -211,8 +210,6 @@ out:
 	return r;
 }
 
-
-
 /** This function exports the physical memory pages of a process
  *  @author Renaud Lottiaux, Matthieu Fertré
  *
@@ -233,10 +230,9 @@ int export_process_pages(struct epm_action *action,
 
 	/* Export process VMAs */
 	vma = mm->mmap;
-	BUG_ON (vma == NULL);
+	BUG_ON(!vma);
 
-	while (vma != NULL) {
-
+	while (vma) {
 		if (vma->vm_ops != &special_mapping_vmops) {
 			r = export_vma_pages (ghost, vma);
 			if (r)
@@ -253,11 +249,6 @@ int export_process_pages(struct epm_action *action,
 out:
 	return r;
 }
-
-
-
-
-
 
 /** Export one VMA into the ghost.
  *  @author Renaud Lottiaux
@@ -614,11 +605,9 @@ exit_put_mm:
 /*                                                                           */
 /*****************************************************************************/
 
-
-
-int import_vma_pages (ghost_t * ghost,
-                      struct mm_struct *mm,
-                      struct vm_area_struct *vma)
+int import_vma_pages(ghost_t *ghost,
+		     struct mm_struct *mm,
+		     struct vm_area_struct *vma)
 {
 	void *page_addr;
 	unsigned long address = 0;
@@ -628,7 +617,7 @@ int import_vma_pages (ghost_t * ghost,
 	pgprot_t prot;
 	int r;
 
-	BUG_ON (vma == NULL);
+	BUG_ON(!vma);
 
 	while (1) {
 		struct page *new_page = NULL;
@@ -636,31 +625,31 @@ int import_vma_pages (ghost_t * ghost,
 		pmd_t *pmd;
 		pte_t *pte;
 
-		r = ghost_read (ghost, &address, sizeof (unsigned long));
+		r = ghost_read(ghost, &address, sizeof(unsigned long));
 		if (r)
 			goto err_read;
 
 		if (address == 0)   /* We have reach the last VMA Page. */
 			break;
 
-		r = ghost_read (ghost, &prot, sizeof (pgprot_t));
+		r = ghost_read(ghost, &prot, sizeof(pgprot_t));
 		if (r)
 			goto err_read;
 
-		new_page = alloc_page (GFP_HIGHUSER);
+		new_page = alloc_page(GFP_HIGHUSER);
 
-		BUG_ON (new_page == 0);
+		BUG_ON(!new_page);
 
-		pgd = pgd_offset (mm, address);
-		pud = pud_alloc (mm, pgd, address);
-		pmd = pmd_alloc (mm, pud, address);
+		pgd = pgd_offset(mm, address);
+		pud = pud_alloc(mm, pgd, address);
+		pmd = pmd_alloc(mm, pud, address);
 		BUG_ON(!pmd);
 
-		pte = pte_alloc_map (mm, pmd, address);
+		pte = pte_alloc_map(mm, pmd, address);
 		BUG_ON(!pte);
-		set_pte (pte, mk_pte (new_page, prot));
+		set_pte (pte, mk_pte(new_page, prot));
 
-		BUG_ON (unlikely(anon_vma_prepare(vma)));
+		BUG_ON(unlikely(anon_vma_prepare(vma)));
 
 		page_add_new_anon_rmap(new_page, vma, address);
 
@@ -671,12 +660,12 @@ int import_vma_pages (ghost_t * ghost,
 
 		nr_pages_received++;
 
-		kunmap (new_page);
+		kunmap(new_page);
 	}
 
-	r = ghost_read (ghost, &nr_pages_sent, sizeof (int));
+	r = ghost_read(ghost, &nr_pages_sent, sizeof (int));
 
-	BUG_ON (nr_pages_sent != nr_pages_received);
+	BUG_ON(nr_pages_sent != nr_pages_received);
 
 err_read:
 	return r;
@@ -699,15 +688,15 @@ int import_process_pages(struct epm_action *action,
 	struct vm_area_struct *vma;
 	int r = 0;
 
-	BUG_ON (mm == NULL);
+	BUG_ON(!mm);
 
 	vma = mm->mmap;
-	BUG_ON (vma == NULL);
+	BUG_ON(!vma);
 
-	while (vma != NULL) {
+	while (vma) {
 
 		if (vma->vm_ops != &special_mapping_vmops) {
-			r = import_vma_pages (ghost, mm, vma);
+			r = import_vma_pages(ghost, mm, vma);
 			if (r)
 				goto exit;
 		}
@@ -718,7 +707,7 @@ int import_process_pages(struct epm_action *action,
 		int magic;
 
 		r = ghost_read(ghost, &magic, sizeof(int));
-		BUG_ON (!r && magic != 962134);
+		BUG_ON(!r && magic != 962134);
 	}
 exit:
 	return r;
