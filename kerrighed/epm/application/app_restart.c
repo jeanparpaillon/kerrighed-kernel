@@ -1264,7 +1264,7 @@ int app_restart(struct restart_request *req,
 		goto exit_put_term;
 
 	if (!r)
-		obj->state = RESTARTED;
+		obj->state = APP_RESTARTED;
 
 exit_put_term:
 	if (term)
