@@ -9,6 +9,7 @@
 #include <linux/sched.h>
 #include <linux/signal.h>
 #include <linux/hrtimer.h>
+#include <linux/timer.h>
 #include <linux/posix-timers.h>
 #include <linux/slab.h>
 #ifdef CONFIG_TASKSTATS
@@ -80,6 +81,7 @@ static struct signal_struct *signal_struct_alloc(void)
 	INIT_LIST_HEAD(&sig->posix_timers);
 
 	hrtimer_init(&sig->real_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	sig->real_timer.function = it_real_fn;
 	sig->leader_pid = NULL;
 
 	sig->tty_old_pgrp = NULL;
