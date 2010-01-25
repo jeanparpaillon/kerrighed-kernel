@@ -151,9 +151,36 @@ err_kernel_version:
 	goto err_read;
 }
 
-static inline int read_task_parent_links(struct app_struct *app,
-					 ghost_t *ghost,
-					 pid_t pid)
+static inline int was_checkpointed(struct app_struct *app, pid_t pid)
+{
+	/* What is the right way to check that ? */
+
+	int error;
+	struct nameidata nd;
+	struct path prev_root;
+
+	char *filename = get_chkpt_filebase("%s/task_%d.bin",
+					    app->restart.storage_dir,
+					    pid);
+	if (IS_ERR(filename))
+		return PTR_ERR(filename);
+
+	chroot_to_physical_root(&prev_root);
+	error = path_lookup(filename, 0, &nd);
+	chroot_to_prev_root(&prev_root);
+	if (!error)
+		path_put(&nd.path);
+	kfree(filename);
+
+	if (!error)
+		return 1;
+
+	return 0;
+}
+
+static int read_task_parent_links(struct app_struct *app,
+				  ghost_t *ghost,
+				  pid_t pid)
 {
 	int r = 0;
 	task_state_t *task_desc = NULL;
@@ -185,6 +212,12 @@ static inline int read_task_parent_links(struct app_struct *app,
 		session = 0;
 	}
 
+	if (app->restart.substitution_pgrp && !was_checkpointed(app, pgrp))
+		pgrp = app->restart.substitution_pgrp;
+
+	if (app->restart.substitution_sid && !was_checkpointed(app, session))
+		session = app->restart.substitution_sid;
+
 	task_desc = alloc_task_state_from_pids(pid, tgid,
 					       parent,
 					       real_parent,
@@ -206,7 +239,8 @@ err_alloc:
 }
 
 static int restore_local_app(long app_id, const char *checkpoint_dir,
-			     kerrighed_node_t node_id, int duplicate)
+			     kerrighed_node_t node_id, int duplicate,
+			     pid_t substitution_pgrp, pid_t substitution_sid)
 {
 	int r = 0;
 	ghost_fs_t oldfs;
@@ -278,6 +312,9 @@ static int restore_local_app(long app_id, const char *checkpoint_dir,
 		goto err_read;
 	}
 
+	app->restart.substitution_pgrp = substitution_pgrp;
+	app->restart.substitution_sid = substitution_sid;
+
 	while (pid != null) {
 
 		r = read_task_parent_links(app, ghost, pid);
@@ -309,17 +346,12 @@ err_open:
 
 /*--------------------------------------------------------------------------*/
 
-static inline int __local_init_restart(long app_id, const char *checkpoint_dir,
-				       kerrighed_node_t node_id, int duplicate)
-{
-	return restore_local_app(app_id, checkpoint_dir, node_id,
-				 duplicate);
-}
-
 struct init_restart_msg {
 	kerrighed_node_t requester;
 	long app_id;
 	int recovery;
+	pid_t substitution_pgrp;
+	pid_t substitution_sid;
 };
 
 static void handle_init_restart(struct rpc_desc *desc, void *_msg, size_t size)
@@ -367,8 +399,8 @@ static void handle_init_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	if (r)
 		goto err_rpc;
 
-
-	r = __local_init_restart(msg->app_id, checkpoint_dir, n, duplicate);
+	r = restore_local_app(msg->app_id, checkpoint_dir, n, duplicate,
+			      msg->substitution_pgrp, msg->substitution_sid);
 
 	revert_creds(old_cred);
 	put_cred(cred);
@@ -440,7 +472,7 @@ err:
 }
 
 static int global_init_restart(struct app_kddm_object **app_obj, long *app_id,
-			       const char *checkpoint_dir)
+			       const char *checkpoint_dir, int flags)
 {
 	struct app_kddm_object *obj;
 	struct rpc_desc *desc;
@@ -461,6 +493,18 @@ static int global_init_restart(struct app_kddm_object **app_obj, long *app_id,
 	msg.requester = kerrighed_node_id;
 	msg.app_id = *app_id;
 	msg.recovery = 0;
+
+	if (flags & APP_SUBSTITUTE_PGRP_SID) {
+		msg.substitution_pgrp = task_pgrp_knr(current);
+		msg.substitution_sid = task_session_knr(current);
+	} else {
+		msg.substitution_pgrp = 0;
+		msg.substitution_sid = 0;
+	}
+
+	printk("%s:%d - flags: %d, pgrp:%d, sid: %d\n",
+	       __PRETTY_FUNCTION__, __LINE__, flags,
+	       msg.substitution_pgrp, msg.substitution_sid);
 
 	/* prepare nodes vector */
 	krgnodes_clear(nodes);
@@ -566,9 +610,16 @@ static inline int is_session_leader(task_state_t *t)
 static inline int __restart_process(struct app_struct *app,
 				    task_state_t *t)
 {
-	int r = 0;
 	struct task_struct *task;
-	task = restart_process(app, t->restart.pid);
+	int r = 0;
+	int flags = 0;
+
+	if (t->restart.pgrp == app->restart.substitution_pgrp)
+		flags |= APP_REPLACE_PGRP;
+	if (t->restart.session == app->restart.substitution_sid)
+		flags |= APP_REPLACE_SID;
+
+	task = restart_process(app, t->restart.pid, flags);
 	if (IS_ERR(task)) {
 		r = PTR_ERR(task);
 		goto error;
@@ -580,33 +631,6 @@ static inline int __restart_process(struct app_struct *app,
 	t->task = task;
 error:
 	return r;
-}
-
-static inline int was_checkpointed(struct app_struct *app, pid_t pid)
-{
-	/* What is the right way to check that ? */
-
-	int error;
-	struct nameidata nd;
-	struct path prev_root;
-
-	char *filename = get_chkpt_filebase("%s/task_%d.bin",
-					    app->restart.storage_dir,
-					    pid);
-	if (IS_ERR(filename))
-		return PTR_ERR(filename);
-
-	chroot_to_physical_root(&prev_root);
-	error = path_lookup(filename, 0, &nd);
-	chroot_to_prev_root(&prev_root);
-	if (!error)
-		path_put(&nd.path);
-	kfree(filename);
-
-	if (!error)
-		return 1;
-
-	return 0;
 }
 
 typedef struct {
@@ -690,7 +714,7 @@ static inline int return_orphan_sessions_and_prgps(struct app_struct *app,
 	/* first, build a list of orphan pids of session(s) and pgrp(s) */
 	list_for_each_entry(t, &app->tasks, next_task) {
 
-		if (t->restart.session) {
+		if (t->restart.session != app->restart.substitution_sid) {
 			checkpointed = was_checkpointed(app, t->restart.session);
 			if (!checkpointed) {
 				r = add_unique_pid(&orphan_pids, t->restart.session);
@@ -702,7 +726,7 @@ static inline int return_orphan_sessions_and_prgps(struct app_struct *app,
 			}
 		}
 
-		if (t->restart.pgrp) {
+		if (t->restart.pgrp != app->restart.substitution_pgrp) {
 			checkpointed = was_checkpointed(app, t->restart.pgrp);
 			if (!checkpointed) {
 				r = add_unique_pid(&orphan_pids, t->restart.pgrp);
@@ -1261,7 +1285,8 @@ int app_restart(struct restart_request *req, const task_identity_t *requester)
 	req->app_id = 0; /* sanitize app_id */
 
 	/* recreate the app_kddm_obj and the struct app_struct */
-	r = global_init_restart(&obj, &req->app_id, req->storage_dir.path);
+	r = global_init_restart(&obj, &req->app_id, req->storage_dir.path,
+				req->flags);
 	if (r)
 		goto exit;
 

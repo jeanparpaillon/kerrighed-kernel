@@ -151,7 +151,8 @@ struct task_struct *restart_task(struct epm_action *action,
  *
  *  @return		New task if success, PTR_ERR if failure
  */
-struct task_struct *restart_process(struct app_struct *app, pid_t pid)
+struct task_struct *restart_process(struct app_struct *app, pid_t pid,
+				    int flags)
 {
 	struct epm_action action;
 	struct task_struct *task;
@@ -163,6 +164,7 @@ struct task_struct *restart_process(struct app_struct *app, pid_t pid)
 	action.type = EPM_CHECKPOINT;
 	action.restart.shared = CR_LINK_ONLY;
 	action.restart.app = app;
+	action.restart.flags = flags;
 
 	task = restart_task(&action, app, pid);
 

@@ -11,6 +11,7 @@
 #define APP_FROM_PID		1
 #define CKPT_W_UNSUPPORTED_FILE	2
 
+#define APP_SUBSTITUTE_PGRP_SID	1
 struct cstr
 {
 	size_t len; /* including the final \0 */

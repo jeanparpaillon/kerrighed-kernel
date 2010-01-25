@@ -103,6 +103,8 @@ struct app_struct {
 		struct {
 			const char *storage_dir;
 			krgnodemask_t replacing_nodes;
+			pid_t substitution_pgrp;
+			pid_t substitution_sid;
 		} restart;
 	};
 

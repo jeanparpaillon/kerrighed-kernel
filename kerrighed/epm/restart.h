@@ -20,6 +20,7 @@ struct app_struct;
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-struct task_struct *restart_process(struct app_struct *app, pid_t pid);
+struct task_struct *restart_process(struct app_struct *app, pid_t pid,
+				    int flags);
 
 #endif /* __RESTART_H__ */
