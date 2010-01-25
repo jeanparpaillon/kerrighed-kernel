@@ -1162,6 +1162,7 @@ int import_private_signals(struct epm_action *action,
 		err = import_sigpending(ghost, task, &task->pending);
 		break;
 	default:
+		init_sigpending(&task->pending);
 		break;
 	}
 
