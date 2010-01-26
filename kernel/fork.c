@@ -1513,7 +1513,7 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	recalc_sigpending();
 #ifdef CONFIG_KRG_EPM
 	/* Only check if inside a remote clone() */
-	if (krg_current && in_krg_do_fork())
+	if (!krg_current || in_krg_do_fork())
 #endif
 	if (signal_pending(current)) {
 		spin_unlock(&current->sighand->siglock);
