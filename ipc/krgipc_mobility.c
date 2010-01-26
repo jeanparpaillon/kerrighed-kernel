@@ -569,11 +569,13 @@ static int cr_delete_sysv_sem(struct task_struct * fake, void * _undo_list_id)
 {
 	unique_id_t undo_list_id = (unique_id_t)_undo_list_id;
 
-	destroy_semundo_proc_list(fake, undo_list_id);
+	fake->sysvsem.undo_list = NULL;
+	fake->sysvsem.undo_list_id = undo_list_id;
+
+	exit_sem(fake);
 
 	return 0;
 }
-
 
 struct shared_object_operations cr_shared_semundo_ops = {
         .export_now        = cr_export_now_sysv_sem,

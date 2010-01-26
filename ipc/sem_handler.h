@@ -11,8 +11,6 @@
 int share_existing_semundo_proc_list(struct task_struct *tsk,
 				     unique_id_t undo_list_id);
 int create_semundo_proc_list(struct task_struct *tsk);
-void destroy_semundo_proc_list(struct task_struct *task,
-			       unique_id_t undo_list_id);
 
 struct kddm_set;
 

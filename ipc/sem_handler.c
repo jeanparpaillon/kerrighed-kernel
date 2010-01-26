@@ -621,31 +621,6 @@ exit_unlock:
 	sem_unlock(sma);
 }
 
-void destroy_semundo_proc_list(struct task_struct *task,
-			       unique_id_t undo_list_id)
-{
-	struct kddm_set *undo_list_set;
-	struct semundo_list_object * undo_list;
-
-	BUG_ON(task->sysvsem.undo_list_id != undo_list_id);
-
-	if (task->sysvsem.undo_list_id == UNIQUE_ID_NONE)
-		return;
-
-	undo_list_set = task_undolist_set(task);
-	if (IS_ERR(undo_list_set)) {
-		BUG();
-		return;
-	}
-
-	undo_list = _kddm_grab_object_no_ft(undo_list_set, undo_list_id);
-	if (undo_list)
-		_kddm_remove_frozen_object(undo_list_set, undo_list_id);
-	else
-		_kddm_put_object(undo_list_set, undo_list_id);
-}
-
-
 void krg_ipc_sem_exit_sem(struct ipc_namespace *ns,
 			  struct task_struct * task)
 {
