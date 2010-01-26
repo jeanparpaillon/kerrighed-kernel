@@ -471,6 +471,8 @@ err:
 	return r;
 }
 
+int cr_create_pid_kddm_object(struct pid *pid);
+
 static int global_init_restart(struct app_kddm_object **app_obj, long *app_id,
 			       const char *checkpoint_dir, int flags)
 {
@@ -495,8 +497,21 @@ static int global_init_restart(struct app_kddm_object **app_obj, long *app_id,
 	msg.recovery = 0;
 
 	if (flags & APP_SUBSTITUTE_PGRP_SID) {
+		struct pid *pid;
+
 		msg.substitution_pgrp = task_pgrp_knr(current);
 		msg.substitution_sid = task_session_knr(current);
+
+		pid = task_pgrp(current);
+		r = cr_create_pid_kddm_object(pid);
+		if (r)
+			goto exit;
+
+		pid = task_session(current);
+		r = cr_create_pid_kddm_object(pid);
+		if (r)
+			goto exit;
+
 	} else {
 		msg.substitution_pgrp = 0;
 		msg.substitution_sid = 0;
