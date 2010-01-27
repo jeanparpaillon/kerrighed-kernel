@@ -282,7 +282,9 @@ void __fput(struct file *file)
 
 #ifdef CONFIG_KRG_FAF
 	if (file->f_flags & O_FAF_CLT) {
+		eventpoll_release(file);
 		security_file_free(file);
+		put_pid(file->f_owner.pid);
 		file_kill(file);
 		file_free(file);
 		return;
