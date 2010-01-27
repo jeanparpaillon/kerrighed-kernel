@@ -712,7 +712,7 @@ static void unimport_notifier(struct task_struct *task)
 
 static void unimport_nsproxy(struct task_struct *task)
 {
-	free_nsproxy(task->nsproxy);
+	put_nsproxy(task->nsproxy);
 }
 
 /* unimport_files_struct() is located in kerrighed/fs/mobility.c */

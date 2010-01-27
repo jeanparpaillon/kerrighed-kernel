@@ -1613,6 +1613,9 @@ bad_fork_cleanup_application:
 bad_fork_free_graph:
 	ftrace_graph_exit_task(p);
 bad_fork_free_pid:
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current)
+#endif
 	if (pid != &init_struct_pid)
 		free_pid(pid);
 bad_fork_cleanup_io:
