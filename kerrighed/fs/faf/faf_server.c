@@ -849,8 +849,16 @@ void handle_faf_accept (struct rpc_desc *desc,
 	void *fdesc;
 	int desc_len;
 
+	r = remote_sleep_prepare(desc);
+	if (r) {
+		rpc_cancel(desc);
+		return;
+	}
+
 	r = sys_accept(msg->server_fd,
 		       (struct sockaddr *)&msg->sa, &msg->addrlen);
+
+	remote_sleep_finish();
 
 	rpc_pack_type(desc, r);
 	if (r < 0)

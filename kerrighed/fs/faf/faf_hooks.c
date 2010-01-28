@@ -663,7 +663,7 @@ long krg_faf_accept(struct file * file,
 	struct dvfs_file_struct *dvfs_file;
 	faf_client_data_t *data = file->private_data;
 	struct faf_bind_msg msg;
-	int r;
+	int r, err;
 	struct sockaddr_storage sa;
 	int sa_len;
 	void *fdesc;
@@ -696,7 +696,14 @@ long krg_faf_accept(struct file * file,
 
 	rpc_pack_type(desc, msg);
 
-	rpc_unpack_type(desc, r);
+	r = unpack_remote_sleep_res_prepare(desc);
+	if (r)
+		goto err_cancel;
+	err = unpack_remote_sleep_res_type(desc, r);
+	if (err) {
+		r = err;
+		goto err_cancel;
+	}
 
 	if (r<0) {
 		rpc_end(desc, 0);
