@@ -23,8 +23,6 @@ struct checkpoint_info
 	int signal;
 };
 
-#define GET_RESTART_CMD_PTS 1
-
 struct cr_subst_file
 {
 	int fd;

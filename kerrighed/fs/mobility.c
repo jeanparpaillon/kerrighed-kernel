@@ -26,8 +26,8 @@
 #include <kerrighed/ghost.h>
 #include <kerrighed/ghost_helpers.h>
 #include <kerrighed/action.h>
+#include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
-#include <kerrighed/app_terminal.h>
 #include <kerrighed/file.h>
 #include <kerrighed/file_stat.h>
 #include "mobility.h"
@@ -256,7 +256,7 @@ void cr_get_file_type_and_key(const struct file *file,
 static int cr_ghost_write_file_id(ghost_t *ghost, struct file *file,
 				  int allow_unsupported)
 {
-	int r, tty;
+	int r;
 	long key;
 	enum shared_obj_type type;
 
@@ -267,16 +267,6 @@ static int cr_ghost_write_file_id(ghost_t *ghost, struct file *file,
 		goto error;
 
 	r = ghost_write(ghost, &key, sizeof(long));
-	if (r)
-		goto error;
-
-	tty = is_tty(file);
-	if (tty < 0) {
-		r = tty;
-		goto error;
-	}
-
-	r = ghost_write(ghost, &tty, sizeof(int));
 	if (r)
 		goto error;
 
@@ -540,21 +530,12 @@ int cr_add_file_to_shared_table(struct task_struct *task,
 				int index, struct file *file,
 				int allow_unsupported)
 {
-	int r, tty;
+	int r;
 
 	r = _cr_add_file_to_shared_table(task, index, file,
 					 allow_unsupported);
 	if (r)
 		goto error;
-
-	tty = is_tty(file);
-	if (tty) {
-		if (tty < 0) {
-			r = tty;
-			goto error;
-		}
-		app_set_checkpoint_terminal(task->application, file);
-	}
 
 	if (!(file->f_flags & O_FAF_CLT) && is_anonymous_pipe(file)) {
 		r = cr_add_pipe_inode_to_shared_table(task, file);

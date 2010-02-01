@@ -17,7 +17,6 @@
 #include <kerrighed/action.h>
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
-#include <kerrighed/app_terminal.h>
 #include <kerrighed/sys/checkpoint.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/ghost_helpers.h>
@@ -33,8 +32,7 @@
 
 /*--------------------------------------------------------------------------*/
 
-static inline int save_app_kddm_object(struct app_kddm_object *obj,
-				       int one_terminal)
+static int save_app_kddm_object(struct app_kddm_object *obj)
 {
 	ghost_fs_t oldfs;
 	ghost_t *ghost;
@@ -87,9 +85,6 @@ static inline int save_app_kddm_object(struct app_kddm_object *obj,
 	if (r)
 		goto err_write;
 	r = ghost_write(ghost, &obj->user_data, sizeof(obj->user_data));
-	if (r)
-		goto err_write;
-	r = ghost_write(ghost, &one_terminal, sizeof(one_terminal));
 	if (r)
 		goto err_write;
 	r = ghost_write(ghost, &magic, sizeof(magic));
@@ -380,10 +375,6 @@ send_res:
 	if (r)
 		goto error;
 
-	r = send_terminal_id(desc, app);
-	if (r)
-		goto error;
-
 error:
 	cr_free_mm_exclusions(app);
 
@@ -399,7 +390,7 @@ static int global_do_chkpt(struct app_kddm_object *obj, int flags)
 {
 	struct rpc_desc *desc;
 	struct checkpoint_request_msg msg;
-	int r , err_rpc, one_terminal;
+	int r, err_rpc;
 
 	r = __get_next_chkptsn(obj->app_id, obj->chkpt_sn);
 	if (r < 0)
@@ -438,11 +429,7 @@ static int global_do_chkpt(struct app_kddm_object *obj, int flags)
 	if (err_rpc)
 		goto err_rpc;
 
-	r = rcv_terminal_id(desc, obj->nodes, &one_terminal);
-	if (r)
-		goto err_rpc;
-
-	r = save_app_kddm_object(obj, one_terminal);
+	r = save_app_kddm_object(obj);
 	if (r)
 		goto exit;
 
