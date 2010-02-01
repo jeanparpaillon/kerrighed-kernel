@@ -419,8 +419,8 @@ void destroy_shared_objects(struct app_struct *app,
 
 /*--------------------------------------------------------------------------*/
 
-
 static int export_one_shared_object(ghost_t *ghost,
+				    ghost_t *user_ghost,
 				    struct epm_action *action,
 				    struct shared_object *this)
 {
@@ -446,6 +446,15 @@ static int export_one_shared_object(ghost_t *ghost,
 				  this->checkpoint.exporting_task,
 				  &this->checkpoint.args);
 
+	if (r)
+		goto error;
+
+	if (this->ops->export_user_info)
+		r = this->ops->export_user_info(action, user_ghost,
+						this->index.key,
+						this->checkpoint.exporting_task,
+						&this->checkpoint.args);
+
 error:
 	if (r)
 		ckpt_err(NULL, r,
@@ -455,7 +464,9 @@ error:
 	return r;
 }
 
-static int export_shared_objects(ghost_t *ghost, struct app_struct *app,
+static int export_shared_objects(ghost_t *ghost,
+				 ghost_t *user_ghost,
+				 struct app_struct *app,
 				 enum shared_obj_type from,
 				 enum shared_obj_type to)
 {
@@ -483,7 +494,7 @@ static int export_shared_objects(ghost_t *ghost, struct app_struct *app,
 		if (idx->type > to)
 			goto exit_write_end;
 
-		r = export_one_shared_object(ghost, &action, this);
+		r = export_one_shared_object(ghost, user_ghost, &action, this);
 		clear_one_shared_object(node, app);
 
 		if (r)
@@ -505,7 +516,7 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 	int r;
 
 	ghost_fs_t oldfs;
-	ghost_t *ghost;
+	ghost_t *ghost, *user_ghost;
 
 	__set_ghost_fs(&oldfs);
 
@@ -517,11 +528,24 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 		goto exit_unset_fs;
 	}
 
-	r = export_shared_objects(ghost, app, PIPE_INODE, UNSUPPORTED_FILE);
-	if (r)
-		goto exit_close_ghost;
+	user_ghost = create_file_ghost(GHOST_WRITE, app->app_id, chkpt_sn,
+				       "user_info_%u.txt", kerrighed_node_id);
 
-	r = export_shared_objects(ghost, app, FILES_STRUCT, SIGNAL_STRUCT);
+	if (IS_ERR(user_ghost)) {
+		r = PTR_ERR(user_ghost);
+		goto exit_close_ghost;
+	}
+
+	r = export_shared_objects(ghost, user_ghost, app,
+				  PIPE_INODE, UNSUPPORTED_FILE);
+	if (r)
+		goto exit_close_user_ghost;
+
+	r = export_shared_objects(ghost, user_ghost, app,
+				  FILES_STRUCT, SIGNAL_STRUCT);
+
+exit_close_user_ghost:
+	ghost_close(user_ghost);
 
 exit_close_ghost:
 	/* End of the really interesting part */

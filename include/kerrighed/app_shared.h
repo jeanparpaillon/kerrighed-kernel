@@ -91,6 +91,13 @@ struct shared_object_operations {
 	size_t restart_data_size;
 	int (*export_now) (struct epm_action *, ghost_t *, struct task_struct *,
 			   union export_args *);
+
+	/* export_user_info is used to export information to a readable file to
+	 * userspace
+	 */
+	int (*export_user_info) (struct epm_action *, ghost_t *, unsigned long,
+				 struct task_struct *, union export_args *);
+
 	int (*import_now) (struct epm_action *, ghost_t *, struct task_struct *,
 			   int, void  **, size_t *);
 	int (*import_complete) (struct task_struct *, void *);

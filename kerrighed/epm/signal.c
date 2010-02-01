@@ -1122,6 +1122,7 @@ static int cr_delete_signal_struct(struct task_struct *fake, void *_sig)
 
 struct shared_object_operations cr_shared_signal_struct_ops = {
 	.export_now        = cr_export_now_signal_struct,
+	.export_user_info  = NULL,
 	.import_now        = cr_import_now_signal_struct,
 	.import_complete   = cr_import_complete_signal_struct,
 	.delete            = cr_delete_signal_struct,

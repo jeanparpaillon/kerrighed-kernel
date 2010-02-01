@@ -1339,6 +1339,7 @@ int cr_delete_pipe_inode(struct task_struct *fake,
 
 struct shared_object_operations cr_shared_pipe_inode_ops = {
 	.export_now        = cr_export_now_pipe_inode,
+	.export_user_info  = NULL,
 	.import_now        = cr_import_now_pipe_inode,
 	.import_complete   = cr_import_complete_pipe_inode,
 	.delete            = cr_delete_pipe_inode,
