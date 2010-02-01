@@ -225,50 +225,43 @@ err_buff:
 	return dirname;
 }
 
-char *__get_chkpt_filebase(const char *directory, const char *label, int objid)
+static char *__get_chkpt_filebase(long app_id,
+				  unsigned int chkpt_sn,
+				  const char *format,
+				  va_list args)
 {
-	char *filename;
+	char *full_path;
+	char *rel_path;
 
-	filename = kmalloc(PATH_MAX * sizeof(char), GFP_KERNEL);
-	if (!filename) {
-		filename = ERR_PTR(-ENOMEM);
-		goto err_filename;
-	}
+	full_path = get_chkpt_dir(app_id, chkpt_sn);
+	if (IS_ERR(full_path))
+		goto err;
 
-	if (objid != -1)
-		snprintf(filename, PATH_MAX, "%s/%s_%d.bin",
-			 directory, label, objid);
-	else
-		snprintf(filename, PATH_MAX, "%s/%s.bin",
-			 directory, label);
-
-err_filename:
-	return filename;
-}
-
-
-/** Returns a string with the name of the file
- *  The caller's responsibility to free it.
- *  checkPointRoot/AppId/vSN/prefixOBJECT_ID
- */
-char *get_chkpt_filebase(long app_id,
-			 unsigned int chkpt_sn,
-			 int objid,
-			 const char *label)
-{
-	char *dirname;
-	char *filename;
-
-	dirname = get_chkpt_dir(app_id, chkpt_sn);
-	if (IS_ERR(dirname)) {
-		filename = ERR_PTR(PTR_ERR(dirname));
+	rel_path = kvasprintf(GFP_KERNEL, format, args);
+	if (!rel_path) {
+		kfree(full_path);
+		full_path = ERR_PTR(-ENOMEM);
 		goto err;
 	}
 
-	filename = __get_chkpt_filebase(dirname, label, objid);
+	strncat(full_path, rel_path, PATH_MAX);
 
-	kfree (dirname);
 err:
+	return full_path;
+}
+
+char *get_chkpt_filebase(long app_id,
+			 unsigned int chkpt_sn,
+			 const char *format,
+			 ...)
+{
+	va_list args;
+	char *filename;
+
+	va_start(args, format);
+	filename = __get_chkpt_filebase(app_id, chkpt_sn, format, args);
+	va_end(args);
+
 	return filename;
 }
 
@@ -372,11 +365,12 @@ err_file:
 ghost_t *create_file_ghost(int access,
 			   long app_id,
 			   unsigned int chkpt_sn,
-			   int obj_id,
-			   const char *label)
+			   const char *format,
+			   ...)
 {
 	struct file *file;
-	char *file_name;
+	va_list args;
+	char *filename;
 	struct path prev_root;
 
 	ghost_t *ghost;
@@ -392,18 +386,21 @@ ghost_t *create_file_ghost(int access,
 	}
 
 	/* Create a ghost to host the checkoint */
-	file_name = get_chkpt_filebase(app_id, chkpt_sn, obj_id, label);
-	if (IS_ERR(file_name)) {
-		r = PTR_ERR(file_name);
+	va_start(args, format);
+	filename = __get_chkpt_filebase(app_id, chkpt_sn, format, args);
+	va_end(args);
+
+	if (IS_ERR(filename)) {
+		r = PTR_ERR(filename);
 		goto err;
 	}
 
 	if (access & GHOST_WRITE)/* fail if already exists */
-		file = filp_open(file_name, O_CREAT|O_EXCL|O_WRONLY, S_IRUSR|S_IWUSR);
+		file = filp_open(filename, O_CREAT|O_EXCL|O_WRONLY, S_IRUSR|S_IWUSR);
 	else
-		file = filp_open(file_name, O_RDONLY, S_IRWXU);
+		file = filp_open(filename, O_RDONLY, S_IRWXU);
 
-	kfree(file_name);
+	kfree(filename);
 
 	if (IS_ERR(file)) {
 		r = PTR_ERR(file);

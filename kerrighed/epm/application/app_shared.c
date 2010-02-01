@@ -510,7 +510,7 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 	__set_ghost_fs(&oldfs);
 
 	ghost = create_file_ghost(GHOST_WRITE, app->app_id, chkpt_sn,
-				  kerrighed_node_id, "shared_obj");
+				  "shared_obj_%d.bin", kerrighed_node_id);
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
@@ -1235,7 +1235,7 @@ static int local_restart_shared_objects(struct rpc_desc *desc,
 	for_each_krgnode_mask(node, app->restart.replacing_nodes) {
 
 		ghost = create_file_ghost(GHOST_READ, app->app_id, chkpt_sn,
-					  node, "shared_obj");
+					  "shared_obj_%d.bin", node);
 
 		if (IS_ERR(ghost)) {
 			r = PTR_ERR(ghost);

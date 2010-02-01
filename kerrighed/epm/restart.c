@@ -94,7 +94,8 @@ struct task_struct *restart_task_from_disk(struct epm_action *action,
 	ghost_t *ghost;
 	struct task_struct *task;
 
-	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn, pid, "task");
+	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn,
+				  "task_%d.bin", pid);
 
 	if (IS_ERR(ghost))
 		return ERR_PTR(PTR_ERR(ghost));

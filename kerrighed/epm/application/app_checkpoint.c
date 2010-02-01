@@ -45,7 +45,7 @@ static inline int save_app_kddm_object(struct app_kddm_object *obj,
 	__set_ghost_fs(&oldfs);
 
 	ghost = create_file_ghost(GHOST_WRITE, obj->app_id, obj->chkpt_sn,
-				  -1, "global");
+				  "global.bin");
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
@@ -182,7 +182,7 @@ static inline int save_local_app(struct app_struct *app, int chkpt_sn)
 	__set_ghost_fs(&oldfs);
 
 	ghost = create_file_ghost(GHOST_WRITE, app->app_id, chkpt_sn,
-				  kerrighed_node_id, "node");
+				  "node_%d.bin", kerrighed_node_id);
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);

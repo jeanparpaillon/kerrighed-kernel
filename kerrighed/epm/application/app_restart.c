@@ -43,7 +43,7 @@ static inline int restore_app_kddm_object(struct app_kddm_object *obj,
 	__set_ghost_fs(&oldfs);
 
 	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn,
-				  -1, "global");
+				  "global.bin");
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
@@ -228,7 +228,7 @@ static inline int restore_local_app(long app_id, int chkpt_sn,
 	__set_ghost_fs(&oldfs);
 
 	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn,
-				  node_id, "node");
+				  "node_%d.bin", node_id);
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
@@ -540,7 +540,7 @@ static inline int was_checkpointed(struct app_struct *app, pid_t pid)
 	struct path prev_root;
 
 	char *filename = get_chkpt_filebase(app->app_id, app->chkpt_sn,
-					    pid, "task");
+					    "task_%d.bin", pid);
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
 
