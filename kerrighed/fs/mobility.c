@@ -192,34 +192,17 @@ exit:
 	return r;
 }
 
-static int is_file_type_supported(const struct file *file)
-{
-	if (is_socket(file)) {
-		printk("Checkpoint of socket file is not supported\n");
-		return 0;
-	} else if (is_named_pipe(file)) {
-		printk("Checkpoint of FIFO file (nammed pipe) is not supported\n");
-		return 0;
-	}
-
-	return 1;
-}
-
 static int _cr_get_file_type_and_key(const struct file *file,
 				     enum shared_obj_type *type,
 				     long *key,
 				     enum object_locality *locality,
 				     int allow_unsupported)
 {
-	if (!is_file_type_supported(file)) {
-		if (allow_unsupported) {
-			*type = UNSUPPORTED_FILE;
-			*key = (long)file;
-			if (locality)
-				*locality = LOCAL_ONLY;
-		} else
-			return -ENOSYS;
-	} else if (file->f_objid) {
+	if (!can_checkpoint_file(file)
+	    && !allow_unsupported)
+		return -ENOSYS;
+
+	if (file->f_objid) {
 		*type = DVFS_FILE;
 		*key = file->f_objid;
 		if (locality) {

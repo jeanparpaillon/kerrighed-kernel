@@ -64,9 +64,6 @@ static struct shared_object_operations * get_shared_ops(
 	case DVFS_FILE:
 		s_ops = &cr_shared_file_ops;
 		break;
-	case UNSUPPORTED_FILE:
-		s_ops = &cr_shared_unsupported_file_ops;
-		break;
 	case FILES_STRUCT:
 		s_ops = &cr_shared_files_struct_ops;
 		break;
@@ -542,7 +539,7 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 	}
 
 	r = export_shared_objects(ghost, user_ghost, app,
-				  PIPE_INODE, UNSUPPORTED_FILE);
+				  PIPE_INODE, DVFS_FILE);
 	if (r)
 		goto exit_close_user_ghost;
 
@@ -921,8 +918,6 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 			      &stmp.restart.data_size);
 	if (r || s)
 		goto err;
-
-	BUG_ON(!stmp.restart.data && type != UNSUPPORTED_FILE);
 
 	s = kmalloc(sizeof(struct shared_object) + stmp.restart.data_size,
 		    GFP_KERNEL);
@@ -1332,7 +1327,6 @@ static int rcv_substitution_files(struct rpc_desc *desc,
 		struct shared_object *obj;
 
 		if (index.type != DVFS_FILE
-		    && index.type != UNSUPPORTED_FILE
 		    && index.type != LOCAL_FILE) {
 			r = -EINVAL;
 			goto error;
@@ -1449,8 +1443,7 @@ static int insert_one_substitution_file(struct rb_root *files,
 	void *fdesc, *cr_file_link;
 
 	if (type != LOCAL_FILE
-	    && type != DVFS_FILE
-	    && type != UNSUPPORTED_FILE) {
+	    && type != DVFS_FILE) {
 		r = -EINVAL;
 		goto error;
 	}
@@ -1685,7 +1678,7 @@ int local_restart_shared(struct rpc_desc *desc,
 
 	/* 2) restore pipes and files */
 	r = local_restart_shared_objects(desc, app, fake, chkpt_sn,
-					 PIPE_INODE, UNSUPPORTED_FILE,
+					 PIPE_INODE, DVFS_FILE,
 					 ghost_offsets);
 	if (r)
 		goto err_ghost_offset;

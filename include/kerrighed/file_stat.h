@@ -45,4 +45,6 @@ char *get_phys_filename(struct file *file, char *buffer);
  */
 char *get_filename(struct file *file, char *buffer);
 
+int can_checkpoint_file(const struct file *file);
+
 #endif
