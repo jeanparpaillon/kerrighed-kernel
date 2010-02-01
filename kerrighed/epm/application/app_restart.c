@@ -1103,7 +1103,7 @@ static int global_do_restart(struct app_kddm_object *obj,
 	struct restart_request_msg msg;
 	pids_list_t orphan_pids;
 	pid_t *root_pid = &req->root_pid;
-	int r=0;
+	int r = 0;
 
 	/* prepare message */
 	msg.requester = kerrighed_node_id;
@@ -1147,7 +1147,7 @@ static int global_do_restart(struct app_kddm_object *obj,
 	if (r)
 		goto error;
 
-	r = global_restart_shared(desc, obj);
+	r = global_restart_shared(desc, obj, req);
 	if (r)
 		goto error;
 

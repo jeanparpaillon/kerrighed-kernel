@@ -83,6 +83,22 @@ static int proc_app_unfreeze(void __user *arg)
 	return sys_app_unfreeze(&ckpt_info);
 }
 
+static int copy_user_array(void **array, const void __user *from, int len)
+{
+	int res = 0;
+
+	*array = kmalloc(len, GFP_KERNEL);
+	if (!array)
+		return -ENOMEM;
+
+	if (copy_from_user(*array, from, len)) {
+		kfree(*array);
+		res = -EFAULT;
+	}
+
+	return res;
+}
+
 /**
  *  /proc function call to checkpoint an application.
  *  @author Matthieu Fertré
@@ -115,16 +131,76 @@ static int proc_app_chkpt(void __user *arg)
 static int proc_app_restart(void __user *arg)
 {
 	int res;
+	unsigned int i = 0;
 	struct restart_request restart_req;
+
+	size_t file_str_len;
+	struct cr_subst_file *files = NULL;
 
 	if (copy_from_user(&restart_req, arg, sizeof(restart_req)))
 		return -EFAULT;
 
+	/* let's say that a user can not substitute more that 256 files */
+	if (restart_req.substitution.nr > 256) {
+		res = -E2BIG;
+		goto error;
+	}
+
+	/* first basic check about files substitution args */
+	if (!restart_req.substitution.nr) {
+		if (!restart_req.substitution.files)
+			goto call_restart;
+
+		res = -EINVAL;
+		goto error;
+	}
+
+	/* get the list of files to replace */
+	res = copy_user_array((void**)&files,
+			      restart_req.substitution.files,
+			      restart_req.substitution.nr *
+			      sizeof(struct cr_subst_file));
+	if (res)
+		goto error;
+
+	file_str_len = sizeof(kerrighed_node_t)*2 + sizeof(unsigned long)*2;
+
+	for (i = 0; i < restart_req.substitution.nr; i++) {
+
+		if (strlen(restart_req.substitution.files[i].file_id)
+		    == file_str_len)
+			res = copy_user_array(
+				(void**)&files[i].file_id,
+				restart_req.substitution.files[i].file_id,
+				file_str_len + 1);
+		else
+			res = -EINVAL;
+
+		if (res) {
+			files[i].file_id = NULL;
+			goto err_free_files;
+		}
+	}
+
+	restart_req.substitution.files = files;
+
+call_restart:
+	/* call the restart */
 	res = sys_app_restart(&restart_req);
+	if (res)
+		goto err_free_files;
 
 	if (copy_to_user(arg, &restart_req, sizeof(restart_req)))
 		res = -EFAULT;
 
+err_free_files:
+	for (i = 0; i < restart_req.substitution.nr; i++) {
+		if (!files[i].file_id)
+			break;
+
+		kfree(files[i].file_id);
+	}
+error:
 	return res;
 }
 
