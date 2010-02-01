@@ -1096,12 +1096,13 @@ error:
 
 static int global_do_restart(struct app_kddm_object *obj,
 			     const task_identity_t *requester,
-			     struct file *term,
-			     pid_t *root_pid)
+			     struct restart_request *req,
+			     struct file *term)
 {
 	struct rpc_desc *desc;
 	struct restart_request_msg msg;
 	pids_list_t orphan_pids;
+	pid_t *root_pid = &req->root_pid;
 	int r=0;
 
 	/* prepare message */
@@ -1223,7 +1224,7 @@ err_no_pids:
  *  @author Matthieu Fertré
  */
 int app_restart(struct restart_request *req,
-		const task_identity_t *requester, pid_t *root_pid)
+		const task_identity_t *requester)
 {
 	struct app_kddm_object *obj;
 	struct file *term = NULL;
@@ -1259,7 +1260,7 @@ int app_restart(struct restart_request *req,
         }
 
 	/* recreate all the tasks */
-	r = global_do_restart(obj, requester, term, root_pid);
+	r = global_do_restart(obj, requester, req, term);
 	if (r)
 		goto exit_put_term;
 

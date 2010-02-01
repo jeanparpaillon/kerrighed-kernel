@@ -30,6 +30,7 @@ struct restart_request
 	long app_id;
 	int chkpt_sn;
 	int flags;
+	pid_t root_pid;
 };
 
 struct app_userdata_request

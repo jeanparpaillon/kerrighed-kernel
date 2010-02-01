@@ -116,23 +116,14 @@ static int proc_app_restart(void __user *arg)
 {
 	int res;
 	struct restart_request restart_req;
-	pid_t root_pid;
 
 	if (copy_from_user(&restart_req, arg, sizeof(restart_req)))
 		return -EFAULT;
 
-	res = sys_app_restart(&restart_req, &root_pid);
+	res = sys_app_restart(&restart_req);
 
-	/*
-	 * in case of success, we replace the req.app_id by the application
-	 * root process id.
-	 */
-	if (!res) {
-		res = root_pid;
-
-		if (copy_to_user(arg, &restart_req, sizeof(restart_req)))
-			return -EFAULT;
-	}
+	if (copy_to_user(arg, &restart_req, sizeof(restart_req)))
+		res = -EFAULT;
 
 	return res;
 }
