@@ -454,8 +454,15 @@ int local_ipc_reserveid(struct ipc_ids* ids, struct kern_ipc_perm* new,
 	if (size > IPCMNI)
 		size = IPCMNI;
 
-	if (ids->in_use >= size)
-		return -ENOSPC;
+	if (ids->in_use >= size) {
+		/* IPC quota is not clusterwide, returning an error here
+		   might lead to kernel crash within the IO linker */
+		printk("%s:%d - Number of Kerrighed IPC objects is locally"
+		       " exceeding quota (%d >= %d)\n",
+		       __PRETTY_FUNCTION__, __LINE__,
+		       ids->in_use, size);
+		/*return -ENOSPC;*/
+	}
 
 	err = idr_pre_get(&ids->ipcs_idr, GFP_KERNEL);
 	if (!err)

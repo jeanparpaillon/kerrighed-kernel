@@ -149,6 +149,7 @@ int shmid_insert_object (struct kddm_obj * obj_entry,
 	shmid_object_t *shp_object;
 	struct shmid_kernel *shp;
 	struct ipc_namespace *ns;
+	int r = 0;
 
 	shp_object = obj_entry->object;
 	BUG_ON(!shp_object);
@@ -166,9 +167,14 @@ int shmid_insert_object (struct kddm_obj * obj_entry,
 	shp = create_local_shp(ns, &shp_object->mobile_shp, shp_object->set_id);
 	shp_object->local_shp = shp;
 
+	if (IS_ERR(shp)) {
+		r = PTR_ERR(shp);
+		BUG();
+	}
+
 	put_ipc_ns(ns);
 done:
-	return 0;
+	return r;
 }
 
 

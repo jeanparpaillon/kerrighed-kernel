@@ -163,6 +163,7 @@ int msq_insert_object (struct kddm_obj * obj_entry,
 {
 	msq_object_t *msq_object;
 	struct msg_queue *msq;
+	int r = 0;
 
 	msq_object = obj_entry->object;
 	BUG_ON(!msq_object);
@@ -184,12 +185,17 @@ int msq_insert_object (struct kddm_obj * obj_entry,
 		 */
 		msq = create_local_msq(ns, &msq_object->mobile_msq);
 		msq_object->local_msq = msq;
-		BUG_ON(IS_ERR(msq));
+
+		if (IS_ERR(msq)) {
+			r = PTR_ERR(msq);
+			BUG();
+		}
 
 		put_ipc_ns(ns);
 	}
 
-	return 0;
+exit:
+	return r;
 }
 
 
