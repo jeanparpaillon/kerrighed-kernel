@@ -148,6 +148,7 @@ struct task_struct *restart_task(struct epm_action *action,
 struct task_struct *restart_process(pid_t pid, long app_id, int chkpt_sn)
 {
 	struct epm_action action;
+	struct task_struct *task;
 
 	/* Check if the process has not been already restarted */
 	if (find_task_by_kpid(pid) != NULL)
@@ -159,5 +160,11 @@ struct task_struct *restart_process(pid_t pid, long app_id, int chkpt_sn)
 
 	BUG_ON(!action.restart.app);
 
-	return restart_task(&action, pid, app_id, chkpt_sn);
+	task = restart_task(&action, pid, app_id, chkpt_sn);
+	if (IS_ERR(task))
+		ckpt_err(&action, PTR_ERR(task),
+			 "Fail to restart process %d",
+			 pid);
+
+	return task;
 }
