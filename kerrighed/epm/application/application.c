@@ -94,7 +94,6 @@ struct app_struct *new_local_app(long app_id)
 	}
 
 	app->app_id = app_id;
-	app->chkpt_sn = 0;
 
 	mutex_init(&app->mutex);
 	init_completion(&app->tasks_chkpted);

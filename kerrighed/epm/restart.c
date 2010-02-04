@@ -64,30 +64,28 @@ exit:
  *  @author       Matthieu Fertré
  *
  *  @param action	Restart descriptor
+ *  @param app          Application
  *  @param pid		Pid of the task to restart
- *  @param app_id	Application id
- *  @param chkpt_sn	Sequence number of the checkpoint
  *
  *  @return		New task if success, PTR_ERR if failure
  */
 static
 struct task_struct *restart_task_from_disk(struct epm_action *action,
-					   pid_t pid,
-					   long app_id,
-					   int chkpt_sn)
+					   struct app_struct *app,
+					   pid_t pid)
 {
 	int r;
 	ghost_t *ghost;
 	struct task_struct *task;
 
-	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn,
-				  "task_%d.bin", pid);
+	ghost = create_file_ghost(GHOST_READ, "%s/task_%d.bin",
+				  app->restart.storage_dir, pid);
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
 		epm_error(action, r, NULL,
-			  "Fail to open file /var/chkpt/%ld/v%d/task_%d.bin",
-			  app_id, chkpt_sn, pid);
+			  "Fail to open file %s/task_%d.bin",
+			  app->restart.storage_dir, pid);
 		return ERR_PTR(r);
 	}
 
@@ -105,23 +103,22 @@ struct task_struct *restart_task_from_disk(struct epm_action *action,
  *  @author      Matthieu Fertré
  *
  *  @param action	Restart descriptor
+ *  @param app          Application
  *  @param pid		Pid of the task to restart
- *  @param app_id	Application id
- *  @param chkpt_sn	Sequence number of the checkpoint
  *
  *  @return		New task if success, PTR_ERR if failure
  */
 static
 struct task_struct *restart_task(struct epm_action *action,
-				 pid_t pid, long app_id,
-				 int chkpt_sn)
+				 struct app_struct *app,
+				 pid_t pid)
 {
 	struct task_struct *task = NULL;
 	ghost_fs_t oldfs;
 
 	__set_ghost_fs(&oldfs);
 
-	task = restart_task_from_disk(action, pid, app_id, chkpt_sn);
+	task = restart_task_from_disk(action, app, pid);
 
 	unset_ghost_fs(&oldfs);
 	return task;
@@ -153,9 +150,7 @@ struct task_struct *restart_process(struct app_struct *app, pid_t pid,
 	action.restart.app = app;
 	action.restart.flags = flags;
 
-	BUG_ON(!action.restart.app);
-
-	task = restart_task(&action, pid, app->app_id, app->chkpt_sn);
+	task = restart_task(&action, app, pid);
 	if (IS_ERR(task))
 		epm_error(&action, PTR_ERR(task), NULL,
 			  "Fail to restart process %d",

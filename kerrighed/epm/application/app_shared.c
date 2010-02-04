@@ -571,7 +571,7 @@ error:
 	return r;
 }
 
-static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
+static int chkpt_shared_objects(struct app_struct *app)
 {
 	int r, err;
 	struct epm_action action;
@@ -584,31 +584,37 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 
 	__set_ghost_fs(&oldfs);
 
-	ghost = create_file_ghost(GHOST_WRITE, app->app_id, chkpt_sn,
-				  "shared_obj_%d.bin", kerrighed_node_id);
+	ghost = create_file_ghost(GHOST_WRITE, "%s/shared_obj_%u.bin",
+				  app->checkpoint.storage_dir,
+				  kerrighed_node_id);
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
 		epm_error(&action, r, NULL,
-			  "Fail to create file "
-			  "/var/chkpt/%ld/v%d/shared_obj_%u.bin",
-			  app->app_id, chkpt_sn, kerrighed_node_id);
+		ckpt_err(NULL, r,
+			 "Fail to create file %s/shared_obj_%u.bin",
+			 app->checkpoint.storage_dir, kerrighed_node_id);
 		goto exit_unset_fs;
 	}
 
-	user_ghost = create_file_ghost(GHOST_WRITE, app->app_id, chkpt_sn,
-				       "user_info_%u.txt", kerrighed_node_id);
+	user_ghost = create_file_ghost(GHOST_WRITE, "%s/user_info_%u.txt",
+				       app->checkpoint.storage_dir,
+				       kerrighed_node_id);
 
 	if (IS_ERR(user_ghost)) {
 		r = PTR_ERR(user_ghost);
 		epm_error(&action, r, NULL,
-			  "Fail to create file "
-			  "/var/chkpt/%ld/v%d/%s/user_info_%u.txt",
-			  app->app_id, chkpt_sn, kerrighed_node_id);
+			  "Fail to create file %s/user_info_%u.txt",
+			  app->checkpoint.storage_dir,
+			  kerrighed_node_id);
 		goto exit_close_ghost;
 	}
 
-	r = export_shared_objects(&action, ghost, user_ghost, app,
+	r = ghost_write_type(ghost, app->app_id);
+	if (r)
+		goto exit_close_user_ghost;
+
+	r = export_shared_objects(ghost, user_ghost, app,
 				  PIPE_INODE, DVFS_FILE);
 	if (r)
 		goto exit_close_user_ghost;
@@ -863,8 +869,7 @@ error:
 }
 
 int local_chkpt_shared(struct rpc_desc *desc,
-		       struct app_struct *app,
-		       int chkpt_sn)
+		       struct app_struct *app)
 {
 	int r = 0;
 
@@ -884,7 +889,7 @@ int local_chkpt_shared(struct rpc_desc *desc,
 		goto error;
 
 	/* 4) dump the shared objects for which we are responsible */
-	r = chkpt_shared_objects(app, chkpt_sn);
+	r = chkpt_shared_objects(app);
 error:
 	return r;
 }
@@ -1683,13 +1688,13 @@ int local_restart_shared_complete(struct app_struct *app,
 static int local_restart_shared_objects(struct rpc_desc *desc,
 					struct app_struct *app,
 					struct task_struct *fake,
-					int chkpt_sn,
 					enum shared_obj_type from,
 					enum shared_obj_type to,
 					loff_t ghost_offsets[])
 {
 	int r = -EINVAL;
 	int idx = 0;
+	long r_app_id;
 	kerrighed_node_t node;
 	struct epm_action action;
 	ghost_t *ghost;
@@ -1702,16 +1707,29 @@ static int local_restart_shared_objects(struct rpc_desc *desc,
 	/* 1) restore objects for which we are master */
 	for_each_krgnode_mask(node, app->restart.replacing_nodes) {
 
-		ghost = create_file_ghost(GHOST_READ, app->app_id, chkpt_sn,
-					  "shared_obj_%d.bin", node);
+		ghost = create_file_ghost(GHOST_READ, "%s/shared_obj_%u.bin",
+					  app->restart.storage_dir, node);
 
 		if (IS_ERR(ghost)) {
 			r = PTR_ERR(ghost);
 			epm_error(&action, r, NULL,
 				  "Fail to open file "
-				  "/var/chkpt/%ld/v%d/shared_obj_%u.bin",
-				  app->app_id, chkpt_sn, kerrighed_node_id);
+				  "%s/shared_obj_%u.bin",
+				  app->restart.storage_dir, kerrighed_node_id);
 			goto err_import;
+		}
+
+		if (ghost_offsets[idx] == 0) {
+			r = ghost_read_type(ghost, r_app_id);
+			if (r)
+				goto err;
+
+			if (r_app_id != app->app_id) {
+				r = -E_CR_BADDATA;
+				goto err;
+			}
+
+			ghost_offsets[idx] = get_file_ghost_pos(ghost);
 		}
 
 		set_file_ghost_pos(ghost, ghost_offsets[idx]);
@@ -1754,8 +1772,7 @@ err_close_ghost:
 
 int local_restart_shared(struct rpc_desc *desc,
 			 struct app_struct *app,
-			 struct task_struct *fake,
-			 int chkpt_sn)
+			 struct task_struct *fake)
 {
 
 	loff_t *ghost_offsets;
@@ -1778,14 +1795,14 @@ int local_restart_shared(struct rpc_desc *desc,
 		goto err_ghost_offset;
 
 	/* 2) restore pipes and files */
-	r = local_restart_shared_objects(desc, app, fake, chkpt_sn,
+	r = local_restart_shared_objects(desc, app, fake,
 					 PIPE_INODE, DVFS_FILE,
 					 ghost_offsets);
 	if (r)
 		goto err_ghost_offset;
 
 	/* 3) restore other objects */
-	r = local_restart_shared_objects(desc, app, fake, chkpt_sn,
+	r = local_restart_shared_objects(desc, app, fake,
 					 FILES_STRUCT, SIGNAL_STRUCT,
 					 ghost_offsets);
 	if (r)

@@ -109,15 +109,25 @@ static int proc_app_chkpt(void __user *arg)
 {
 	int res;
 	struct checkpoint_info ckpt_info;
+	char *storage_dir;
 
 	if (copy_from_user(&ckpt_info, arg, sizeof(ckpt_info)))
 		return -EFAULT;
 
+	res = copy_user_array((void**)&storage_dir, ckpt_info.storage_dir.path,
+			      ckpt_info.storage_dir.len);
+	if (res)
+		goto out;
+
+	ckpt_info.storage_dir.path = storage_dir;
+
 	res = sys_app_chkpt(&ckpt_info);
 
 	if (copy_to_user(arg, &ckpt_info, sizeof(ckpt_info)))
-		return -EFAULT;
+		res = -EFAULT;
 
+	kfree(storage_dir);
+out:
 	return res;
 }
 
@@ -134,16 +144,24 @@ static int proc_app_restart(void __user *arg)
 	unsigned int i = 0;
 	struct restart_request restart_req;
 
+	char *storage_dir;
 	size_t file_str_len;
 	struct cr_subst_file *files = NULL;
 
 	if (copy_from_user(&restart_req, arg, sizeof(restart_req)))
 		return -EFAULT;
 
+	/* get the storage _dir */
+	res = copy_user_array((void**)&storage_dir,
+			      restart_req.storage_dir.path,
+			      restart_req.storage_dir.len);
+	if (res)
+		goto error;
+
 	/* let's say that a user can not substitute more that 256 files */
 	if (restart_req.substitution.nr > 256) {
 		res = -E2BIG;
-		goto error;
+		goto err_free_storage;
 	}
 
 	/* first basic check about files substitution args */
@@ -152,7 +170,7 @@ static int proc_app_restart(void __user *arg)
 			goto call_restart;
 
 		res = -EINVAL;
-		goto error;
+		goto err_free_storage;
 	}
 
 	/* get the list of files to replace */
@@ -161,7 +179,7 @@ static int proc_app_restart(void __user *arg)
 			      restart_req.substitution.nr *
 			      sizeof(struct cr_subst_file));
 	if (res)
-		goto error;
+		goto err_free_storage;
 
 	file_str_len = sizeof(kerrighed_node_t)*2 + sizeof(unsigned long)*2;
 
@@ -182,6 +200,7 @@ static int proc_app_restart(void __user *arg)
 		}
 	}
 
+	restart_req.storage_dir.path = storage_dir;
 	restart_req.substitution.files = files;
 
 call_restart:
@@ -200,6 +219,8 @@ err_free_files:
 
 		kfree(files[i].file_id);
 	}
+err_free_storage:
+	kfree(storage_dir);
 error:
 	return res;
 }

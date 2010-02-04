@@ -28,29 +28,19 @@ struct file_ghost_data {
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-int mkdir_chkpt_path(long app_id, unsigned int chkpt_sn);
-
-char *get_chkpt_dir(long app_id, unsigned int chkpt_sn);
-
-char *get_chkpt_filebase(long app_id,
-			 unsigned int chkpt_sn,
-			 const char *format,
-			 ...);
+char *get_chkpt_filebase(const char *format, ...);
 
 /** Create a new file ghost.
  *  @author Matthieu Fertré, Renaud Lottiaux
  *
  *  @param  access   Ghost access (READ/WRITE)
- *  @param  file     File to read/write data to/from.
+ *  @param  format   String format for the pathname.
  *
  *  @return        ghost_t if everything ok
  *                 ERR_PTR otherwise.
  */
-ghost_t *create_file_ghost(int access,
-			   long app_id,
-			   unsigned int chkpt_sn,
-			   const char *format,
-			   ...);
+ghost_t *create_file_ghost(int access, const char *format, ...);
+
 void unlink_file_ghost(ghost_t *ghost);
 
 /** Create a new file ghost.
