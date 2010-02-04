@@ -31,10 +31,10 @@ static int restore_app_kddm_object(struct app_kddm_object *obj,
 {
 	ghost_fs_t oldfs;
 	ghost_t *ghost;
-	long tmpl;
-	int tmpi;
+	long r_appid;
+	int r_chkpt_sn;
 	int r = 0;
-	int magic = 4342338;
+	int r_magic, magic = 4342338;
 	u32 linux_version;
 	char compile_info[MAX_GHOST_STRING];
 
@@ -99,20 +99,20 @@ static int restore_app_kddm_object(struct app_kddm_object *obj,
 		goto err_kernel_version;
 
 	/* check some information about the checkpoint itself */
-	r = ghost_read(ghost, &tmpl, sizeof(tmpl));
+	r = ghost_read_type(ghost, r_appid);
 	if (r)
 		goto err_read;
 
-	if (tmpl != app_id) {
+	if (r_appid != app_id) {
 		r = -E_CR_BADDATA;
 		goto err_read;
 	}
 
-	r = ghost_read(ghost, &tmpi, sizeof(tmpi));
+	r = ghost_read_type(ghost, r_chkpt_sn);
 	if (r)
 		goto err_read;
 
-	if (tmpi != chkpt_sn) {
+	if (r_chkpt_sn != chkpt_sn) {
 		r = -E_CR_BADDATA;
 		goto err_read;
 	}
@@ -129,11 +129,11 @@ static int restore_app_kddm_object(struct app_kddm_object *obj,
 	if (r)
 		goto err_read;
 
-	r = ghost_read(ghost, &tmpi, sizeof(tmpi));
+	r = ghost_read_type(ghost, r_magic);
 	if (r)
 		goto err_read;
 
-	if (tmpi != magic) {
+	if (r_magic != magic) {
 		r = -E_CR_BADDATA;
 		goto err_read;
 	}
