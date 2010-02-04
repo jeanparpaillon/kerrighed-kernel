@@ -66,6 +66,41 @@ err_rpc:
 	goto exit;
 }
 
+static inline int send_storage_dir(struct rpc_desc *desc,
+				   const char *storage_dir)
+{
+	int r, len;
+	len = strlen(storage_dir) + 1;
+
+	r = rpc_pack_type(desc, len);
+	if (r)
+		goto err;
+
+	r = rpc_pack(desc, 0, storage_dir, len);
+err:
+	return r;
+}
+
+static inline int rcv_storage_dir(struct rpc_desc *desc,
+				  char **storage_dir)
+{
+	int r, len;
+
+	r = rpc_unpack_type(desc, len);
+	if (r)
+		goto err;
+
+	*storage_dir = kmalloc(len, GFP_KERNEL);
+	if (!*storage_dir) {
+		r = -ENOMEM;
+		goto err;
+	}
+
+	r = rpc_unpack(desc, 0, *storage_dir, len);
+err:
+	return r;
+}
+
 struct task_struct *alloc_shared_fake_task_struct(struct app_struct *app);
 
 void free_shared_fake_task_struct(struct task_struct *fake);

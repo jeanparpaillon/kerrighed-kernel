@@ -121,18 +121,16 @@ int checkpoint_task_on_disk(struct epm_action *action,
 	struct app_struct *app = task_to_checkpoint->application;
 	BUG_ON(!app);
 
-	ghost = create_file_ghost(GHOST_WRITE,
-				  app->app_id,
-				  app->chkpt_sn,
-				  "task_%d.bin",
+	ghost = create_file_ghost(GHOST_WRITE, "%s/task_%d.bin",
+				  app->checkpoint.storage_dir,
 				  task_pid_knr(task_to_checkpoint));
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
 		ckpt_err(action, r,
-			 "Fail to create file /var/chkpt/%ld/v%d/task_%d.bin "
+			 "Fail to create file %s/task_%d.bin "
 			 "to checkpoint process %d",
-			 app->app_id, app->chkpt_sn,
+			 app->checkpoint.storage_dir,
 			 task_pid_knr(task_to_checkpoint),
 			 task_pid_knr(task_to_checkpoint));
 		goto exit;

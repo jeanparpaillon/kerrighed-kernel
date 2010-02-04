@@ -82,7 +82,6 @@ struct app_kddm_object {
 
 struct app_struct {
 	long app_id;
-	int chkpt_sn;
 
 	spinlock_t lock;
 	struct completion tasks_chkpted;
@@ -99,12 +98,14 @@ struct app_struct {
 
 	union {
 		struct {
+			char *storage_dir;
 			int flags;
 
 			struct cr_mm_region *first_mm_region;
 		} checkpoint;
 
 		struct {
+			const char *storage_dir;
 			krgnodemask_t replacing_nodes;
 			pid_t substitution_pgrp;
 			pid_t substitution_sid;

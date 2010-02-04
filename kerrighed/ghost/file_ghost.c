@@ -183,138 +183,20 @@ void unset_ghost_fs(const ghost_fs_t *oldfs)
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-// Path where file ghost are saved
-#define CHECKPOINT_PATH "/var/chkpt/"
-#define CHECKPOINT_PATH_LENGTH 45
 
-char checkpointRoot[CHECKPOINT_PATH_LENGTH] = CHECKPOINT_PATH;
-
-char *get_chkpt_dir(long app_id,
-		    unsigned int chkpt_sn)
-{
-	char *buff;
-	char *dirname;
-
-	buff = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
-	if (!buff) {
-		dirname = ERR_PTR(-ENOMEM);
-		goto err_buff;
-	}
-
-	dirname = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
-	if (!dirname) {
-		dirname = ERR_PTR(-ENOMEM);
-		goto err_dirname;
-	}
-
-	snprintf(dirname, PATH_MAX, "%s", checkpointRoot);
-
-	if (app_id) {
-		snprintf(buff, PATH_MAX, "%ld/", app_id);
-		strncat(dirname, buff, PATH_MAX);
-	}
-
-	if (chkpt_sn) {
-		snprintf(buff, PATH_MAX, "v%d/", chkpt_sn);
-		strncat(dirname, buff, PATH_MAX);
-	}
-
-err_dirname:
-	kfree(buff);
-err_buff:
-	return dirname;
-}
-
-static char *__get_chkpt_filebase(long app_id,
-				  unsigned int chkpt_sn,
-				  const char *format,
-				  va_list args)
-{
-	char *full_path;
-	char *rel_path;
-
-	full_path = get_chkpt_dir(app_id, chkpt_sn);
-	if (IS_ERR(full_path))
-		goto err;
-
-	rel_path = kvasprintf(GFP_KERNEL, format, args);
-	if (!rel_path) {
-		kfree(full_path);
-		full_path = ERR_PTR(-ENOMEM);
-		goto err;
-	}
-
-	strncat(full_path, rel_path, PATH_MAX);
-
-err:
-	return full_path;
-}
-
-char *get_chkpt_filebase(long app_id,
-			 unsigned int chkpt_sn,
-			 const char *format,
-			 ...)
+char *get_chkpt_filebase(const char *format, ...)
 {
 	va_list args;
 	char *filename;
 
 	va_start(args, format);
-	filename = __get_chkpt_filebase(app_id, chkpt_sn, format, args);
+	filename = kvasprintf(GFP_KERNEL, format, args);
 	va_end(args);
 
+	if (!filename)
+		filename = ERR_PTR(-ENOMEM);
+
 	return filename;
-}
-
-int mkdir_chkpt_path(long app_id, unsigned int chkpt_sn)
-{
-	char *buff;
-	char *dirname;
-	int r;
-
-	buff = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
-	if (!buff) {
-		r = -ENOMEM;
-		goto err_buff;
-	}
-
-	dirname = kmalloc(PATH_MAX*sizeof(char), GFP_KERNEL);
-	if (!dirname) {
-		r = -ENOMEM;
-		goto err_dirname;
-	}
-
-	snprintf(dirname, PATH_MAX, "%s", checkpointRoot);
-
-	if (app_id) {
-		snprintf(buff, PATH_MAX, "%ld/", app_id);
-		strncat(dirname, buff, PATH_MAX);
-	}
-
-	r = sys_mkdir(dirname, S_IRWXUGO|S_ISVTX);
-	if (r && r != -EEXIST)
-		goto err;
-
-	/* really force the mode without looking at umask */
-	r = sys_chmod(dirname, S_IRWXUGO|S_ISVTX);
-	if (r)
-		goto err;
-
-	if (chkpt_sn) {
-		snprintf(buff, PATH_MAX, "v%d/", chkpt_sn);
-		strncat(dirname, buff, PATH_MAX);
-
-		r = sys_mkdir(dirname, S_IRWXU);
-		if (r && r != -EEXIST)
-			goto err;
-		r = 0;
-	}
-
-err:
-	kfree(dirname);
-err_dirname:
-	kfree(buff);
-err_buff:
-	return r;
 }
 
 static ghost_t *__create_file_ghost(int access, struct file *file, int from_fd)
@@ -362,11 +244,7 @@ err_file:
  *  @return        ghost_t if everything ok
  *                 ERR_PTR otherwise.
  */
-ghost_t *create_file_ghost(int access,
-			   long app_id,
-			   unsigned int chkpt_sn,
-			   const char *format,
-			   ...)
+ghost_t *create_file_ghost(int access, const char *format, ...)
 {
 	struct file *file;
 	va_list args;
@@ -378,20 +256,13 @@ ghost_t *create_file_ghost(int access,
 
 	chroot_to_physical_root(&prev_root);
 
-	/* Create directory if not exist */
-	if (access & GHOST_WRITE) {
-		r = mkdir_chkpt_path(app_id, chkpt_sn);
-		if (r)
-			goto err;
-	}
-
 	/* Create a ghost to host the checkoint */
 	va_start(args, format);
-	filename = __get_chkpt_filebase(app_id, chkpt_sn, format, args);
+	filename = kvasprintf(GFP_KERNEL, format, args);
 	va_end(args);
 
-	if (IS_ERR(filename)) {
-		r = PTR_ERR(filename);
+	if (!filename) {
+		r = -ENOMEM;
 		goto err;
 	}
 
