@@ -191,15 +191,24 @@ void handle_faf_ioctl(struct rpc_desc *desc,
 	long r;
 	int err;
 
-	err = prepare_ruaccess(desc);
-	if (err)
-		goto out_err;
-	r = sys_ioctl (msg->server_fd, msg->cmd, msg->arg);
-	err = cleanup_ruaccess(desc);
+	err = remote_sleep_prepare(desc);
 	if (err)
 		goto out_err;
 
+	err = prepare_ruaccess(desc);
+	if (err)
+		goto out_sleep_finish;
+
+	r = sys_ioctl(msg->server_fd, msg->cmd, msg->arg);
+
+	err = cleanup_ruaccess(desc);
+	if (err)
+		goto out_sleep_finish;
+
 	err = rpc_pack_type(desc, r);
+
+out_sleep_finish:
+	remote_sleep_finish();
 	if (err)
 		goto out_err;
 	return;
@@ -227,7 +236,13 @@ void handle_faf_fcntl (struct rpc_desc* desc,
 	else
 		arg = msg->arg;
 
+	err = remote_sleep_prepare(desc);
+	if (err)
+		goto cancel;
+
 	r = sys_fcntl (msg->server_fd, msg->cmd, arg);
+
+	remote_sleep_finish();
 
 	err = rpc_pack_type(desc, r);
 	if (unlikely(err))
@@ -264,7 +279,13 @@ void handle_faf_fcntl64 (struct rpc_desc* desc,
 	else
 		arg = msg->arg;
 
+	err = remote_sleep_prepare(desc);
+	if (err)
+		goto cancel
+
 	r = sys_fcntl64 (msg->server_fd, msg->cmd, arg);
+
+	remote_sleep_finish();
 
 	err = rpc_pack_type(desc, r);
 	if (unlikely(err))
@@ -388,15 +409,29 @@ int handle_faf_fsync (struct rpc_desc* desc,
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-int handle_faf_flock (struct rpc_desc* desc,
+void handle_faf_flock(struct rpc_desc *desc,
                       void *msgIn, size_t size)
 {
 	struct faf_ctl_msg *msg = msgIn;
 	long r = -EINVAL;
+	int err;
+
+	r = remote_sleep_prepare(desc);
+	if (r)
+		goto cancel;
 
 	r = sys_flock (msg->server_fd, msg->cmd);
 
-	return r;
+	remote_sleep_finish();
+
+	err = rpc_pack_type(desc, r);
+	if (err)
+		goto cancel;
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
 }
 
 /*
@@ -817,16 +852,29 @@ int handle_faf_bind (struct rpc_desc* desc,
 	return r;
 }
 
-int handle_faf_connect (struct rpc_desc* desc,
+void handle_faf_connect(struct rpc_desc *desc,
 			void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
-	int r;
+	int r, err;
+
+	r = remote_sleep_prepare(desc);
+	if (r)
+		goto cancel;
 
 	r = sys_connect(msg->server_fd,
 			(struct sockaddr *)&msg->sa, msg->addrlen);
 
-	return r;
+	remote_sleep_finish();
+
+	err = rpc_pack_type(desc, r);
+	if (err)
+		goto cancel;
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
 }
 
 int handle_faf_listen (struct rpc_desc* desc,
@@ -923,88 +971,163 @@ int handle_faf_getpeername (struct rpc_desc* desc,
 	return r;
 }
 
-int handle_faf_send (struct rpc_desc* desc,
+void handle_faf_send(struct rpc_desc *desc,
                      void *msgIn, size_t size)
 {
 	struct faf_send_msg *msg = msgIn;
-	int r = -ENOMEM;
+	int r = -ENOMEM, err;
 	void *buff;
+
+	err = remote_sleep_prepare(desc);
+	if (err)
+		goto cancel;
 
 	buff = vmalloc(msg->len);
 	if (buff) {
-		rpc_unpack(desc, 0, buff, msg->len);
-		r = sys_send(msg->server_fd, buff, msg->len, msg->flags);
+		err = rpc_unpack(desc, 0, buff, msg->len);
+		if (!err)
+			r = sys_send(msg->server_fd, buff, msg->len, msg->flags);
 		vfree(buff);
 	}
 
-	return r;
+	remote_sleep_finish();
+
+	if (err)
+		goto cancel;
+
+	err = rpc_pack_type(desc, r);
+	if (err)
+		goto cancel;
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
 }
 
-int handle_faf_sendto (struct rpc_desc* desc,
-                     void *msgIn, size_t size)
+void handle_faf_sendto(struct rpc_desc *desc,
+                       void *msgIn, size_t size)
 {
 	struct faf_sendto_msg *msg = msgIn;
-	int r = -ENOMEM;
+	int r = -ENOMEM, err;
 	void *buff;
+
+	err = remote_sleep_prepare(desc);
+	if (err)
+		goto cancel;
 
 	buff = vmalloc(msg->len);
 
 	if (buff) {
-		rpc_unpack(desc, 0, buff, msg->len);
-		r = sys_sendto(msg->server_fd, buff, msg->len, msg->flags,
-			       (struct sockaddr *)&msg->sa, msg->addrlen);
+		err = rpc_unpack(desc, 0, buff, msg->len);
+		if (!err)
+			r = sys_sendto(msg->server_fd, buff, msg->len, msg->flags,
+				       (struct sockaddr *)&msg->sa, msg->addrlen);
 		vfree(buff);
 	}
 
-	return r;
+	remote_sleep_finish();
+
+	if (err)
+		goto cancel;
+
+	err = rpc_pack_type(desc, r);
+	if (err)
+		goto cancel;
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
 }
 
-int handle_faf_recv (struct rpc_desc* desc,
+void handle_faf_recv(struct rpc_desc *desc,
                      void *msgIn, size_t size)
 {
 	struct faf_send_msg *msg = msgIn;
-	int r = -ENOMEM;
+	int r = -ENOMEM, err;
 	void *buff;
 
 	buff = vmalloc(msg->len);
 	if (!buff)
 		goto exit;
 
+	err = remote_sleep_prepare(desc);
+	if (err) {
+		vfree(buff);
+		goto cancel;
+	}
+
 	r = sys_recv(msg->server_fd, buff, msg->len, msg->flags);
 
-	if (r > 0)
-		rpc_pack(desc, 0, buff, r);
+	remote_sleep_finish();
 
-	vfree(buff);
 exit:
-	return r;
+	err = rpc_pack_type(desc, r);
+	if (err)
+		goto cancel;
+
+	if (r > 0) {
+		err = rpc_pack(desc, 0, buff, r);
+		if (err)
+			goto cancel;
+	}
+	if (buff)
+		vfree(buff);
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
 }
 
 int handle_faf_recvfrom (struct rpc_desc* desc,
                      void *msgIn, size_t size)
 {
 	struct faf_sendto_msg *msg = msgIn;
-	int r = -ENOMEM;
+	int r = -ENOMEM, err;
 	void *buff;
 
 	buff = vmalloc(msg->len);
 	if (!buff)
 		goto exit;
 
+	err = remote_sleep_prepare(desc);
+	if (err) {
+		vfree(buff);
+		goto cancel;
+	}
+
 	r = sys_recvfrom(msg->server_fd, buff, msg->len, msg->flags,
 			 (struct sockaddr *)&msg->sa, &msg->addrlen);
 
-	if (r > 0)
-		rpc_pack(desc, 0, buff, r);
+	remote_sleep_finish();
 
+exit:
+	err = rpc_pack_type(desc, r);
+	if (err)
+		goto cancel;
+
+	if (r > 0) {
+		 err = rpc_pack(desc, 0, buff, r);
+		 if (err)
+			 goto cancel;
+	}
 	if (r >= 0) {
-		rpc_pack_type(desc, msg->addrlen);
-		rpc_pack(desc, 0, &msg->sa, msg->addrlen);
+		err = rpc_pack_type(desc, msg->addrlen);
+		if (err)
+			goto cancel;
+		err = rpc_pack(desc, 0, &msg->sa, msg->addrlen);
+		if (err)
+			goto cancel;
 	}
 
 	vfree(buff);
-exit:
-	return r;
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
 }
 
 int handle_faf_shutdown (struct rpc_desc* desc,
@@ -1075,42 +1198,85 @@ out_err:
 	goto exit;
 }
 
-int handle_faf_sendmsg (struct rpc_desc* desc,
+void handle_faf_sendmsg(struct rpc_desc *desc,
 			void *msgIn, size_t size)
 {
 	struct faf_sendmsg_msg *msg = msgIn;
-	int r;
+	int r, err;
 	struct msghdr msghdr;
 
 	memset(&msghdr, 0, sizeof(msghdr));
 
-	recv_msghdr(desc, &msghdr, 0);
+	err = recv_msghdr(desc, &msghdr, 0);
+	if (err) {
+		rpc_cancel(desc);
+		return;
+	}
+
+	err = remote_sleep_prepare(desc);
+	if (err)
+		goto cancel;
 
 	r = sys_sendmsg (msg->server_fd, &msghdr, msg->flags);
 
+	remote_sleep_finish();
+
+	err = rpc_pack_type(desc, r);
+	if (err)
+		goto cancel;
+
+out_free:
 	free_msghdr(&msghdr);
 
-	return r;
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto out_free;
 }
 
-int handle_faf_recvmsg (struct rpc_desc* desc,
+void handle_faf_recvmsg(struct rpc_desc *desc,
 			void *msgIn, size_t size)
 {
 	struct faf_sendmsg_msg *msg = msgIn;
-	int r;
+	int r, err;
 	struct msghdr msghdr;
 
 	memset(&msghdr, 0, sizeof(msghdr));
 
-	recv_msghdr(desc, &msghdr, 0);
+	err = recv_msghdr(desc, &msghdr, 0);
+	if (err) {
+		rpc_cancel(desc);
+		return;
+	}
+
+	err = remote_sleep_prepare(desc);
+	if (err)
+		goto cancel;
 
 	r = sys_recvmsg(msg->server_fd, &msg->msghdr, msg->flags);
 
-	send_msghdr(desc, &msghdr, 0);
+	remote_sleep_finish();
 
+	err = rpc_pack_type(desc, r);
+	if (err)
+		goto cancel;
+
+	if (r < 0)
+		goto out_free;
+
+	err = send_msghdr(desc, &msghdr, 0);
+	if (err)
+		goto cancel;
+
+out_free:
 	free_msghdr(&msghdr);
 
-	return r;
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto out_free;
 }
 
 int handle_faf_notify_close (struct rpc_desc* desc,
@@ -1150,26 +1316,26 @@ void faf_server_init (void)
 	rpc_register_void(RPC_FAF_FSTAT, handle_faf_fstat, 0);
 	rpc_register_void(RPC_FAF_FSTATFS, handle_faf_fstatfs, 0);
 	rpc_register_int(RPC_FAF_FSYNC, handle_faf_fsync, 0);
-	rpc_register_int(RPC_FAF_FLOCK, handle_faf_flock, 0);
+	rpc_register_void(RPC_FAF_FLOCK, handle_faf_flock, 0);
 	rpc_register_void(RPC_FAF_LSEEK, handle_faf_lseek, 0);
 	rpc_register_void(RPC_FAF_LLSEEK, handle_faf_llseek, 0);
 	rpc_register_void(RPC_FAF_D_PATH, handle_faf_d_path, 0);
 
 	rpc_register_int(RPC_FAF_BIND, handle_faf_bind, 0);
-	rpc_register_int(RPC_FAF_CONNECT, handle_faf_connect, 0);
+	rpc_register_void(RPC_FAF_CONNECT, handle_faf_connect, 0);
 	rpc_register_int(RPC_FAF_LISTEN, handle_faf_listen, 0);
 	rpc_register_void(RPC_FAF_ACCEPT, handle_faf_accept, 0);
 	rpc_register_int(RPC_FAF_GETSOCKNAME, handle_faf_getsockname, 0);
 	rpc_register_int(RPC_FAF_GETPEERNAME, handle_faf_getpeername, 0);
-	rpc_register_int(RPC_FAF_SEND, handle_faf_send, 0);
-	rpc_register_int(RPC_FAF_SENDTO, handle_faf_sendto, 0);
-	rpc_register_int(RPC_FAF_RECV, handle_faf_recv, 0);
-	rpc_register_int(RPC_FAF_RECVFROM, handle_faf_recvfrom, 0);
+	rpc_register_void(RPC_FAF_SEND, handle_faf_send, 0);
+	rpc_register_void(RPC_FAF_SENDTO, handle_faf_sendto, 0);
+	rpc_register_void(RPC_FAF_RECV, handle_faf_recv, 0);
+	rpc_register_void(RPC_FAF_RECVFROM, handle_faf_recvfrom, 0);
 	rpc_register_int(RPC_FAF_SHUTDOWN, handle_faf_shutdown, 0);
 	rpc_register_void(RPC_FAF_SETSOCKOPT, handle_faf_setsockopt, 0);
 	rpc_register_void(RPC_FAF_GETSOCKOPT, handle_faf_getsockopt, 0);
-	rpc_register_int(RPC_FAF_SENDMSG, handle_faf_sendmsg, 0);
-	rpc_register_int(RPC_FAF_RECVMSG, handle_faf_recvmsg, 0);
+	rpc_register_void(RPC_FAF_SENDMSG, handle_faf_sendmsg, 0);
+	rpc_register_void(RPC_FAF_RECVMSG, handle_faf_recvmsg, 0);
 	rpc_register_int(RPC_FAF_NOTIFY_CLOSE, handle_faf_notify_close, 0);
 }
 

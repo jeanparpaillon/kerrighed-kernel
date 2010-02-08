@@ -258,10 +258,14 @@ long krg_faf_ioctl (struct file *file,
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto out_cancel;
+
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto out_cancel;
 	err = handle_ruaccess(desc);
 	if (err)
 		goto out_cancel;
-	err = rpc_unpack_type(desc, r);
+	err = unpack_remote_sleep_res_type(desc, r);
 	if (err)
 		goto out_cancel;
 	rpc_end(desc, 0);
@@ -315,7 +319,10 @@ long krg_faf_fcntl (struct file *file,
 	if (unlikely(err))
 		goto cancel;
 
-	err = rpc_unpack_type(desc, r);
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
+	err = unpack_remote_sleep_res_type(desc, r);
 	if (unlikely(err))
 		goto cancel;
 
@@ -378,7 +385,10 @@ long krg_faf_fcntl64 (struct file *file,
 	if (unlikely(err))
 		goto cancel;
 
-	err = rpc_unpack_type(desc, r);
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
+	err = unpack_remote_sleep_res_type(desc, r);
 	if (unlikely(err))
 		goto cancel;
 
@@ -505,14 +515,36 @@ long krg_faf_flock (struct file *file,
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_ctl_msg msg;
+	struct rpc_desc *desc;
 	long r;
+	int err;
 
 	msg.server_fd = data->server_fd;
 	msg.cmd = cmd;
 
-	r = rpc_sync(RPC_FAF_FLOCK, data->server_id, &msg, sizeof(msg));
+	desc = rpc_begin(RPC_FAF_FLOCK, data->server_id);
+	if (!desc)
+		return -ENOMEM;
 
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
+	err = unpack_remote_sleep_res_type(desc, r);
+	if (err)
+		goto cancel;
+
+out_end:
+	rpc_end(desc, 0);
 	return r;
+
+cancel:
+	rpc_cancel(desc);
+	r = err;
+	goto out_end;
 }
 
 /** Kerrighed FAF d_path function.
@@ -625,7 +657,8 @@ long krg_faf_connect (struct file * file,
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_bind_msg msg;
-	long r;
+	struct rpc_desc *desc;
+	int r, err;
 
 	msg.server_fd = data->server_fd;
 
@@ -634,10 +667,34 @@ long krg_faf_connect (struct file * file,
 		goto out;
 
 	msg.addrlen = addrlen;
-	r = rpc_sync(RPC_FAF_CONNECT, data->server_id, &msg, sizeof(msg));
+
+	desc = rpc_begin(RPC_FAF_CONNECT, data->server_id);
+	if (!desc) {
+		r = -ENOMEM;
+		goto out;
+	}
+
+	err = rpc_pack_type(desc, msg);
+	if (r)
+		goto cancel;
+
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
+	err = unpack_remote_sleep_res_type(desc, r);
+	if (err)
+		goto cancel;
+
+out_end:
+	rpc_end(desc, 0);
 
 out:
 	return r;
+
+cancel:
+	rpc_cancel(desc);
+	r = err;
+	goto out_end;
 }
 
 long krg_faf_listen (struct file * file,
@@ -838,14 +895,12 @@ long krg_faf_send (struct file * file,
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_send_msg msg;
-	int r;
+	int r = -ENOMEM, err;
 	void *buff;
 
 	buff = vmalloc(len);
-	if (!buff) {
-		r = -ENOMEM;
+	if (!buff)
 		goto out;
-	}
 
 	if(!copy_from_user(buff, _buff, len)){
 		struct rpc_desc* desc;
@@ -856,19 +911,46 @@ long krg_faf_send (struct file * file,
 		msg.len = len;
 
 		desc = rpc_begin(RPC_FAF_SEND, data->server_id);
-		rpc_pack_type(desc, msg);
-		rpc_pack(desc, 0, buff, len);
+		if (!desc)
+			goto out_free;
 
-		rpc_unpack_type(desc, r);
+		err = rpc_pack_type(desc, msg);
+		if (err)
+			goto cancel;
+		err = rpc_pack(desc, 0, buff, len);
+		if (err)
+			goto cancel;
+
+		/*
+		 * Optimization: Allow server to receive its data before
+		 * we wait for its notification of being ready to handle
+		 * signals.
+		 * WARNING: we assume that unpack_remote_sleep_res_prepare()
+		 * does _not_ call rpc_pack()
+		 */
+		err = unpack_remote_sleep_res_prepare(desc);
+		if (err)
+			goto cancel;
+		err = unpack_remote_sleep_res_type(desc, r);
+		if (err)
+			goto cancel;
+
 		rpc_end(desc, 0);
 	} else {
 		r = -EFAULT;
 	}
 
+out_free:
 	vfree(buff);
 
 out:
 	return r;
+
+cancel:
+	rpc_cancel(desc);
+	rpc_end(desc, 0);
+	r = err;
+	goto out_free;
 }
 
 long krg_faf_sendto (struct file * file,
@@ -881,7 +963,7 @@ long krg_faf_sendto (struct file * file,
 	faf_client_data_t *data = file->private_data;
 	struct faf_sendto_msg msg;
 	void *buff;
-	int r;
+	int r, err;
 
 	if (addr) {
 		r = move_addr_to_kernel(addr, addr_len, (struct sockaddr *)&msg.sa);
@@ -892,11 +974,10 @@ long krg_faf_sendto (struct file * file,
 		msg.addrlen = 0;
 	}
 
+	r = -ENOMEM;
 	buff = vmalloc(len);
-	if (!buff) {
-		r = -ENOMEM;
+	if (!buff)
 		goto out;
-	}
 
 	if(!copy_from_user(buff, _buff, len)){
 		struct rpc_desc* desc;
@@ -906,19 +987,40 @@ long krg_faf_sendto (struct file * file,
 		msg.flags = flags;
 
 		desc = rpc_begin(RPC_FAF_SENDTO, data->server_id);
-		rpc_pack_type(desc, msg);
-		rpc_pack(desc, 0, buff, len);
+		if (!desc)
+			goto out_free;
 
-		rpc_unpack_type(desc, r);
+		err = rpc_pack_type(desc, msg);
+		if (err)
+			goto cancel;
+		err = rpc_pack(desc, 0, buff, len);
+		if (err)
+			goto cancel;
+
+		/* Same optimization as in krg_faf_send() */
+		err = unpack_remote_sleep_res_prepare(desc);
+		if (err)
+			goto cancel;
+		err = unpack_remote_sleep_res_type(desc, r);
+		if (err)
+			goto cancel;
+
 		rpc_end(desc, 0);
 
 	} else
 		r = -EFAULT;
 
+out_free:
 	vfree(buff);
 
 out:
 	return r;
+
+cancel:
+	rpc_cancel(desc);
+	rpc_end(desc, 0);
+	r = err;
+	goto out_free;
 }
 
 
@@ -930,7 +1032,7 @@ long krg_faf_recv (struct file * file,
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_send_msg msg;
-	int r;
+	int r, err;
 	void *buff;
 	struct rpc_desc* desc;
 
@@ -943,20 +1045,43 @@ long krg_faf_recv (struct file * file,
 	msg.flags = flags;
 
 	desc = rpc_begin(RPC_FAF_RECV, data->server_id);
-	rpc_pack_type (desc, msg);
-	rpc_unpack_type(desc, r);
+	if (!desc) {
+		r = -ENOMEM;
+		goto out_free;
+	}
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
+	err = unpack_remote_sleep_res_type(desc, r);
+	if (err)
+		goto cancel;
 
 	if (r > 0) {
-		rpc_unpack(desc, 0, buff, r);
+		err = rpc_unpack(desc, 0, buff, r);
+		if (err)
+			goto cancel;
 
 		if (copy_to_user(ubuf, buff, r))
 			r = -EFAULT;
 	}
+out_end:
 	rpc_end(desc, 0);
 
+out_free:
 	vfree(buff);
 
 	return r;
+
+cancel:
+	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
+	r = err;
+	goto out_end;
 }
 
 long krg_faf_recvfrom (struct file * file,
@@ -968,7 +1093,7 @@ long krg_faf_recvfrom (struct file * file,
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_sendto_msg msg;
-	int r;
+	int r, err;
 	void *buff;
 	struct sockaddr_storage sa;
 	int sa_len;
@@ -982,27 +1107,44 @@ long krg_faf_recvfrom (struct file * file,
 		msg.addrlen = 0;
 	}
 
+	r = -ENOMEM;
 	buff = vmalloc(size);
-	if (!buff) {
-		r = -ENOMEM;
+	if (!buff)
 		goto out;
-	}
 
 	msg.server_fd = data->server_fd;
 	msg.len = size;
 	msg.flags = flags;
 
 	desc = rpc_begin(RPC_FAF_RECVFROM, data->server_id);
-	rpc_pack_type (desc, msg);
-	rpc_unpack_type(desc, r);
+	if (!desc)
+		goto out_free;
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
 
-	if( r > 0)
-		rpc_unpack(desc, 0, buff, r);
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
+	err = unpack_remote_sleep_res_type(desc, r);
+	if (err)
+		goto cancel;
+
+	if( r > 0) {
+		err = rpc_unpack(desc, 0, buff, r);
+		if (err)
+			goto cancel;
+	}
 
 	if (r >= 0) {
-		rpc_unpack_type(desc, sa_len);
-		rpc_unpack(desc, 0, &sa, sa_len);
+		err = rpc_unpack_type(desc, sa_len);
+		if (err)
+			goto cancel;
+		err = rpc_unpack(desc, 0, &sa, sa_len);
+		if (err)
+			goto cancel;
 	}
+out_end:
 	rpc_end(desc, 0);
 
 	if (r < 0)
@@ -1026,6 +1168,13 @@ out_free:
 
 out:
 	return r;
+
+cancel:
+	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
+	r = err;
+	goto out_end;
 }
 
 long krg_faf_shutdown (struct file * file,
@@ -1146,7 +1295,7 @@ long krg_faf_sendmsg (struct file * file,
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_sendmsg_msg msg;
-	int r;
+	int r, err;
 	struct rpc_desc* desc;
 
 	msg.server_fd = data->server_fd;
@@ -1154,14 +1303,32 @@ long krg_faf_sendmsg (struct file * file,
 	msg.flags = flags;
 
 	desc = rpc_begin(RPC_FAF_SENDMSG, data->server_id);
-	rpc_pack_type(desc, msg);
+	if (!desc)
+		return -ENOMEM;
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
 
-	send_msghdr(desc, msghdr, 1);
+	err = send_msghdr(desc, msghdr, 1);
+	if (err)
+		goto cancel;
 
-	rpc_unpack_type(desc, r);
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
+	err = unpack_remote_sleep_res_type(desc, r);
+	if (err)
+		goto cancel;
+
+out_end:
 	rpc_end(desc, 0);
 
 	return r;
+
+cancel:
+	rpc_cancel(desc);
+	r = err;
+	goto out_end;
 }
 
 long krg_faf_recvmsg(struct file * file,
@@ -1170,7 +1337,7 @@ long krg_faf_recvmsg(struct file * file,
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_sendmsg_msg msg;
-	int r;
+	int r, err;
 	struct rpc_desc* desc;
 
 	msg.server_fd = data->server_fd;
@@ -1178,16 +1345,41 @@ long krg_faf_recvmsg(struct file * file,
 	msg.flags = flags;
 
 	desc = rpc_begin(RPC_FAF_RECVMSG, data->server_id);
-	rpc_pack_type(desc, msg);
+	if (!desc)
+		return -ENOMEM;
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
 
-	send_msghdr(desc, msghdr, 1);
+	err = send_msghdr(desc, msghdr, 1);
+	if (err)
+		goto cancel;
 
-	rpc_unpack_type(desc, r);
-	recv_msghdr(desc, msghdr, 1);
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
+	err = unpack_remote_sleep_res_type(desc, r);
+	if (err)
+		goto cancel;
 
+	if (r < 0)
+		goto out_end;
+
+	err = recv_msghdr(desc, msghdr, 1);
+	if (err)
+		goto cancel;
+
+out_end:
 	rpc_end(desc, 0);
 
 	return r;
+
+cancel:
+	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
+	r = err;
+	goto out_end;
 }
 
 char *krg_faf_d_path(struct file *file, char *buffer, int size)
