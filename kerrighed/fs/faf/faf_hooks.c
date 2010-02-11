@@ -1020,7 +1020,7 @@ long krg_faf_sendmsg (struct file * file,
 	if (err)
 		goto cancel;
 
-	err = send_msghdr(desc, msghdr, 1, 0);
+	err = send_msghdr(desc, msghdr, total_len, MSG_USER);
 	if (err)
 		goto cancel;
 
@@ -1065,7 +1065,7 @@ long krg_faf_recvmsg(struct file * file,
 	if (err)
 		goto cancel;
 
-	err = send_msghdr(desc, msghdr, 1, 1);
+	err = send_msghdr(desc, msghdr, total_len, MSG_USER|MSG_HDR_ONLY);
 	if (err)
 		goto cancel;
 
@@ -1079,7 +1079,7 @@ long krg_faf_recvmsg(struct file * file,
 	if (r < 0)
 		goto out_end;
 
-	err = recv_msghdr(desc, msghdr, 1);
+	err = recv_msghdr(desc, msghdr, MSG_USER);
 	if (err)
 		goto cancel;
 
