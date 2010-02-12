@@ -20,6 +20,8 @@ struct kddm_set *task_undolist_set(struct task_struct *task);
 struct semundo_list_object;
 int add_semundo_to_proc_list(struct semundo_list_object *undo_list, int semid);
 
+int krg_sem_flush_set(struct ipc_namespace *ns);
+
 void sem_handler_init(void);
 void sem_handler_finalize(void);
 

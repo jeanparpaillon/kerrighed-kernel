@@ -9,8 +9,10 @@
 #include <linux/ipc_namespace.h>
 #include <linux/msg.h>
 #include <linux/sem.h>
+#include <linux/semaphore.h>
 #include <linux/nsproxy.h>
 #include <kddm/kddm.h>
+#include <kddm/kddm_flush_object.h>
 #include <kerrighed/pid.h>
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/hotplug.h>
@@ -671,6 +673,39 @@ exit_wo_action:
 /*                              INITIALIZATION                               */
 /*                                                                           */
 /*****************************************************************************/
+
+static int ipc_flusher(struct kddm_set *set, objid_t objid,
+		       struct kddm_obj *obj_entry, void *data)
+{
+	kerrighed_node_t node;
+
+	/*
+	 * TODO: choose a better node to flush to.
+	 * This may be done looking at the processes blocked.
+	 */
+	node = first_krgnode(krgnode_online_map);
+
+	return node;
+}
+
+int krg_sem_flush_set(struct ipc_namespace *ns)
+{
+	struct semkrgops *semops;
+
+	down_write(&sem_ids(ns).rw_mutex);
+
+	semops = container_of(sem_ids(ns).krgops, struct semkrgops, krgops);
+
+	_kddm_flush_set(semops->krgops.data_kddm_set, ipc_flusher, NULL);
+	_kddm_flush_set(semops->krgops.map_kddm_set, ipc_flusher, NULL);
+	_kddm_flush_set(semops->krgops.key_kddm_set, ipc_flusher, NULL);
+
+	_kddm_flush_set(semops->undo_list_kddm_set, ipc_flusher, NULL);
+
+	up_write(&sem_ids(ns).rw_mutex);
+
+	return 0;
+}
 
 int krg_sem_init_ns(struct ipc_namespace *ns)
 {

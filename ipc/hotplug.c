@@ -13,6 +13,7 @@
 #include "ipc_handler.h"
 #include "msg_handler.h"
 #include "shm_handler.h"
+#include "sem_handler.h"
 #include "krgmsg.h"
 
 static struct cluster_barrier *barrier;
@@ -39,12 +40,13 @@ static int ipc_remove_local(struct hotplug_context *ctx)
 	ns = find_get_krg_ipcns();
 	BUG_ON(!ns);
 
-	/* TODO: flush IPC Objects */
-
 	err = krg_msg_flush_set(ns);
 	BUG_ON(err);
 
 	err = krg_shm_flush_set(ns);
+	BUG_ON(err);
+
+	err = krg_sem_flush_set(ns);
 	BUG_ON(err);
 
 	put_ipc_ns(ns);
