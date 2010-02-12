@@ -224,6 +224,8 @@ long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 	int index;
 	struct msgsnd_msg msg;
 
+	down_read(&krgipcmsg_rwsem);
+
 	index = ipcid_to_idx(msqid);
 
 	master_set = krgipc_ops_master_set(msg_ids(ns).krgops);
@@ -285,6 +287,8 @@ exit_rpc:
 exit_free_buffer:
 	kfree(buffer);
 exit:
+	up_read(&krgipcmsg_rwsem);
+
 	return r;
 }
 
@@ -328,6 +332,9 @@ exit_free_text:
 	kfree(mtext);
 exit_put_ns:
 	put_ipc_ns(ns);
+
+	if (r)
+		rpc_cancel(desc);
 }
 
 struct msgrcv_msg
@@ -353,6 +360,8 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 	int index;
 	struct msgrcv_msg msg;
 
+	down_read(&krgipcmsg_rwsem);
+
 	/* TODO: manage ipc namespace */
 	index = ipcid_to_idx(msqid);
 
@@ -361,7 +370,8 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 	master_node = _kddm_get_object_no_ft(master_set, index);
 	if (!master_node) {
 		_kddm_put_object(master_set, index);
-		return -EINVAL;
+		r = -EINVAL;
+		goto exit;
 	}
 
 	if (*master_node == kerrighed_node_id) {
@@ -370,7 +380,7 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 		_kddm_put_object(master_set, index);
 		r = __do_msgrcv(msqid, pmtype, mtext, msgsz, msgtyp,
 				msgflg, ns, tgid);
-		return r;
+		goto exit;
 	}
 
 	msg.requester = kerrighed_node_id;
@@ -396,7 +406,7 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 		goto cancel;
 
 	if (r < 0)
-		goto exit;
+		goto exit_end_rpc;
 
 	/* get the real msg type */
 	err = rpc_unpack(desc, 0, pmtype, sizeof(long));
@@ -417,10 +427,12 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 	if (err)
 		goto cancel;
 
-exit:
+exit_end_rpc:
 	if (buffer)
 		kfree(buffer);
 	rpc_end(desc, 0);
+exit:
+	up_read(&krgipcmsg_rwsem);
 	return r;
 
 cancel:
@@ -428,7 +440,7 @@ cancel:
 	if (r == -ECANCELED)
 		r = -EPIPE;
 	rpc_cancel(desc);
-	goto exit;
+	goto exit_end_rpc;
 }
 
 static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
