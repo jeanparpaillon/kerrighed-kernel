@@ -23,6 +23,7 @@
 #include <kerrighed/hotplug.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/debug.h>
 #include "ghost.h"

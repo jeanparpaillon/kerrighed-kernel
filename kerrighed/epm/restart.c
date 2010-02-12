@@ -19,6 +19,7 @@
 #include <kerrighed/application.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include "ghost.h"
 #include "pid.h"
 #include "restart.h"
