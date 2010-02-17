@@ -108,7 +108,6 @@ struct faf_getsockopt_msg {
 
 struct faf_sendmsg_msg {
 	int server_fd;
-	struct msghdr msghdr;
 	unsigned int flags;
 };
 

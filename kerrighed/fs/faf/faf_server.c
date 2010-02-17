@@ -1254,7 +1254,7 @@ void handle_faf_recvmsg(struct rpc_desc *desc,
 	if (err)
 		goto cancel;
 
-	r = sys_recvmsg(msg->server_fd, &msg->msghdr, msg->flags);
+	r = sys_recvmsg(msg->server_fd, &msghdr, msg->flags);
 
 	remote_sleep_finish();
 
