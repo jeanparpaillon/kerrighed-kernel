@@ -71,20 +71,6 @@ struct faf_listen_msg {
 	int backlog;
 };
 
-struct faf_send_msg {
-	int server_fd;
-	size_t len;
-	unsigned flags;
-};
-
-struct faf_sendto_msg {
-	int server_fd;
-	size_t len;
-	unsigned flags;
-	int addrlen;
-	struct sockaddr_storage sa;
-};
-
 struct faf_shutdown_msg {
 	int server_fd;
 	int how;

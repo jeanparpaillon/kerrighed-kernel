@@ -888,295 +888,6 @@ long krg_faf_getpeername (struct file * file,
 	return r;
 }
 
-long krg_faf_send (struct file * file,
-		   void __user * _buff,
-		   size_t len,
-		   unsigned flags)
-{
-	faf_client_data_t *data = file->private_data;
-	struct faf_send_msg msg;
-	int r = -ENOMEM, err;
-	void *buff;
-
-	buff = vmalloc(len);
-	if (!buff)
-		goto out;
-
-	if(!copy_from_user(buff, _buff, len)){
-		struct rpc_desc* desc;
-
-		msg.server_fd = data->server_fd;
-
-		msg.flags = flags;
-		msg.len = len;
-
-		desc = rpc_begin(RPC_FAF_SEND, data->server_id);
-		if (!desc)
-			goto out_free;
-
-		err = rpc_pack_type(desc, msg);
-		if (err)
-			goto cancel;
-		err = rpc_pack(desc, 0, buff, len);
-		if (err)
-			goto cancel;
-
-		/*
-		 * Optimization: Allow server to receive its data before
-		 * we wait for its notification of being ready to handle
-		 * signals.
-		 * WARNING: we assume that unpack_remote_sleep_res_prepare()
-		 * does _not_ call rpc_pack()
-		 */
-		err = unpack_remote_sleep_res_prepare(desc);
-		if (err)
-			goto cancel;
-		err = unpack_remote_sleep_res_type(desc, r);
-		if (err)
-			goto cancel;
-
-		rpc_end(desc, 0);
-	} else {
-		r = -EFAULT;
-	}
-
-out_free:
-	vfree(buff);
-
-out:
-	return r;
-
-cancel:
-	rpc_cancel(desc);
-	rpc_end(desc, 0);
-	r = err;
-	goto out_free;
-}
-
-long krg_faf_sendto (struct file * file,
-		     void __user * _buff,
-		     size_t len,
-		     unsigned flags,
-		     struct sockaddr __user *addr,
-		     int addr_len)
-{
-	faf_client_data_t *data = file->private_data;
-	struct faf_sendto_msg msg;
-	void *buff;
-	int r, err;
-
-	if (addr) {
-		r = move_addr_to_kernel(addr, addr_len, (struct sockaddr *)&msg.sa);
-		if (r)
-			goto out;
-		msg.addrlen = addr_len;
-	} else {
-		msg.addrlen = 0;
-	}
-
-	r = -ENOMEM;
-	buff = vmalloc(len);
-	if (!buff)
-		goto out;
-
-	if(!copy_from_user(buff, _buff, len)){
-		struct rpc_desc* desc;
-
-		msg.server_fd = data->server_fd;
-		msg.len = len;
-		msg.flags = flags;
-
-		desc = rpc_begin(RPC_FAF_SENDTO, data->server_id);
-		if (!desc)
-			goto out_free;
-
-		err = rpc_pack_type(desc, msg);
-		if (err)
-			goto cancel;
-		err = rpc_pack(desc, 0, buff, len);
-		if (err)
-			goto cancel;
-
-		/* Same optimization as in krg_faf_send() */
-		err = unpack_remote_sleep_res_prepare(desc);
-		if (err)
-			goto cancel;
-		err = unpack_remote_sleep_res_type(desc, r);
-		if (err)
-			goto cancel;
-
-		rpc_end(desc, 0);
-
-	} else
-		r = -EFAULT;
-
-out_free:
-	vfree(buff);
-
-out:
-	return r;
-
-cancel:
-	rpc_cancel(desc);
-	rpc_end(desc, 0);
-	r = err;
-	goto out_free;
-}
-
-
-
-long krg_faf_recv (struct file * file,
-		   void __user * ubuf,
-		   size_t size,
-		   unsigned flags)
-{
-	faf_client_data_t *data = file->private_data;
-	struct faf_send_msg msg;
-	int r, err;
-	void *buff;
-	struct rpc_desc* desc;
-
-	buff = vmalloc(size);
-	if (!buff)
-		return -ENOMEM;
-
-	msg.server_fd = data->server_fd;
-	msg.len = size;
-	msg.flags = flags;
-
-	desc = rpc_begin(RPC_FAF_RECV, data->server_id);
-	if (!desc) {
-		r = -ENOMEM;
-		goto out_free;
-	}
-	err = rpc_pack_type(desc, msg);
-	if (err)
-		goto cancel;
-
-	err = unpack_remote_sleep_res_prepare(desc);
-	if (err)
-		goto cancel;
-	err = unpack_remote_sleep_res_type(desc, r);
-	if (err)
-		goto cancel;
-
-	if (r > 0) {
-		err = rpc_unpack(desc, 0, buff, r);
-		if (err)
-			goto cancel;
-
-		if (copy_to_user(ubuf, buff, r))
-			r = -EFAULT;
-	}
-out_end:
-	rpc_end(desc, 0);
-
-out_free:
-	vfree(buff);
-
-	return r;
-
-cancel:
-	rpc_cancel(desc);
-	if (err > 0)
-		err = -EPIPE;
-	r = err;
-	goto out_end;
-}
-
-long krg_faf_recvfrom (struct file * file,
-		       void __user * ubuf,
-		       size_t size,
-		       unsigned flags,
-		       struct sockaddr __user *addr,
-		       int __user *addr_len)
-{
-	faf_client_data_t *data = file->private_data;
-	struct faf_sendto_msg msg;
-	int r, err;
-	void *buff;
-	struct sockaddr_storage sa;
-	int sa_len;
-	struct rpc_desc* desc;
-
-	r = -EFAULT;
-	if (addr) {
-		if (get_user(msg.addrlen, addr_len))
-			goto out;
-	} else {
-		msg.addrlen = 0;
-	}
-
-	r = -ENOMEM;
-	buff = vmalloc(size);
-	if (!buff)
-		goto out;
-
-	msg.server_fd = data->server_fd;
-	msg.len = size;
-	msg.flags = flags;
-
-	desc = rpc_begin(RPC_FAF_RECVFROM, data->server_id);
-	if (!desc)
-		goto out_free;
-	err = rpc_pack_type(desc, msg);
-	if (err)
-		goto cancel;
-
-	err = unpack_remote_sleep_res_prepare(desc);
-	if (err)
-		goto cancel;
-	err = unpack_remote_sleep_res_type(desc, r);
-	if (err)
-		goto cancel;
-
-	if( r > 0) {
-		err = rpc_unpack(desc, 0, buff, r);
-		if (err)
-			goto cancel;
-	}
-
-	if (r >= 0) {
-		err = rpc_unpack_type(desc, sa_len);
-		if (err)
-			goto cancel;
-		err = rpc_unpack(desc, 0, &sa, sa_len);
-		if (err)
-			goto cancel;
-	}
-out_end:
-	rpc_end(desc, 0);
-
-	if (r < 0)
-		goto out_free;
-
-	if (addr) {
-		int err;
-
-		err = move_addr_to_user((struct sockaddr *)&sa, sa_len,
-					addr, addr_len);
-		if (err) {
-			r = err;
-			goto out_free;
-		}
-	}
-	if (copy_to_user(ubuf, buff, r))
-		r = -EFAULT;
-
-out_free:
-	vfree(buff);
-
-out:
-	return r;
-
-cancel:
-	rpc_cancel(desc);
-	if (err > 0)
-		err = -EPIPE;
-	r = err;
-	goto out_end;
-}
-
 long krg_faf_shutdown (struct file * file,
 		       int how)
 {
@@ -1290,8 +1001,8 @@ err_cancel:
 }
 
 long krg_faf_sendmsg (struct file * file,
-		      struct msghdr __user *msghdr,
-		      unsigned flags)
+		      struct msghdr *msghdr,
+		      int total_len)
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_sendmsg_msg msg;
@@ -1300,7 +1011,7 @@ long krg_faf_sendmsg (struct file * file,
 
 	msg.server_fd = data->server_fd;
 
-	msg.flags = flags;
+	msg.flags = msghdr->msg_flags;
 
 	desc = rpc_begin(RPC_FAF_SENDMSG, data->server_id);
 	if (!desc)
@@ -1309,7 +1020,7 @@ long krg_faf_sendmsg (struct file * file,
 	if (err)
 		goto cancel;
 
-	err = send_msghdr(desc, msghdr, 1);
+	err = send_msghdr(desc, msghdr, 1, 0);
 	if (err)
 		goto cancel;
 
@@ -1332,7 +1043,8 @@ cancel:
 }
 
 long krg_faf_recvmsg(struct file * file,
-		     struct msghdr __user *msghdr,
+		     struct msghdr *msghdr,
+		     int total_len,
 		     unsigned int flags)
 {
 	faf_client_data_t *data = file->private_data;
@@ -1351,7 +1063,7 @@ long krg_faf_recvmsg(struct file * file,
 	if (err)
 		goto cancel;
 
-	err = send_msghdr(desc, msghdr, 1);
+	err = send_msghdr(desc, msghdr, 1, 1);
 	if (err)
 		goto cancel;
 
@@ -1368,6 +1080,9 @@ long krg_faf_recvmsg(struct file * file,
 	err = recv_msghdr(desc, msghdr, 1);
 	if (err)
 		goto cancel;
+
+	/* Behave as sock_recvmsg() */
+	msghdr->msg_control += msghdr->msg_controllen;
 
 out_end:
 	rpc_end(desc, 0);

@@ -68,26 +68,15 @@ long krg_faf_getsockname(struct file *file,
 long krg_faf_getpeername(struct file *file,
 			 struct sockaddr __user *usockaddr,
 			 int __user *usockaddr_len);
-long krg_faf_send(struct file *file, void __user *buff, size_t len,
-		  unsigned flags);
-long krg_faf_sendto(struct file *file, void __user *buff,
-		    size_t len, unsigned flags,
-		    struct sockaddr __user *addr, int addr_len);
-long krg_faf_recv(struct file *file, void __user *ubuf, size_t size,
-		  unsigned flags);
-long krg_faf_recvfrom(struct file *file, void __user *ubuf,
-		      size_t size, unsigned flags,
-		      struct sockaddr __user *addr,
-		      int __user *addr_len);
 long krg_faf_shutdown(struct file *file, int how);
 long krg_faf_setsockopt(struct file *file, int level, int optname,
 			char __user *optval, int optlen);
 long krg_faf_getsockopt(struct file *file, int level, int optname,
 			char __user *optval, int __user *optlen);
-long krg_faf_sendmsg(struct file *file, struct msghdr __user *msg,
-		     unsigned flags);
-long krg_faf_recvmsg(struct file *file, struct msghdr __user *msg,
-		     unsigned int flags);
+long krg_faf_sendmsg(struct file *file, struct msghdr *msg,
+		     int total_len);
+long krg_faf_recvmsg(struct file *file, struct msghdr *msg,
+		     int total_len, unsigned int flags);
 int krg_faf_poll_wait(struct file *file, int wait);
 void krg_faf_poll_dequeue(struct file *file);
 

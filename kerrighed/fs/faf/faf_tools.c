@@ -50,20 +50,16 @@ int recv_iovec(struct rpc_desc* desc,
 
 	rpc_unpack_type(desc, iov_len);
 
-	if (!iovec->iov_base) {
-		iovec->iov_base = kmalloc(iov_len, GFP_KERNEL);
-		if (!iovec->iov_base)
-			return -ENOMEM;
+	iov_base = kmalloc(iov_len, GFP_KERNEL);
+	if (!iov_base)
+		return -ENOMEM;
+	if (to_user) {
+		if (iovec->iov_len > iov_len)
+			iovec->iov_len = iov_len;
+	} else {
+		iovec->iov_base = iov_base;
 		iovec->iov_len = iov_len;
 	}
-
-	iovec->iov_len = iovec->iov_len > iov_len ? iov_len : iovec->iov_len;
-
-	if (to_user) {
-		iov_base = kmalloc(iov_len, GFP_KERNEL);
-		BUG_ON(!iov_base);
-	} else
-		iov_base = iovec->iov_base;
 
 	rpc_unpack(desc, 0, iov_base, iov_len);
 
@@ -84,30 +80,17 @@ int free_iovec(struct iovec *iovec)
 
 int send_msghdr(struct rpc_desc* desc,
 		struct msghdr *msghdr,
-		int from_user)
+		int from_user,
+		int ctl_from_user)
 {
-	void *msg_name;
 	void *msg_control;
-	struct msghdr *msg;
 	int i;
 
-	if (from_user) {
+	if (ctl_from_user) {
 		int r;
-
-		msg_name = kmalloc(msghdr->msg_namelen, GFP_KERNEL);
-		BUG_ON(!msg_name);
 
 		msg_control = kmalloc(msghdr->msg_controllen, GFP_KERNEL);
 		BUG_ON(!msg_control);
-
-		msg = kmalloc(sizeof(struct msghdr), GFP_KERNEL);
-		BUG_ON(!msg);
-
-		r = copy_from_user(msg_name, msghdr->msg_name, msghdr->msg_namelen);
-		if (r) {
-			printk("send_msghdr: TODO: msg_name\n");
-			BUG();
-		}
 
 		r = copy_from_user(msg_control, msghdr->msg_control, msghdr->msg_controllen);
 		if (r) {
@@ -115,30 +98,19 @@ int send_msghdr(struct rpc_desc* desc,
 			BUG();
 		}
 
-		r = copy_from_user(msg, msghdr, sizeof(struct msghdr));
-		if (r) {
-			printk("send_msghdr: TODO: msghdr\n");
-			BUG();
-		}
-
 	} else {
-		msg_name = msghdr->msg_name;
 		msg_control = msghdr->msg_control;
-		msg = msghdr;
 	}
 
-	rpc_pack(desc, 0, msg, sizeof(*msg));
-	rpc_pack(desc, 0, msg_name, msghdr->msg_namelen);
+	rpc_pack(desc, 0, msghdr, sizeof(*msghdr));
+	rpc_pack(desc, 0, msghdr->msg_name, msghdr->msg_namelen);
 	rpc_pack(desc, 0, msg_control, msghdr->msg_controllen);
-	rpc_pack_type(desc, msg->msg_flags);
 
 	for (i = 0; i < msghdr->msg_iovlen; i++)
-		send_iovec(desc, &(msg->msg_iov[i]), from_user);
+		send_iovec(desc, &(msghdr->msg_iov[i]), from_user);
 
-	if (from_user) {
-		kfree(msg_name);
+	if (ctl_from_user) {
 		kfree(msg_control);
-		kfree(msg);
 	}
 
 	return 0;
@@ -148,40 +120,30 @@ int recv_msghdr(struct rpc_desc* desc,
 		struct msghdr *msghdr,
 		int to_user)
 {
-	struct msghdr* msg;
+	struct msghdr tmp_msg;
+	struct msghdr *msg = to_user ? &tmp_msg : msghdr;
 	int i;
-
-	if (to_user) {
-		msg = kmalloc(sizeof(struct msghdr), GFP_KERNEL);
-		memset(msg, 0, sizeof(*msg));
-	} else
-		msg = msghdr;
 
 	rpc_unpack(desc, 0, msg, sizeof(*msg));
 
-	msg->msg_name = kmalloc(msg->msg_namelen, GFP_KERNEL);
-	BUG_ON(!msg->msg_name);
+	if (to_user) {
+		msg->msg_name = msghdr->msg_name;
+	} else {
+		msg->msg_name = kmalloc(msg->msg_namelen, GFP_KERNEL);
+		BUG_ON(!msg->msg_name);
+	}
 
 	msg->msg_control = kmalloc(msg->msg_controllen, GFP_KERNEL);
 	BUG_ON(!msg->msg_control);
 
 	rpc_unpack(desc, 0, msg->msg_name, msg->msg_namelen);
 	rpc_unpack(desc, 0, msg->msg_control, msg->msg_controllen);
-	rpc_unpack_type(desc, msg->msg_flags);
 
 	if (to_user) {
 		int r;
 
 		if (msg->msg_namelen < msghdr->msg_namelen)
 			msghdr->msg_namelen = msg->msg_namelen;
-		r = copy_to_user(msghdr->msg_name, msg->msg_name,
-				 msghdr->msg_namelen);
-		if (r) {
-			printk("recv_msghdr: TODO: msg_name\n");
-			BUG();
-		}
-
-		kfree(msg->msg_name);
 
 		if (msg->msg_controllen < msghdr->msg_controllen)
 			msghdr->msg_controllen = msg->msg_controllen;
@@ -198,7 +160,7 @@ int recv_msghdr(struct rpc_desc* desc,
 		for (i = 0; i < msghdr->msg_iovlen; i++)
 			recv_iovec(desc, &msghdr->msg_iov[i], 1);
 
-		kfree(msg);
+		msghdr->msg_flags = msg->msg_flags;
 
 	} else {
 		msg->msg_iov = kmalloc(sizeof(msg->msg_iov[0])*msg->msg_iovlen,
