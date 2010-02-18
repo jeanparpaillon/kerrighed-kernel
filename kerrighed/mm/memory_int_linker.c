@@ -26,7 +26,7 @@
 
 
 struct vm_operations_struct null_vm_ops = {};
-
+extern struct vm_operations_struct shm_vm_ops;
 
 
 /** Create the anonymous kddm_set for the given process.
@@ -79,20 +79,30 @@ int check_link_vma_to_anon_memory_kddm_set (struct vm_area_struct *vma)
 {
 	int r = 0;
 
-	if (!anon_vma(vma))
+	/* Easy case */
+	if (vma->anon_vma || vma->vm_flags & VM_KDDM)
+		goto link;
+
+	/* Don't link shared mapping */
+	if (vma->vm_flags & VM_SHARED)
 		return r;
 
+	/* Don't link non shared read-only file */
+	if (vma->vm_file && !(vma->vm_flags & VM_WRITE))
+		return r;
+
+link:
 	/* Do not share the VDSO page as anonymous memory. Anyway it is always
 	 * available on all nodes. */
 	if (arch_vma_name(vma))
 		return r;
 
-	if (vma->vm_ops == &anon_memory_kddm_vmops)
+	/* Don't link already linked VMAs */
+	if ((vma->vm_ops == &anon_memory_kddm_vmops) ||
+	    (vma->vm_ops == &shm_vm_ops))
 		return r;
 
 	/*** Make the VMA a kddm set VMA ***/
-
-	BUG_ON(vma->vm_flags & VM_SHARED);
 
 	BUG_ON(vma->initial_vm_ops == &anon_memory_kddm_vmops);
 	if (vma->vm_ops == NULL)
