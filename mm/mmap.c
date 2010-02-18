@@ -2170,11 +2170,15 @@ unsigned long do_brk(unsigned long addr, unsigned long len)
 	vma->vm_flags = flags;
 	vma->vm_page_prot = vm_get_page_prot(flags);
 	vma_link(mm, vma, prev, rb_link, rb_parent);
-#ifdef CONFIG_KRG_MM
-	if (mm->anon_vma_kddm_set)
-		krg_check_vma_link(vma);
-#endif
 out:
+#ifdef CONFIG_KRG_MM
+	if (mm->anon_vma_kddm_set) {
+		krg_check_vma_link(vma);
+		if (!handler_call)
+			krg_do_brk(mm, addr, len,
+				current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur);
+	}
+#endif
 	mm->total_vm += len >> PAGE_SHIFT;
 	if (flags & VM_LOCKED) {
 		if (!mlock_vma_pages_range(vma, addr, addr + len))
