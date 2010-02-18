@@ -848,15 +848,16 @@ static inline void unmap_hole (struct mm_struct *mm,
 int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 		   unsigned long *last_end)
 {
-	struct address_space *mapping;
 	struct vm_area_struct *old;
 	int had_anon_vma = 0, r = 0;
 
 	/* If the is a hole between the last imported VMA and the current one,
 	 * unmap every in between.
 	 */
-	if (vma->vm_start != *last_end)
+	if (vma->vm_start != *last_end) {
+		/// TODO: remove this deprecated code
 		unmap_hole (mm, *last_end, vma->vm_start);
+	}
 
 	if (vma->anon_vma) {
 		had_anon_vma = 1;
@@ -873,72 +874,23 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 		goto done;
 	}
 
+	/* Paranoia checks */
 	BUG_ON ((old->vm_start != vma->vm_start) ||
 		(old->vm_end != vma->vm_end));
+	BUG_ON (old->vm_flags != vma->vm_flags);
+	BUG_ON (old->vm_ops != vma->vm_ops);
+	BUG_ON (old->vm_pgoff != vma->vm_pgoff);
+	BUG_ON (old->vm_file && !vma->vm_file);
+	BUG_ON (vma->vm_file && !old->vm_file);
+	BUG_ON (old->vm_file && vma->vm_file &&
+		(old->vm_file->f_dentry != vma->vm_file->f_dentry));
 
-	/* Not easy case, we have to play with the existing VMA */
-
-	if (vma->vm_end > old->vm_end) {
-		BUG_ON (vma->vm_next && vma->vm_next->vm_start < vma->vm_end);
-		old->vm_end = vma->vm_end;
-	}
-	else {
-		if (vma->vm_end < old->vm_end) {
-			r = split_vma(mm, old, vma->vm_end, 0);
-			if (r)
-				goto fail;
-		}
-	}
-
-	if (vma->vm_start > old->vm_start)
-		old->vm_start = vma->vm_start;
-
-	old->vm_page_prot = vma->vm_page_prot;
-
-	if (!(old->vm_flags & VM_EXECUTABLE) && (vma->vm_flags & VM_EXECUTABLE))
-		added_exe_file_vma(mm);
-	if ((old->vm_flags & VM_EXECUTABLE) && !(vma->vm_flags & VM_EXECUTABLE))
-		removed_exe_file_vma(mm);
-
-	old->vm_flags = vma->vm_flags;
-	old->initial_vm_ops = vma->initial_vm_ops;
-	if (old->vm_ops && (old->vm_ops != vma->vm_ops)) {
-		printk ("reconcile_vma: ops old %p - new %p\n", old->vm_ops,
-			vma->vm_ops);
-		BUG();
-	}
-	old->vm_ops = vma->vm_ops;
-	old->vm_private_data = vma->vm_private_data;
-	old->vm_pgoff = vma->vm_pgoff;
-
-	BUG_ON(!had_anon_vma && old->anon_vma);
-	if (had_anon_vma && !old->anon_vma)
-		anon_vma_prepare(old);
-
-	if (old->vm_file) {
-		BUG_ON (old->vm_file->f_dentry != vma->vm_file->f_dentry);
-	}
-	else {
-		if (vma->vm_file) {
-			old->vm_file = vma->vm_file;
-			get_file(old->vm_file);
-			if (old->vm_ops && old->vm_ops->open)
-				old->vm_ops->open(old);
-			mapping = old->vm_file->f_mapping;
-			if (mapping)
-				spin_lock(&mapping->i_mmap_lock);
-			__vma_link_file(old);
-			if (mapping)
-				spin_unlock(&mapping->i_mmap_lock);
-		}
-	}
 	remove_vma(vma);
 
 	vma = old;
 done:
 	*last_end = vma->vm_end;
 
-fail:
 	return r;
 }
 
