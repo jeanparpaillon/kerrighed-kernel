@@ -8,6 +8,7 @@
 #include <linux/sched.h>
 #include <linux/file.h>
 #include <linux/proc_fs.h>
+#include <asm/mmu_context.h>
 #include <net/krgrpc/rpc.h>
 #include <net/krgrpc/rpcid.h>
 #include <kerrighed/krginit.h>
@@ -193,6 +194,10 @@ struct mm_struct *krg_dup_mm(struct task_struct *tsk, struct mm_struct *src_mm)
 	if (err)
 		goto exit_put_mm;
 
+	err = init_new_context(NULL, mm);
+	if (err)
+		goto fail_nocontext;
+
 	/* The duplicated mm does not yet belong to any real process */
 	atomic_set(&mm->mm_ltasks, 0);
 
@@ -227,6 +232,15 @@ exit_put_mm:
         mmput(mm);
 
 fail_nomem:
+        return ERR_PTR(err);
+
+fail_nocontext:
+        /*
+         * If init_new_context() failed, we cannot use mmput() to free the mm
+         * because it calls destroy_context()
+         */
+	pgd_free(mm, mm->pgd);
+        free_mm(mm);
         return ERR_PTR(err);
 }
 
