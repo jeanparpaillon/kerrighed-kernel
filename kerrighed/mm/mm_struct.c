@@ -99,10 +99,6 @@ struct mm_struct *alloc_fake_mm(struct mm_struct *src_mm)
 
 	atomic_set(&mm->mm_ltasks, 0);
 
-	r = alloc_fake_vma(mm, 0, TASK_SIZE);
-	if (r)
-		goto err_put_mm;
-
 	return mm;
 
 err_put_mm:

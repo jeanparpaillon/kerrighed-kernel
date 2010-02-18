@@ -712,7 +712,8 @@ static inline int is_mergeable_vma(struct vm_area_struct *vma,
 		return 0;
 
 #ifdef CONFIG_KRG_MM
-	BUG_ON(!(vma->vm_flags & VM_KDDM) && (vm_flags & VM_KDDM));
+	if (!(vma->vm_flags & VM_KDDM) && (vm_flags & VM_KDDM))
+		return 0;
 #endif
 	return 1;
 }

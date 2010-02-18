@@ -437,9 +437,7 @@ static inline void check_create_vma(struct mm_struct *mm, unsigned long addr)
 	if (vma && (vma->vm_start <= addr))
 		return;
 
-	addr = addr & PAGE_MASK;
-
-	alloc_fake_vma (mm, addr, addr + PAGE_SIZE);
+	BUG();
 }
 
 

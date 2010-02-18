@@ -873,6 +873,9 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 		goto done;
 	}
 
+	BUG_ON ((old->vm_start != vma->vm_start) ||
+		(old->vm_end != vma->vm_end));
+
 	/* Not easy case, we have to play with the existing VMA */
 
 	if (vma->vm_end > old->vm_end) {
