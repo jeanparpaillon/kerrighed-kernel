@@ -42,7 +42,6 @@ int handle_do_mmap_region (struct rpc_desc* desc,
 int handle_do_munmap (struct rpc_desc* desc,
 		      void *msgIn, size_t size)
 {
-	struct vm_area_struct *vma;
 	struct mm_mmap_msg *msg = msgIn;
 	struct mm_struct *mm;
 
@@ -51,9 +50,11 @@ int handle_do_munmap (struct rpc_desc* desc,
 	if (!mm)
 		return 0;
 
-	vma = find_vma(mm, msg->start);
-	if (vma)
-		zap_page_range(vma, msg->start, msg->len, NULL);
+	down_write(&mm->mmap_sem);
+
+	__do_munmap(mm, msg->start, msg->len, 1);
+
+	up_write(&mm->mmap_sem);
 
 	krg_put_mm(msg->mm_id);
 

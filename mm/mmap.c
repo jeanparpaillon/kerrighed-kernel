@@ -1177,7 +1177,11 @@ unsigned long mmap_region(struct file *file, unsigned long addr,
 munmap_back:
 	vma = find_vma_prepare(mm, addr, &prev, &rb_link, &rb_parent);
 	if (vma && vma->vm_start < addr + len) {
+#ifdef CONFIG_KRG_MM
+		if (__do_munmap(mm, addr, len, handler_call))
+#else
 		if (do_munmap(mm, addr, len))
+#endif
 			return -ENOMEM;
 		goto munmap_back;
 	}
@@ -1954,7 +1958,17 @@ int split_vma(struct mm_struct * mm, struct vm_area_struct * vma,
  * work.  This now handles partial unmappings.
  * Jeremy Fitzhardinge <jeremy@goop.org>
  */
+#ifdef CONFIG_KRG_MM
 int do_munmap(struct mm_struct *mm, unsigned long start, size_t len)
+{
+	return __do_munmap(mm, start, len, 0);
+}
+
+int __do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
+		int handler_call)
+#else
+int do_munmap(struct mm_struct *mm, unsigned long start, size_t len)
+#endif
 {
 	unsigned long end;
 	struct vm_area_struct *vma, *prev, *last;

@@ -1187,6 +1187,9 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_KRG_MM
+extern int __do_munmap(struct mm_struct *, unsigned long, size_t, int);
+#endif
 extern int do_munmap(struct mm_struct *, unsigned long, size_t);
 
 #ifdef CONFIG_KRG_MM
