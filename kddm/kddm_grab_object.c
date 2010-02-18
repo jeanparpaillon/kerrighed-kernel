@@ -137,8 +137,6 @@ sleep_on_wait_page:
 			goto try_again;
 
 		if (!OBJ_EXCLUSIVE(obj_entry)) {
-			BUG_ON (flags & KDDM_COW_OBJECT);
-
 			kddm_change_obj_state(set, obj_entry, objid,
 					      WAIT_ACK_WRITE);
 			request_copies_invalidation(set, obj_entry, objid,
