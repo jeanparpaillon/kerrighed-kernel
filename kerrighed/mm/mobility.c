@@ -850,7 +850,7 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 {
 	struct address_space *mapping;
 	struct vm_area_struct *old;
-	int r = 0;
+	int had_anon_vma = 0, r = 0;
 
 	/* If the is a hole between the last imported VMA and the current one,
 	 * unmap every in between.
@@ -858,11 +858,18 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 	if (vma->vm_start != *last_end)
 		unmap_hole (mm, *last_end, vma->vm_start);
 
+	if (vma->anon_vma) {
+		had_anon_vma = 1;
+		vma->anon_vma = NULL;
+	}
+
 	old = find_vma(mm, vma->vm_start);
 
 	/* Easy case: no conflict with existing VMA, just map the new VMA */
 	if (!old || (old->vm_start >= vma->vm_end)) {
 		r = insert_vm_struct (mm, vma);
+		if (had_anon_vma)
+			anon_vma_prepare(vma);
 		goto done;
 	}
 
@@ -900,10 +907,11 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 	old->vm_ops = vma->vm_ops;
 	old->vm_private_data = vma->vm_private_data;
 	old->vm_pgoff = vma->vm_pgoff;
-	if (!vma->anon_vma) {
-		anon_vma_unlink(old);
-		old->anon_vma = NULL;
-	}
+
+	BUG_ON(!had_anon_vma && old->anon_vma);
+	if (had_anon_vma && !old->anon_vma)
+		anon_vma_prepare(old);
+
 	if (old->vm_file) {
 		BUG_ON (old->vm_file->f_dentry != vma->vm_file->f_dentry);
 	}
@@ -992,8 +1000,6 @@ static int import_one_vma (struct epm_action *action,
 
 	if (action->type == EPM_CHECKPOINT)
 		restore_initial_vm_ops(vma);
-
-	vma->anon_vma = NULL;
 
 	if (vm_ops_type == KRGSYMS_VM_OPS_SPECIAL_MAPPING)
 		import_vdso_context(vma);
