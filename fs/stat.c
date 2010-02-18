@@ -94,6 +94,15 @@ int vfs_fstatat(int dfd, char __user *filename, struct kstat *stat, int flag)
 	if (error)
 		goto out;
 
+#ifdef CONFIG_KRG_FAF
+	if ((!path.dentry) && (path.mnt)) {
+		struct file *file = (struct file *)path.mnt;
+		get_file (file);
+		error = krg_faf_fstat(file, stat);
+		fput(file);
+		return error;
+	}
+#endif
 	error = vfs_getattr(path.mnt, path.dentry, stat);
 	path_put(&path);
 out:
