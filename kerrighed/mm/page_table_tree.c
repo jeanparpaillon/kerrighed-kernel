@@ -137,6 +137,8 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 		page = new_page;
 	}
 
+	page->index = objid;
+
 	atomic_inc (&page->_kddm_count);
 	if (page->obj_entry != NULL)
 		goto done;
