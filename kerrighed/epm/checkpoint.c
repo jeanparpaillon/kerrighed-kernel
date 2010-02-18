@@ -23,6 +23,7 @@
 #include <kerrighed/hotplug.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/debug.h>
 #include "ghost.h"
@@ -123,7 +124,8 @@ int checkpoint_task_on_disk(struct epm_action *action,
 	ghost = create_file_ghost(GHOST_WRITE,
 				  app->app_id,
 				  app->chkpt_sn,
-				  task_pid_knr(task_to_checkpoint), "task");
+				  "task_%d.bin",
+				  task_pid_knr(task_to_checkpoint));
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
@@ -169,6 +171,10 @@ static int checkpoint_task(struct epm_action *action,
 
 	unset_ghost_fs(&oldfs);
 
+	if (r)
+		ckpt_err(action, r,
+			 "Fail to checkpoint process %d",
+			 task_pid_knr(task_to_checkpoint));
 out:
 	return r;
 }

@@ -15,73 +15,20 @@
 #endif
 #include <kddm/kddm.h>
 #include <kerrighed/action.h>
+#include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
-#include <kerrighed/app_terminal.h>
 #ifdef CONFIG_KRG_FAF
 #include <kerrighed/faf.h>
 #include "faf/faf_internal.h"
 #include <kerrighed/faf_file_mgr.h>
 #endif
 #include <kerrighed/file.h>
+#include <kerrighed/file_stat.h>
 #include <kerrighed/ghost_helpers.h>
 #include <kerrighed/regular_file_mgr.h>
 #include <kerrighed/physical_fs.h>
 #include <kerrighed/pid.h>
 #include "mobility.h"
-
-int is_pipe(const struct file *file)
-{
-	umode_t i_mode;
-
-#ifdef CONFIG_KRG_FAF
-	if (file->f_flags & O_FAF_CLT)
-		i_mode = ((struct faf_client_data*)file->private_data)->i_mode;
-	else
-#endif
-		i_mode = file->f_dentry->d_inode->i_mode;
-
-	return S_ISFIFO(i_mode);
-}
-
-static int __is_pipe_named(const struct file *file)
-{
-#ifdef CONFIG_KRG_FAF
-	if (file->f_flags & O_FAF_CLT)
-		return ((struct faf_client_data*)file->private_data)->is_named_pipe;
-#endif
-
-	return strlen(file->f_dentry->d_name.name);
-}
-
-int is_anonymous_pipe(const struct file *file)
-{
-	if (!is_pipe(file))
-		return 0;
-
-	return (!__is_pipe_named(file));
-}
-
-int is_named_pipe(const struct file *file)
-{
-	if (!is_pipe(file))
-		return 0;
-
-	return (__is_pipe_named(file));
-}
-
-int is_socket(const struct file *file)
-{
-	umode_t i_mode;
-
-#ifdef CONFIG_KRG_FAF
-	if (file->f_flags & O_FAF_CLT)
-		i_mode = ((struct faf_client_data*)file->private_data)->i_mode;
-	else
-#endif
-		i_mode = file->f_dentry->d_inode->i_mode;
-
-	return S_ISSOCK(i_mode);
-}
 
 /*****************************************************************************/
 /*                                                                           */
@@ -189,20 +136,6 @@ int check_flush_file (struct epm_action *action,
 	return err;
 }
 
-static char *get_filename(struct file* file, char *buffer, int buffer_size)
-{
-	char *filename;
-
-#ifdef CONFIG_KRG_FAF
-	if (file->f_flags & O_FAF_CLT)
-		filename = krg_faf_d_path(file, buffer, buffer_size);
-	else
-#endif
-		filename = physical_d_path(&file->f_path, buffer);
-
-	return filename;
-}
-
 /** Return a kerrighed descriptor corresponding to the given file.
  *  @author Renaud Lottiaux, Matthieu Fertré
  *
@@ -213,19 +146,16 @@ static char *get_filename(struct file* file, char *buffer, int buffer_size)
  *  @return   0 if everything ok.
  *            Negative value otherwise.
  */
-static int get_regular_file_krg_desc(struct file *file, void **desc,
-				     int *desc_size)
+int get_regular_file_krg_desc(struct file *file, void **desc,
+			      int *desc_size)
 {
-	char *tmp = (char *) __get_free_page (GFP_KERNEL);
-	char *file_name;
+	char *tmp, *file_name;
 	struct regular_file_krg_desc *data;
 	int size = 0, name_len;
 	int r = -ENOENT;
 
 #ifdef CONFIG_KRG_IPC
-	BUG_ON(file->f_op == &krg_shm_file_operations);
-
-	if (file->f_op == &shm_file_operations) {
+	if (is_shm(file)) {
 		r = get_shm_file_krg_desc(file, desc, desc_size);
 		goto exit;
 	}
@@ -235,10 +165,15 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 		goto exit;
 	}
 
-	file_name = get_filename(file, tmp, PAGE_SIZE);
-
-	if (!file_name)
+	tmp = (char *)__get_free_page(GFP_KERNEL);
+	if (!tmp) {
+		r = -ENOMEM;
 		goto exit;
+	}
+
+	file_name = get_phys_filename(file, tmp);
+	if (!file_name)
+		goto exit_free_page;
 
 	name_len = strlen (file_name) + 1;
 	size = sizeof (struct regular_file_krg_desc) + name_len;
@@ -246,7 +181,7 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 	data = kmalloc (size, GFP_KERNEL);
 	if (!data) {
 		r = -ENOMEM;
-		goto exit;
+		goto exit_free_page;
 	}
 
 	data->type = FILE;
@@ -277,8 +212,9 @@ static int get_regular_file_krg_desc(struct file *file, void **desc,
 	*desc = data;
 	*desc_size = size;
 	r = 0;
-exit:
+exit_free_page:
 	free_page ((unsigned long) tmp);
+exit:
 	return r;
 }
 
@@ -380,7 +316,7 @@ error:
 /*****************************************************************************/
 
 enum cr_file_desc_type {
-	CR_FILE_REPLACED_BY_TTY,
+	CR_FILE_NONE,
 	CR_FILE_POINTER,
 	CR_FILE_REGULAR_DESC,
 	CR_FILE_FAF_DESC
@@ -392,23 +328,20 @@ struct cr_file_link {
 	void *desc;
 };
 
-int __cr_link_to_regular_file(struct epm_action *action,
-			      ghost_t *ghost,
-			      struct task_struct *task,
-			      struct cr_file_link *file_link,
-			      struct file **returned_file)
+static int __cr_link_to_file(struct epm_action *action, ghost_t *ghost,
+			     struct task_struct *task,
+			     struct cr_file_link *file_link,
+			     struct file **returned_file)
 {
 	int r = 0;
 
-	/* look in the table to find the new allocated data
-	 imported in import_shared_objects */
 	if (!file_link) {
 		BUG();
 		r = -E_CR_BADDATA;
 		goto exit;
 	}
 
-	BUG_ON(file_link->desc_type == CR_FILE_REPLACED_BY_TTY);
+	BUG_ON(file_link->desc_type == CR_FILE_NONE);
 
 	if (file_link->desc_type != CR_FILE_POINTER
 	    && file_link->desc_type != CR_FILE_REGULAR_DESC
@@ -459,43 +392,57 @@ exit:
 	return r;
 }
 
-int cr_link_to_local_regular_file(struct epm_action *action, ghost_t *ghost,
-				  struct task_struct *task,
-				  struct file **returned_file,
-				  long key)
+int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
+		    struct task_struct *task, struct file **returned_file)
 {
-	int r = 0;
+	int r;
+	long key;
+	enum shared_obj_type type;
 	struct cr_file_link *file_link;
 
-	/* look in the table to find the new allocated data
-	 imported in import_shared_objects */
+	BUG_ON(action->type != EPM_CHECKPOINT);
 
-	file_link = get_imported_shared_object(action->restart.app,
-					       REGULAR_FILE, key);
+	/* files are linked while loading files_struct or mm_struct */
+	BUG_ON(action->restart.shared != CR_LOAD_NOW);
 
-	r = __cr_link_to_regular_file(action, ghost, task, file_link,
-				      returned_file);
-	return r;
-}
+	r = ghost_read(ghost, &type, sizeof(enum shared_obj_type));
+	if (r)
+		goto error;
 
-int cr_link_to_dvfs_regular_file(struct epm_action *action,
-				 ghost_t *ghost,
-				 struct task_struct *task,
-				 struct file **returned_file,
-				 long key)
-{
-	int r = 0;
-	struct cr_file_link *file_link;
+	if (type != LOCAL_FILE
+	    && type != DVFS_FILE)
+		goto err_bad_data;
+
+	r = ghost_read(ghost, &key, sizeof(long));
+	if (r)
+		goto error;
 
 	/* look in the table to find the new allocated data
-	 imported in import_shared_objects */
+	 * imported in import_shared_objects */
 
 	file_link = get_imported_shared_object(action->restart.app,
-					       REGULAR_DVFS_FILE, key);
+					       type, key);
 
-	r = __cr_link_to_regular_file(action, ghost, task, file_link,
+	if (file_link->desc_type == CR_FILE_NONE) {
+		*returned_file = NULL;
+		r = 0;
+	} else
+		r = __cr_link_to_file(action, ghost, task, file_link,
 				      returned_file);
+
+error:
+	if (r)
+		ckpt_err(NULL, r,
+			 "Fail to relink process %d of application %ld"
+			 " to file %d:%lu",
+			 task_pid_knr(task), action->restart.app->app_id,
+			 type, key);
+
 	return r;
+
+err_bad_data:
+	r = -E_CR_BADDATA;
+	goto error;
 }
 
 /*****************************************************************************/
@@ -590,25 +537,22 @@ struct dvfs_mobility_operations dvfs_mobility_regular_ops = {
 	.file_import = regular_file_import,
 };
 
-int cr_export_now_regular_file(struct epm_action *action, ghost_t *ghost,
-			       struct task_struct *task,
-			       union export_args *args)
+static int cr_export_now_file(struct epm_action *action, ghost_t *ghost,
+			      struct task_struct *task,
+			      union export_args *args)
 {
-	int r, tty;
+	int r, supported;
 
-	tty = is_tty(args->file_args.file);
-	if (tty < 0) {
-		r = tty;
-		goto error;
-	}
+	supported = can_checkpoint_file(args->file_args.file);
 
-	r = ghost_write(ghost, &tty, sizeof(int));
+	r = ghost_write(ghost, &supported, sizeof(supported));
 	if (r)
 		goto error;
 
-	r = regular_file_export(action, ghost, task,
-				args->file_args.index,
-				args->file_args.file);
+	if (supported)
+		r = regular_file_export(action, ghost, task,
+					args->file_args.index,
+					args->file_args.file);
 
 error:
 	if (r)
@@ -620,8 +564,104 @@ error:
 	return r;
 }
 
-static int prepare_restart_data_replaced_by_tty(void **returned_data,
-						size_t *data_size)
+int cr_export_user_info_file(struct epm_action *action, ghost_t *ghost,
+			     unsigned long key, struct export_obj_info *export)
+{
+	int r, index, keylen, nodelen;
+	char *tmp, *file_name;
+	struct file *file;
+	struct task_struct *task;
+	struct export_obj_info *_export;
+	kerrighed_node_t file_node;
+
+	/* do not export info about mapped file */
+	if (export->args.file_args.index == -1)
+		return 0;
+
+	file = export->args.file_args.file;
+
+	tmp = (char *) __get_free_page (GFP_KERNEL);
+	if (!tmp) {
+		r = -ENOMEM;
+		goto exit;
+	}
+
+	file_name = get_filename(file, tmp);
+
+	if (!file_name) {
+		file_name = tmp;
+		sprintf(file_name, "-");
+	}
+
+	if (is_socket(file))
+		r = ghost_printf(ghost, "socket  ");
+
+	else if (is_anonymous_pipe(file))
+		r = ghost_printf(ghost, "pipe    ");
+
+	else if (is_named_pipe(file))
+		r = ghost_printf(ghost, "fifo    ");
+
+	else if (is_tty(file))
+		r = ghost_printf(ghost, "tty     ");
+
+	else if (is_char_device(file))
+		r = ghost_printf(ghost, "char    ");
+
+	else if (is_block_device(file))
+		r = ghost_printf(ghost, "block   ");
+
+	else if (is_link(file))
+		r = ghost_printf(ghost, "link    ");
+
+	else if (is_directory(file))
+		r = ghost_printf(ghost, "dir     ");
+
+	else
+		r = ghost_printf(ghost, "file    ");
+
+	if (r)
+		goto err_free_page;
+
+	if (file->f_objid)
+		/* if the file is shared, there is no host node */
+		file_node = KERRIGHED_NODE_ID_NONE;
+	else
+		file_node = kerrighed_node_id;
+
+	nodelen = sizeof(file_node)*2;
+	keylen = sizeof(key)*2;
+
+	task = export->task;
+	index = export->args.file_args.index;
+
+	r = ghost_printf(ghost, "|%0*hX%0*lX|%s|%d:%d",
+			 nodelen, file_node, keylen, key,
+			 file_name, task_pid_knr(task), index);
+	if (r)
+		goto err_free_page;
+
+	list_for_each_entry(_export, &export->next, next) {
+		task = _export->task;
+		index = _export->args.file_args.index;
+
+		r = ghost_printf(ghost, ",%d:%d",
+				 task_pid_knr(task), index);
+		if (r)
+			goto err_free_page;
+	}
+
+	r = ghost_printf(ghost, "\n");
+
+err_free_page:
+	free_page ((unsigned long) tmp);
+exit:
+	return r;
+}
+
+
+static int prepare_restart_data_unsupported_file(void **returned_data,
+						 size_t *data_size)
 {
 	struct cr_file_link *file_link;
 
@@ -630,7 +670,8 @@ static int prepare_restart_data_replaced_by_tty(void **returned_data,
 	if (!file_link)
 		return -ENOMEM;
 
-	file_link->desc_type = CR_FILE_REPLACED_BY_TTY;
+	file_link->desc_type = CR_FILE_NONE;
+	file_link->desc = NULL;
 
 	*returned_data = file_link;
 
@@ -696,7 +737,14 @@ static int prepare_restart_data_faf_file(struct file *f,
 	file_link->desc = &file_link[1];
 	file_link->desc_type = CR_FILE_FAF_DESC;
 	file_link->dvfs_objid = f->f_objid;
-	fill_faf_file_krg_desc(file_link->desc, f);
+
+	if (f->f_flags & O_FAF_SRV)
+		fill_faf_file_krg_desc(file_link->desc, f);
+	else {
+		BUG_ON(!(f->f_flags & O_FAF_CLT));
+		*(faf_client_data_t*)file_link->desc =
+			*(faf_client_data_t*)f->private_data;
+	}
 
 	*returned_data = file_link;
 
@@ -704,24 +752,61 @@ static int prepare_restart_data_faf_file(struct file *f,
 }
 #endif
 
-static int cr_import_now_regular_file(struct epm_action *action,
-				      ghost_t *ghost,
-				      struct task_struct *fake,
-				      int local_only,
-				      void **returned_data,
-				      size_t *data_size)
+int prepare_restart_data_shared_file(struct file *f,
+				     int local_only,
+				     void *fdesc, int fdesc_size,
+				     void **returned_data, size_t *data_size)
 {
-	int r, tty, desc_size;
+	int r;
+
+	if (!local_only) {
+		/* get a new dvfs objid */
+		r = create_kddm_file_object(f);
+		if (r)
+			goto error;
+
+#ifdef CONFIG_KRG_FAF
+		r = setup_faf_file_if_needed(f);
+		if (r)
+			goto error;
+
+		if (f->f_flags & (O_FAF_CLT | O_FAF_SRV))
+			r = prepare_restart_data_faf_file(f, returned_data,
+							  data_size);
+		else
+#endif
+			r = prepare_restart_data_dvfs_file(f, fdesc, fdesc_size,
+							   returned_data,
+							   data_size);
+	} else
+		r = prepare_restart_data_local_file(f, returned_data,
+						    data_size);
+
+error:
+	return r;
+}
+
+/* if *returned_data is not NULL, the file checkpointed must be
+ * replaced. Thus, we just read the ghost.
+ */
+static int cr_import_now_file(struct epm_action *action,
+			      ghost_t *ghost,
+			      struct task_struct *fake,
+			      int local_only,
+			      void **returned_data,
+			      size_t *data_size)
+{
+	int r, desc_size, supported;
 	struct file *f;
 	void *desc;
 
-	r = ghost_read(ghost, &tty, sizeof(int));
+	r = ghost_read(ghost, &supported, sizeof(supported));
 	if (r)
 		goto error;
 
-	if (tty != 0 && tty != 1) {
-		BUG();
-		r = -E_CR_BADDATA;
+	if (!supported) {
+		r = prepare_restart_data_unsupported_file(returned_data,
+							  data_size);
 		goto error;
 	}
 
@@ -732,42 +817,16 @@ static int cr_import_now_regular_file(struct epm_action *action,
 	if (r)
 		goto error;
 
-	/* the file will be replaced by the current terminal,
-	 * no need to import
-	 */
-	if (tty && action->restart.app->restart.terminal) {
-		r = prepare_restart_data_replaced_by_tty(returned_data,
-							 data_size);
-		goto err_free_desc;
-	}
+	/* File has been substituted at restart-time */
+	if (*returned_data)
+		goto error;
 
 	r = __regular_file_import_from_desc(action, desc, fake, &f);
 	if (r)
 		goto err_free_desc;
 
-	if (!local_only) {
-		/* get a new dvfs objid
-		 */
-		r = create_kddm_file_object(f);
-		if (r)
-			goto err_free_desc;
-
-#ifdef CONFIG_KRG_FAF
-		r = setup_faf_file_if_needed(f);
-		if (r)
-			goto err_free_desc;
-
-		if (f->f_flags & (O_FAF_CLT | O_FAF_SRV))
-			r = prepare_restart_data_faf_file(f, returned_data,
-							  data_size);
-		else
-#endif
-			r = prepare_restart_data_dvfs_file(f, desc, desc_size,
-							   returned_data,
-							   data_size);
-	} else
-		r = prepare_restart_data_local_file(f, returned_data,
-						    data_size);
+	r = prepare_restart_data_shared_file(f, local_only, desc, desc_size,
+					     returned_data, data_size);
 
 err_free_desc:
 	kfree(desc);
@@ -779,13 +838,12 @@ error:
 	return r;
 }
 
-int cr_import_complete_regular_file(struct task_struct *fake,
-				    void *_file_link)
+static int cr_import_complete_file(struct task_struct *fake, void *_file_link)
 {
 	struct cr_file_link *file_link = _file_link;
 	struct file *file;
 
-	if (file_link->desc_type == CR_FILE_REPLACED_BY_TTY)
+	if (file_link->desc_type == CR_FILE_NONE)
 		/* the file has not been imported */
 		return 0;
 
@@ -811,14 +869,13 @@ int cr_import_complete_regular_file(struct task_struct *fake,
 	return 0;
 }
 
-int cr_delete_regular_file(struct task_struct *fake,
-			   void *_file_link)
+static int cr_delete_file(struct task_struct *fake, void *_file_link)
 {
 	int r = 0;
 	struct cr_file_link *file_link = _file_link;
 	struct file *file;
 
-	if (file_link->desc_type == CR_FILE_REPLACED_BY_TTY)
+	if (file_link->desc_type == CR_FILE_NONE)
 		/* the file has not been imported */
 		return 0;
 
@@ -848,9 +905,10 @@ error:
 	return 0;
 }
 
-struct shared_object_operations cr_shared_regular_file_ops = {
-	.export_now        = cr_export_now_regular_file,
-	.import_now        = cr_import_now_regular_file,
-	.import_complete   = cr_import_complete_regular_file,
-	.delete            = cr_delete_regular_file,
+struct shared_object_operations cr_shared_file_ops = {
+	.export_now        = cr_export_now_file,
+	.export_user_info  = cr_export_user_info_file,
+	.import_now        = cr_import_now_file,
+	.import_complete   = cr_import_complete_file,
+	.delete            = cr_delete_file,
 };

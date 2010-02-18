@@ -9,6 +9,7 @@
 #include <linux/sched.h>
 #include <linux/signal.h>
 #include <linux/hrtimer.h>
+#include <linux/timer.h>
 #include <linux/posix-timers.h>
 #include <linux/slab.h>
 #ifdef CONFIG_TASKSTATS
@@ -80,6 +81,7 @@ static struct signal_struct *signal_struct_alloc(void)
 	INIT_LIST_HEAD(&sig->posix_timers);
 
 	hrtimer_init(&sig->real_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	sig->real_timer.function = it_real_fn;
 	sig->leader_pid = NULL;
 
 	sig->tty_old_pgrp = NULL;
@@ -768,7 +770,7 @@ static int cr_export_later_signal_struct(struct epm_action *action,
 
 	r = add_to_shared_objects_list(task->application,
 				       SIGNAL_STRUCT, key, LOCAL_ONLY,
-				       task, NULL);
+				       task, NULL, 0);
 
 	if (r == -ENOKEY) /* the signal_struct was already in the list */
 		r = 0;
@@ -1122,6 +1124,7 @@ static int cr_delete_signal_struct(struct task_struct *fake, void *_sig)
 
 struct shared_object_operations cr_shared_signal_struct_ops = {
 	.export_now        = cr_export_now_signal_struct,
+	.export_user_info  = NULL,
 	.import_now        = cr_import_now_signal_struct,
 	.import_complete   = cr_import_complete_signal_struct,
 	.delete            = cr_delete_signal_struct,
@@ -1159,6 +1162,7 @@ int import_private_signals(struct epm_action *action,
 		err = import_sigpending(ghost, task, &task->pending);
 		break;
 	default:
+		init_sigpending(&task->pending);
 		break;
 	}
 

@@ -34,8 +34,8 @@ char *get_chkpt_dir(long app_id, unsigned int chkpt_sn);
 
 char *get_chkpt_filebase(long app_id,
 			 unsigned int chkpt_sn,
-			 int obj_id,
-			 const char * obj_prefix);
+			 const char *format,
+			 ...);
 
 /** Create a new file ghost.
  *  @author Matthieu Fertré, Renaud Lottiaux
@@ -49,8 +49,8 @@ char *get_chkpt_filebase(long app_id,
 ghost_t *create_file_ghost(int access,
 			   long app_id,
 			   unsigned int chkpt_sn,
-			   int obj_id,
-			   const char *label);
+			   const char *format,
+			   ...);
 
 /** Create a new file ghost.
  *  @author Matthieu Fertré, Renaud Lottiaux

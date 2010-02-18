@@ -19,6 +19,7 @@
 #include <kerrighed/application.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
+#include <kerrighed/ghost_helpers.h>
 #include "ghost.h"
 #include "pid.h"
 #include "restart.h"
@@ -94,7 +95,8 @@ struct task_struct *restart_task_from_disk(struct epm_action *action,
 	ghost_t *ghost;
 	struct task_struct *task;
 
-	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn, pid, "task");
+	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn,
+				  "task_%d.bin", pid);
 
 	if (IS_ERR(ghost))
 		return ERR_PTR(PTR_ERR(ghost));
@@ -148,6 +150,7 @@ struct task_struct *restart_task(struct epm_action *action,
 struct task_struct *restart_process(pid_t pid, long app_id, int chkpt_sn)
 {
 	struct epm_action action;
+	struct task_struct *task;
 
 	/* Check if the process has not been already restarted */
 	if (find_task_by_kpid(pid) != NULL)
@@ -159,5 +162,11 @@ struct task_struct *restart_process(pid_t pid, long app_id, int chkpt_sn)
 
 	BUG_ON(!action.restart.app);
 
-	return restart_task(&action, pid, app_id, chkpt_sn);
+	task = restart_task(&action, pid, app_id, chkpt_sn);
+	if (IS_ERR(task))
+		ckpt_err(&action, PTR_ERR(task),
+			 "Fail to restart process %d",
+			 pid);
+
+	return task;
 }

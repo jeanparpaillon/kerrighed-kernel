@@ -444,6 +444,11 @@ void krg_sched_info_free(struct task_struct *task)
 {
 	struct krg_sched_info *info = rcu_dereference(task->krg_sched);
 
+#ifdef CONFIG_KRG_EPM
+	if (krg_current)
+		return;
+#endif
+
 	if (!info)
 		return;
 

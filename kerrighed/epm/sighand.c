@@ -421,7 +421,7 @@ static int cr_export_later_sighand_struct(struct epm_action *action,
 	 */
 	r = add_to_shared_objects_list(task->application,
 				       SIGHAND_STRUCT, key, LOCAL_ONLY,
-				       task, NULL);
+				       task, NULL, 0);
 
 	if (r == -ENOKEY) /* the sighand_struct was already in the list. */
 		r = 0;
@@ -611,6 +611,7 @@ static int cr_delete_sighand_struct(struct task_struct *fake, void *_sig)
 
 struct shared_object_operations cr_shared_sighand_struct_ops = {
 	.export_now        = cr_export_now_sighand_struct,
+	.export_user_info  = NULL,
 	.import_now        = cr_import_now_sighand_struct,
 	.import_complete   = cr_import_complete_sighand_struct,
 	.delete            = cr_delete_sighand_struct,

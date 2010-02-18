@@ -26,9 +26,10 @@
 #include <kerrighed/ghost.h>
 #include <kerrighed/ghost_helpers.h>
 #include <kerrighed/action.h>
+#include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
-#include <kerrighed/app_terminal.h>
 #include <kerrighed/file.h>
+#include <kerrighed/file_stat.h>
 #include "mobility.h"
 #include <kerrighed/regular_file_mgr.h>
 #include <kerrighed/physical_fs.h>
@@ -191,35 +192,18 @@ exit:
 	return r;
 }
 
-static int is_file_type_supported(const struct file *file)
-{
-	if (is_socket(file)) {
-		printk("Checkpoint of socket file is not supported\n");
-		return 0;
-	} else if (is_named_pipe(file)) {
-		printk("Checkpoint of FIFO file (nammed pipe) is not supported\n");
-		return 0;
-	}
-
-	return 1;
-}
-
 static int _cr_get_file_type_and_key(const struct file *file,
 				     enum shared_obj_type *type,
 				     long *key,
 				     enum object_locality *locality,
 				     int allow_unsupported)
 {
-	if (!is_file_type_supported(file)) {
-		if (allow_unsupported) {
-			*type = UNSUPPORTED_FILE;
-			*key = (long)file;
-			if (locality)
-				*locality = LOCAL_ONLY;
-		} else
-			return -ENOSYS;
-	} else if (file->f_objid) {
-		*type = REGULAR_DVFS_FILE;
+	if (!can_checkpoint_file(file)
+	    && !allow_unsupported)
+		return -ENOSYS;
+
+	if (file->f_objid) {
+		*type = DVFS_FILE;
 		*key = file->f_objid;
 		if (locality) {
 			if (is_anonymous_pipe(file)) {
@@ -231,7 +215,7 @@ static int _cr_get_file_type_and_key(const struct file *file,
 				*locality = SHARED_ANY;
 		}
 	} else {
-		*type = REGULAR_FILE;
+		*type = LOCAL_FILE;
 		*key = (long)file;
 		if (locality)
 			*locality = LOCAL_ONLY;
@@ -255,7 +239,7 @@ void cr_get_file_type_and_key(const struct file *file,
 static int cr_ghost_write_file_id(ghost_t *ghost, struct file *file,
 				  int allow_unsupported)
 {
-	int r, tty;
+	int r;
 	long key;
 	enum shared_obj_type type;
 
@@ -266,16 +250,6 @@ static int cr_ghost_write_file_id(ghost_t *ghost, struct file *file,
 		goto error;
 
 	r = ghost_write(ghost, &key, sizeof(long));
-	if (r)
-		goto error;
-
-	tty = is_tty(file);
-	if (tty < 0) {
-		r = tty;
-		goto error;
-	}
-
-	r = ghost_write(ghost, &tty, sizeof(int));
 	if (r)
 		goto error;
 
@@ -510,7 +484,7 @@ int _cr_add_file_to_shared_table(struct task_struct *task,
 				 int index, struct file *file,
 				 int allow_unsupported)
 {
-	int r;
+	int r, force;
 	long key;
 	enum shared_obj_type type;
 	enum object_locality locality;
@@ -524,9 +498,14 @@ int _cr_add_file_to_shared_table(struct task_struct *task,
 	args.file_args.index = index;
 	args.file_args.file = file;
 
+	if (index == -1)
+		force = 0;
+	else
+		force = 1;
+
 	r = add_to_shared_objects_list(task->application,
 				       type, key, locality, task,
-				       &args);
+				       &args, force);
 
 	if (r == -ENOKEY) /* the file was already in the list */
                r = 0;
@@ -539,21 +518,12 @@ int cr_add_file_to_shared_table(struct task_struct *task,
 				int index, struct file *file,
 				int allow_unsupported)
 {
-	int r, tty;
+	int r;
 
 	r = _cr_add_file_to_shared_table(task, index, file,
 					 allow_unsupported);
 	if (r)
 		goto error;
-
-	tty = is_tty(file);
-	if (tty) {
-		if (tty < 0) {
-			r = tty;
-			goto error;
-		}
-		app_set_checkpoint_terminal(task->application, file);
-	}
 
 	if (!(file->f_flags & O_FAF_CLT) && is_anonymous_pipe(file)) {
 		r = cr_add_pipe_inode_to_shared_table(task, file);
@@ -617,11 +587,15 @@ static int cr_export_later_files_struct(ghost_t *ghost,
 
 	r = add_to_shared_objects_list(task->application,
 				       FILES_STRUCT, key, LOCAL_ONLY,
-				       task, NULL);
-	if (r)
-		goto err_add;
+				       task, NULL, 0);
+	if (r && r != -ENOKEY)
+		goto err;
 
-	/* now we need to check the files to see if they are shared */
+	/*
+	 * we need to check the files to see if they are shared even if
+	 * the files_struct itself is shared. These is needed to export
+	 * valid information to user to help file substitution.
+	 */
 	rcu_read_lock();
 	fdt = files_fdtable(task->files);
 
@@ -629,9 +603,6 @@ static int cr_export_later_files_struct(ghost_t *ghost,
 	r = cr_add_files_to_shared_table(task, fdt, last_open_fd);
 	rcu_read_unlock();
 
-err_add:
-	if (r == -ENOKEY)
-		r = 0;
 err:
 	return r;
 }
@@ -751,7 +722,7 @@ static int cr_export_later_fs_struct(struct epm_action *action,
 
 	r = add_to_shared_objects_list(task->application,
 				       FS_STRUCT, key, LOCAL_ONLY, task,
-				       NULL);
+				       NULL, 0);
 
 	if (r == -ENOKEY) /* the fs_struct was already in the list */
 		r = 0;
@@ -974,86 +945,6 @@ err:
 	}
 
 	goto exit;
-}
-
-static int cr_link_to_terminal(struct epm_action *action,
-			       struct file **returned_file)
-{
-	int r = 0;
-
-	*returned_file = app_get_restart_terminal(action->restart.app);
-
-	if (IS_ERR(*returned_file))
-		r = PTR_ERR(*returned_file);
-
-	return r;
-}
-
-int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
-		    struct task_struct *task, struct file **returned_file)
-{
-	int r, tty;
-	long key;
-	enum shared_obj_type type;
-
-	BUG_ON(action->type != EPM_CHECKPOINT);
-
-	/* files are linked while loading files_struct or mm_struct */
-	BUG_ON(action->restart.shared != CR_LOAD_NOW);
-
-	r = ghost_read(ghost, &type, sizeof(enum shared_obj_type));
-	if (r)
-		goto error;
-
-	if (type != REGULAR_FILE
-	    && type != REGULAR_DVFS_FILE
-	    && type != UNSUPPORTED_FILE)
-		goto err_bad_data;
-
-	r = ghost_read(ghost, &key, sizeof(long));
-	if (r)
-		goto error;
-
-	r = ghost_read(ghost, &tty, sizeof(int));
-	if (r)
-		goto error;
-
-	if (tty != 1 && tty != 0)
-		goto err_bad_data;
-
-	if (tty) {
-		BUG_ON(type == UNSUPPORTED_FILE);
-
-		r = cr_link_to_terminal(action, returned_file);
-
-		if (r || *returned_file)
-			goto error;
-	}
-
-	switch (type) {
-	case REGULAR_FILE:
-		r = cr_link_to_local_regular_file(action, ghost, task,
-						  returned_file, key);
-		break;
-	case REGULAR_DVFS_FILE:
-		r = cr_link_to_dvfs_regular_file(action, ghost, task,
-						 returned_file, key);
-		break;
-	case UNSUPPORTED_FILE:
-		*returned_file = NULL;
-		r = 0;
-		break;
-	default:
-		BUG();
-		break;
-	}
-
-error:
-	return r;
-
-err_bad_data:
-	r = -E_CR_BADDATA;
-	goto error;
 }
 
 static int cr_link_to_open_files(struct epm_action *action,
@@ -1627,6 +1518,7 @@ static int cr_delete_files_struct(struct task_struct *fake, void *_files)
 
 struct shared_object_operations cr_shared_files_struct_ops = {
         .export_now        = cr_export_now_files_struct,
+	.export_user_info  = NULL,
 	.import_now        = cr_import_now_files_struct,
 	.import_complete   = cr_import_complete_files_struct,
 	.delete            = cr_delete_files_struct,
@@ -1688,43 +1580,8 @@ static int cr_delete_fs_struct(struct task_struct *fake, void *_fs)
 
 struct shared_object_operations cr_shared_fs_struct_ops = {
         .export_now        = cr_export_now_fs_struct,
+	.export_user_info  = NULL,
 	.import_now        = cr_import_now_fs_struct,
 	.import_complete   = cr_import_complete_fs_struct,
 	.delete            = cr_delete_fs_struct,
-};
-
-static int cr_export_now_unsupported_file(struct epm_action *action, ghost_t *ghost,
-					  struct task_struct *task,
-					  union export_args *args)
-{
-	return 0;
-}
-
-static int cr_import_now_unsupported_file(struct epm_action *action, ghost_t *ghost,
-					  struct task_struct *fake, int local_only,
-					  void ** returned_data,
-					  size_t *returned_data_size)
-{
-	*returned_data = NULL;
-	*returned_data_size = 0;
-
-	return 0;
-}
-
-static int cr_import_complete_unsupported_file(struct task_struct *fake, void *_fs)
-{
-	return 0;
-}
-
-static int cr_delete_unsupported_file(struct task_struct *fake, void *_fs)
-{
-	return 0;
-}
-
-struct shared_object_operations cr_shared_unsupported_file_ops = {
-        .restart_data_size = 0,
-        .export_now        = cr_export_now_unsupported_file,
-	.import_now        = cr_import_now_unsupported_file,
-	.import_complete   = cr_import_complete_unsupported_file,
-	.delete            = cr_delete_unsupported_file,
 };

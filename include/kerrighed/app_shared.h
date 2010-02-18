@@ -28,7 +28,8 @@ int local_chkpt_shared(struct rpc_desc *desc,
 		       int chkpt_sn);
 
 int global_restart_shared(struct rpc_desc *desc,
-			  struct app_kddm_object *obj);
+			  struct app_kddm_object *obj,
+			  struct restart_request *req);
 
 int local_restart_shared(struct rpc_desc *desc,
 			 struct app_struct *app,
@@ -45,9 +46,8 @@ enum shared_obj_type {
 	PIPE_INODE,
 
 	/* file descriptors */
-	REGULAR_FILE,
-	REGULAR_DVFS_FILE,
-	UNSUPPORTED_FILE,
+	LOCAL_FILE,
+	DVFS_FILE,
 
 	/* other objects */
 	FILES_STRUCT,
@@ -68,6 +68,11 @@ union export_args {
 	struct file_export_args file_args;
 };
 
+struct export_obj_info {
+	struct task_struct *task;
+	struct list_head next;
+	union export_args args;
+};
 
 enum object_locality {
 	LOCAL_ONLY,
@@ -81,7 +86,8 @@ int add_to_shared_objects_list(struct app_struct *app,
 			       unsigned long key,
 			       enum object_locality locality,
 			       struct task_struct* exporting_task,
-			       union export_args *args);
+			       union export_args *args,
+			       int force);
 
 void *get_imported_shared_object(struct app_struct *app,
 				 enum shared_obj_type type,
@@ -91,6 +97,13 @@ struct shared_object_operations {
 	size_t restart_data_size;
 	int (*export_now) (struct epm_action *, ghost_t *, struct task_struct *,
 			   union export_args *);
+
+	/* export_user_info is used to export information to a readable file to
+	 * userspace
+	 */
+	int (*export_user_info) (struct epm_action *, ghost_t *, unsigned long,
+				 struct export_obj_info *);
+
 	int (*import_now) (struct epm_action *, ghost_t *, struct task_struct *,
 			   int, void  **, size_t *);
 	int (*import_complete) (struct task_struct *, void *);

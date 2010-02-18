@@ -99,14 +99,12 @@ struct app_struct {
 
 	union {
 		struct {
-			struct file *terminal;
 			int flags;
 
 			struct cr_mm_region *first_mm_region;
 		} checkpoint;
 
 		struct {
-			struct file *terminal;
 			krgnodemask_t replacing_nodes;
 		} restart;
 	};

@@ -341,6 +341,11 @@ void krg_task_abort(struct task_struct *task)
 {
 	struct task_kddm_object *obj = task->task_obj;
 
+#ifdef CONFIG_KRG_EPM
+	if (krg_current)
+		return;
+#endif
+
 	if (!obj)
 		return;
 

@@ -1140,7 +1140,7 @@ int cr_add_pipe_inode_to_shared_table(struct task_struct *task,
 	key = (long)file->f_path.dentry->d_inode;
 
 	r = add_to_shared_objects_list(task->application, PIPE_INODE, key,
-				       LOCAL_ONLY, task, &args);
+				       LOCAL_ONLY, task, &args, 0);
 	if (r == -ENOKEY) /* the inode was already in the list */
 		r = 0;
 
@@ -1339,6 +1339,7 @@ int cr_delete_pipe_inode(struct task_struct *fake,
 
 struct shared_object_operations cr_shared_pipe_inode_ops = {
 	.export_now        = cr_export_now_pipe_inode,
+	.export_user_info  = NULL,
 	.import_now        = cr_import_now_pipe_inode,
 	.import_complete   = cr_import_complete_pipe_inode,
 	.delete            = cr_delete_pipe_inode,

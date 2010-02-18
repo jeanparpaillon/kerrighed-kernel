@@ -1513,7 +1513,7 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	recalc_sigpending();
 #ifdef CONFIG_KRG_EPM
 	/* Only check if inside a remote clone() */
-	if (krg_current && in_krg_do_fork())
+	if (!krg_current || in_krg_do_fork())
 #endif
 	if (signal_pending(current)) {
 		spin_unlock(&current->sighand->siglock);
@@ -1613,6 +1613,9 @@ bad_fork_cleanup_application:
 bad_fork_free_graph:
 	ftrace_graph_exit_task(p);
 bad_fork_free_pid:
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current)
+#endif
 	if (pid != &init_struct_pid)
 		free_pid(pid);
 bad_fork_cleanup_io:

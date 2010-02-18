@@ -199,6 +199,7 @@ int semarray_insert_object (struct kddm_obj * obj_entry,
 {
 	semarray_object_t *sem_object;
 	struct sem_array *sem;
+	int r = 0;
 
 	sem_object = obj_entry->object;
 	BUG_ON(!sem_object);
@@ -215,13 +216,20 @@ int semarray_insert_object (struct kddm_obj * obj_entry,
 		sem = create_local_sem(ns, &sem_object->imported_sem);
 		sem_object->local_sem = sem;
 
+		if (IS_ERR(sem)) {
+			r = PTR_ERR(sem);
+			BUG();
+		}
+
 		put_ipc_ns(ns);
 	}
 
-	update_local_sem(sem_object->local_sem,
-			 &sem_object->imported_sem);
+	if (!r)
+		update_local_sem(sem_object->local_sem,
+				 &sem_object->imported_sem);
 
-	return 0;
+exit:
+	return r;
 }
 
 

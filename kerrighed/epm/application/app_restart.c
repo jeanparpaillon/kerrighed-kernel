@@ -14,7 +14,6 @@
 #include <kerrighed/pid.h>
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
-#include <kerrighed/app_terminal.h>
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/ghost_helpers.h>
@@ -27,9 +26,8 @@
 #include "../epm_internal.h"
 #include "app_utils.h"
 
-static inline int restore_app_kddm_object(struct app_kddm_object *obj,
-					  long app_id, int chkpt_sn,
-					  int *one_terminal)
+static int restore_app_kddm_object(struct app_kddm_object *obj,
+				   long app_id, int chkpt_sn)
 {
 	ghost_fs_t oldfs;
 	ghost_t *ghost;
@@ -43,7 +41,7 @@ static inline int restore_app_kddm_object(struct app_kddm_object *obj,
 	__set_ghost_fs(&oldfs);
 
 	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn,
-				  -1, "global");
+				  "global.bin");
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
@@ -125,10 +123,6 @@ static inline int restore_app_kddm_object(struct app_kddm_object *obj,
 		goto err_read;
 
 	r = ghost_read(ghost, &obj->user_data, sizeof(obj->user_data));
-	if (r)
-		goto err_read;
-
-	r = ghost_read(ghost, one_terminal, sizeof(int));
 	if (r)
 		goto err_read;
 
@@ -228,7 +222,7 @@ static inline int restore_local_app(long app_id, int chkpt_sn,
 	__set_ghost_fs(&oldfs);
 
 	ghost = create_file_ghost(GHOST_READ, app_id, chkpt_sn,
-				  node_id, "node");
+				  "node_%d.bin", node_id);
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
@@ -397,8 +391,7 @@ out:
 	return n;
 }
 
-static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn,
-			       int *one_terminal)
+static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn)
 {
 	struct rpc_desc *desc;
 	struct init_restart_msg msg;
@@ -408,7 +401,7 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn,
 	int duplicate = 0;
 	int r;
 
-	r = restore_app_kddm_object(obj, obj->app_id, chkpt_sn, one_terminal);
+	r = restore_app_kddm_object(obj, obj->app_id, chkpt_sn);
 	if (r)
 		goto exit;
 
@@ -540,7 +533,7 @@ static inline int was_checkpointed(struct app_struct *app, pid_t pid)
 	struct path prev_root;
 
 	char *filename = get_chkpt_filebase(app->app_id, app->chkpt_sn,
-					    pid, "task");
+					    "task_%d.bin", pid);
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
 
@@ -960,7 +953,6 @@ struct restart_request_msg {
 	kerrighed_node_t requester;
 	long app_id;
 	task_identity_t requester_task;
-	int terminal;
 };
 
 static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
@@ -988,12 +980,6 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	}
 	old_cred = override_creds(cred);
 	app->cred = cred;
-
-	if (msg->terminal) {
-		r = rcv_terminal_desc(desc, app);
-		if (r)
-			goto error;
-	}
 
 	/* return the list of orphan sessions and pgrp */
 	r = return_orphan_sessions_and_prgps(app, desc);
@@ -1073,9 +1059,6 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	local_restart_shared_complete(app, fake);
 
 error:
-	/* call fput on the terminal file imported by rcv_terminal_desc */
-	app_put_terminal(app);
-
 	if (app->cred) {
 		app->cred = NULL;
 		put_cred(cred);
@@ -1096,23 +1079,18 @@ error:
 
 static int global_do_restart(struct app_kddm_object *obj,
 			     const task_identity_t *requester,
-			     struct file *term,
-			     pid_t *root_pid)
+			     struct restart_request *req)
 {
 	struct rpc_desc *desc;
 	struct restart_request_msg msg;
 	pids_list_t orphan_pids;
-	int r=0;
+	pid_t *root_pid = &req->root_pid;
+	int r = 0;
 
 	/* prepare message */
 	msg.requester = kerrighed_node_id;
 	msg.app_id = obj->app_id;
 	msg.requester_task = *requester;
-
-	if (term)
-		msg.terminal = 1;
-	else
-		msg.terminal = 0;
 
 	desc = rpc_begin_m(APP_DO_RESTART, &obj->nodes);
 	if (!desc)
@@ -1124,12 +1102,6 @@ static int global_do_restart(struct app_kddm_object *obj,
 	r = pack_creds(desc, current_cred());
 	if (r)
 		goto err_no_pids;
-
-	if (term) {
-		r = send_terminal_desc(desc, term);
-		if (r)
-			goto err_no_pids;
-	}
 
 	/* get the list of orphan sessions/groups */
 	r = get_orphan_sessions_and_pgrps(desc, obj->nodes, &orphan_pids);
@@ -1146,7 +1118,7 @@ static int global_do_restart(struct app_kddm_object *obj,
 	if (r)
 		goto error;
 
-	r = global_restart_shared(desc, obj);
+	r = global_restart_shared(desc, obj, req);
 	if (r)
 		goto error;
 
@@ -1223,12 +1195,10 @@ err_no_pids:
  *  @author Matthieu Fertré
  */
 int app_restart(struct restart_request *req,
-		const task_identity_t *requester, pid_t *root_pid)
+		const task_identity_t *requester)
 {
 	struct app_kddm_object *obj;
-	struct file *term = NULL;
 	int r = 0;
-	int one_terminal;
 
 	obj = kddm_grab_object(kddm_def_ns, APP_KDDM_ID, req->app_id);
 
@@ -1239,36 +1209,14 @@ int app_restart(struct restart_request *req,
 	obj->app_id = req->app_id;
 
 	/* open the files and recreate the struct app_struct */
-	r = global_init_restart(obj, req->chkpt_sn, &one_terminal);
+	r = global_init_restart(obj, req->chkpt_sn);
 	if (r)
 		goto exit;
 
-	/* get the restart cmd terminal */
-        if (req->flags & GET_RESTART_CMD_PTS) {
-		if (!one_terminal) {
-			r = -EPERM;
-			ckpt_err(NULL, r, "Fail to replace terminal");
-			goto exit;
-		}
-		term = get_valid_terminal();
-		if (!term) {
-			r = -EINVAL;
-			ckpt_err(NULL, r, "Fail to replace terminal");
-			goto exit;
-		}
-        }
-
 	/* recreate all the tasks */
-	r = global_do_restart(obj, requester, term, root_pid);
-	if (r)
-		goto exit_put_term;
-
+	r = global_do_restart(obj, requester, req);
 	if (!r)
 		obj->state = APP_RESTARTED;
-
-exit_put_term:
-	if (term)
-		fput(term);
 
 exit:
 	if (r)
