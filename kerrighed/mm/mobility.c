@@ -620,7 +620,6 @@ int export_mm_struct(struct epm_action *action,
 		     struct task_struct *tsk)
 {
 	struct mm_struct *mm, *exported_mm;
-	struct kddm_set *set = NULL;
 	int r = 0;
 
 	mm = tsk->mm;
@@ -641,8 +640,6 @@ int export_mm_struct(struct epm_action *action,
 			  if (IS_ERR(exported_mm))
 				  return PTR_ERR(exported_mm);
 
-			  set = exported_mm->anon_vma_kddm_set;
-
 			  break;
 		  }
 		  /* else fall through */
@@ -653,8 +650,6 @@ int export_mm_struct(struct epm_action *action,
 			  if (r)
 				  goto exit_put_mm;
 		  }
-
-		  set = mm->anon_vma_kddm_set;
 
 		  break;
 
