@@ -34,8 +34,6 @@ void (*kh_fill_pte)(struct mm_struct *mm, unsigned long addr,
 void (*kh_zap_pte)(struct mm_struct *mm, unsigned long addr,
 		   pte_t *pte) = NULL;
 
-void (*kh_do_mmap)(struct vm_area_struct *vma) = NULL;
-
 void (*kh_do_munmap)(struct mm_struct *, unsigned long, size_t,
 		     struct vm_area_struct *) = NULL;
 
@@ -341,10 +339,10 @@ int init_anon_vma_kddm_set(struct task_struct *tsk,
 
 
 
-static void kcb_do_mmap(struct vm_area_struct *vma)
+void krg_check_vma_link(struct vm_area_struct *vma)
 {
-	if (vma->vm_mm->anon_vma_kddm_set)
-		check_link_vma_to_anon_memory_kddm_set (vma);
+	BUG_ON (!vma->vm_mm->anon_vma_kddm_set);
+	check_link_vma_to_anon_memory_kddm_set (vma);
 }
 
 
@@ -474,7 +472,6 @@ void mm_struct_init (void)
 	hook_register(&kh_copy_mm, kcb_copy_mm);
 	hook_register(&kh_mm_get, kcb_mm_get);
 	hook_register(&kh_mm_release, kcb_mm_release);
-	hook_register(&kh_do_mmap, kcb_do_mmap);
 	hook_register(&kh_do_munmap, kcb_do_munmap);
 	hook_register(&kh_fill_pte, kcb_fill_pte);
 	hook_register(&kh_zap_pte, kcb_zap_pte);

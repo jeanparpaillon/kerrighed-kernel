@@ -638,7 +638,8 @@ int setup_arg_pages(struct linux_binprm *bprm,
 	}
 
 #ifdef CONFIG_KRG_MM
-        KRGFCT(kh_do_mmap)(vma);
+	if (mm->anon_vma_kddm_set)
+		krg_check_vma_link(vma);
 #endif
 
 #ifdef CONFIG_STACK_GROWSUP

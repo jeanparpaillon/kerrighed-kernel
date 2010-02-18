@@ -2107,8 +2107,8 @@ gotten:
 		goto oom;
 
 #ifdef CONFIG_KRG_MM
-	if (need_vma_link_check)
-		KRGFCT(kh_do_mmap)(vma);
+	if (need_vma_link_check && mm->anon_vma_kddm_set)
+		krg_check_vma_link(vma);
 	if (vma->vm_ops && vma->vm_ops->wppage) {
 		new_page = vma->vm_ops->wppage(vma, address & PAGE_MASK,
 					       old_page);
@@ -2763,7 +2763,8 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 			anon = 1;
 			return VM_FAULT_OOM;
 		}
-		KRGFCT(kh_do_mmap)(vma);
+		if (mm->anon_vma_kddm_set)
+			krg_check_vma_link(vma);
 	}
 #endif
 	ret = vma->vm_ops->fault(vma, &vmf);

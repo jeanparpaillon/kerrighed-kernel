@@ -1275,7 +1275,8 @@ out:
 	} else if ((flags & MAP_POPULATE) && !(flags & MAP_NONBLOCK))
 		make_pages_present(addr, addr + len);
 #ifdef CONFIG_KRG_MM
-	KRGFCT(kh_do_mmap)(vma);
+	if (mm->anon_vma_kddm_set)
+		krg_check_vma_link(vma);
 #endif
 	return addr;
 
@@ -2124,7 +2125,8 @@ unsigned long do_brk(unsigned long addr, unsigned long len)
 	vma->vm_page_prot = vm_get_page_prot(flags);
 	vma_link(mm, vma, prev, rb_link, rb_parent);
 #ifdef CONFIG_KRG_MM
-	KRGFCT(kh_do_mmap)(vma);
+	if (mm->anon_vma_kddm_set)
+		krg_check_vma_link(vma);
 #endif
 out:
 	mm->total_vm += len >> PAGE_SHIFT;
