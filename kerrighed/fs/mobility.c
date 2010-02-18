@@ -649,7 +649,7 @@ int export_files_struct (struct epm_action *action,
 
 	/* Export the bit vector close_on_exec */
 
-	rcu_read_lock();
+	spin_lock(&tsk->files->file_lock);
 	fdt = files_fdtable(tsk->files);
 
 	last_open_fd = count_open_files(fdt);
@@ -698,7 +698,7 @@ int export_files_struct (struct epm_action *action,
 	}
 
 exit_unlock:
-	rcu_read_unlock();
+	spin_unlock(&tsk->files->file_lock);
 
 err:
 	return r;
