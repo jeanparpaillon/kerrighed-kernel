@@ -840,7 +840,9 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 		}
 
 #ifdef CONFIG_KRG_MM
-		if (vma->vm_mm->anon_vma_kddm_set) {
+		if (vma->vm_mm->anon_vma_kddm_set &&
+		    !(details && (details->check_mapping ||
+				  details->nonlinear_vma ))) {
 			KRGFCT(kh_zap_pte)(vma->vm_mm, addr, pte);
 			ptent = *pte;
 			if (pte_none(ptent)) {
