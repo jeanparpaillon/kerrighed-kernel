@@ -254,6 +254,8 @@ void create_mm_struct_object(struct mm_struct *mm)
 
 	atomic_inc(&mm->mm_users); // Get a reference count for the KDDM.
 
+	krgnode_set(kerrighed_node_id, mm->copyset);
+
 	mm->mm_id = get_unique_id(&mm_struct_unique_id_root);
 
 	_mm = _kddm_grab_object_manual_ft(mm_struct_kddm_set, mm->mm_id);
