@@ -2052,9 +2052,21 @@ static inline void verify_mm_writelocked(struct mm_struct *mm)
  *  anonymous maps.  eventually we may be able to do some
  *  brk-specific accounting here.
  */
+#ifdef CONFIG_KRG_MM
+unsigned long do_brk(unsigned long addr, unsigned long len)
+{
+	return __do_brk(current->mm, addr, len,
+			current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur, 0);
+}
+unsigned long __do_brk(struct mm_struct * mm, unsigned long addr,
+		       unsigned long len, unsigned long _lock_limit,
+		       int handler_call)
+{
+#else
 unsigned long do_brk(unsigned long addr, unsigned long len)
 {
 	struct mm_struct * mm = current->mm;
+#endif
 	struct vm_area_struct * vma, * prev;
 	unsigned long flags;
 	struct rb_node ** rb_link, * rb_parent;
@@ -2088,7 +2100,11 @@ unsigned long do_brk(unsigned long addr, unsigned long len)
 		unsigned long locked, lock_limit;
 		locked = len >> PAGE_SHIFT;
 		locked += mm->locked_vm;
+#ifdef CONFIG_KRG_MM
+		lock_limit = _lock_limit;
+#else
 		lock_limit = current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur;
+#endif
 		lock_limit >>= PAGE_SHIFT;
 		if (locked > lock_limit && !capable(CAP_IPC_LOCK))
 			return -EAGAIN;
@@ -2118,7 +2134,11 @@ unsigned long do_brk(unsigned long addr, unsigned long len)
 	if (mm->map_count > sysctl_max_map_count)
 		return -ENOMEM;
 
+#ifdef CONFIG_KRG_MM
+	if (security_vm_enough_memory_mm(mm, len >> PAGE_SHIFT))
+#else
 	if (security_vm_enough_memory(len >> PAGE_SHIFT))
+#endif
 		return -ENOMEM;
 
 	/* Can we just expand an old private anonymous mapping? */
@@ -2155,7 +2175,6 @@ out:
 	}
 	return addr;
 }
-
 EXPORT_SYMBOL(do_brk);
 
 /* Release all mmaps. */
