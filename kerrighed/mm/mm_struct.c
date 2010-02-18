@@ -178,7 +178,7 @@ void break_distributed_cow_put(struct kddm_set *set, struct mm_struct *mm)
 struct mm_struct *krg_dup_mm(struct task_struct *tsk, struct mm_struct *src_mm)
 {
 	struct mm_struct *mm;
-	int err;
+	int err = -ENOMEM;
 
 	if (src_mm->anon_vma_kddm_set)
 		break_distributed_cow(src_mm->anon_vma_kddm_set, src_mm);
@@ -227,7 +227,7 @@ exit_put_mm:
         mmput(mm);
 
 fail_nomem:
-        return NULL;
+        return ERR_PTR(err);
 }
 
 
