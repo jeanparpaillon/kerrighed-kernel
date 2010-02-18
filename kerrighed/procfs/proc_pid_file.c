@@ -40,46 +40,32 @@ static int do_handle_environ_read(struct task_struct *task,
 				  char *buf, size_t count, loff_t *ppos)
 {
 	struct pid_namespace *ns = find_get_krg_pid_ns();
-	struct dentry *root = ns->proc_mnt->mnt_root;
-	struct dentry *pid_dentry;
-	struct dentry *environ_dentry;
+	struct vfsmount *mnt = ns->proc_mnt;
 	struct file *file;
-	static const char environ_string[] = "environ";
-	char str_buf[PROC_NUMBUF + 1];
-	int len;
+	struct nameidata nd;
+	char str_buf[PROC_NUMBUF + sizeof("/environ")];
 	int ret;
 
-	len = snprintf(str_buf, sizeof(str_buf), "%d", task_pid_nr_ns(task, ns));
-	pid_dentry = lookup_one_len(str_buf, root, len);
-	if (IS_ERR(pid_dentry)) {
-		ret = PTR_ERR(pid_dentry);
+	sprintf(str_buf, "%d/environ", task_pid_nr_ns(task, ns));
+	ret = vfs_path_lookup(mnt->mnt_root, mnt, str_buf, 0, &nd);
+	if (ret)
 		goto out;
-	}
 
-	environ_dentry = lookup_one_len(environ_string,
-					pid_dentry,
-					sizeof(environ_string) - 1);
-	if (IS_ERR(environ_dentry)) {
-		ret = PTR_ERR(environ_dentry);
-		goto out_put_pid_dentry;
-	}
-
-	file = dentry_open(environ_dentry,
-			   mntget(ns->proc_mnt),
+	file = dentry_open(nd.path.dentry,
+			   nd.path.mnt,
 			   O_RDONLY,
 			   current_cred());
 	if (IS_ERR(file)) {
 		ret = PTR_ERR(file);
-		/* dentry_open() dropped environ_dentry and proc_mnt ref counts */
-		goto out_put_pid_dentry;
+		/* dentry_open() dropped nd.path ref counts */
+		goto out;
 	}
 
 	ret = vfs_read(file, buf, count, ppos);
 
-	/* Drops environ_dentry and proc_mnt ref counts */
+	/* Drops nd.path == file->f_path ref counts */
 	fput(file);
-out_put_pid_dentry:
-	dput(pid_dentry);
+
 out:
 	put_pid_ns(ns);
 	return ret;
