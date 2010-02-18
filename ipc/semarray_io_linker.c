@@ -228,7 +228,6 @@ int semarray_insert_object (struct kddm_obj * obj_entry,
 		update_local_sem(sem_object->local_sem,
 				 &sem_object->imported_sem);
 
-exit:
 	return r;
 }
 
