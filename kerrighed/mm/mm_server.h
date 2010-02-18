@@ -17,11 +17,13 @@
 
 
 
-typedef struct mm_munmap_msg {
+typedef struct mm_mmap_msg {
 	unique_id_t mm_id;
 	unsigned long start;
 	size_t len;
-} mm_munmap_msg_t;
+	unsigned long flags;
+	unsigned int vm_flags;
+} mm_mmap_msg_t;
 
 
 

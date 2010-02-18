@@ -1168,7 +1168,12 @@ extern unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
 extern unsigned long mmap_region(struct file *file, unsigned long addr,
 	unsigned long len, unsigned long flags,
 	unsigned int vm_flags, unsigned long pgoff);
-
+#ifdef CONFIG_KRG_MM
+extern unsigned long __mmap_region(struct mm_struct *mm, struct file *file,
+				   unsigned long addr, unsigned long len,
+				   unsigned long flags, unsigned int vm_flags,
+				   unsigned long pgoff, int handler_call);
+#endif
 static inline unsigned long do_mmap(struct file *file, unsigned long addr,
 	unsigned long len, unsigned long prot,
 	unsigned long flag, unsigned long offset)

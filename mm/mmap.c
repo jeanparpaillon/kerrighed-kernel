@@ -1145,11 +1145,26 @@ static inline int accountable_mapping(struct file *file, unsigned int vm_flags)
 	return (vm_flags & (VM_NORESERVE | VM_SHARED | VM_WRITE)) == VM_WRITE;
 }
 
+#ifdef CONFIG_KRG_MM
+unsigned long mmap_region(struct file *file, unsigned long addr,
+			  unsigned long len, unsigned long flags,
+			  unsigned int vm_flags, unsigned long pgoff)
+{
+	return __mmap_region(current->mm, file, addr, len, flags, vm_flags,
+			     pgoff, 0);
+}
+unsigned long __mmap_region(struct mm_struct *mm, struct file *file,
+			    unsigned long addr, unsigned long len,
+			    unsigned long flags, unsigned int vm_flags,
+			    unsigned long pgoff, int handler_call)
+{
+#else
 unsigned long mmap_region(struct file *file, unsigned long addr,
 			  unsigned long len, unsigned long flags,
 			  unsigned int vm_flags, unsigned long pgoff)
 {
 	struct mm_struct *mm = current->mm;
+#endif
 	struct vm_area_struct *vma, *prev;
 	int correct_wcount = 0;
 	int error;
@@ -1190,7 +1205,11 @@ munmap_back:
 	 */
 	if (accountable_mapping(file, vm_flags)) {
 		charged = len >> PAGE_SHIFT;
+#ifdef CONFIG_KRG_MM
+		if (security_vm_enough_memory_mm(mm, charged))
+#else
 		if (security_vm_enough_memory(charged))
+#endif
 			return -ENOMEM;
 		vm_flags |= VM_ACCOUNT;
 	}

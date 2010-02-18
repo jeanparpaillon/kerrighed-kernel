@@ -432,7 +432,7 @@ static void kcb_do_munmap(struct mm_struct *mm,
 			  size_t len,
 			  struct vm_area_struct *vma)
 {
-	struct mm_munmap_msg msg;
+	struct mm_mmap_msg msg;
 
 	if ((!anon_vma(vma)) || (!mm->mm_id))
 		return;
@@ -443,7 +443,6 @@ static void kcb_do_munmap(struct mm_struct *mm,
 
 	rpc_sync_m(RPC_MM_MUNMAP, &mm->copyset, &msg, sizeof(msg));
 }
-
 
 
 
