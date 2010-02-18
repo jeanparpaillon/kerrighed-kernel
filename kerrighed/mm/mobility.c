@@ -502,11 +502,13 @@ err:
 
 static int export_mm_counters(struct epm_action *action,
 			      ghost_t *ghost,
-			      struct mm_struct* mm)
+			      struct mm_struct* mm,
+			      struct mm_struct *exported_mm)
 {
 	int r;
 
 	r = ghost_write(ghost, mm, sizeof(struct mm_struct));
+	r = ghost_write(ghost, &exported_mm->mm_tasks, sizeof(atomic_t));
 	return r;
 }
 
@@ -666,7 +668,7 @@ int export_mm_struct(struct epm_action *action,
 		goto up_mmap_sem;
 
 	down_read(&mm->mmap_sem);
-	r = export_context_struct(ghost, mm);
+	r = export_context_struct(ghost, exported_mm);
 	if (r)
 		goto up_mmap_sem;
 
@@ -680,7 +682,7 @@ int export_mm_struct(struct epm_action *action,
 	if (r)
 		goto up_mmap_sem;
 
-	r = export_mm_counters(action, ghost, mm);
+	r = export_mm_counters(action, ghost, mm, exported_mm);
 
 up_mmap_sem:
 	up_read(&mm->mmap_sem);
@@ -1156,7 +1158,6 @@ static int import_mm_counters(struct epm_action *action,
 	mm->env_end = src_mm->env_end;
 	mm->cached_hole_size = src_mm->cached_hole_size;
 	mm->free_area_cache = src_mm->free_area_cache;
-	mm->mm_tasks = src_mm->mm_tasks;
 	mm->hiwater_rss = src_mm->hiwater_rss;
 	mm->hiwater_vm = src_mm->hiwater_vm;
 	mm->total_vm = src_mm->total_vm;
@@ -1167,6 +1168,8 @@ static int import_mm_counters(struct epm_action *action,
 	mm->reserved_vm = src_mm->reserved_vm;
 	mm->brk = src_mm->brk;
 	mm->flags = src_mm->flags;
+
+	r = ghost_read(ghost, &mm->mm_tasks, sizeof(atomic_t));
 
 out_free_mm:
 	free_mm(src_mm);
