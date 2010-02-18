@@ -91,9 +91,6 @@ extern void (*kh_fill_pte)(struct mm_struct *mm, unsigned long addr,
 extern void (*kh_zap_pte)(struct mm_struct *mm, unsigned long addr,
 			  pte_t *pte);
 
-extern void (*kh_do_munmap)(struct mm_struct *, unsigned long, size_t,
-			    struct vm_area_struct *);
-
 int try_to_flush_page(struct page *page);
 
 void krg_notify_mem(int mem_usage);
@@ -102,6 +99,9 @@ void krg_check_vma_link(struct vm_area_struct *vma);
 
 void krg_do_mmap_region(struct vm_area_struct *vma, unsigned long flags,
 			unsigned int vm_flags);
+
+void krg_do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
+		   struct vm_area_struct *vma);
 
 void krg_do_brk(struct mm_struct *mm, unsigned long start, size_t len,
 		unsigned long lock_limit);

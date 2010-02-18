@@ -34,9 +34,6 @@ void (*kh_fill_pte)(struct mm_struct *mm, unsigned long addr,
 void (*kh_zap_pte)(struct mm_struct *mm, unsigned long addr,
 		   pte_t *pte) = NULL;
 
-void (*kh_do_munmap)(struct mm_struct *, unsigned long, size_t,
-		     struct vm_area_struct *) = NULL;
-
 int krg_do_execve(struct task_struct *tsk, struct mm_struct *mm)
 {
 	if (can_use_krg_cap(current, CAP_USE_REMOTE_MEMORY))
@@ -460,21 +457,28 @@ void krg_do_mmap_region(struct vm_area_struct *vma,
 }
 
 
-static void kcb_do_munmap(struct mm_struct *mm,
-			  unsigned long start,
-			  size_t len,
-			  struct vm_area_struct *vma)
+void krg_do_munmap(struct mm_struct *mm,
+		   unsigned long start,
+		   size_t len,
+		   struct vm_area_struct *vma)
 {
 	struct mm_mmap_msg msg;
+	krgnodemask_t copyset;
 
 	if ((!anon_vma(vma)) || (!mm->mm_id))
+		return;
+
+	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
 		return;
 
 	msg.mm_id = mm->mm_id;
 	msg.start = start;
 	msg.len = len;
 
-	rpc_sync_m(RPC_MM_MUNMAP, &mm->copyset, &msg, sizeof(msg));
+	krgnodes_copy(copyset, mm->copyset);
+	krgnode_clear(kerrighed_node_id, copyset);
+
+	rpc_sync_m(RPC_MM_MUNMAP, &copyset, &msg, sizeof(msg));
 }
 
 void krg_do_brk(struct mm_struct *mm,
@@ -551,7 +555,6 @@ void mm_struct_init (void)
 	hook_register(&kh_copy_mm, kcb_copy_mm);
 	hook_register(&kh_mm_get, kcb_mm_get);
 	hook_register(&kh_mm_release, kcb_mm_release);
-	hook_register(&kh_do_munmap, kcb_do_munmap);
 	hook_register(&kh_fill_pte, kcb_fill_pte);
 	hook_register(&kh_zap_pte, kcb_zap_pte);
 }

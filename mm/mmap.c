@@ -2032,8 +2032,8 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len)
 	 */
 	detach_vmas_to_be_unmapped(mm, vma, prev, end);
 #ifdef CONFIG_KRG_MM
-	if (kh_do_munmap && mm->anon_vma_kddm_set)
-		kh_do_munmap(mm, start, len, vma);
+	if (!handler_call && mm->anon_vma_kddm_set)
+		krg_do_munmap(mm, start, len, vma);
 #endif
 	unmap_region(mm, vma, prev, start, end);
 
