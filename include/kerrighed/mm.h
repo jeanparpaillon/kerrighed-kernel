@@ -100,6 +100,9 @@ void krg_notify_mem(int mem_usage);
 
 void krg_check_vma_link(struct vm_area_struct *vma);
 
+void krg_do_mmap_region(struct vm_area_struct *vma, unsigned long flags,
+			unsigned int vm_flags);
+
 #define TestClearPageLRU(page)  test_and_clear_bit(PG_lru, &(page)->flags)
 
 #endif // __KKRG_MM__

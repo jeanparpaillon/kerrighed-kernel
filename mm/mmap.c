@@ -1294,8 +1294,8 @@ out:
 	} else if ((flags & MAP_POPULATE) && !(flags & MAP_NONBLOCK))
 		make_pages_present(addr, addr + len);
 #ifdef CONFIG_KRG_MM
-	if (mm->anon_vma_kddm_set)
-		krg_check_vma_link(vma);
+	if (!handler_call && mm->anon_vma_kddm_set)
+		krg_do_mmap_region(vma, flags, vm_flags);
 #endif
 	return addr;
 

@@ -426,6 +426,39 @@ static void kcb_mm_release(struct mm_struct *mm, int notify)
 }
 
 
+void krg_do_mmap_region(struct vm_area_struct *vma,
+			unsigned long flags,
+			unsigned int vm_flags)
+{
+	struct mm_struct *mm = vma->vm_mm;
+	struct mm_mmap_msg msg;
+	krgnodemask_t copyset;
+
+	if (!mm->anon_vma_kddm_set)
+		return;
+
+	BUG_ON (!mm->mm_id);
+
+	check_link_vma_to_anon_memory_kddm_set (vma);
+
+	if (!vma->vm_flags & VM_KDDM)
+		return;
+
+	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
+		return;
+
+	msg.mm_id = mm->mm_id;
+	msg.start = vma->vm_start;
+	msg.len = vma->vm_end - vma->vm_start;
+	msg.flags = flags;
+	msg.vm_flags = vm_flags;
+
+	krgnodes_copy(copyset, mm->copyset);
+	krgnode_clear(kerrighed_node_id, copyset);
+
+	rpc_sync_m(RPC_MM_MMAP_REGION, &copyset, &msg, sizeof(msg));
+}
+
 
 static void kcb_do_munmap(struct mm_struct *mm,
 			  unsigned long start,
