@@ -1750,9 +1750,12 @@ int expand_stack_downwards(struct vm_area_struct *vma, unsigned long address)
 {
 	return expand_downwards(vma, address);
 }
-
 #ifdef CONFIG_STACK_GROWSUP
+#ifdef CONFIG_KRG_MM
+int __expand_stack(struct vm_area_struct *vma, unsigned long address)
+#else
 int expand_stack(struct vm_area_struct *vma, unsigned long address)
+#endif
 {
 	return expand_upwards(vma, address);
 }
@@ -1775,7 +1778,11 @@ find_extend_vma(struct mm_struct *mm, unsigned long addr)
 	return prev;
 }
 #else
+#ifdef CONFIG_KRG_MM
+int __expand_stack(struct vm_area_struct *vma, unsigned long address)
+#else
 int expand_stack(struct vm_area_struct *vma, unsigned long address)
+#endif
 {
 	return expand_downwards(vma, address);
 }

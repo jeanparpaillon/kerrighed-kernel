@@ -85,6 +85,34 @@ int handle_do_brk (struct rpc_desc* desc,
 	return 0;
 }
 
+/** Handler for remote expand_stack.
+ *  @author Renaud Lottiaux
+ */
+int handle_expand_stack (struct rpc_desc* desc,
+			 void *msgIn, size_t size)
+{
+	struct mm_mmap_msg *msg = msgIn;
+	struct vm_area_struct *vma;
+	struct mm_struct *mm;
+	int r;
+
+	mm = krg_get_mm(msg->mm_id);
+
+	if (!mm)
+		return -EINVAL;
+
+	down_write(&mm->mmap_sem);
+
+	vma = find_vma(mm, msg->start);
+
+	r = __expand_stack(vma, msg->flags);
+
+	up_write(&mm->mmap_sem);
+
+	krg_put_mm(msg->mm_id);
+
+	return r;
+}
 
 /* MM handler Initialisation */
 
@@ -93,6 +121,7 @@ void mm_server_init (void)
 	rpc_register_int(RPC_MM_MMAP_REGION, handle_do_mmap_region, 0);
 	rpc_register_int(RPC_MM_MUNMAP, handle_do_munmap, 0);
 	rpc_register_int(RPC_MM_DO_BRK, handle_do_brk, 0);
+	rpc_register_int(RPC_MM_EXPAND_STACK, handle_expand_stack, 0);
 }
 
 

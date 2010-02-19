@@ -1234,7 +1234,16 @@ void page_cache_async_readahead(struct address_space *mapping,
 unsigned long max_sane_readahead(unsigned long nr);
 
 /* Do stack extension */
+#ifdef CONFIG_KRG_MM
+extern int __expand_stack(struct vm_area_struct *vma, unsigned long address);
+static inline int expand_stack(struct vm_area_struct *vma,
+			       unsigned long address)
+{
+	return __expand_stack(vma, address);
+}
+#else
 extern int expand_stack(struct vm_area_struct *vma, unsigned long address);
+#endif
 #ifdef CONFIG_IA64
 extern int expand_upwards(struct vm_area_struct *vma, unsigned long address);
 #endif
