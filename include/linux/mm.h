@@ -1235,11 +1235,18 @@ unsigned long max_sane_readahead(unsigned long nr);
 
 /* Do stack extension */
 #ifdef CONFIG_KRG_MM
+extern int krg_expand_stack(struct vm_area_struct *vma, unsigned long address);
 extern int __expand_stack(struct vm_area_struct *vma, unsigned long address);
 static inline int expand_stack(struct vm_area_struct *vma,
 			       unsigned long address)
 {
-	return __expand_stack(vma, address);
+	int err;
+
+	err = __expand_stack(vma, address);
+	if (!err && vma->vm_mm->anon_vma_kddm_set)
+		krg_expand_stack(vma, address);
+
+	return err;
 }
 #else
 extern int expand_stack(struct vm_area_struct *vma, unsigned long address);

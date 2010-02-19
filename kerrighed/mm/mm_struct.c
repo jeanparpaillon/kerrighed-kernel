@@ -501,6 +501,29 @@ void krg_do_brk(struct mm_struct *mm,
 	rpc_sync_m(RPC_MM_DO_BRK, &copyset, &msg, sizeof(msg));
 }
 
+int krg_expand_stack(struct vm_area_struct *vma,
+		     unsigned long address)
+{
+	struct mm_struct *mm = vma->vm_mm;
+	struct mm_mmap_msg msg;
+	krgnodemask_t copyset;
+	int r;
+
+	BUG_ON (!mm->mm_id);
+
+	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
+		return 0;
+
+	msg.start = vma->vm_start;
+	msg.flags = address;
+
+	krgnodes_copy(copyset, mm->copyset);
+	krgnode_clear(kerrighed_node_id, copyset);
+
+	r = rpc_sync_m(RPC_MM_EXPAND_STACK, &copyset, &msg, sizeof(msg));
+
+	return r;
+}
 
 
 /*****************************************************************************/

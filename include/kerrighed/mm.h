@@ -106,6 +106,8 @@ void krg_do_mmap_region(struct vm_area_struct *vma, unsigned long flags,
 void krg_do_brk(struct mm_struct *mm, unsigned long start, size_t len,
 		unsigned long lock_limit);
 
+int krg_expand_stack(struct vm_area_struct *vma, unsigned long address);
+
 #define TestClearPageLRU(page)  test_and_clear_bit(PG_lru, &(page)->flags)
 
 #endif // __KKRG_MM__
