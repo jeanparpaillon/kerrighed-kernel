@@ -6,7 +6,10 @@
 #include <linux/time.h>
 #include <asm/cputime.h>
 
-static int uptime_proc_show(struct seq_file *m, void *v)
+#ifndef CONFIG_KRG_PROCFS
+static
+#endif
+int uptime_proc_show(struct seq_file *m, void *v)
 {
 	struct timespec uptime;
 	struct timespec idle;

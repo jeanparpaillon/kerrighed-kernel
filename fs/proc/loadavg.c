@@ -10,7 +10,10 @@
 #define LOAD_INT(x) ((x) >> FSHIFT)
 #define LOAD_FRAC(x) LOAD_INT(((x) & (FIXED_1-1)) * 100)
 
-static int loadavg_proc_show(struct seq_file *m, void *v)
+#ifndef CONFIG_KRG_PROCFS
+static
+#endif
+int loadavg_proc_show(struct seq_file *m, void *v)
 {
 	int a, b, c;
 	unsigned long seq;

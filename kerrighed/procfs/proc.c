@@ -197,6 +197,9 @@ static void *c_start(struct seq_file *m, loff_t *pos)
 	struct cpu_info_seq_struct *seq_data = m->private;
 	krg_static_cpu_info_t *cpu_info;
 
+	if (!current->nsproxy->krg_ns)
+		return cpuinfo_op.start(m, pos);
+
 	if (*pos == 0)
 		init_cpu_info_seq_struct (seq_data);
 	else {
@@ -217,6 +220,9 @@ static void *c_start(struct seq_file *m, loff_t *pos)
 
 static void *c_next(struct seq_file *m, void *v, loff_t *pos)
 {
+	if (!current->nsproxy->krg_ns)
+		return cpuinfo_op.next(m, v, pos);
+
 	++*pos;
 
 	return c_start(m, pos);
@@ -224,6 +230,8 @@ static void *c_next(struct seq_file *m, void *v, loff_t *pos)
 
 static void c_stop(struct seq_file *m, void *v)
 {
+	if (!current->nsproxy->krg_ns)
+		cpuinfo_op.stop(m, v);
 }
 
 static int show_cpuinfo(struct seq_file *m, void *v)
@@ -309,6 +317,9 @@ static int show_meminfo(struct seq_file *p, void *v)
 	kerrighed_node_t node;
 	long cached;
 	int i;
+
+	if (!current->nsproxy->krg_ns)
+		return meminfo_proc_show(p, v);
 
 	nodes = get_proc_nodes_vector(nodeid);
 
@@ -508,7 +519,7 @@ static struct file_operations proc_krg_meminfo_operations = {
  *  @author Renaud Lottiaux
  *
  */
-static int show_stat(struct seq_file *p, void *v)
+static int krg_show_stat(struct seq_file *p, void *v)
 {
 	kerrighed_node_t req_nodeid = (long)p->private;
 	krg_dynamic_cpu_info_t *dynamic_cpu_info;
@@ -531,6 +542,9 @@ static int show_stat(struct seq_file *p, void *v)
 		[HEAD_BLANK_LEN] = '\0'
 	};
 	int head_len;
+
+	if (!current->nsproxy->krg_ns)
+		return show_stat(p, v);
 
 	irqs = kmalloc(sizeof(*irqs) * NR_IRQS, GFP_KERNEL);
 	if (!irqs)
@@ -660,7 +674,7 @@ static int stat_open(struct inode *inode, struct file *file)
 
 	size = 256 + NR_IRQS * 8 + NR_CPUS * kerrighed_nb_nodes * 80;
 
-	return krg_proc_stat_open(inode, file, show_stat, size);
+	return krg_proc_stat_open(inode, file, krg_show_stat, size);
 }
 
 static struct file_operations proc_krg_stat_operations = {
@@ -692,6 +706,9 @@ static int show_loadavg(struct seq_file *p, void *v)
 	kerrighed_node_t i;
 	int a, b, c, nr_threads, last_pid;
 	long nr_running;
+
+	if (!current->nsproxy->krg_ns)
+		return loadavg_proc_show(p, v);
 
 	a = b = c = nr_running = nr_threads = last_pid = 0;
 
@@ -849,6 +866,9 @@ static int show_uptime(struct seq_file *p, void *v)
 	struct timespec uptime;
 	unsigned long long idle = 0;
 	unsigned long idle_mod;
+
+	if (!current->nsproxy->krg_ns)
+		return uptime_proc_show(p, v);
 
 	nodes = get_proc_nodes_vector(nodeid);
 

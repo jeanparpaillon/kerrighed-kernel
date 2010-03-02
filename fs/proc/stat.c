@@ -22,7 +22,10 @@
 #define arch_idle_time(cpu) 0
 #endif
 
-static int show_stat(struct seq_file *p, void *v)
+#ifndef CONFIG_KRG_PROCFS
+static
+#endif
+int show_stat(struct seq_file *p, void *v)
 {
 	int i, j;
 	unsigned long jif;

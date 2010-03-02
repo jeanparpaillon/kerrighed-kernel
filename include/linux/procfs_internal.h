@@ -22,6 +22,12 @@ do {						\
 } while(0)
 #endif
 
+struct seq_file;
+int meminfo_proc_show(struct seq_file *m, void *v);
+int show_stat(struct seq_file *p, void *v);
+int loadavg_proc_show(struct seq_file *m, void *v);
+int uptime_proc_show(struct seq_file *m, void *v);
+
 #ifdef CONFIG_KRG_PROC
 /* From fs/proc/base.c */
 struct tgid_iter {
