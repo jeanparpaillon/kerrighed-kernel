@@ -1030,6 +1030,8 @@ long krg_faf_sendmsg (struct file * file,
 	err = unpack_remote_sleep_res_type(desc, r);
 	if (err)
 		goto cancel;
+	if (r == -EPIPE && !(msghdr->msg_flags & MSG_NOSIGNAL))
+		send_sig(SIGPIPE, current, 0);
 
 out_end:
 	rpc_end(desc, 0);
