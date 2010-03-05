@@ -156,6 +156,8 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 
 	BUG_ON (kddm_io_default_owner(set, objid) != kerrighed_node_id);
 	obj_entry->object = page;
+	ADD_TO_SET(COPYSET(obj_entry), kerrighed_node_id);
+	ADD_TO_SET(RMSET(obj_entry), kerrighed_node_id);
 	kddm_change_obj_state(set, obj_entry, objid, WRITE_OWNER);
 
 	BUG_ON (page->obj_entry != NULL);
