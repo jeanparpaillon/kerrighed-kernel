@@ -514,6 +514,7 @@ int krg_expand_stack(struct vm_area_struct *vma,
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
 		return 0;
 
+	msg.mm_id = mm->mm_id;
 	msg.start = vma->vm_start;
 	msg.flags = address;
 
