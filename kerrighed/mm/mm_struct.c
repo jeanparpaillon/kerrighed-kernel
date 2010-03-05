@@ -434,7 +434,7 @@ void krg_do_mmap_region(struct vm_area_struct *vma,
 
 	check_link_vma_to_anon_memory_kddm_set (vma);
 
-	if (!vma->vm_flags & VM_KDDM)
+	if (!(vma->vm_flags & VM_KDDM))
 		return;
 
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
