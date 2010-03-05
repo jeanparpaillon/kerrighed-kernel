@@ -850,13 +850,15 @@ int import_one_open_file (struct epm_action *action,
 {
 	struct dvfs_file_struct *dvfs_file = NULL;
 	struct dvfs_mobility_operations *ops;
-	struct file *file = NULL;
+	struct file *file = NULL, *imported_file = NULL;
 	krgsyms_val_t dvfs_ops_type;
 	unsigned long objid;
 	int first_import = 0;
 	int r = 0;
 
 	BUG_ON(action->type == EPM_CHECKPOINT);
+
+	*returned_file = NULL;
 
 	r = ghost_read(ghost, &dvfs_ops_type, sizeof (dvfs_ops_type));
 	if (r)
@@ -870,12 +872,14 @@ int import_one_open_file (struct epm_action *action,
 	/* We need to import the file, to avoid leaving unused data in
 	 * the ghost... We can probably do better...
 	 */
-	r = ops->file_import (action, ghost, task, returned_file);
+	r = ops->file_import (action, ghost, task, &imported_file);
 	if (r)
-		goto exit;
+		goto err_read;
 
-	if (index == MMAPPED_FILE)
+	if (index == MMAPPED_FILE) {
+		*returned_file = imported_file;
 		goto exit;
+	}
 
 	/* Check if the file struct is already present */
 	file = begin_import_dvfs_file(objid, &dvfs_file);
@@ -887,15 +891,27 @@ int import_one_open_file (struct epm_action *action,
 	if (file) {
 		/* The file has already been imported on this node */
 #ifdef CONFIG_KRG_FAF
-		free_faf_file_private_data(*returned_file);
+		free_faf_file_private_data(imported_file);
 #endif
-		fput(*returned_file);
+		fput(imported_file);
 		*returned_file = file;
 	}
-	else
+	else {
+		*returned_file = imported_file;
 		first_import = 1;
+	}
 
-	r = end_import_dvfs_file(objid, dvfs_file, *returned_file, first_import);
+	r = end_import_dvfs_file(objid, dvfs_file, imported_file, first_import);
+	if (!r)
+		goto exit;
+
+	if (!first_import) {
+#ifdef CONFIG_KRG_FAF
+		free_faf_file_private_data(imported_file);
+#endif
+		fput(imported_file);
+		*returned_file = NULL;
+	}
 
 exit:
 err_read:
