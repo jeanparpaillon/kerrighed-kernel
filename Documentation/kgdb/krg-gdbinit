@@ -77,19 +77,63 @@ document dmesg
 	print the kernel ring buffer
 end
 
+define __task_pids
+	set $pid = $arg1->pids[PIDTYPE_PID].pid
+	set $max_level = $pid->level
+	set $level = 0
+
+	while $level <= $max_level
+		printf "level %d:\t", $level
+		p $pid->numbers[$level].nr
+		set $level = $level + 1
+	end
+end
+
+define task_pids
+	__task_pids "" $arg0
+end
+document task_pids
+	print pids in all namespaces (starting from init_pid_ns) of a task given its address
+end
+
 define task
 	set $t = (struct task_struct *) $arg0
 
-	printf "Task %d %s:\n", $t->pid, $t->comm
-	printf "  task_struct:\t0x%lx\n", $t
-	printf "  stack:\t0x%lx\n", $t->stack
-	printf "  signal:\t0x%lx\n", $t->signal
-	printf "  sighand:\t0x%lx\n", $t->sighand
-	printf "  mm:\t\t0x%lx\n", $t->mm
-	printf "  files:\t0x%lx\n", $t->files
-	printf "  fs:\t\t0x%lx\n", $t->fs
-	printf "  state:\t0x%lx\n", $t->state
-	printf "  flags:\t0x%x\n", $t->flags
+	printf "Task "
+	p $t->pid
+
+	printf "  comm:\t"
+	p $t->comm
+
+	printf "  pids:\n"
+	__task_pids "    " $t
+
+	printf "  task_struct:\t"
+	p $t
+
+	printf "  stack:\t"
+	p $t->stack
+
+	printf "  signal:\t"
+	p $t->signal
+
+	printf "  sighand:\t"
+	p $t->sighand
+
+	printf "  mm:\t\t"
+	p $t->mm
+
+	printf "  files:\t"
+	p $t->files
+
+	printf "  fs:\t\t"
+	p $t->fs
+
+	printf "  state:\t"
+	p /x $t->state
+
+	printf "  flags:\t"
+	p /x $t->flags
 end
 document task
 	print informations on a task given its task_struct address
