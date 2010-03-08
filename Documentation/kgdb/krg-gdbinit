@@ -1,5 +1,17 @@
+define __offset_of
+	print &(($arg0 *) 0)->$arg1
+end
+
 define offset_of
 	print &((struct $arg0 *) 0)->$arg1
+end
+
+define __container_of
+	print ($arg1 *)(((char *)$arg0) - (char *)&(($arg1 *) 0)->$arg2)
+end
+
+define container_of
+	print (struct $arg1 *)(((char *)$arg0) - (char *)&((struct $arg1 *) 0)->$arg2)
 end
 
 define ps
