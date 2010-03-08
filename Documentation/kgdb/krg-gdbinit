@@ -197,3 +197,14 @@ end
 document taskpid
 	print informations on a task given its pid
 end
+
+define taskkpid
+	if krg_ns == 0
+		printf "no Kerrighed namespace\n"
+	else
+		__taskpid $arg0 krg_ns->root_pid_ns
+	end
+end
+document taskkpid
+	print informations on a task given its Kerrighed pid
+end
