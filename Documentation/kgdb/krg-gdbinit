@@ -14,6 +14,18 @@ define container_of
 	print (struct $arg1 *)(((char *)$arg0) - (char *)&((struct $arg1 *) 0)->$arg2)
 end
 
+define __attach
+	target extended-remote udp:$arg0:6443
+end
+
+define attach
+	__attach 10.4.7.$arg0
+end
+
+define reboot
+	run
+end
+
 define ps
 	set $inittask = &init_task
 	set $mthread = &init_task
