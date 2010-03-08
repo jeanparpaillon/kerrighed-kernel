@@ -139,10 +139,12 @@ document task
 	print informations on a task given its task_struct address
 end
 
-define taskpid
+define __taskpid
 	set $nr = $arg0
+	set $ns = $arg1
+	set $level = $ns->level
 	set $s = pidhash_shift
-	set $hash = $nr + (unsigned long)&init_pid_ns
+	set $hash = (unsigned long)$nr + (unsigned long)$ns
 	set $n = $hash
 
 	set $n <<= 18
@@ -163,8 +165,8 @@ define taskpid
 	set $pos = pid_hash[$hash].first
 	while $pos != 0
 		set $upid = (struct upid *)((char *)$pos - (char *)&((struct upid *)0)->pid_chain)
-		if $upid->nr == $nr && $upid->ns == &init_pid_ns
-			set $pid = (struct pid *)((char *)$upid - (char *)&(((struct pid *)0)->numbers[0]))
+		if $upid->nr == $nr && $upid->ns == $ns
+			set $pid = (struct pid *)((char *)$upid - (char *)&(((struct pid *)0)->numbers[$level]))
 			loop_break
 		end
 
@@ -184,6 +186,13 @@ define taskpid
 	else
 		task $t
 	end
+end
+document __taskpid
+	print informations on a task given its pid and a pid namespace
+end
+
+define taskpid
+	__taskpid $arg0 &init_pid_ns
 end
 document taskpid
 	print informations on a task given its pid
