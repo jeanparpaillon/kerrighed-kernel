@@ -625,6 +625,10 @@ int app_cr_exclude(struct cr_mm_region *mm_regions)
 	}
 
 	desc = rpc_begin_m(APP_EXCL_MM_REGION, &obj->nodes);
+	if (!desc) {
+		r = -ENOMEM;
+		goto exit_kddmput;
+	}
 
 	r = rpc_pack_type(desc, app_id);
 	if (r)
