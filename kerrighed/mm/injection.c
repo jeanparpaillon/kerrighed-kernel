@@ -217,14 +217,13 @@ set_mem_usage:
 
 static int flush_page(struct page *page,
 		      struct mm_struct *mm,
+		      objid_t objid,
 		      pte_t *pte,
 		      spinlock_t *ptl)
 {
        struct kddm_set *set = mm->anon_vma_kddm_set;
        kerrighed_node_t dest_node;
        int r = SWAP_FAIL;
-
-       BUG_ON(page->index == 0);
 
        pte_unmap_unlock(pte, ptl);
 
@@ -241,7 +240,7 @@ static int flush_page(struct page *page,
                return SWAP_FAIL;
 
        SetPageSwapCache(page);
-       r = _kddm_flush_object(set, page->index, dest_node);
+       r = _kddm_flush_object(set, objid, dest_node);
        ClearPageSwapCache(page);
        if (r)
                return SWAP_FAIL;
@@ -257,11 +256,16 @@ static int try_to_flush_one(struct page *page, struct vm_area_struct *vma)
 {
         struct mm_struct *mm = vma->vm_mm;
         unsigned long address;
+	objid_t objid;
         pte_t *pte;
         spinlock_t *ptl;
         int ret = SWAP_AGAIN;
 
-        address = page->index * PAGE_SIZE;
+	objid = page->index;
+	if (vma->vm_file)
+		objid += vma->vm_start;
+
+        address = objid * PAGE_SIZE;
 
         pte = page_check_address(page, mm, address, &ptl, 0);
         if (!pte)
@@ -278,7 +282,7 @@ static int try_to_flush_one(struct page *page, struct vm_area_struct *vma)
 		return SWAP_FAIL;
 	}
 
-	return flush_page(page, mm, pte, ptl);
+	return flush_page(page, mm, objid, pte, ptl);
 }
 
 

@@ -137,7 +137,6 @@ int memory_insert_page (struct kddm_obj * obj_entry,
 	struct page *page;
 
 	page = obj_entry->object;
-	page->index = objid;
 
 	return 0;
 }

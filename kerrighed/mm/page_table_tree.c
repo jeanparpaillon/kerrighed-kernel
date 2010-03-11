@@ -42,7 +42,8 @@ static inline void unlock_kddm_page (struct page *page)
 
 
 static inline void page_put_kddm_count(struct kddm_set *set,
-				       struct page *page)
+				       struct page *page,
+				       unsigned long objid)
 {
 	struct kddm_obj *obj_entry = page->obj_entry;
 
@@ -56,7 +57,7 @@ static inline void page_put_kddm_count(struct kddm_set *set,
 	 */
 	obj_entry->object = NULL;
 	BUG_ON(TEST_OBJECT_LOCKED(obj_entry));
-	free_kddm_obj_entry(set, obj_entry, page->index);
+	free_kddm_obj_entry(set, obj_entry, objid);
 	page->obj_entry = NULL;
 }
 
@@ -136,8 +137,6 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 		unlock_kddm_page(page);
 		page = new_page;
 	}
-
-	page->index = objid;
 
 	atomic_inc (&page->_kddm_count);
 	if (page->obj_entry != NULL)
@@ -775,7 +774,7 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 		BUG_ON(!page);
 
 		wait_lock_kddm_page(page);
-		page_put_kddm_count(set, page);
+		page_put_kddm_count(set, page, addr / PAGE_SIZE);
 		unlock_kddm_page(page);
 	}
 }
