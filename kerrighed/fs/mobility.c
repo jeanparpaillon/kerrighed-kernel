@@ -1361,7 +1361,7 @@ int import_fs_struct (struct epm_action *action,
                       struct task_struct *tsk)
 {
 	struct fs_struct *fs;
-	char *buffer = (char *) __get_free_page (GFP_KERNEL);
+	char *buffer;
 	int r;
 
 	if (action->type == EPM_CHECKPOINT
@@ -1370,6 +1370,10 @@ int import_fs_struct (struct epm_action *action,
 		return r;
 	}
 
+	buffer = (char *)__get_free_page(GFP_KERNEL);
+	if (!buffer)
+		return -ENOMEM;
+
 	{
 		int magic = 0;
 
@@ -1377,9 +1381,10 @@ int import_fs_struct (struct epm_action *action,
 		BUG_ON (!r && magic != 55611);
 	}
 
+	r = -ENOMEM;
 	fs = kmem_cache_alloc(fs_cachep, GFP_KERNEL);
 	if (fs == NULL)
-		return -ENOMEM;
+		goto exit;
 
 	fs->users = 1;
 	fs->in_exec = 0;
