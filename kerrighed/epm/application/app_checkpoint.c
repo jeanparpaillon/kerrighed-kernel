@@ -655,23 +655,6 @@ exit_rpc:
 /*--------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-static inline int create_app_folder(long app_id, int chkpt_sn)
-{
-	ghost_fs_t oldfs;
-	struct path prev_root;
-	int r;
-
-	__set_ghost_fs(&oldfs);
-	chroot_to_physical_root(&prev_root);
-
-	r = mkdir_chkpt_path(app_id, chkpt_sn);
-
-	chroot_to_prev_root(&prev_root);
-	unset_ghost_fs(&oldfs);
-
-	return r;
-}
-
 static long get_appid(const struct checkpoint_info *info)
 {
 	long r;
