@@ -385,7 +385,7 @@ ghost_t *create_file_ghost(int access,
 			goto err;
 	}
 
-	/* Create a ghost to host the checkoint */
+	/* Create a ghost to host the checkpoint */
 	va_start(args, format);
 	filename = __get_chkpt_filebase(app_id, chkpt_sn, format, args);
 	va_end(args);
