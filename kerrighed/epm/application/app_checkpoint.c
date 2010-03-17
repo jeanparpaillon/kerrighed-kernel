@@ -227,18 +227,32 @@ exit:
  * "send a request" to checkpoint a local process
  * an ack is send at the end of the checkpoint
  */
-static inline void __chkpt_task_req(struct task_struct *task)
+static inline void __chkpt_task_req(struct app_struct *app, task_state_t *tsk)
 {
+	struct task_struct *task = tsk->task;
+	ghost_t *ghost;
 	struct siginfo info;
 	int signo;
 	int r;
 
 	BUG_ON(!task);
 
+	tsk->checkpoint.ghost = NULL;
 	if (!can_be_checkpointed(task)) {
 		__set_task_result(task, -EPERM);
 		return;
 	}
+
+	ghost = create_file_ghost(GHOST_WRITE,
+				  app->app_id,
+				  app->chkpt_sn,
+				  "task_%d.bin",
+				  task_pid_knr(task));
+	if (IS_ERR(ghost)) {
+		__set_task_result(task, PTR_ERR(ghost));
+		return;
+	}
+	tsk->checkpoint.ghost = ghost;
 
 	signo = KRG_SIG_CHECKPOINT;
 	info.si_errno = 0;
@@ -251,6 +265,24 @@ static inline void __chkpt_task_req(struct task_struct *task)
 		__set_task_result(task, r);
 
 	wake_up_process(task);
+}
+
+ghost_t *get_task_chkpt_ghost(struct app_struct *app, struct task_struct *task)
+{
+	ghost_t *ghost = NULL;
+	task_state_t *t;
+
+	mutex_lock(&app->mutex);
+
+	list_for_each_entry(t, &app->tasks, next_task)
+		if (task == t->task) {
+			ghost = t->checkpoint.ghost;
+			break;
+		}
+
+	mutex_unlock(&app->mutex);
+
+	return ghost;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -316,7 +348,7 @@ static inline int __local_do_chkpt(struct app_struct *app, int chkpt_sn)
 
 		tsk->result = PCUS_CHKPT_IN_PROGRESS;
 		BUG_ON(tmp == current);
-		__chkpt_task_req(tmp);
+		__chkpt_task_req(app, tsk);
 	}
 
 	mutex_unlock(&app->mutex);

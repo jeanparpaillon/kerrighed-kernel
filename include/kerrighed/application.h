@@ -49,6 +49,9 @@ typedef struct task_and_state {
 	struct task_struct *task;
 	union {
 		struct {
+			ghost_t *ghost;
+		} checkpoint;
+		struct {
 			pid_t pid;
 			pid_t tgid;
 			pid_t parent;
@@ -171,6 +174,10 @@ void unimport_application(struct epm_action *action,
 int global_stop(struct app_kddm_object *obj);
 
 int global_unfreeze(struct app_kddm_object *obj, int signal);
+
+/*--------------------------------------------------------------------------*/
+
+ghost_t *get_task_chkpt_ghost(struct app_struct *app, struct task_struct *task);
 
 /*--------------------------------------------------------------------------*/
 

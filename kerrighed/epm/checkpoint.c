@@ -121,24 +121,15 @@ int checkpoint_task_on_disk(struct epm_action *action,
 	struct app_struct *app = task_to_checkpoint->application;
 	BUG_ON(!app);
 
-	ghost = create_file_ghost(GHOST_WRITE,
-				  app->app_id,
-				  app->chkpt_sn,
-				  "task_%d.bin",
-				  task_pid_knr(task_to_checkpoint));
-
-	if (IS_ERR(ghost)) {
-		r = PTR_ERR(ghost);
-		goto exit;
+	ghost = get_task_chkpt_ghost(app, task_to_checkpoint);
+	if (!ghost) {
+		__WARN();
+		return r;
 	}
 
 	/* Do the process ghosting */
-	r = checkpoint_task_to_ghost(action, ghost,
-				     task_to_checkpoint, regs);
-
-	ghost_close(ghost);
-exit:
-	return r;
+	return checkpoint_task_to_ghost(action, ghost,
+				        task_to_checkpoint, regs);
 }
 
 /**

@@ -396,6 +396,12 @@ int get_local_tasks_chkpt_result(struct app_struct* app)
 			if (t->task->state == TASK_DEAD)
 				return -E_CR_TASKDEAD;
 
+		if (t->checkpoint.ghost) {
+			if (pcus_result < 0)
+				unlink_file_ghost(t->checkpoint.ghost);
+			ghost_close(t->checkpoint.ghost);
+			t->checkpoint.ghost = NULL;
+		}
 		r = r | pcus_result;
 	}
 
