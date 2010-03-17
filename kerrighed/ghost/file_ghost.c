@@ -426,6 +426,19 @@ err:
 	goto out;
 }
 
+void unlink_file_ghost(ghost_t *ghost)
+{
+	struct file_ghost_data *ghost_data = ghost->data;
+	struct dentry *dentry = ghost_data->file->f_dentry;
+	struct inode *dir = dentry->d_parent->d_inode;
+
+	BUG_ON(ghost_data->from_fd);
+
+	mutex_lock_nested(&dir->i_mutex, I_MUTEX_PARENT);
+	vfs_unlink(dir, dentry);
+	mutex_unlock(&dir->i_mutex);
+}
+
 /** Create a new file ghost.
  *  @author Matthieu Fertré
  *

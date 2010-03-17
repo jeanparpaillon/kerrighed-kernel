@@ -51,6 +51,7 @@ ghost_t *create_file_ghost(int access,
 			   unsigned int chkpt_sn,
 			   const char *format,
 			   ...);
+void unlink_file_ghost(ghost_t *ghost);
 
 /** Create a new file ghost.
  *  @author Matthieu Fertré, Renaud Lottiaux
