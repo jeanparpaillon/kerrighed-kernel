@@ -236,7 +236,7 @@ static inline void __chkpt_task_req(struct task_struct *task)
 	BUG_ON(!task);
 
 	if (!can_be_checkpointed(task)) {
-		set_task_chkpt_result(task, -EPERM);
+		__set_task_chkpt_result(task, -EPERM);
 		return;
 	}
 
@@ -251,7 +251,7 @@ static inline void __chkpt_task_req(struct task_struct *task)
 		BUG();
 
 	if (!wake_up_process(task)) {
-		set_task_chkpt_result(task, -EAGAIN);
+		__set_task_chkpt_result(task, -EAGAIN);
 	}
 }
 

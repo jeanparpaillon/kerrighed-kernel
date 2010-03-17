@@ -321,7 +321,7 @@ exit:
 
 /*--------------------------------------------------------------------------*/
 
-void set_task_chkpt_result(struct task_struct *task, int result)
+void __set_task_chkpt_result(struct task_struct *task, int result)
 {
 	struct app_struct *app;
 	struct list_head *tmp, *element;
@@ -329,11 +329,6 @@ void set_task_chkpt_result(struct task_struct *task, int result)
 	int done_for_all_tasks = 1;
 
 	app = task->application;
-
-	if (!app)
-		return;
-
-	spin_lock(&app->lock);
 
 	list_for_each_safe(element, tmp, &app->tasks) {
 		t = list_entry(element, task_state_t, next_task);
@@ -345,10 +340,21 @@ void set_task_chkpt_result(struct task_struct *task, int result)
 			done_for_all_tasks = 0;
 	}
 
-	spin_unlock(&app->lock);
-
 	if (done_for_all_tasks)
 		complete(&app->tasks_chkpted);
+}
+
+void set_task_chkpt_result(struct task_struct *task, int result)
+{
+	struct app_struct *app;
+
+	app = task->application;
+	if (!app)
+		return;
+
+	spin_lock(&app->lock);
+	__set_task_chkpt_result(task, result);
+	spin_unlock(&app->lock);
 }
 
 /* before running this method, be sure checkpoints are completed */
