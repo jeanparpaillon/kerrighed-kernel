@@ -196,9 +196,9 @@ static inline int read_task_parent_links(struct app_struct *app,
 		goto err_alloc;
 	}
 
-	spin_lock(&app->lock);
+	mutex_lock(&app->mutex);
 	list_add_tail(&task_desc->next_task, &app->tasks);
-	spin_unlock(&app->lock);
+	mutex_unlock(&app->mutex);
 
 err_read:
 err_alloc:
@@ -915,7 +915,7 @@ static void local_abort_restart(struct app_struct *app,
 	int r;
 
 	/* killall restarted processes */
-	spin_lock(&app->lock);
+	mutex_lock(&app->mutex);
 	while (!list_empty(&app->tasks)) {
 		element = (&app->tasks)->next;
 		t = list_entry(element, task_state_t, next_task);
@@ -924,7 +924,7 @@ static void local_abort_restart(struct app_struct *app,
 		free_task_state(t);
 
 		if (task) {
-			spin_unlock(&app->lock);
+			mutex_unlock(&app->mutex);
 
 			/* kill the process which was already restarted */
 			/*
@@ -935,10 +935,10 @@ static void local_abort_restart(struct app_struct *app,
 			task->application = NULL;
 			release_task(task);
 
-			spin_lock(&app->lock);
+			mutex_lock(&app->mutex);
 		}
 	}
-	spin_unlock(&app->lock);
+	mutex_unlock(&app->mutex);
 
 	/* destroying the shared objects that were restored for nothing */
 	if (fake)

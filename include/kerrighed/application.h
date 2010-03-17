@@ -8,6 +8,7 @@
 #ifdef CONFIG_KRG_EPM
 
 #include <linux/list.h>
+#include <linux/mutex.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/linkage.h>
@@ -84,7 +85,7 @@ struct app_struct {
 	long app_id;
 	int chkpt_sn;
 
-	spinlock_t lock;
+	struct mutex mutex;
 	struct completion tasks_chkpted;
 
 	/* local processes of the application */
@@ -142,7 +143,7 @@ int register_task_to_app(struct app_struct *app, struct task_struct *task);
 
 void unregister_task_to_app(struct app_struct *app, struct task_struct *task);
 
-/* need to hold lock app->lock before calling it */
+/* need to hold lock app->mutex before calling it */
 static inline int local_tasks_list_empty(struct app_struct *app) {
 	return list_empty(&app->tasks);
 }

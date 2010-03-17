@@ -90,7 +90,7 @@ struct app_struct *new_local_app(long app_id)
 	app->app_id = app_id;
 	app->chkpt_sn = 0;
 
-	spin_lock_init(&app->lock);
+	mutex_init(&app->mutex);
 	init_completion(&app->tasks_chkpted);
 	INIT_LIST_HEAD(&app->tasks);
 	app->shared_objects.root = RB_ROOT;
@@ -103,20 +103,21 @@ struct app_struct *new_local_app(long app_id)
 
 int __delete_local_app(struct app_struct *app)
 {
-	spin_lock(&app->lock);
+	mutex_lock(&app->mutex);
 	/* should be really rare ...*/
 	if (!local_tasks_list_empty(app))
 		goto exit_wo_deleting;
 
 	hashtable_remove(app_struct_table, app->app_id);
-	spin_unlock(&app->lock);
+	mutex_unlock(&app->mutex);
 
 	clear_shared_objects(app);
+	mutex_destroy(&app->mutex);
 	kmem_cache_free(app_struct_cachep, app);
 	return 0;
 
 exit_wo_deleting:
-	spin_unlock(&app->lock);
+	mutex_unlock(&app->mutex);
 	return -EAGAIN;
 }
 
@@ -125,12 +126,12 @@ void delete_app(struct app_struct *app)
 	int r = 0;
 	struct app_kddm_object *obj = NULL;
 
-	spin_lock(&app->lock);
+	mutex_lock(&app->mutex);
 	if (!local_tasks_list_empty(app)) {
-		spin_unlock(&app->lock);
+		mutex_unlock(&app->mutex);
 		return;
 	}
-	spin_unlock(&app->lock);
+	mutex_unlock(&app->mutex);
 
 	obj = _kddm_grab_object_no_ft(app_kddm_set, app->app_id);
 	if (!obj) /* another process was running delete_app concurrently */
@@ -262,10 +263,10 @@ int register_task_to_app(struct app_struct *app,
 	}
 	t->chkpt_result = PCUS_RUNNING;
 
-	spin_lock(&app->lock);
+	mutex_lock(&app->mutex);
 	task->application = app;
 	list_add_tail(&t->next_task, &app->tasks);
-	spin_unlock(&app->lock);
+	mutex_unlock(&app->mutex);
 
 err:
 	return r;
@@ -300,14 +301,14 @@ void unregister_task_to_app(struct app_struct *app, struct task_struct *task)
 	BUG_ON(!app);
 
 	/* remove the task */
-	spin_lock(&app->lock);
+	mutex_lock(&app->mutex);
 	task->application = NULL;
 
 	list_for_each_safe(element, tmp, &app->tasks) {
 		t = list_entry(element, task_state_t, next_task);
 		if (task == t->task) {
 			list_del(element);
-			spin_unlock(&app->lock);
+			mutex_unlock(&app->mutex);
 
 			free_task_state(t);
 			goto exit;
@@ -352,9 +353,9 @@ void set_task_chkpt_result(struct task_struct *task, int result)
 	if (!app)
 		return;
 
-	spin_lock(&app->lock);
+	mutex_lock(&app->mutex);
 	__set_task_chkpt_result(task, result);
-	spin_unlock(&app->lock);
+	mutex_unlock(&app->mutex);
 }
 
 /* before running this method, be sure checkpoints are completed */
