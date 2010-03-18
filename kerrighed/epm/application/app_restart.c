@@ -154,9 +154,34 @@ err_kernel_version:
 	goto err_read;
 }
 
-static inline int read_task_parent_links(struct app_struct *app,
-					 ghost_t *ghost,
-					 pid_t pid)
+static int was_checkpointed(struct app_struct *app, pid_t pid)
+{
+	/* What is the right way to check that ? */
+
+	int error;
+	struct nameidata nd;
+	struct path prev_root;
+
+	char *filename = get_chkpt_filebase(app->app_id, app->chkpt_sn,
+					    "task_%d.bin", pid);
+	if (IS_ERR(filename))
+		return PTR_ERR(filename);
+
+	chroot_to_physical_root(&prev_root);
+	error = path_lookup(filename, 0, &nd);
+	chroot_to_prev_root(&prev_root);
+	if (!error)
+		path_put(&nd.path);
+	kfree(filename);
+
+	if (!error)
+		return 1;
+
+	return 0;
+}
+
+static int read_task_parent_links(struct app_struct *app, ghost_t *ghost,
+				  pid_t pid)
 {
 	int r = 0;
 	task_state_t *task_desc = NULL;
@@ -528,32 +553,6 @@ static inline int __restart_process(struct app_struct *app,
 	t->task = task;
 error:
 	return r;
-}
-
-static inline int was_checkpointed(struct app_struct *app, pid_t pid)
-{
-	/* What is the right way to check that ? */
-
-	int error;
-	struct nameidata nd;
-	struct path prev_root;
-
-	char *filename = get_chkpt_filebase(app->app_id, app->chkpt_sn,
-					    "task_%d.bin", pid);
-	if (IS_ERR(filename))
-		return PTR_ERR(filename);
-
-	chroot_to_physical_root(&prev_root);
-	error = path_lookup(filename, 0, &nd);
-	chroot_to_prev_root(&prev_root);
-	if (!error)
-		path_put(&nd.path);
-	kfree(filename);
-
-	if (!error)
-		return 1;
-
-	return 0;
 }
 
 typedef struct {
