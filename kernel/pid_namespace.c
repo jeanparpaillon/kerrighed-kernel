@@ -225,7 +225,7 @@ void zap_pid_ns_processes(struct pid_namespace *pid_ns)
 struct pid_namespace *find_get_krg_pid_ns(void)
 {
 	struct krg_namespace *krg_ns = find_get_krg_ns();
-	struct pid_namespace *ns = get_pid_ns(krg_ns->root_pid_ns);
+	struct pid_namespace *ns = get_pid_ns(krg_ns->root_nsproxy.pid_ns);
 	put_krg_ns(krg_ns);
 	return ns;
 }

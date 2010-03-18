@@ -353,7 +353,7 @@ static bool krg_container_may_conflict(struct krg_namespace *ns)
 			continue;
 
 #ifdef CONFIG_KRG_PROC
-		if (task_active_pid_ns(t)->krg_ns_root == ns->root_pid_ns)
+		if (task_active_pid_ns(t)->krg_ns_root == ns->root_nsproxy.pid_ns)
 #else
 		nsp = task_nsproxy(t);
 		if (nsp && nsp->krg_ns == ns)
@@ -373,8 +373,8 @@ static bool krg_container_may_conflict(struct krg_namespace *ns)
 	 * Check that userspace did not leak IPCs in the Kerrighed
 	 * container
 	 */
-	if (root_task->nsproxy->ipc_ns != ns->root_ipc_ns
-	    || ipc_used(ns->root_ipc_ns))
+	if (root_task->nsproxy->ipc_ns != ns->root_nsproxy.ipc_ns
+	    || ipc_used(ns->root_nsproxy.ipc_ns))
 		conflict = true;
 #endif
 

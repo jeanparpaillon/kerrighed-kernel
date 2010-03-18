@@ -51,7 +51,7 @@ void get_physical_root(struct path *root)
 	struct krg_namespace *krg_ns = find_get_krg_ns();
 
 	BUG_ON(!krg_ns);
-	root->mnt = krg_ns->root_mnt_ns->root;
+	root->mnt = krg_ns->root_nsproxy.mnt_ns->root;
 	root->dentry = root->mnt->mnt_root;
 	path_get(root);
 	put_krg_ns(krg_ns);

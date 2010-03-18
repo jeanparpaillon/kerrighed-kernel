@@ -164,7 +164,7 @@ out_put_dentry:
 int export_ipc_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *task)
 {
-	if (task->nsproxy->ipc_ns != task->nsproxy->krg_ns->root_ipc_ns)
+	if (task->nsproxy->ipc_ns != task->nsproxy->krg_ns->root_nsproxy.ipc_ns)
 		return -EPERM;
 
 	return 0;

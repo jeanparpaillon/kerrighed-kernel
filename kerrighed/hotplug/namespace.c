@@ -38,24 +38,28 @@ int copy_krg_ns(struct task_struct *task, struct nsproxy *new)
 			if (ns) {
 				atomic_set(&ns->count, 1);
 
+				atomic_set(&ns->root_nsproxy.count, 1);
 				get_uts_ns(new->uts_ns);
-				ns->root_uts_ns = new->uts_ns;
+				ns->root_nsproxy.uts_ns = new->uts_ns;
 				get_ipc_ns(new->ipc_ns);
-				ns->root_ipc_ns = new->ipc_ns;
+				ns->root_nsproxy.ipc_ns = new->ipc_ns;
 				get_mnt_ns(new->mnt_ns);
-				ns->root_mnt_ns = new->mnt_ns;
+				ns->root_nsproxy.mnt_ns = new->mnt_ns;
 				get_pid_ns(new->pid_ns);
-				ns->root_pid_ns = new->pid_ns;
+				ns->root_nsproxy.pid_ns = new->pid_ns;
 				get_net(new->net_ns);
-				ns->root_net_ns = new->net_ns;
+				ns->root_nsproxy.net_ns = new->net_ns;
+				ns->root_nsproxy.krg_ns = ns;
+
 				get_user_ns(user_ns);
 				ns->root_user_ns = user_ns;
 
 				get_task_struct(task);
 				ns->root_task = task;
 
-				BUG_ON(ns->root_pid_ns->krg_ns_root);
-				ns->root_pid_ns->krg_ns_root = ns->root_pid_ns;
+				BUG_ON(ns->root_nsproxy.pid_ns->krg_ns_root);
+				ns->root_nsproxy.pid_ns->krg_ns_root =
+					ns->root_nsproxy.pid_ns;
 
 				rcu_assign_pointer(krg_ns, ns);
 			} else {
@@ -79,16 +83,17 @@ static void delayed_free_krg_ns(struct rcu_head *rcu)
 {
 	struct krg_namespace *ns = container_of(rcu, struct krg_namespace, rcu);
 
-	if (ns->root_uts_ns)
-		put_uts_ns(ns->root_uts_ns);
-	if (ns->root_ipc_ns)
-		put_ipc_ns(ns->root_ipc_ns);
-	if (ns->root_mnt_ns)
-		put_mnt_ns(ns->root_mnt_ns);
-	if (ns->root_pid_ns)
-		put_pid_ns(ns->root_pid_ns);
-	if (ns->root_net_ns)
-		put_net(ns->root_net_ns);
+	BUG_ON(atomic_read(&ns->root_nsproxy.count) != 1);
+	if (ns->root_nsproxy.uts_ns)
+		put_uts_ns(ns->root_nsproxy.uts_ns);
+	if (ns->root_nsproxy.ipc_ns)
+		put_ipc_ns(ns->root_nsproxy.ipc_ns);
+	if (ns->root_nsproxy.mnt_ns)
+		put_mnt_ns(ns->root_nsproxy.mnt_ns);
+	if (ns->root_nsproxy.pid_ns)
+		put_pid_ns(ns->root_nsproxy.pid_ns);
+	if (ns->root_nsproxy.net_ns)
+		put_net(ns->root_nsproxy.net_ns);
 	if (ns->root_user_ns)
 		put_user_ns(ns->root_user_ns);
 

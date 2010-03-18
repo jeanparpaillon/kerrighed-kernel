@@ -11,6 +11,7 @@
 #include <asm/uaccess.h>
 #include <linux/ipc.h>
 #include <linux/ipc_namespace.h>
+#include <linux/nsproxy.h>
 #include <linux/msg.h>
 #include <kddm/kddm.h>
 #include <kerrighed/namespace.h>
@@ -33,10 +34,10 @@ struct ipc_namespace *find_get_krg_ipcns(void)
 	if (!krg_ns)
 		goto error;
 
-	if (!krg_ns->root_ipc_ns)
+	if (!krg_ns->root_nsproxy.ipc_ns)
 		goto error_ipcns;
 
-	ipc_ns = get_ipc_ns(krg_ns->root_ipc_ns);
+	ipc_ns = get_ipc_ns(krg_ns->root_nsproxy.ipc_ns);
 
 	put_krg_ns(krg_ns);
 

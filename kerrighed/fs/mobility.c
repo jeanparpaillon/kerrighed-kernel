@@ -818,7 +818,7 @@ int export_mnt_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *tsk)
 {
 	/* Nothing done right now... */
-	if (tsk->nsproxy->mnt_ns != tsk->nsproxy->krg_ns->root_mnt_ns)
+	if (tsk->nsproxy->mnt_ns != tsk->nsproxy->krg_ns->root_nsproxy.mnt_ns)
 		return -EPERM;
 	return 0;
 }
@@ -1432,7 +1432,7 @@ int import_mnt_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *tsk)
 {
 	/* TODO */
-	tsk->nsproxy->mnt_ns = tsk->nsproxy->krg_ns->root_mnt_ns;
+	tsk->nsproxy->mnt_ns = tsk->nsproxy->krg_ns->root_nsproxy.mnt_ns;
 	get_mnt_ns(tsk->nsproxy->mnt_ns);
 
 	return 0;

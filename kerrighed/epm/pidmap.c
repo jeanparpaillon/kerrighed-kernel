@@ -367,7 +367,7 @@ static void handle_pidmap_steal(struct rpc_desc *desc, void *_msg, size_t size)
 
 int pidmap_map_add(struct hotplug_context *ctx)
 {
-	struct pid_namespace *ns = ctx->ns->root_pid_ns;
+	struct pid_namespace *ns = ctx->ns->root_nsproxy.pid_ns;
 	kerrighed_node_t host_node;
 	struct rpc_desc *desc;
 	int err;

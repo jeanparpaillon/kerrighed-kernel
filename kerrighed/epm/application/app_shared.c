@@ -388,16 +388,16 @@ struct task_struct *alloc_shared_fake_task_struct(struct app_struct *app)
 		goto err_ns;
 	}
 
-	get_uts_ns(krg_ns->root_uts_ns);
-	fake->nsproxy->uts_ns = krg_ns->root_uts_ns;
-	get_ipc_ns(krg_ns->root_ipc_ns);
-	fake->nsproxy->ipc_ns = krg_ns->root_ipc_ns;
-	get_mnt_ns(krg_ns->root_mnt_ns);
-	fake->nsproxy->mnt_ns = krg_ns->root_mnt_ns;
-	get_pid_ns(krg_ns->root_pid_ns);
-	fake->nsproxy->pid_ns = krg_ns->root_pid_ns;
-	get_net(krg_ns->root_net_ns);
-	fake->nsproxy->net_ns = krg_ns->root_net_ns;
+	get_uts_ns(krg_ns->root_nsproxy.uts_ns);
+	fake->nsproxy->uts_ns = krg_ns->root_nsproxy.uts_ns;
+	get_ipc_ns(krg_ns->root_nsproxy.ipc_ns);
+	fake->nsproxy->ipc_ns = krg_ns->root_nsproxy.ipc_ns;
+	get_mnt_ns(krg_ns->root_nsproxy.mnt_ns);
+	fake->nsproxy->mnt_ns = krg_ns->root_nsproxy.mnt_ns;
+	get_pid_ns(krg_ns->root_nsproxy.pid_ns);
+	fake->nsproxy->pid_ns = krg_ns->root_nsproxy.pid_ns;
+	get_net(krg_ns->root_nsproxy.net_ns);
+	fake->nsproxy->net_ns = krg_ns->root_nsproxy.net_ns;
 
 	fake->nsproxy->krg_ns = krg_ns;
 

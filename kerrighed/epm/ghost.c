@@ -255,7 +255,7 @@ static int export_uts_namespace(struct epm_action *action,
 {
 	int err = 0;
 
-	if (task->nsproxy->uts_ns != task->nsproxy->krg_ns->root_uts_ns)
+	if (task->nsproxy->uts_ns != task->nsproxy->krg_ns->root_nsproxy.uts_ns)
 		/* UTS namespace sharing is not implemented yet */
 		err = -EPERM;
 
@@ -267,7 +267,7 @@ static int export_net_namespace(struct epm_action *action,
 {
 	int err = 0;
 
-	if (task->nsproxy->net_ns != task->nsproxy->krg_ns->root_net_ns)
+	if (task->nsproxy->net_ns != task->nsproxy->krg_ns->root_nsproxy.net_ns)
 		/* Net namespace sharing is not implemented yet */
 		err = -EPERM;
 
@@ -1085,7 +1085,7 @@ static int import_cpu_timers(struct epm_action *action,
 static int import_uts_namespace(struct epm_action *action,
 				ghost_t *ghost, struct task_struct *task)
 {
-	struct uts_namespace *ns = task->nsproxy->krg_ns->root_uts_ns;
+	struct uts_namespace *ns = task->nsproxy->krg_ns->root_nsproxy.uts_ns;
 
 	get_uts_ns(ns);
 	task->nsproxy->uts_ns = ns;
@@ -1096,7 +1096,7 @@ static int import_uts_namespace(struct epm_action *action,
 static int import_net_namespace(struct epm_action *action,
 				ghost_t *ghost, struct task_struct *task)
 {
-	struct net *ns = task->nsproxy->krg_ns->root_net_ns;
+	struct net *ns = task->nsproxy->krg_ns->root_nsproxy.net_ns;
 
 	get_net(ns);
 	task->nsproxy->net_ns = ns;
