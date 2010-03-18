@@ -248,11 +248,9 @@ static inline void __chkpt_task_req(struct task_struct *task)
 
 	r = send_kerrighed_signal(signo, &info, task);
 	if (r)
-		BUG();
+		__set_task_chkpt_result(task, r);
 
-	if (!wake_up_process(task)) {
-		__set_task_chkpt_result(task, -EAGAIN);
-	}
+	wake_up_process(task);
 }
 
 /*--------------------------------------------------------------------------*/
