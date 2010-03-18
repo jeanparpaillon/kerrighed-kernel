@@ -236,7 +236,7 @@ static inline void __chkpt_task_req(struct task_struct *task)
 	BUG_ON(!task);
 
 	if (!can_be_checkpointed(task)) {
-		__set_task_chkpt_result(task, -EPERM);
+		__set_task_result(task, -EPERM);
 		return;
 	}
 
@@ -248,7 +248,7 @@ static inline void __chkpt_task_req(struct task_struct *task)
 
 	r = send_kerrighed_signal(signo, &info, task);
 	if (r)
-		__set_task_chkpt_result(task, r);
+		__set_task_result(task, r);
 
 	wake_up_process(task);
 }
@@ -309,12 +309,12 @@ static inline int __local_do_chkpt(struct app_struct *app, int chkpt_sn)
 	list_for_each_entry(tsk, &app->tasks, next_task) {
 		tmp = tsk->task;
 
-		if (tsk->chkpt_result != PCUS_OPERATION_OK) {
-			printk("Pid: %d, result: %d\n", tmp->pid, tsk->chkpt_result);
+		if (tsk->result != PCUS_OPERATION_OK) {
+			printk("Pid: %d, result: %d\n", tmp->pid, tsk->result);
 			BUG();
 		}
 
-		tsk->chkpt_result = PCUS_CHKPT_IN_PROGRESS;
+		tsk->result = PCUS_CHKPT_IN_PROGRESS;
 		BUG_ON(tmp == current);
 		__chkpt_task_req(tmp);
 	}

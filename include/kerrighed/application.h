@@ -59,7 +59,7 @@ typedef struct task_and_state {
 			pid_t session;
 		} restart;
 	};
-	int chkpt_result;
+	int result;
 	struct list_head next_task;
 } task_state_t;
 
@@ -148,8 +148,8 @@ static inline int local_tasks_list_empty(struct app_struct *app) {
 	return list_empty(&app->tasks);
 }
 
-void __set_task_chkpt_result(struct task_struct *task, int result);
-void set_task_chkpt_result(struct task_struct *task, int result);
+void __set_task_result(struct task_struct *task, int result);
+void set_task_result(struct task_struct *task, int result);
 int get_local_tasks_chkpt_result(struct app_struct* app);
 
 /*--------------------------------------------------------------------------*/

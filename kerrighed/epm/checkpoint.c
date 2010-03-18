@@ -202,9 +202,9 @@ static void krg_task_checkpoint(int sig, struct siginfo *info,
 	set_current_state(TASK_UNINTERRUPTIBLE);
 
 	if (r != 0)
-		set_task_chkpt_result(current, r);
+		set_task_result(current, r);
 	else
-		set_task_chkpt_result(current, PCUS_OPERATION_OK);
+		set_task_result(current, PCUS_OPERATION_OK);
 
 	if (current->state == TASK_UNINTERRUPTIBLE)
 		schedule(); /* be sure to stop now! */

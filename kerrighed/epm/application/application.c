@@ -198,7 +198,7 @@ static inline task_state_t *__alloc_task_state(void)
 		t = ERR_PTR(-ENOMEM);
 		goto err_mem;
 	}
-	t->chkpt_result = 0;
+	t->result = 0;
 err_mem:
 	return t;
 }
@@ -261,7 +261,7 @@ int register_task_to_app(struct app_struct *app,
 		r = PTR_ERR(t);
 		goto err;
 	}
-	t->chkpt_result = PCUS_RUNNING;
+	t->result = PCUS_RUNNING;
 
 	mutex_lock(&app->mutex);
 	task->application = app;
@@ -322,7 +322,7 @@ exit:
 
 /*--------------------------------------------------------------------------*/
 
-void __set_task_chkpt_result(struct task_struct *task, int result)
+void __set_task_result(struct task_struct *task, int result)
 {
 	struct app_struct *app;
 	struct list_head *tmp, *element;
@@ -334,10 +334,10 @@ void __set_task_chkpt_result(struct task_struct *task, int result)
 	list_for_each_safe(element, tmp, &app->tasks) {
 		t = list_entry(element, task_state_t, next_task);
 		if (task == t->task)
-			t->chkpt_result = result;
+			t->result = result;
 
-		if (t->chkpt_result == PCUS_CHKPT_IN_PROGRESS ||
-		    t->chkpt_result == PCUS_STOP_IN_PROGRESS)
+		if (t->result == PCUS_CHKPT_IN_PROGRESS ||
+		    t->result == PCUS_STOP_IN_PROGRESS)
 			done_for_all_tasks = 0;
 	}
 
@@ -345,7 +345,7 @@ void __set_task_chkpt_result(struct task_struct *task, int result)
 		complete(&app->tasks_chkpted);
 }
 
-void set_task_chkpt_result(struct task_struct *task, int result)
+void set_task_result(struct task_struct *task, int result)
 {
 	struct app_struct *app;
 
@@ -354,8 +354,30 @@ void set_task_chkpt_result(struct task_struct *task, int result)
 		return;
 
 	mutex_lock(&app->mutex);
-	__set_task_chkpt_result(task, result);
+	__set_task_result(task, result);
 	mutex_unlock(&app->mutex);
+}
+
+/* before running this method, be sure stops are completed */
+static int get_local_tasks_stop_result(struct app_struct* app)
+{
+	int r = 0, pcus_result = 0;
+	task_state_t *t;
+
+	list_for_each_entry(t, &app->tasks, next_task) {
+		pcus_result = t->result;
+		if (pcus_result == PCUS_RUNNING) {
+			/* one process has been forgotten! try again!! */
+			return pcus_result;
+		} else if (pcus_result == PCUS_STOP_IN_PROGRESS)
+			/* Process is zombie !! */
+			if (t->task->state == TASK_DEAD)
+				return -E_CR_TASKDEAD;
+
+		r = r | pcus_result;
+	}
+
+	return r;
 }
 
 /* before running this method, be sure checkpoints are completed */
@@ -365,7 +387,7 @@ int get_local_tasks_chkpt_result(struct app_struct* app)
 	task_state_t *t;
 
 	list_for_each_entry(t, &app->tasks, next_task) {
-		pcus_result = t->chkpt_result;
+		pcus_result = t->result;
 		if (pcus_result == PCUS_RUNNING) {
 			/* one process has been forgotten! try again!! */
 			return pcus_result;
@@ -549,11 +571,11 @@ stop_all_running:
 	init_completion(&app->tasks_chkpted);
 
 	list_for_each_entry(tsk, &app->tasks, next_task) {
-		if (tsk->chkpt_result == PCUS_RUNNING) {
-			tsk->chkpt_result = PCUS_STOP_IN_PROGRESS;
+		if (tsk->result == PCUS_RUNNING) {
+			tsk->result = PCUS_STOP_IN_PROGRESS;
 			r = __stop_task(tsk->task);
 			if (r != 0)
-				set_task_chkpt_result(tsk->task, r);
+				set_task_result(tsk->task, r);
 		}
 	}
 	r = PCUS_STOP_IN_PROGRESS;
@@ -562,7 +584,7 @@ stop_all_running:
 		printk("*** wait for completion\n");
 
 		wait_for_completion_timeout(&app->tasks_chkpted, 100);
-		r = get_local_tasks_chkpt_result(app);
+		r = get_local_tasks_stop_result(app);
 
 		/* A process may have been forgotten because it is a child of
 		   a process which has forked before handling the signal but after
@@ -667,7 +689,7 @@ static inline int __continue_task(task_state_t *tsk, int first_run)
 		wake_up_new_task(tsk->task, CLONE_VM);
 	}
 
-	tsk->chkpt_result = PCUS_RUNNING;
+	tsk->result = PCUS_RUNNING;
 
 exit:
 	return r;
