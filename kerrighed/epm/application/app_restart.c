@@ -213,6 +213,12 @@ static int read_task_parent_links(struct app_struct *app, ghost_t *ghost,
 		session = 0;
 	}
 
+	if (app->restart.substitution_pgrp && !was_checkpointed(app, pgrp))
+		pgrp = app->restart.substitution_pgrp;
+
+	if (app->restart.substitution_sid && !was_checkpointed(app, session))
+		session = app->restart.substitution_sid;
+
 	task_desc = alloc_task_state_from_pids(pid, tgid,
 					       parent,
 					       real_parent,
@@ -233,9 +239,9 @@ err_alloc:
 	return r;
 }
 
-static inline int restore_local_app(long app_id, int chkpt_sn,
-				    kerrighed_node_t node_id,
-				    int duplicate)
+static int restore_local_app(long app_id, int chkpt_sn,
+			     kerrighed_node_t node_id, int duplicate,
+			     pid_t substitution_pgrp, pid_t substitution_sid)
 {
 	int r = 0;
 	ghost_fs_t oldfs;
@@ -299,6 +305,9 @@ static inline int restore_local_app(long app_id, int chkpt_sn,
 		goto err_read;
 	}
 
+	app->restart.substitution_pgrp = substitution_pgrp;
+	app->restart.substitution_sid = substitution_sid;
+
 	while (pid != null) {
 
 		r = read_task_parent_links(app, ghost, pid);
@@ -328,17 +337,13 @@ err_open:
 
 /*--------------------------------------------------------------------------*/
 
-static inline int __local_init_restart(long app_id, int chkpt_sn,
-				       kerrighed_node_t node_id, int duplicate)
-{
-	return restore_local_app(app_id, chkpt_sn, node_id, duplicate);
-}
-
 struct init_restart_msg {
 	kerrighed_node_t requester;
 	long app_id;
 	int chkpt_sn;
 	int recovery;
+	pid_t substitution_pgrp;
+	pid_t substitution_sid;
 };
 
 static void handle_init_restart(struct rpc_desc *desc, void *_msg, size_t size)
@@ -371,7 +376,8 @@ static void handle_init_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	}
 	old_cred = override_creds(cred);
 
-	r = __local_init_restart(msg->app_id, msg->chkpt_sn, n, duplicate);
+	r = restore_local_app(msg->app_id, msg->chkpt_sn, n, duplicate,
+			      msg->substitution_pgrp, msg->substitution_sid);
 
 	revert_creds(old_cred);
 	put_cred(cred);
@@ -422,7 +428,7 @@ out:
 	return n;
 }
 
-static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn)
+static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn, int flags)
 {
 	struct rpc_desc *desc;
 	struct init_restart_msg msg;
@@ -441,6 +447,26 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn)
 	msg.app_id = obj->app_id;
 	msg.chkpt_sn = chkpt_sn;
 	msg.recovery = 0;
+
+	if (flags & APP_REPLACE_PGRP_SID) {
+		struct pid *pid;
+		msg.substitution_pgrp = task_pgrp_knr(current);
+		msg.substitution_sid = task_session_knr(current);
+
+		pid = task_pgrp(current);
+		r = cr_create_pid_kddm_object(pid);
+		if (r)
+			goto exit;
+
+		pid = task_session(current);
+		r = cr_create_pid_kddm_object(pid);
+		if (r)
+			goto exit;
+
+	} else {
+		msg.substitution_pgrp = 0;
+		msg.substitution_sid = 0;
+	}
 
 	/* prepare nodes vector */
 	krgnodes_clear(nodes);
@@ -539,9 +565,16 @@ static inline int __restart_process(struct app_struct *app,
 				    task_state_t *t)
 {
 	int r = 0;
+	int flags = 0;
 	struct task_struct *task;
-	task = restart_process(t->restart.pid,
-			       app->app_id, app->chkpt_sn);
+
+	if (t->restart.pgrp == app->restart.substitution_pgrp)
+		flags |= APP_REPLACE_PGRP;
+	if (t->restart.session == app->restart.substitution_sid)
+		flags |= APP_REPLACE_SID;
+
+	task = restart_process(app, t->restart.pid, flags);
+
 	if (IS_ERR(task)) {
 		r = PTR_ERR(task);
 		goto error;
@@ -636,7 +669,7 @@ static inline int return_orphan_sessions_and_prgps(struct app_struct *app,
 	/* first, build a list of orphan pids of session(s) and pgrp(s) */
 	list_for_each_entry(t, &app->tasks, next_task) {
 
-		if (t->restart.session) {
+		if (t->restart.session != app->restart.substitution_sid) {
 			checkpointed = was_checkpointed(app, t->restart.session);
 			if (!checkpointed) {
 				r = add_unique_pid(&orphan_pids, t->restart.session);
@@ -648,7 +681,7 @@ static inline int return_orphan_sessions_and_prgps(struct app_struct *app,
 			}
 		}
 
-		if (t->restart.pgrp) {
+		if (t->restart.pgrp != app->restart.substitution_pgrp) {
 			checkpointed = was_checkpointed(app, t->restart.pgrp);
 			if (!checkpointed) {
 				r = add_unique_pid(&orphan_pids, t->restart.pgrp);
@@ -1214,7 +1247,7 @@ int app_restart(struct restart_request *req,
 	obj->app_id = req->app_id;
 
 	/* open the files and recreate the struct app_struct */
-	r = global_init_restart(obj, req->chkpt_sn);
+	r = global_init_restart(obj, req->chkpt_sn, req->flags);
 	if (r)
 		goto exit;
 

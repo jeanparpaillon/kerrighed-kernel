@@ -30,6 +30,9 @@ typedef enum {
 	CR_LINK_ONLY
 } r_shared_obj_option_t;
 
+#define APP_REPLACE_PGRP	1
+#define APP_REPLACE_SID		2
+
 struct task_struct;
 struct completion;
 
@@ -57,6 +60,7 @@ struct epm_action {
 		struct {
 			r_shared_obj_option_t shared;
 			struct app_struct * app;
+			int flags;
 		} restart;
 	};
 };

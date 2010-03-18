@@ -24,6 +24,7 @@
 #include <kerrighed/ghost.h>
 #include <kerrighed/ghost_helpers.h>
 #include <kerrighed/action.h>
+#include <kerrighed/application.h>
 #include <kerrighed/libproc.h>
 
 #include <linux/delay.h>
@@ -419,6 +420,11 @@ static int create_pid_kddm_object(struct pid *pid, int early)
 	return 0;
 }
 
+int cr_create_pid_kddm_object(struct pid *pid)
+{
+	return create_pid_kddm_object(pid, 0);
+}
+
 int export_pid(struct epm_action *action,
 	       ghost_t *ghost, struct pid_link *link)
 {
@@ -601,7 +607,8 @@ int cancel_pid_reservation(pid_t pid)
 /*--------------------------------------------------------------------------*
  *--------------------------------------------------------------------------*/
 
-int import_pid(struct epm_action *action, ghost_t *ghost, struct pid_link *link)
+int import_pid(struct epm_action *action, ghost_t *ghost, struct pid_link *link,
+	       enum pid_type type)
 {
 	struct pid *pid;
 	int nr;
@@ -610,6 +617,15 @@ int import_pid(struct epm_action *action, ghost_t *ghost, struct pid_link *link)
 	retval = ghost_read(ghost, &nr, sizeof(nr));
 	if (retval)
 		return retval;
+
+	if (action->type == EPM_CHECKPOINT) {
+		if ((action->restart.flags & APP_REPLACE_PGRP)
+		    && type == PIDTYPE_PGID)
+			nr = action->restart.app->restart.substitution_pgrp;
+		else if ((action->restart.flags & APP_REPLACE_SID)
+			 && type == PIDTYPE_SID)
+			nr = action->restart.app->restart.substitution_sid;
+	}
 
 	pid = krg_get_pid(nr);
 	if (!pid)

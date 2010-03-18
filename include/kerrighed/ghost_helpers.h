@@ -233,10 +233,12 @@ int export_pid_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *task);
 
 int import_pid(struct epm_action *action,
-	       ghost_t *ghost, struct pid_link *link);
+	       ghost_t *ghost, struct pid_link *link, enum pid_type type);
 int import_pid_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *task);
 void unimport_pid(struct pid_link *link);
+
+int cr_create_pid_kddm_object(struct pid *pid);
 
 /* Misc */
 

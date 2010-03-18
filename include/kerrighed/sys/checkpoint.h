@@ -11,6 +11,8 @@
 #define APP_FROM_PID		1
 #define CKPT_W_UNSUPPORTED_FILE	2
 
+#define APP_REPLACE_PGRP_SID	1
+
 struct checkpoint_info
 {
 	long app_id;
