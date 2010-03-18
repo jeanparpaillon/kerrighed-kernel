@@ -530,7 +530,7 @@ static inline int was_checkpointed(struct app_struct *app, pid_t pid)
 
 	int error;
 	struct nameidata nd;
-	struct path prev_root;
+	struct prev_root prev_root;
 
 	char *filename = get_chkpt_filebase(app->app_id, app->chkpt_sn,
 					    "task_%d.bin", pid);

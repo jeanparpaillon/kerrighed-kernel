@@ -371,7 +371,7 @@ ghost_t *create_file_ghost(int access,
 	struct file *file;
 	va_list args;
 	char *filename;
-	struct path prev_root;
+	struct prev_root prev_root;
 
 	ghost_t *ghost;
 	int r;

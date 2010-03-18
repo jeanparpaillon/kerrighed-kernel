@@ -7,10 +7,16 @@
 #ifndef __PHYSICAL_FS__
 #define __PHYSICAL_FS__
 
+#include <linux/path.h>
 #include <linux/types.h>
 
-struct path;
+struct nsproxy;
 struct file;
+
+struct prev_root {
+	struct path path;
+	struct nsproxy *nsproxy;
+};
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -22,8 +28,8 @@ char *physical_d_path(const struct path *path, char *tmp);
 
 void get_physical_root(struct path *root);
 
-void chroot_to_physical_root(struct path *prev_root);
-void chroot_to_prev_root(const struct path *prev_root);
+void chroot_to_physical_root(struct prev_root *prev_root);
+void chroot_to_prev_root(const struct prev_root *prev_root);
 
 struct file *open_physical_file(char *filename,
 				int flags, int mode, uid_t fsuid, gid_t fsgid);

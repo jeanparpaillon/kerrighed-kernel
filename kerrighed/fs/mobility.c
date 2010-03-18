@@ -72,7 +72,7 @@ static inline int populate_fs_struct (ghost_t * ghost,
 				      char *buffer,
 				      struct path *path)
 {
-	struct path root;
+	struct prev_root root;
 	int len, r;
 
 	r = ghost_read (ghost, &len, sizeof (int));

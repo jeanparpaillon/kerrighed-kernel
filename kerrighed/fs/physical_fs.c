@@ -61,26 +61,36 @@ void get_physical_root(struct path *root)
 		;
 }
 
-void chroot_to_physical_root(struct path *prev_root)
+void chroot_to_physical_root(struct prev_root *prev_root)
 {
+	struct krg_namespace *krg_ns = find_get_krg_ns();
 	struct path root;
+
+	BUG_ON(!krg_ns);
+	BUG_ON(current->fs->users != 1);
 
 	get_physical_root(&root);
 	write_lock(&current->fs->lock);
-	*prev_root = current->fs->root;
+	prev_root->path = current->fs->root;
 	current->fs->root = root;
 	write_unlock(&current->fs->lock);
+
+	BUG_ON(prev_root->path.mnt->mnt_ns != current->nsproxy->mnt_ns);
+	prev_root->nsproxy = current->nsproxy;
+	rcu_assign_pointer(current->nsproxy, &krg_ns->root_nsproxy);
 }
 
-void chroot_to_prev_root(const struct path *prev_root)
+void chroot_to_prev_root(const struct prev_root *prev_root)
 {
 	struct path root;
 
 	write_lock(&current->fs->lock);
 	root = current->fs->root;
-	current->fs->root = *prev_root;
+	current->fs->root = prev_root->path;
 	write_unlock(&current->fs->lock);
 	path_put(&root);
+
+	rcu_assign_pointer(current->nsproxy, prev_root->nsproxy);
 }
 
 struct file *open_physical_file (char *filename,
@@ -91,7 +101,7 @@ struct file *open_physical_file (char *filename,
 {
 	const struct cred *old_cred;
 	struct cred *override_cred;
-	struct path prev_root;
+	struct prev_root prev_root;
 	struct file *file;
 
 	override_cred = prepare_creds();
