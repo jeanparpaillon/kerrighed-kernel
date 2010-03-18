@@ -1036,7 +1036,7 @@ static int import_pids(struct epm_action *action,
 	}
 
 	for (; type < max_type; type++) {
-		retval = import_pid(action, ghost, &task->pids[type]);
+		retval = import_pid(action, ghost, &task->pids[type], type);
 		if (retval) {
 			__unimport_pids(task, type);
 			break;

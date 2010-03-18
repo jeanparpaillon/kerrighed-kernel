@@ -146,15 +146,16 @@ struct task_struct *restart_task(struct epm_action *action,
 
 /**
  *  Main kernel entry function to restart a checkpointed task.
- *  @author Geoffroy Vallée
+ *  @author Geoffroy Vallée, Matthieu Fertré
  *
+ *  @param app          Application
  *  @param pid		Pid of the task to restart
- *  @param app_id	Application id
- *  @param chkpt_sn	Sequence number of the checkpoint
+ *  @param flags	Option flags
  *
  *  @return		New task if success, PTR_ERR if failure
  */
-struct task_struct *restart_process(pid_t pid, long app_id, int chkpt_sn)
+struct task_struct *restart_process(struct app_struct *app, pid_t pid,
+				    int flags)
 {
 	struct epm_action action;
 	struct task_struct *task;
@@ -165,11 +166,12 @@ struct task_struct *restart_process(pid_t pid, long app_id, int chkpt_sn)
 
 	action.type = EPM_CHECKPOINT;
 	action.restart.shared = CR_LINK_ONLY;
-	action.restart.app = find_local_app(app_id);
+	action.restart.app = app;
+	action.restart.flags = flags;
 
 	BUG_ON(!action.restart.app);
 
-	task = restart_task(&action, pid, app_id, chkpt_sn);
+	task = restart_task(&action, pid, app->app_id, app->chkpt_sn);
 	if (IS_ERR(task))
 		ckpt_err(&action, PTR_ERR(task),
 			 "Fail to restart process %d",
