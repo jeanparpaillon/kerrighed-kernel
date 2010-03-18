@@ -420,6 +420,11 @@ static int create_pid_kddm_object(struct pid *pid, int early)
 	return 0;
 }
 
+int cr_create_pid_kddm_object(struct pid *pid)
+{
+	return create_pid_kddm_object(pid, 0);
+}
+
 int export_pid(struct epm_action *action,
 	       ghost_t *ghost, struct pid_link *link)
 {

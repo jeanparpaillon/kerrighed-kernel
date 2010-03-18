@@ -238,6 +238,8 @@ int import_pid_namespace(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *task);
 void unimport_pid(struct pid_link *link);
 
+int cr_create_pid_kddm_object(struct pid *pid);
+
 /* Misc */
 
 int export_sched(struct epm_action *action,

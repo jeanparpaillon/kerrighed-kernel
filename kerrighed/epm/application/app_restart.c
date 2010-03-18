@@ -449,8 +449,20 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn, int fl
 	msg.recovery = 0;
 
 	if (flags & APP_REPLACE_PGRP_SID) {
+		struct pid *pid;
 		msg.substitution_pgrp = task_pgrp_knr(current);
 		msg.substitution_sid = task_session_knr(current);
+
+		pid = task_pgrp(current);
+		r = cr_create_pid_kddm_object(pid);
+		if (r)
+			goto exit;
+
+		pid = task_session(current);
+		r = cr_create_pid_kddm_object(pid);
+		if (r)
+			goto exit;
+
 	} else {
 		msg.substitution_pgrp = 0;
 		msg.substitution_sid = 0;
