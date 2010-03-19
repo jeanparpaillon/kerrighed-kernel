@@ -1504,8 +1504,8 @@ static int cr_import_now_files_struct(struct epm_action *action, ghost_t *ghost,
 	r = import_files_struct(action, ghost, fake);
 	if (r) {
 		ckpt_err(action, r,
-			 "Fail to restore struct files_struct of process %d",
-			 fake->pid);
+			 "Fail to restore a struct files_struct",
+			 action->restart.app->app_id);
 		goto err;
 	}
 
@@ -1567,8 +1567,8 @@ static int cr_import_now_fs_struct(struct epm_action *action, ghost_t *ghost,
 	r = import_fs_struct(action, ghost, fake);
 	if (r) {
 		ckpt_err(action, r,
-			 "Fail to restore struct fs_struct of process %d",
-			 fake->pid);
+			 "App %ld - Fail to restore a struct fs_struct",
+			 action->restart.app->app_id);
 		goto err;
 	}
 

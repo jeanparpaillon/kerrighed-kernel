@@ -547,8 +547,8 @@ static int cr_import_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 err:
 	if (r)
 		ckpt_err(action, r,
-			 "Fail to restore semundos of process %d",
-			 fake->pid);
+			 "App %ld - Fail to restore semundos",
+			 action->restart.app->app_id);
 	return r;
 }
 

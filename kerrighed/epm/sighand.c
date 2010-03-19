@@ -570,8 +570,8 @@ static int cr_import_now_sighand_struct(struct epm_action *action,
 	r = import_sighand_struct(action, ghost, fake);
 	if (r) {
 		ckpt_err(action, r,
-			 "Fail to restore struct sighand_struct of process %d",
-			 fake->pid);
+			 "App %d - Fail to restore a struct sighand_struct",
+			 action->restart.app->app_id);
 		goto err;
 	}
 

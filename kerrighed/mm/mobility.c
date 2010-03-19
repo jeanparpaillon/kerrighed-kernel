@@ -1338,8 +1338,8 @@ static int cr_import_now_mm_struct(struct epm_action *action, ghost_t *ghost,
 	r = import_mm_struct(action, ghost, fake);
 	if (r) {
 		ckpt_err(action, r,
-			 "Fail to restore struct mm_struct of process %d",
-			 fake->pid);
+			 "Fail to restore a struct mm_struct",
+			 action->restart.app->app_id);
 		goto err;
 	}
 
