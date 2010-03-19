@@ -1062,8 +1062,8 @@ static int cr_import_now_signal_struct(struct epm_action *action,
 	r = import_signal_struct(action, ghost, fake);
 	if (r) {
 		ckpt_err(action, r,
-			 "Fail to restore struct signal_struct of process %d",
-			 fake->pid);
+			 "App %ld - Fail to restore a struct signal_struct",
+			 action->restart.app->app_id);
 		goto err;
 	}
 

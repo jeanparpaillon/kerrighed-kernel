@@ -833,8 +833,8 @@ err_free_desc:
 error:
 	if (r)
 		ckpt_err(action, r,
-			 "Fail to restore a file of process %d",
-			 fake->pid);
+			 "App %ld - Fail to restore a file",
+			 action->restart.app->app_id);
 	return r;
 }
 
