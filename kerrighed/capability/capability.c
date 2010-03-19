@@ -300,7 +300,7 @@ static int krg_get_father_cap(struct task_struct *son,
 			krg_parent_children_readlock(son, &real_parent_tgid);
 		if (!parent_children_obj)
 			/* Parent is init. */
-			return krg_get_cap(son->nsproxy->pid_ns->child_reaper,
+			return krg_get_cap(task_active_pid_ns(son)->child_reaper,
 					   resulting_cap);
 		krg_get_parent(parent_children_obj, son,
 			       &parent_pid, &real_parent_pid);

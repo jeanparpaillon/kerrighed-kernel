@@ -1328,7 +1328,7 @@ static int import_krg_structs(struct epm_action *action,
 		 * Bringing restarted processes to foreground will need more
 		 * work
 		 */
-		reaper = tsk->nsproxy->pid_ns->child_reaper;
+		reaper = task_active_pid_ns(tsk)->child_reaper;
 		obj->parent = task_pid_knr(reaper);
 		obj->real_parent = obj->parent;
 		obj->real_parent_tgid = task_tgid_knr(reaper);

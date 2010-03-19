@@ -833,7 +833,7 @@ int krg_do_wait(struct children_kddm_object *obj, int *notask_error,
 	pid_t current_pid = task_pid_knr(current);
 	int ret = 0;
 
-	if (!is_krg_pid_ns_root(current->nsproxy->pid_ns))
+	if (!is_krg_pid_ns_root(task_active_pid_ns(current)))
 		goto out_unlock;
 
 	/*
@@ -1055,7 +1055,7 @@ pid_t krg_get_real_parent_pid(struct task_struct *task)
 	if (task->real_parent != baby_sitter)
 		return task_pid_vnr(task->real_parent);
 
-	BUG_ON(!is_krg_pid_ns_root(current->nsproxy->pid_ns));
+	BUG_ON(!is_krg_pid_ns_root(task_active_pid_ns(current)));
 	parent_obj = krg_parent_children_readlock(task, &real_parent_tgid);
 	if (!parent_obj) {
 		real_parent_pid = 1;
@@ -1348,7 +1348,7 @@ int krg_children_prepare_fork(struct task_struct *task,
 	rcu_assign_pointer(task->children_obj, NULL);
 	rcu_assign_pointer(task->parent_children_obj, NULL);
 
-	if (!is_krg_pid_ns_root(task->nsproxy->pid_ns))
+	if (!is_krg_pid_ns_root(task_active_pid_ns(task)))
 		goto out;
 
 	if (krg_current) {

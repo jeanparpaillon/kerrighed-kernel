@@ -1119,7 +1119,7 @@ krg_prepare_setpgid(pid_t pid, pid_t pgid, kerrighed_node_t *nodep)
 	down_read(&kerrighed_init_sem);
 
 	if (!current->nsproxy->krg_ns
-	    || !is_krg_pid_ns_root(current->nsproxy->pid_ns)
+	    || !is_krg_pid_ns_root(task_active_pid_ns(current))
 	    || !(pid & GLOBAL_PID_MASK))
 		goto out;
 
@@ -1194,7 +1194,7 @@ SYSCALL_DEFINE2(setpgid, pid_t, pid, pid_t, pgid)
 	if (node != kerrighed_node_id && node != KERRIGHED_NODE_ID_NONE)
 		err = krg_forward_setpgid(node, pid, pgid);
 	else
-		err = do_setpgid(pid, pgid, -1, current->nsproxy->pid_ns);
+		err = do_setpgid(pid, pgid, -1, task_active_pid_ns(current));
 	krg_cleanup_setpgid(pid, pgid, parent_children_obj, node, !err);
 	return err;
 }
@@ -1271,7 +1271,7 @@ SYSCALL_DEFINE1(getpgid, pid_t, pid)
 {
 	int retval;
 
-	retval = do_getpgid(pid, current->nsproxy->pid_ns);
+	retval = do_getpgid(pid, task_active_pid_ns(current));
 	if (retval == -ESRCH)
 		retval = krg_getpgid(pid);
 
@@ -1359,7 +1359,7 @@ SYSCALL_DEFINE1(getsid, pid_t, pid)
 {
 	int retval;
 
-	retval = do_getsid(pid, current->nsproxy->pid_ns);
+	retval = do_getsid(pid, task_active_pid_ns(current));
 	if (retval == -ESRCH)
 		retval = krg_getsid(pid);
 

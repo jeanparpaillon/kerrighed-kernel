@@ -1497,7 +1497,7 @@ struct task_struct *copy_process(unsigned long clone_flags,
 		 * be attached to a real local process. Fortunately this can
 		 * only be the local child reaper.
 		 */
-		p->real_parent = current->nsproxy->pid_ns->child_reaper;
+		p->real_parent = task_active_pid_ns(current)->child_reaper;
 #endif /* CONFIG_KRG_EPM */
 
 	spin_lock(&current->sighand->siglock);
