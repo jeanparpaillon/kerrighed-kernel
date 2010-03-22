@@ -553,7 +553,7 @@ cancel:
  *  @param file     The file to get the path.
  *  @param buff     Buffer to store the path in.
  */
-char *faf_d_path(struct file *file, char *buff, int size)
+char *krg_faf_d_path(struct file *file, char *buff, int size)
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_rw_msg msg;
@@ -605,7 +605,7 @@ int krg_faf_do_path_lookup(struct file *file,
 	char *path;
 	int len, err = 0;
 
-	path = faf_d_path(file, tmp, PAGE_SIZE);
+	path = krg_faf_d_path(file, tmp, PAGE_SIZE);
 
 	if (IS_ERR(path)) {
 		err = PTR_ERR(path);
@@ -1097,11 +1097,6 @@ cancel:
 		err = -EPIPE;
 	r = err;
 	goto out_end;
-}
-
-char *krg_faf_d_path(struct file *file, char *buffer, int size)
-{
-	return faf_d_path (file, buffer, size);
 }
 
 void krg_faf_srv_close(struct file *file)
