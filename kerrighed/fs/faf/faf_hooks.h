@@ -21,8 +21,6 @@ extern struct file_operations faf_file_ops;
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-void kcb_faf_get_file(struct file * file);
-
 void faf_hooks_init (void);
 void faf_hooks_finalize (void);
 
