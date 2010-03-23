@@ -88,14 +88,25 @@ error:
 static void kcb_ipc_sem_unlock(struct kern_ipc_perm *ipcp)
 {
 	int index;
+	long task_state;
+
+	/*
+	 * We may enter in interruptible state, and kddm_put_object might
+	 * schedule and reset to running.
+	 * Fortunately, wakeup only happens with ipcp->mutex held, so we can
+	 * restore the state right before mutex_unlock.
+	 */
+	task_state = current->state;
 
 	index = ipcid_to_idx(ipcp->id);
 
 	BUG_ON(ipcp->deleted);
 
-	mutex_unlock(&ipcp->mutex);
-
 	_kddm_put_object(ipcp->krgops->data_kddm_set, index);
+
+	__set_current_state(task_state);
+
+	mutex_unlock(&ipcp->mutex);
 }
 
 static struct kern_ipc_perm *kcb_ipc_sem_findkey(struct ipc_ids *ids, key_t key)
