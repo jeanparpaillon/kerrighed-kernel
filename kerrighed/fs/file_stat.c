@@ -117,9 +117,11 @@ char *get_phys_filename(struct file *file, char *buffer)
 	char *filename;
 
 #ifdef CONFIG_KRG_FAF
-	if (file->f_flags & O_FAF_CLT)
+	if (file->f_flags & O_FAF_CLT) {
 		filename = krg_faf_d_path(file, buffer, PAGE_SIZE);
-	else
+		if (IS_ERR(filename))
+			filename = NULL;
+	} else
 #endif
 		filename = physical_d_path(&file->f_path, buffer);
 
@@ -130,14 +132,16 @@ char *get_filename(struct file *file, char *buffer)
 {
 	char *filename;
 
-	filename = get_phys_filename(file, buffer);
-
-	if (!filename && file->f_path.dentry && file->f_path.dentry->d_op
-	    && file->f_path.dentry->d_op->d_dname)
+	if (file->f_path.dentry && file->f_path.dentry->d_op
+	    && file->f_path.dentry->d_op->d_dname) {
 		filename = file->f_path.dentry->d_op->d_dname(
 				file->f_path.dentry, buffer, PAGE_SIZE);
+		if (IS_ERR(filename))
+			filename = NULL;
+		return filename;
+	}
 
-	return filename;
+	return get_phys_filename(file, buffer);
 }
 
 int can_checkpoint_file(const struct file *file)
