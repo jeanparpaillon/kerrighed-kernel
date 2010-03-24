@@ -90,6 +90,28 @@ static int pack_root(struct rpc_desc *desc)
 	return ret;
 }
 
+static int pack_root_pwd(struct rpc_desc *desc)
+{
+	struct path root, pwd;
+	int ret;
+
+	read_lock(&current->fs->lock);
+	root = current->fs->root;
+	path_get(&root);
+	pwd = current->fs->pwd;
+	path_get(&pwd);
+	read_unlock(&current->fs->lock);
+
+	ret = pack_path(desc, &root);
+	if (!ret)
+		ret = pack_path(desc, &pwd);
+
+	path_put(&root);
+	path_put(&pwd);
+
+	return ret;
+}
+
 /** Kerrighed kernel hook for FAF lseek function.
  *  @author Renaud Lottiaux
  *
@@ -312,6 +334,9 @@ long krg_faf_ioctl (struct file *file,
 		goto out_err;
 
 	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto out_cancel;
+	err = pack_root_pwd(desc);
 	if (err)
 		goto out_cancel;
 
@@ -725,7 +750,8 @@ long krg_faf_bind (struct file * file,
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_bind_msg msg;
-	long r;
+	struct rpc_desc *desc;
+	int err, r;
 
 	msg.server_fd = data->server_fd;
 
@@ -734,9 +760,34 @@ long krg_faf_bind (struct file * file,
 		goto out;
 
 	msg.addrlen = addrlen;
-	r = rpc_sync(RPC_FAF_BIND, data->server_id, &msg, sizeof(msg));
+
+	r = -ENOMEM;
+	desc = rpc_begin(RPC_FAF_BIND, data->server_id);
+	if (!desc)
+		goto out;
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+	err = pack_root_pwd(desc);
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, r);
+	if (err)
+		goto cancel;
+
+out_end:
+	rpc_end(desc, 0);
 out:
 	return r;
+
+cancel:
+	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
+	r = err;
+	goto out_end;
 }
 
 
@@ -765,6 +816,9 @@ long krg_faf_connect (struct file * file,
 	}
 
 	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+	err = pack_root_pwd(desc);
 	if (err)
 		goto cancel;
 
@@ -934,6 +988,7 @@ long krg_faf_getsockname (struct file * file,
 
 	desc = rpc_begin(RPC_FAF_GETSOCKNAME, data->server_id);
 	rpc_pack_type(desc, msg);
+	pack_root(desc);
 
 	rpc_unpack_type(desc, r);
 	rpc_unpack_type(desc, sa_len);
@@ -966,6 +1021,7 @@ long krg_faf_getpeername (struct file * file,
 
 	desc = rpc_begin(RPC_FAF_GETPEERNAME, data->server_id);
 	rpc_pack_type(desc, msg);
+	pack_root(desc);
 	rpc_unpack_type(desc, r);
 	rpc_unpack_type(desc, sa_len);
 	rpc_unpack(desc, 0, &sa, sa_len);
@@ -1021,6 +1077,9 @@ long krg_faf_setsockopt (struct file * file,
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto err_cancel;
+	err = pack_root_pwd(desc);
+	if (err)
+		goto err_cancel;
 	err = handle_ruaccess(desc);
 	if (err)
 		goto err_cancel;
@@ -1067,6 +1126,9 @@ long krg_faf_getsockopt (struct file * file,
 	}
 
 	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto err_cancel;
+	err = pack_root_pwd(desc);
 	if (err)
 		goto err_cancel;
 	err = handle_ruaccess(desc);

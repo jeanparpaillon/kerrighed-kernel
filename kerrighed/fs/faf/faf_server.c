@@ -115,6 +115,38 @@ static int unpack_root(struct rpc_desc *desc, struct prev_root *prev_root)
 	return err;
 }
 
+static int unpack_root_pwd(struct rpc_desc *desc, struct prev_root *prev_root)
+{
+	struct path root, pwd, tmp_root, tmp_pwd;
+	int err;
+
+	chroot_to_physical_root(prev_root);
+
+	err = unpack_path(desc, &root);
+	if (err)
+		goto out_err;
+	err = unpack_path(desc, &pwd);
+	if (err)
+		goto out_err_pwd;
+
+	write_lock(&current->fs->lock);
+	tmp_root = current->fs->root;
+	current->fs->root = root;
+	tmp_pwd = current->fs->pwd;
+	current->fs->pwd = pwd;
+	write_unlock(&current->fs->lock);
+	path_put(&tmp_root);
+	path_put(&tmp_pwd);
+
+	return err;
+
+out_err_pwd:
+	path_put(&root);
+out_err:
+	chroot_to_prev_root(prev_root);
+	return err;
+}
+
 /** Handler for reading in a FAF open file.
  *  @author Renaud Lottiaux
  *
@@ -240,7 +272,11 @@ void handle_faf_ioctl(struct rpc_desc *desc,
 	long r;
 	int err;
 
-	chroot_to_physical_root(&prev_root);
+	err = unpack_root_pwd(desc, &prev_root);
+	if (err) {
+		rpc_cancel(desc);
+		return;
+	}
 
 	err = remote_sleep_prepare(desc);
 	if (err)
@@ -913,8 +949,14 @@ int handle_faf_bind (struct rpc_desc* desc,
 	struct prev_root prev_root;
 	int r;
 
-	chroot_to_physical_root(&prev_root);
+	r = unpack_root_pwd(desc, &prev_root);
+	if (r) {
+		rpc_cancel(desc);
+		return r;
+	}
+
 	r = sys_bind(msg->server_fd, (struct sockaddr *)&msg->sa, msg->addrlen);
+
 	chroot_to_prev_root(&prev_root);
 
 	return r;
@@ -927,7 +969,11 @@ void handle_faf_connect(struct rpc_desc *desc,
 	struct prev_root prev_root;
 	int r, err;
 
-	chroot_to_physical_root(&prev_root);
+	r = unpack_root_pwd(desc, &prev_root);
+	if (r) {
+		rpc_cancel(desc);
+		return;
+	}
 
 	r = remote_sleep_prepare(desc);
 	if (r)
@@ -1023,7 +1069,7 @@ int handle_faf_getsockname (struct rpc_desc* desc,
 	struct prev_root prev_root;
 	int r;
 
-	chroot_to_physical_root(&prev_root);
+	unpack_root(desc, &prev_root);
 
 	r = sys_getsockname(msg->server_fd,
 			    (struct sockaddr *)&msg->sa, &msg->addrlen);
@@ -1043,7 +1089,7 @@ int handle_faf_getpeername (struct rpc_desc* desc,
 	struct prev_root prev_root;
 	int r;
 
-	chroot_to_physical_root(&prev_root);
+	unpack_root(desc, &prev_root);
 
 	r = sys_getpeername(msg->server_fd,
 			    (struct sockaddr *)&msg->sa, &msg->addrlen);
@@ -1074,7 +1120,11 @@ void handle_faf_setsockopt (struct rpc_desc *desc,
 	struct prev_root prev_root;
 	int r, err;
 
-	chroot_to_physical_root(&prev_root);
+	err = unpack_root_pwd(desc, &prev_root);
+	if (err) {
+		rpc_cancel(desc);
+		return;
+	}
 
 	err = prepare_ruaccess(desc);
 	if (err)
@@ -1108,7 +1158,11 @@ void handle_faf_getsockopt (struct rpc_desc *desc,
 	struct prev_root prev_root;
 	int r, err;
 
-	chroot_to_physical_root(&prev_root);
+	err = unpack_root_pwd(desc, &prev_root);
+	if (err) {
+		rpc_cancel(desc);
+		return;
+	}
 
 	err = prepare_ruaccess(desc);
 	if (err)
