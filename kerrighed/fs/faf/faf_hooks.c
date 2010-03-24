@@ -561,8 +561,7 @@ char *krg_faf_d_path(struct file *file, char *buff, int size)
 	int len;
 	int err;
 
-	if (file->f_flags & O_FAF_SRV)
-		return d_path(&file->f_path, buff, size);
+	BUG_ON(file->f_flags & O_FAF_SRV);
 
 	msg.server_fd = data->server_fd;
 	msg.count = size;
