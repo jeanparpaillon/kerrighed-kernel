@@ -322,19 +322,21 @@ exit:
 
 /*--------------------------------------------------------------------------*/
 
-void __set_task_result(struct task_struct *task, int result)
+task_state_t *__set_task_result(struct task_struct *task, int result)
 {
 	struct app_struct *app;
 	struct list_head *tmp, *element;
-	task_state_t *t;
+	task_state_t *t, *ret = NULL;
 	int done_for_all_tasks = 1;
 
 	app = task->application;
 
 	list_for_each_safe(element, tmp, &app->tasks) {
 		t = list_entry(element, task_state_t, next_task);
-		if (task == t->task)
+		if (task == t->task) {
 			t->result = result;
+			ret = t;
+		}
 
 		if (t->result == PCUS_CHKPT_IN_PROGRESS ||
 		    t->result == PCUS_STOP_IN_PROGRESS)
@@ -343,6 +345,10 @@ void __set_task_result(struct task_struct *task, int result)
 
 	if (done_for_all_tasks)
 		complete(&app->tasks_chkpted);
+
+	BUG_ON(!ret);
+
+	return ret;
 }
 
 void set_task_result(struct task_struct *task, int result)
@@ -356,6 +362,31 @@ void set_task_result(struct task_struct *task, int result)
 	mutex_lock(&app->mutex);
 	__set_task_result(task, result);
 	mutex_unlock(&app->mutex);
+}
+
+void set_result_wait(int result)
+{
+	struct app_struct *app;
+	task_state_t *current_state;
+
+	app = current->application;
+	BUG_ON(!app);
+
+	mutex_lock(&app->mutex);
+	current_state = __set_task_result(current, result);
+
+	init_completion(&current_state->checkpoint.completion);
+	mutex_unlock(&app->mutex);
+
+	/*
+	 * the task_state_t can disappear only:
+	 * 1) when aborting a restart
+	 * 2) when the process itself exits
+	 *
+	 * both are impossible here, we can safely release app->mutex before
+	 * waiting for the completion.
+	 */
+	wait_for_completion(&current_state->checkpoint.completion);
 }
 
 /* before running this method, be sure stops are completed */
@@ -677,33 +708,22 @@ err_rpc:
 /*--------------------------------------------------------------------------*/
 
 /* wake up a local process (blocking request) */
-static inline int __continue_task(task_state_t *tsk, int first_run)
+static void __continue_task(task_state_t *tsk, int first_run)
 {
-	int r = 0;
 	BUG_ON(!tsk);
 
 	krg_action_stop(tsk->task, EPM_CHECKPOINT);
 
-	if (!first_run) {
-		BUG_ON(tsk->task->state != TASK_UNINTERRUPTIBLE &&
-		       tsk->task->state != TASK_INTERRUPTIBLE);
-		if (!wake_up_process(tsk->task)) {
-			r = -EAGAIN;
-			goto exit;
-		}
-	} else {
+	if (!first_run)
+		complete(&tsk->checkpoint.completion);
+	else
 		wake_up_new_task(tsk->task, CLONE_VM);
-	}
 
 	tsk->result = PCUS_RUNNING;
-
-exit:
-	return r;
 }
 
-static inline int __local_continue(struct app_struct *app, int first_run)
+static void __local_continue(struct app_struct *app, int first_run)
 {
-	int r = 0;
 	task_state_t *tsk;
 
 	BUG_ON(!app);
@@ -712,10 +732,8 @@ static inline int __local_continue(struct app_struct *app, int first_run)
 	/* make all the local processes of the application going back to
 	 * computation */
 	list_for_each_entry(tsk, &app->tasks, next_task) {
-		r = __continue_task(tsk, first_run);
+		__continue_task(tsk, first_run);
 	}
-
-	return r;
 }
 
 struct app_continue_msg {
@@ -726,13 +744,13 @@ struct app_continue_msg {
 
 static void handle_app_continue(struct rpc_desc *desc, void *_msg, size_t size)
 {
-	int r;
+	int r = 0;
 	struct app_continue_msg *msg = _msg;
 	struct app_struct *app = find_local_app(msg->app_id);
 
 	BUG_ON(!app);
 
-	r = __local_continue(app, msg->first_run);
+	__local_continue(app, msg->first_run);
 
 	r = rpc_pack_type(desc, r);
 	if (r)

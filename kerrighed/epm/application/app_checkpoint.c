@@ -277,7 +277,7 @@ static inline void __chkpt_task_req(struct app_struct *app, task_state_t *tsk)
 	if (r)
 		__set_task_result(task, r);
 
-	wake_up_process(task);
+	complete(&tsk->checkpoint.completion);
 }
 
 ghost_t *get_task_chkpt_ghost(struct app_struct *app, struct task_struct *task)

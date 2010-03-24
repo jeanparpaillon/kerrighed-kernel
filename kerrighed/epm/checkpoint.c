@@ -190,15 +190,10 @@ static void krg_task_checkpoint(int sig, struct siginfo *info,
 		r = checkpoint_task(&action, current, regs);
 	}
 
-	set_current_state(TASK_UNINTERRUPTIBLE);
-
 	if (r != 0)
-		set_task_result(current, r);
+		set_result_wait(r);
 	else
-		set_task_result(current, PCUS_OPERATION_OK);
-
-	if (current->state == TASK_UNINTERRUPTIBLE)
-		schedule(); /* be sure to stop now! */
+		set_result_wait(PCUS_OPERATION_OK);
 }
 
 void register_checkpoint_hooks(void)
