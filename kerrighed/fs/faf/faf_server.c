@@ -188,8 +188,11 @@ void handle_faf_ioctl(struct rpc_desc *desc,
 		      void *msgIn, size_t size)
 {
 	struct faf_ctl_msg *msg = msgIn;
+	struct prev_root prev_root;
 	long r;
 	int err;
+
+	chroot_to_physical_root(&prev_root);
 
 	err = remote_sleep_prepare(desc);
 	if (err)
@@ -211,10 +214,15 @@ out_sleep_finish:
 	remote_sleep_finish();
 	if (err)
 		goto out_err;
+
+out:
+	chroot_to_prev_root(&prev_root);
+
 	return;
 
 out_err:
 	rpc_cancel(desc);
+	goto out;
 }
 
 /** Handler for doing an FCNTL in a FAF open file.
@@ -807,8 +815,11 @@ void handle_faf_d_path (struct rpc_desc* desc,
 	struct faf_rw_msg *msg = msgIn;
 	char *buff, *file_name = NULL;
 	struct file *file;
+	struct prev_root prev_root;
 	int len;
 	int err;
+
+	chroot_to_physical_root(&prev_root);
 
 	buff = kmalloc (msg->count, GFP_KERNEL);
 
@@ -832,6 +843,8 @@ void handle_faf_d_path (struct rpc_desc* desc,
 out:
 	kfree (buff);
 
+	chroot_to_prev_root(&prev_root);
+
 	return;
 
 err_cancel:
@@ -845,9 +858,12 @@ int handle_faf_bind (struct rpc_desc* desc,
                      void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
+	struct prev_root prev_root;
 	int r;
 
+	chroot_to_physical_root(&prev_root);
 	r = sys_bind(msg->server_fd, (struct sockaddr *)&msg->sa, msg->addrlen);
+	chroot_to_prev_root(&prev_root);
 
 	return r;
 }
@@ -856,7 +872,10 @@ void handle_faf_connect(struct rpc_desc *desc,
 			void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
+	struct prev_root prev_root;
 	int r, err;
+
+	chroot_to_physical_root(&prev_root);
 
 	r = remote_sleep_prepare(desc);
 	if (r)
@@ -871,10 +890,14 @@ void handle_faf_connect(struct rpc_desc *desc,
 	if (err)
 		goto cancel;
 
+out:
+	chroot_to_prev_root(&prev_root);
+
 	return;
 
 cancel:
 	rpc_cancel(desc);
+	goto out;
 }
 
 int handle_faf_listen (struct rpc_desc* desc,
@@ -945,13 +968,18 @@ int handle_faf_getsockname (struct rpc_desc* desc,
 			    void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
+	struct prev_root prev_root;
 	int r;
+
+	chroot_to_physical_root(&prev_root);
 
 	r = sys_getsockname(msg->server_fd,
 			    (struct sockaddr *)&msg->sa, &msg->addrlen);
 
 	rpc_pack_type(desc, msg->addrlen);
 	rpc_pack(desc, 0, &msg->sa, msg->addrlen);
+
+	chroot_to_prev_root(&prev_root);
 
 	return r;
 }
@@ -960,13 +988,18 @@ int handle_faf_getpeername (struct rpc_desc* desc,
 			    void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
+	struct prev_root prev_root;
 	int r;
+
+	chroot_to_physical_root(&prev_root);
 
 	r = sys_getpeername(msg->server_fd,
 			    (struct sockaddr *)&msg->sa, &msg->addrlen);
 
 	rpc_pack_type(desc, msg->addrlen);
 	rpc_pack(desc, 0, &msg->sa, msg->addrlen);
+
+	chroot_to_prev_root(&prev_root);
 
 	return r;
 }
@@ -986,7 +1019,10 @@ void handle_faf_setsockopt (struct rpc_desc *desc,
 			    void *msgIn, size_t size)
 {
 	struct faf_setsockopt_msg *msg = msgIn;
+	struct prev_root prev_root;
 	int r, err;
+
+	chroot_to_physical_root(&prev_root);
 
 	err = prepare_ruaccess(desc);
 	if (err)
@@ -1001,6 +1037,8 @@ void handle_faf_setsockopt (struct rpc_desc *desc,
 		goto out_err;
 
 exit:
+	chroot_to_prev_root(&prev_root);
+
 	return;
 
 out_err:
@@ -1015,7 +1053,10 @@ void handle_faf_getsockopt (struct rpc_desc *desc,
 			    void *msgIn, size_t size)
 {
 	struct faf_getsockopt_msg *msg = msgIn;
+	struct prev_root prev_root;
 	int r, err;
+
+	chroot_to_physical_root(&prev_root);
 
 	err = prepare_ruaccess(desc);
 	if (err)
@@ -1029,6 +1070,8 @@ void handle_faf_getsockopt (struct rpc_desc *desc,
 		goto out_err;
 
 exit:
+	chroot_to_prev_root(&prev_root);
+
 	return;
 
 out_err:
