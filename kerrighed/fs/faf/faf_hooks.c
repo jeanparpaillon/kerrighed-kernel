@@ -675,7 +675,7 @@ long krg_faf_connect (struct file * file,
 	}
 
 	err = rpc_pack_type(desc, msg);
-	if (r)
+	if (err)
 		goto cancel;
 
 	err = unpack_remote_sleep_res_prepare(desc);
