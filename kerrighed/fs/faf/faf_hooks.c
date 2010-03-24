@@ -5,6 +5,8 @@
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
 #include <linux/fs.h>
+#include <linux/fs_struct.h>
+#include <linux/mount.h>
 #include <linux/file.h>
 #include <linux/namei.h>
 #include <linux/socket.h>
@@ -17,6 +19,7 @@
 #include <linux/types.h>
 #include <linux/remote_sleep.h>
 #include <kerrighed/faf.h>
+#include <kerrighed/physical_fs.h>
 #include <asm/uaccess.h>
 
 #include <kddm/kddm.h>
@@ -33,6 +36,59 @@
 #include "ruaccess.h"
 
 static DEFINE_MUTEX(faf_poll_mutex);
+
+static int pack_path(struct rpc_desc *desc, const struct path *path)
+{
+	char *tmp, *name;
+	struct path phys_root;
+	int len, err;
+
+	err = -EPERM;
+	get_physical_root(&phys_root);
+	if (path->mnt->mnt_ns != phys_root.mnt->mnt_ns)
+		/* path lives in a child mount namespace: not supported yet */
+		goto out;
+
+	err = -ENOMEM;
+	tmp = (char *)__get_free_page(GFP_KERNEL);
+	if (!tmp)
+		goto out;
+
+	err = -EINVAL;
+	name = physical_d_path(path, tmp, false);
+	if (!name)
+		goto out_free;
+	len = strlen(name) + 1;
+
+	err = rpc_pack_type(desc, len);
+	if (err)
+		goto out_free;
+	err = rpc_pack(desc, 0, name, len);
+
+out_free:
+	free_page((unsigned long)tmp);
+out:
+	path_put(&phys_root);
+
+	return err;
+}
+
+static int pack_root(struct rpc_desc *desc)
+{
+	struct path root;
+	int ret;
+
+	read_lock(&current->fs->lock);
+	root = current->fs->root;
+	path_get(&root);
+	read_unlock(&current->fs->lock);
+
+	ret = pack_path(desc, &root);
+
+	path_put(&root);
+
+	return ret;
+}
 
 /** Kerrighed kernel hook for FAF lseek function.
  *  @author Renaud Lottiaux
@@ -547,13 +603,8 @@ cancel:
 	goto out_end;
 }
 
-/** Kerrighed FAF d_path function.
- *  @author Renaud Lottiaux
- *
- *  @param file     The file to get the path.
- *  @param buff     Buffer to store the path in.
- */
-char *krg_faf_d_path(struct file *file, char *buff, int size)
+static char *__krg_faf_d_path(const struct path *root, const struct file *file,
+			      char *buff, int size)
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_rw_msg msg;
@@ -572,6 +623,10 @@ char *krg_faf_d_path(struct file *file, char *buff, int size)
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto err_cancel;
+	err = pack_path(desc, root);
+	if (err)
+		goto err_cancel;
+
 	err = rpc_unpack_type(desc, len);
 	if (err)
 		goto err_cancel;
@@ -593,6 +648,42 @@ err_cancel:
 		err = -EPIPE;
 	buff = ERR_PTR(err);
 	goto out_end;
+}
+
+char *krg_faf_phys_d_path(const struct file *file, char *buff, int size)
+{
+	struct path root;
+	char *ret;
+
+	get_physical_root(&root);
+	ret = __krg_faf_d_path(&root, file, buff, size);
+	path_put(&root);
+
+	return ret;
+}
+
+/** Kerrighed FAF d_path function.
+ *  @author Renaud Lottiaux
+ *
+ *  @param file     The file to get the path.
+ *  @param buff     Buffer to store the path in.
+ */
+char *
+krg_faf_d_path(const struct file *file, char *buff, int size)
+{
+	struct path root;
+	char *ret;
+
+	read_lock(&current->fs->lock);
+	root = current->fs->root;
+	path_get(&root);
+	read_unlock(&current->fs->lock);
+
+	ret = __krg_faf_d_path(&root, file, buff, size);
+
+	path_put(&root);
+
+	return ret;
 }
 
 int krg_faf_do_path_lookup(struct file *file,

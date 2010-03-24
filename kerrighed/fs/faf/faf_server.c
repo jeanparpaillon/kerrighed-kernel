@@ -5,6 +5,7 @@
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
 #include <linux/fs.h>
+#include <linux/fs_struct.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
 #include <linux/syscalls.h>
@@ -66,6 +67,53 @@ static DEFINE_MUTEX(faf_polled_fd_mutex);
 			 EPOLLET)
 #define FAF_POLL_MAXEVENTS 10
 
+static int unpack_path(struct rpc_desc *desc, struct path *path)
+{
+	char *tmp;
+	int len, err;
+
+	err = -ENOMEM;
+	tmp = (char *)__get_free_page(GFP_KERNEL);
+	if (!tmp)
+		goto out;
+
+	err = rpc_unpack_type(desc, len);
+	if (err)
+		goto out_free;
+	err = rpc_unpack(desc, 0, tmp, len);
+	if (err)
+		goto out_free;
+
+	err = kern_path(tmp, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, path);
+
+out_free:
+	free_page((unsigned long)tmp);
+
+out:
+	return err;
+}
+
+static int unpack_root(struct rpc_desc *desc, struct prev_root *prev_root)
+{
+	struct path root, tmp_root;
+	int err;
+
+	chroot_to_physical_root(prev_root);
+
+	err = unpack_path(desc, &root);
+	if (err) {
+		chroot_to_prev_root(prev_root);
+		return err;
+	}
+
+	write_lock(&current->fs->lock);
+	tmp_root = current->fs->root;
+	current->fs->root = root;
+	write_unlock(&current->fs->lock);
+	path_put(&tmp_root);
+
+	return err;
+}
 
 /** Handler for reading in a FAF open file.
  *  @author Renaud Lottiaux
@@ -819,7 +867,11 @@ void handle_faf_d_path (struct rpc_desc* desc,
 	int len;
 	int err;
 
-	chroot_to_physical_root(&prev_root);
+	err = unpack_root(desc, &prev_root);
+	if (err) {
+		rpc_cancel(desc);
+		return;
+	}
 
 	buff = kmalloc (msg->count, GFP_KERNEL);
 

@@ -118,7 +118,7 @@ char *get_phys_filename(struct file *file, char *buffer)
 
 #ifdef CONFIG_KRG_FAF
 	if (file->f_flags & O_FAF_CLT) {
-		filename = krg_faf_d_path(file, buffer, PAGE_SIZE);
+		filename = krg_faf_phys_d_path(file, buffer, PAGE_SIZE);
 		if (IS_ERR(filename))
 			filename = NULL;
 	} else
