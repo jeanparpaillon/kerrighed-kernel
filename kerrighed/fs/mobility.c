@@ -772,7 +772,7 @@ int export_fs_struct (struct epm_action *action,
 
 	/* Export the root path name */
 
-	file_name = physical_d_path(&tsk->fs->root, tmp);
+	file_name = physical_d_path(&tsk->fs->root, tmp, false);
 	if (!file_name) {
 		r = -ENOENT;
 		goto err_write;
@@ -788,7 +788,7 @@ int export_fs_struct (struct epm_action *action,
 
 	/* Export the pwd path name */
 
-	file_name = physical_d_path(&tsk->fs->pwd, tmp);
+	file_name = physical_d_path(&tsk->fs->pwd, tmp, false);
 	if (!file_name) {
 		r = -ENOENT;
 		goto err_write;

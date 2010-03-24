@@ -1477,7 +1477,7 @@ int do_proc_readlink(struct path *path, char __user *buffer, int buflen)
 
 #ifdef CONFIG_KRG_FAF
 	if (!path->dentry && path->mnt)
-		pathname = krg_faf_d_path((struct file *)path->mnt, tmp, PAGE_SIZE);
+		pathname = krg_faf_d_path((struct file *)path->mnt, tmp, PAGE_SIZE, NULL);
 	else
 #endif
 	pathname = d_path(path, tmp, PAGE_SIZE);

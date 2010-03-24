@@ -112,18 +112,21 @@ int is_tty(const struct file *file)
 	return r;
 }
 
-char *get_phys_filename(struct file *file, char *buffer)
+char *get_phys_filename(struct file *file, char *buffer, bool del_ok)
 {
 	char *filename;
 
 #ifdef CONFIG_KRG_FAF
 	if (file->f_flags & O_FAF_CLT) {
-		filename = krg_faf_phys_d_path(file, buffer, PAGE_SIZE);
-		if (IS_ERR(filename))
+		bool deleted = false;
+		bool *deleted_param = del_ok ? NULL : &deleted;
+
+		filename = krg_faf_phys_d_path(file, buffer, PAGE_SIZE, deleted_param);
+		if ((!del_ok && deleted) || IS_ERR(filename))
 			filename = NULL;
 	} else
 #endif
-		filename = physical_d_path(&file->f_path, buffer);
+		filename = physical_d_path(&file->f_path, buffer, del_ok);
 
 	return filename;
 }
@@ -141,7 +144,7 @@ char *get_filename(struct file *file, char *buffer)
 		return filename;
 	}
 
-	return get_phys_filename(file, buffer);
+	return get_phys_filename(file, buffer, true);
 }
 
 int can_checkpoint_file(const struct file *file)

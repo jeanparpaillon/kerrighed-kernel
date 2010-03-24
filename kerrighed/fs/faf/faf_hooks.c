@@ -629,10 +629,10 @@ cancel:
 }
 
 static char *__krg_faf_d_path(const struct path *root, const struct file *file,
-			      char *buff, int size)
+			      char *buff, int size, bool *deleted)
 {
 	faf_client_data_t *data = file->private_data;
-	struct faf_rw_msg msg;
+	struct faf_d_path_msg msg;
 	struct rpc_desc* desc;
 	int len;
 	int err;
@@ -640,6 +640,7 @@ static char *__krg_faf_d_path(const struct path *root, const struct file *file,
 	BUG_ON(file->f_flags & O_FAF_SRV);
 
 	msg.server_fd = data->server_fd;
+	msg.deleted = !!deleted;
 	msg.count = size;
 
 	desc = rpc_begin(RPC_FAF_D_PATH, data->server_id);
@@ -659,6 +660,11 @@ static char *__krg_faf_d_path(const struct path *root, const struct file *file,
 		err = rpc_unpack(desc, 0, buff, len);
 		if (err)
 			goto err_cancel;
+		if (deleted) {
+			err = rpc_unpack_type(desc, *deleted);
+			if (err)
+				goto err_cancel;
+		}
 	} else {
 		buff = ERR_PTR(len);
 	}
@@ -675,13 +681,14 @@ err_cancel:
 	goto out_end;
 }
 
-char *krg_faf_phys_d_path(const struct file *file, char *buff, int size)
+char *krg_faf_phys_d_path(const struct file *file, char *buff, int size,
+			  bool *deleted)
 {
 	struct path root;
 	char *ret;
 
 	get_physical_root(&root);
-	ret = __krg_faf_d_path(&root, file, buff, size);
+	ret = __krg_faf_d_path(&root, file, buff, size, deleted);
 	path_put(&root);
 
 	return ret;
@@ -694,7 +701,7 @@ char *krg_faf_phys_d_path(const struct file *file, char *buff, int size)
  *  @param buff     Buffer to store the path in.
  */
 char *
-krg_faf_d_path(const struct file *file, char *buff, int size)
+krg_faf_d_path(const struct file *file, char *buff, int size, bool *deleted)
 {
 	struct path root;
 	char *ret;
@@ -704,7 +711,7 @@ krg_faf_d_path(const struct file *file, char *buff, int size)
 	path_get(&root);
 	read_unlock(&current->fs->lock);
 
-	ret = __krg_faf_d_path(&root, file, buff, size);
+	ret = __krg_faf_d_path(&root, file, buff, size, deleted);
 
 	path_put(&root);
 
@@ -718,24 +725,27 @@ int krg_faf_do_path_lookup(struct file *file,
 {
 	char *tmp = (char *) __get_free_page (GFP_KERNEL);
 	char *path;
+	bool deleted;
 	int len, err = 0;
 
-	path = krg_faf_d_path(file, tmp, PAGE_SIZE);
+	path = krg_faf_d_path(file, tmp, PAGE_SIZE, &deleted);
 
 	if (IS_ERR(path)) {
 		err = PTR_ERR(path);
 		goto exit;
 	}
+	if (deleted) {
+		err = -ENOENT;
+		goto exit;
+	}
 
-	len = strlen (path);
-	if ((len >= 10) && (strcmp (path + len - 10, " (deleted)") == 0))
-		len -= 10;
 
 	if (likely(path != tmp)) {
 		strncpy(tmp, path, PAGE_SIZE);
 		path = tmp;
 	}
 
+	len = strlen (path);
 	strncpy(&path[len], name, PAGE_SIZE - len);
 
 	err = path_lookup(path, flags, nd);

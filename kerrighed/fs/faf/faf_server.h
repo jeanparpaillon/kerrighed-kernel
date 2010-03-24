@@ -20,6 +20,12 @@ struct faf_rw_msg {
 	size_t count;
 };
 
+struct faf_d_path_msg {
+	int server_fd;
+	int deleted;
+	size_t count;
+};
+
 struct faf_notify_msg {
 	int server_fd;
 	unsigned long objid;

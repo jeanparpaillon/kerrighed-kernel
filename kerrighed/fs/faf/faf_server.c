@@ -896,10 +896,11 @@ static void faf_poll_init(void)
 void handle_faf_d_path (struct rpc_desc* desc,
 			void *msgIn, size_t size)
 {
-	struct faf_rw_msg *msg = msgIn;
+	struct faf_d_path_msg *msg = msgIn;
 	char *buff, *file_name = NULL;
 	struct file *file;
 	struct prev_root prev_root;
+	bool deleted = false;
 	int len;
 	int err;
 
@@ -914,7 +915,10 @@ void handle_faf_d_path (struct rpc_desc* desc,
 	file = fcheck_files (current->files, msg->server_fd);
 	/* Remote caller holds a reference so it can't disappear. */
 	BUG_ON(!file);
-	file_name = d_path(&file->f_path, buff, msg->count);
+	if (msg->deleted)
+		file_name = d_path_check(&file->f_path, buff, msg->count, &deleted);
+	else
+		file_name = d_path(&file->f_path, buff, msg->count);
 	if (IS_ERR(file_name))
 		len = PTR_ERR(file_name);
 	else
@@ -923,10 +927,16 @@ void handle_faf_d_path (struct rpc_desc* desc,
 	err = rpc_pack_type(desc, len);
 	if (err)
 		goto err_cancel;
-	if (len >= 0)
+	if (len >= 0) {
 		err = rpc_pack(desc, 0, file_name, len);
-	if (err)
-		goto err_cancel;
+		if (err)
+			goto err_cancel;
+		if (msg->deleted) {
+			err = rpc_pack_type(desc, deleted);
+			if (err)
+				goto err_cancel;
+		}
+	}
 
 out:
 	kfree (buff);

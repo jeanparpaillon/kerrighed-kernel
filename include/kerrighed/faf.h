@@ -46,8 +46,8 @@ long krg_faf_fstat(struct file *file, struct kstat *stat);
 long krg_faf_fstatfs(struct file *file, struct statfs *statfs);
 long krg_faf_fsync(struct file *file);
 long krg_faf_flock(struct file *file, unsigned int cmd);
-char *krg_faf_d_path(const struct file *file, char *buffer, int size);
-char *krg_faf_phys_d_path(const struct file *file, char *buff, int size);
+char *krg_faf_d_path(const struct file *file, char *buffer, int size, bool *deleted);
+char *krg_faf_phys_d_path(const struct file *file, char *buff, int size, bool *deleted);
 int krg_faf_do_path_lookup(struct file *file, const char *name,
 			   unsigned int flags, struct nameidata *nd);
 void krg_faf_srv_close(struct file *file);

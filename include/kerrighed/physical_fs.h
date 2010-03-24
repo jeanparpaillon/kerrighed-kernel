@@ -24,7 +24,7 @@ struct prev_root {
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-char *physical_d_path(const struct path *path, char *tmp);
+char *physical_d_path(const struct path *path, char *tmp, bool del_ok);
 
 void get_physical_root(struct path *root);
 

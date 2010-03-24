@@ -179,7 +179,7 @@ int get_regular_file_krg_desc(struct file *file, void **desc,
 		goto exit;
 	}
 
-	file_name = get_phys_filename(file, tmp);
+	file_name = get_phys_filename(file, tmp, false);
 	if (!file_name)
 		goto exit_free_page;
 

@@ -22,10 +22,11 @@
 #include <kerrighed/physical_fs.h>
 #include <kerrighed/namespace.h>
 
-char *physical_d_path(const struct path *path, char *tmp)
+char *physical_d_path(const struct path *path, char *tmp, bool del_ok)
 {
 	struct path ns_root;
 	char *pathname;
+	bool deleted;
 
 	/* Mnt namespace is already pinned by path->mnt */
 	if (!path->mnt->mnt_ns)
@@ -35,12 +36,12 @@ char *physical_d_path(const struct path *path, char *tmp)
 	ns_root.mnt = path->mnt->mnt_ns->root;
 	ns_root.dentry = ns_root.mnt->mnt_root;
 	spin_lock(&dcache_lock);
-	pathname = __d_path(path, &ns_root, tmp, PAGE_SIZE);
+	pathname = ____d_path(path, &ns_root, tmp, PAGE_SIZE, &deleted);
 	spin_unlock(&dcache_lock);
 	BUG_ON(ns_root.mnt != path->mnt->mnt_ns->root
 	       || ns_root.dentry != ns_root.mnt->mnt_root);
 
-	if (IS_ERR(pathname))
+	if ((deleted && !del_ok) || IS_ERR(pathname))
 		return NULL;
 
 	return pathname;

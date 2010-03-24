@@ -32,10 +32,11 @@ int is_tty(const struct file *file);
 /*
  * Return the 'physical' name of a file.
  * The filesystem must be mounted else it return NULL
+ * Returns NULL if file is deleted and del_ok is false
  *
  * buffer must have a size of PAGE_SIZE
  */
-char *get_phys_filename(struct file *file, char *buffer);
+char *get_phys_filename(struct file *file, char *buffer, bool del_ok);
 
 /*
  * Return the name of a file as visible in /proc/<pid>/fd.

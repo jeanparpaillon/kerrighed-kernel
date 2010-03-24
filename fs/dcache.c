@@ -1900,8 +1900,13 @@ static int prepend_name(char **buffer, int *buflen, struct qstr *name)
  * If path is not reachable from the supplied root, then the value of
  * root is changed (without modifying refcounts).
  */
+#ifdef CONFIG_KRG_DVFS
+char *____d_path(const struct path *path, struct path *root,
+		 char *buffer, int buflen, bool *deleted)
+#else
 char *__d_path(const struct path *path, struct path *root,
 	       char *buffer, int buflen)
+#endif
 {
 	struct dentry *dentry = path->dentry;
 	struct vfsmount *vfsmnt = path->mnt;
@@ -1910,9 +1915,19 @@ char *__d_path(const struct path *path, struct path *root,
 
 	spin_lock(&vfsmount_lock);
 	prepend(&end, &buflen, "\0", 1);
+#ifdef CONFIG_KRG_DVFS
+	if (!IS_ROOT(dentry) && d_unhashed(dentry)) {
+		*deleted = true;
+		if (prepend(&end, &buflen, " (deleted)", 10) != 0)
+			goto Elong;
+	} else {
+		*deleted = false;
+	}
+#else
 	if (!IS_ROOT(dentry) && d_unhashed(dentry) &&
 		(prepend(&end, &buflen, " (deleted)", 10) != 0))
 			goto Elong;
+#endif
 
 	if (buflen < 1)
 		goto Elong;
@@ -1959,6 +1974,34 @@ Elong:
 	retval = ERR_PTR(-ENAMETOOLONG);
 	goto out;
 }
+
+#ifdef CONFIG_KRG_DVFS
+char *d_path_check(const struct path *path, char *buf, int buflen, bool *deleted)
+{
+	char *res;
+	struct path root;
+	struct path tmp;
+
+	read_lock(&current->fs->lock);
+	root = current->fs->root;
+	path_get(&root);
+	read_unlock(&current->fs->lock);
+	spin_lock(&dcache_lock);
+	tmp = root;
+	res = ____d_path(path, &tmp, buf, buflen, deleted);
+	spin_unlock(&dcache_lock);
+	path_put(&root);
+	return res;
+}
+
+char *__d_path(const struct path *path, struct path *root,
+	       char *buffer, int buflen)
+{
+	bool deleted;
+
+	return ____d_path(path, root, buffer, buflen, &deleted);
+}
+#endif
 
 /**
  * d_path - return the path of a dentry
