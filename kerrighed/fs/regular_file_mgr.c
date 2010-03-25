@@ -87,7 +87,9 @@ struct file *create_file_entry_from_krg_desc (struct task_struct *task,
  *            Negative value otherwise.
  */
 static struct file *import_regular_file_from_krg_desc(
-	struct task_struct *task, struct regular_file_krg_desc *desc)
+	struct epm_action *action,
+	struct task_struct *task,
+	struct regular_file_krg_desc *desc)
 {
 	struct file *file;
 
@@ -107,6 +109,12 @@ static struct file *import_regular_file_from_krg_desc(
 			file = create_file_entry_from_krg_desc(task, desc);
 		else
 			file = reopen_file_entry_from_krg_desc(task, desc);
+
+		if (IS_ERR(file))
+			ckpt_err(action, PTR_ERR(file),
+				 "App %ld - Fail to import file %s",
+				 action->restart.app->app_id,
+				 desc->file.filename);
 	}
 
 	return file;
@@ -374,7 +382,7 @@ static int __cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 			else
 #endif
 				file = import_regular_file_from_krg_desc(
-							task, file_link->desc);
+					action, task, file_link->desc);
 			first_import = 1;
 		}
 
@@ -486,7 +494,7 @@ int __regular_file_import_from_desc(struct epm_action *action,
 	int r = 0;
 	struct file *file;
 
-	file = import_regular_file_from_krg_desc(task, desc);
+	file = import_regular_file_from_krg_desc(action, task, desc);
 	if (IS_ERR(file)) {
 		r = PTR_ERR (file);
 		goto exit;
