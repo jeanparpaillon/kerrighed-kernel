@@ -121,7 +121,33 @@ static inline int hashtable_add(hashtable_t * table, unsigned long hash,
 	return r;
 }
 
+/** Add an element to a hash table
+ *  It fails with EEXIST if there is already an element with the same hash.
+ *
+ *  @author Matthieu Fertré
+ *
+ *  @param table  The table to add the element in.
+ *  @param hash   The element key.
+ *  @param data   The element to add in the table
+ *
+ *  @return  0 if everything ok.
+ *           Negative value otherwise.
+ */
+int __hashtable_add_unique(hashtable_t *table, unsigned long hash, void *data);
 
+static inline int hashtable_add_unique(hashtable_t *table, unsigned long hash,
+				       void *data)
+{
+	int r;
+
+	hashtable_lock_irqsave(table);
+
+	r = __hashtable_add_unique(table, hash, data);
+
+	hashtable_unlock_irqrestore(table);
+
+	return r;
+}
 
 /** Remove an element from a hash table
  *  @author Viet Hoa Dinh
@@ -201,7 +227,6 @@ static inline void * hashtable_find_next(hashtable_t * table,
 
 	return r;
 }
-
 
 
 /** Apply a function on each hash table key.

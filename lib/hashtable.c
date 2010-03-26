@@ -243,6 +243,28 @@ int __hashtable_add(hashtable_t * table,
 }
 EXPORT_SYMBOL(__hashtable_add);
 
+int __hashtable_add_unique(hashtable_t * table,
+			   unsigned long hash,
+			   void * data)
+{
+	int index;
+	int r = 0;
+
+	index = hash % table->hashtable_size;
+
+	if (!table->table[index].data) {
+		table->table[index].hash = hash;
+		table->table[index].data = data;
+		table->table[index].next = NULL;
+	}
+	else if (hash_list_find(&table->table[index], hash))
+		r = -EEXIST;
+	else
+		r = hash_list_add(table, hash, data);
+
+	return r;
+}
+EXPORT_SYMBOL(__hashtable_add_unique);
 
 /** Remove an element from a hash table */
 
