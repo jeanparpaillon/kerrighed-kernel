@@ -143,8 +143,6 @@ task_state_t *alloc_task_state_from_pids(pid_t pid,
 
 void free_task_state(task_state_t *t);
 
-int register_task_to_appid(long app_id, struct task_struct *task);
-
 int register_task_to_app(struct app_struct *app, struct task_struct *task);
 
 void unregister_task_to_app(struct app_struct *app, struct task_struct *task);

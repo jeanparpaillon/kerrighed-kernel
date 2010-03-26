@@ -268,8 +268,16 @@ static int restore_local_app(long app_id, int chkpt_sn,
 
 	if (node_id == kerrighed_node_id || !duplicate) {
 		app = new_local_app(app_id);
-		if (!app)
+		if (IS_ERR(app)) {
+			r = PTR_ERR(app);
+			if (r == -EEXIST)
+				/*
+				 * cleaning of a previous failed restart is
+				 * in progress
+				 */
+				r = -EAGAIN;
 			goto err_read;
+		}
 
 		krgnodes_clear(app->restart.replacing_nodes);
 	} else {

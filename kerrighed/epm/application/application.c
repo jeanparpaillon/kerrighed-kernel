@@ -84,8 +84,13 @@ static struct iolinker_struct app_io_linker = {
 struct app_struct *new_local_app(long app_id)
 {
 	struct app_struct *app;
+	int r;
 
 	app = kmem_cache_zalloc(app_struct_cachep, GFP_KERNEL);
+	if (!app) {
+		app = ERR_PTR(-ENOMEM);
+		goto exit;
+	}
 
 	app->app_id = app_id;
 	app->chkpt_sn = 0;
@@ -96,9 +101,24 @@ struct app_struct *new_local_app(long app_id)
 	app->shared_objects.root = RB_ROOT;
 	spin_lock_init(&app->shared_objects.lock);
 
-	hashtable_add(app_struct_table, app_id, app);
+	/*
+	 * it may fail if:
+	 * - a previous restart has failed and cleaning is not
+	 *   yet completely finished.
+	 * - there is a lack of memory
+	 */
+	r = hashtable_add_unique(app_struct_table, app_id, app);
+	if (r)
+		goto error_hash;
 
+exit:
 	return app;
+
+error_hash:
+	mutex_destroy(&app->mutex);
+	kmem_cache_free(app_struct_cachep, app);
+	app = ERR_PTR(r);
+	goto exit;
 }
 
 int __delete_local_app(struct app_struct *app)
@@ -177,8 +197,8 @@ int create_application(struct task_struct *task)
 	krgnodes_clear(obj->nodes);
 	krgnode_set(kerrighed_node_id, obj->nodes);
 	app = new_local_app(app_id);
-	if (!app) {
-		r = -ENOMEM;
+	if (IS_ERR(app)) {
+		r = PTR_ERR(app);
 		task->application = NULL;
 		_kddm_remove_frozen_object(app_kddm_set, app_id);
 		goto exit;
@@ -272,8 +292,8 @@ err:
 	return r;
 }
 
-int register_task_to_appid(long app_id,
-			   struct task_struct *task)
+static int register_task_to_appid(long app_id,
+				  struct task_struct *task)
 {
 	int r;
 	struct app_struct *app;
@@ -284,12 +304,17 @@ int register_task_to_appid(long app_id,
 
 	app = find_local_app(app_id);
 	if (!app) {
-		krgnode_set(kerrighed_node_id, obj->nodes);
 		app = new_local_app(app_id);
+		if (IS_ERR(app)) {
+			r = PTR_ERR(app);
+			goto error;
+		}
+		krgnode_set(kerrighed_node_id, obj->nodes);
 	}
 	r = register_task_to_app(app, task);
-	_kddm_put_object(app_kddm_set, app_id);
 
+error:
+	_kddm_put_object(app_kddm_set, app_id);
 	return r;
 }
 
@@ -544,7 +569,7 @@ int import_application(struct epm_action *action,
 		/* this can be done later ... (lazy creation of application) */
 		/* create_application(task); */
 	} else
-		register_task_to_appid(app_id, task);
+		r = register_task_to_appid(app_id, task);
 out:
 	return r;
 }
