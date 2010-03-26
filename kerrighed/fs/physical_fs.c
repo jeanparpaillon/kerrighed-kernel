@@ -64,16 +64,21 @@ void get_physical_root(struct path *root)
 void chroot_to_physical_root(struct prev_root *prev_root)
 {
 	struct krg_namespace *krg_ns = find_get_krg_ns();
-	struct path root;
+	struct fs_struct *fs = current->fs;
+	struct path root, prev_pwd;
 
 	BUG_ON(!krg_ns);
-	BUG_ON(current->fs->users != 1);
+	BUG_ON(fs->users != 1);
 
 	get_physical_root(&root);
-	write_lock(&current->fs->lock);
-	prev_root->path = current->fs->root;
-	current->fs->root = root;
-	write_unlock(&current->fs->lock);
+	write_lock(&fs->lock);
+	prev_root->path = fs->root;
+	fs->root = root;
+	path_get(&root);
+	prev_pwd = fs->pwd;
+	fs->pwd = root;
+	write_unlock(&fs->lock);
+	path_put(&prev_pwd);
 
 	BUG_ON(prev_root->path.mnt->mnt_ns != current->nsproxy->mnt_ns);
 	prev_root->nsproxy = current->nsproxy;
@@ -82,13 +87,18 @@ void chroot_to_physical_root(struct prev_root *prev_root)
 
 void chroot_to_prev_root(const struct prev_root *prev_root)
 {
-	struct path root;
+	struct fs_struct *fs = current->fs;
+	struct path root, pwd;
 
-	write_lock(&current->fs->lock);
-	root = current->fs->root;
-	current->fs->root = prev_root->path;
-	write_unlock(&current->fs->lock);
+	write_lock(&fs->lock);
+	root = fs->root;
+	fs->root = prev_root->path;
+	pwd = fs->pwd;
+	path_get(&fs->root);
+	fs->pwd = fs->root;
+	write_unlock(&fs->lock);
 	path_put(&root);
+	path_put(&pwd);
 
 	rcu_assign_pointer(current->nsproxy, prev_root->nsproxy);
 }
