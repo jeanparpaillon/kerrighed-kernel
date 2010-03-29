@@ -20,6 +20,7 @@
 #include <linux/remote_sleep.h>
 #include <kerrighed/faf.h>
 #include <kerrighed/physical_fs.h>
+#include <kerrighed/remote_cred.h>
 #include <asm/uaccess.h>
 
 #include <kddm/kddm.h>
@@ -110,6 +111,19 @@ static int pack_root_pwd(struct rpc_desc *desc)
 	path_put(&pwd);
 
 	return ret;
+}
+
+static int pack_context(struct rpc_desc *desc)
+{
+	int err;
+
+	err = pack_creds(desc, current_cred());
+	if (err)
+		goto out;
+	err = pack_root_pwd(desc);
+
+out:
+	return err;
 }
 
 /** Kerrighed kernel hook for FAF lseek function.
@@ -336,7 +350,7 @@ long krg_faf_ioctl (struct file *file,
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto out_cancel;
-	err = pack_root_pwd(desc);
+	err = pack_context(desc);
 	if (err)
 		goto out_cancel;
 
@@ -398,6 +412,9 @@ long krg_faf_fcntl (struct file *file,
 
 	err = rpc_pack_type(desc, msg);
 	if (unlikely(err))
+		goto cancel;
+	err = pack_creds(desc, current_cred());
+	if (err)
 		goto cancel;
 
 	err = unpack_remote_sleep_res_prepare(desc);
@@ -464,6 +481,9 @@ long krg_faf_fcntl64 (struct file *file,
 
 	err = rpc_pack_type(desc, msg);
 	if (unlikely(err))
+		goto cancel;
+	err = pack_creds(desc, current_cred());
+	if (err)
 		goto cancel;
 
 	err = unpack_remote_sleep_res_prepare(desc);
@@ -610,6 +630,9 @@ long krg_faf_flock (struct file *file,
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto cancel;
+	err = pack_creds(desc, current_cred());
+	if (err)
+		goto cancel;
 
 	err = unpack_remote_sleep_res_prepare(desc);
 	if (err)
@@ -647,6 +670,9 @@ static char *__krg_faf_d_path(const struct path *root, const struct file *file,
 	if (!desc)
 		return ERR_PTR(-ENOMEM);
 	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto err_cancel;
+	err = pack_creds(desc, current_cred());
 	if (err)
 		goto err_cancel;
 	err = pack_path(desc, root);
@@ -779,7 +805,7 @@ long krg_faf_bind (struct file * file,
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto cancel;
-	err = pack_root_pwd(desc);
+	err = pack_context(desc);
 	if (err)
 		goto cancel;
 
@@ -828,7 +854,7 @@ long krg_faf_connect (struct file * file,
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto cancel;
-	err = pack_root_pwd(desc);
+	err = pack_context(desc);
 	if (err)
 		goto cancel;
 
@@ -1087,7 +1113,7 @@ long krg_faf_setsockopt (struct file * file,
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto err_cancel;
-	err = pack_root_pwd(desc);
+	err = pack_context(desc);
 	if (err)
 		goto err_cancel;
 	err = handle_ruaccess(desc);
@@ -1138,7 +1164,7 @@ long krg_faf_getsockopt (struct file * file,
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto err_cancel;
-	err = pack_root_pwd(desc);
+	err = pack_context(desc);
 	if (err)
 		goto err_cancel;
 	err = handle_ruaccess(desc);

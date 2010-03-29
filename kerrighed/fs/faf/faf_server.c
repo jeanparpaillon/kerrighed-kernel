@@ -23,6 +23,7 @@
 
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
+#include <kerrighed/remote_cred.h>
 #include <kerrighed/physical_fs.h>
 #include <kerrighed/file.h>
 #include "../file_struct_io_linker.h"
@@ -147,6 +148,30 @@ out_err:
 	return err;
 }
 
+static int unpack_context(struct rpc_desc *desc, struct prev_root *prev_root,
+			  const struct cred **old_cred)
+{
+	int err;
+
+	*old_cred = unpack_override_creds(desc);
+	if (IS_ERR(*old_cred))
+		return PTR_ERR(*old_cred);
+
+	err = unpack_root_pwd(desc, prev_root);
+	if (err)
+		revert_creds(*old_cred);
+
+	return err;
+}
+
+static
+void
+restore_context(const struct prev_root *prev_root, const struct cred *old_cred)
+{
+	chroot_to_prev_root(prev_root);
+	revert_creds(old_cred);
+}
+
 /** Handler for reading in a FAF open file.
  *  @author Renaud Lottiaux
  *
@@ -269,10 +294,11 @@ void handle_faf_ioctl(struct rpc_desc *desc,
 {
 	struct faf_ctl_msg *msg = msgIn;
 	struct prev_root prev_root;
+	const struct cred *old_cred;
 	long r;
 	int err;
 
-	err = unpack_root_pwd(desc, &prev_root);
+	err = unpack_context(desc, &prev_root, &old_cred);
 	if (err) {
 		rpc_cancel(desc);
 		return;
@@ -300,7 +326,7 @@ out_sleep_finish:
 		goto out_err;
 
 out:
-	chroot_to_prev_root(&prev_root);
+	restore_context(&prev_root, old_cred);
 
 	return;
 
@@ -319,6 +345,7 @@ void handle_faf_fcntl (struct rpc_desc* desc,
 		       void *msgIn, size_t size)
 {
 	struct faf_ctl_msg *msg = msgIn;
+	const struct cred *old_cred;
 	unsigned long arg;
 	long r;
 	int err;
@@ -328,13 +355,19 @@ void handle_faf_fcntl (struct rpc_desc* desc,
 	else
 		arg = msg->arg;
 
-	err = remote_sleep_prepare(desc);
-	if (err)
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred))
 		goto cancel;
+	err = remote_sleep_prepare(desc);
+	if (err) {
+		revert_creds(old_cred);
+		goto cancel;
+	}
 
 	r = sys_fcntl (msg->server_fd, msg->cmd, arg);
 
 	remote_sleep_finish();
+	revert_creds(old_cred);
 
 	err = rpc_pack_type(desc, r);
 	if (unlikely(err))
@@ -362,6 +395,7 @@ void handle_faf_fcntl64 (struct rpc_desc* desc,
 			 void *msgIn, size_t size)
 {
 	struct faf_ctl_msg *msg = msgIn;
+	const struct cred *old_cred;
 	unsigned long arg;
 	long r;
 	int err;
@@ -371,13 +405,19 @@ void handle_faf_fcntl64 (struct rpc_desc* desc,
 	else
 		arg = msg->arg;
 
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred))
+		goto cancel;
 	err = remote_sleep_prepare(desc);
-	if (err)
-		goto cancel
+	if (err) {
+		revert_creds(old_cred);
+		goto cancel;
+	}
 
 	r = sys_fcntl64 (msg->server_fd, msg->cmd, arg);
 
 	remote_sleep_finish();
+	revert_creds(old_cred);
 
 	err = rpc_pack_type(desc, r);
 	if (unlikely(err))
@@ -505,16 +545,23 @@ void handle_faf_flock(struct rpc_desc *desc,
                       void *msgIn, size_t size)
 {
 	struct faf_ctl_msg *msg = msgIn;
+	const struct cred *old_cred;
 	long r = -EINVAL;
 	int err;
 
-	r = remote_sleep_prepare(desc);
-	if (r)
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred))
 		goto cancel;
+	r = remote_sleep_prepare(desc);
+	if (r) {
+		revert_creds(old_cred);
+		goto cancel;
+	}
 
 	r = sys_flock (msg->server_fd, msg->cmd);
 
 	remote_sleep_finish();
+	revert_creds(old_cred);
 
 	err = rpc_pack_type(desc, r);
 	if (err)
@@ -900,12 +947,19 @@ void handle_faf_d_path (struct rpc_desc* desc,
 	char *buff, *file_name = NULL;
 	struct file *file;
 	struct prev_root prev_root;
+	const struct cred *old_cred;
 	bool deleted = false;
 	int len;
 	int err;
 
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		rpc_cancel(desc);
+		return;
+	}
 	err = unpack_root(desc, &prev_root);
 	if (err) {
+		revert_creds(old_cred);
 		rpc_cancel(desc);
 		return;
 	}
@@ -942,6 +996,7 @@ out:
 	kfree (buff);
 
 	chroot_to_prev_root(&prev_root);
+	revert_creds(old_cred);
 
 	return;
 
@@ -957,9 +1012,10 @@ int handle_faf_bind (struct rpc_desc* desc,
 {
 	struct faf_bind_msg *msg = msgIn;
 	struct prev_root prev_root;
+	const struct cred *old_cred;
 	int r;
 
-	r = unpack_root_pwd(desc, &prev_root);
+	r = unpack_context(desc, &prev_root, &old_cred);
 	if (r) {
 		rpc_cancel(desc);
 		return r;
@@ -967,7 +1023,7 @@ int handle_faf_bind (struct rpc_desc* desc,
 
 	r = sys_bind(msg->server_fd, (struct sockaddr *)&msg->sa, msg->addrlen);
 
-	chroot_to_prev_root(&prev_root);
+	restore_context(&prev_root, old_cred);
 
 	return r;
 }
@@ -977,9 +1033,10 @@ void handle_faf_connect(struct rpc_desc *desc,
 {
 	struct faf_bind_msg *msg = msgIn;
 	struct prev_root prev_root;
+	const struct cred *old_cred;
 	int r, err;
 
-	r = unpack_root_pwd(desc, &prev_root);
+	r = unpack_context(desc, &prev_root, &old_cred);
 	if (r) {
 		rpc_cancel(desc);
 		return;
@@ -999,7 +1056,7 @@ void handle_faf_connect(struct rpc_desc *desc,
 		goto cancel;
 
 out:
-	chroot_to_prev_root(&prev_root);
+	restore_context(&prev_root, old_cred);
 
 	return;
 
@@ -1128,9 +1185,10 @@ void handle_faf_setsockopt (struct rpc_desc *desc,
 {
 	struct faf_setsockopt_msg *msg = msgIn;
 	struct prev_root prev_root;
+	const struct cred *old_cred;
 	int r, err;
 
-	err = unpack_root_pwd(desc, &prev_root);
+	err = unpack_context(desc, &prev_root, &old_cred);
 	if (err) {
 		rpc_cancel(desc);
 		return;
@@ -1149,7 +1207,7 @@ void handle_faf_setsockopt (struct rpc_desc *desc,
 		goto out_err;
 
 exit:
-	chroot_to_prev_root(&prev_root);
+	restore_context(&prev_root, old_cred);
 
 	return;
 
@@ -1166,9 +1224,10 @@ void handle_faf_getsockopt (struct rpc_desc *desc,
 {
 	struct faf_getsockopt_msg *msg = msgIn;
 	struct prev_root prev_root;
+	const struct cred *old_cred;
 	int r, err;
 
-	err = unpack_root_pwd(desc, &prev_root);
+	err = unpack_context(desc, &prev_root, &old_cred);
 	if (err) {
 		rpc_cancel(desc);
 		return;
@@ -1186,7 +1245,7 @@ void handle_faf_getsockopt (struct rpc_desc *desc,
 		goto out_err;
 
 exit:
-	chroot_to_prev_root(&prev_root);
+	restore_context(&prev_root, old_cred);
 
 	return;
 
