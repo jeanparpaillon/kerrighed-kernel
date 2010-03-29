@@ -354,11 +354,6 @@ static inline int __local_do_chkpt(struct app_struct *app, int chkpt_sn)
 	list_for_each_entry(tsk, &app->tasks, next_task) {
 		tmp = tsk->task;
 
-		if (tsk->result != PCUS_OPERATION_OK) {
-			printk("Pid: %d, result: %d\n", tmp->pid, tsk->result);
-			BUG();
-		}
-
 		tsk->result = PCUS_CHKPT_IN_PROGRESS;
 		BUG_ON(tmp == current);
 		__chkpt_task_req(app, tsk);
