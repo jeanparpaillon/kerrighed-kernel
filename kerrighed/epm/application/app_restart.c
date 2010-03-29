@@ -359,7 +359,6 @@ static void handle_init_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	struct init_restart_msg *msg = _msg;
 	kerrighed_node_t n = kerrighed_node_id;
 	int duplicate = 0;
-	struct cred *cred;
 	const struct cred *old_cred;
 	int r;
 
@@ -372,23 +371,16 @@ static void handle_init_restart(struct rpc_desc *desc, void *_msg, size_t size)
 			goto err_rpc;
 	}
 
-	cred = prepare_creds();
-	if (!cred) {
-		r = -ENOMEM;
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		r = PTR_ERR(old_cred);
 		goto send_res;
 	}
-	r = unpack_creds(desc, cred);
-	if (r) {
-		put_cred(cred);
-		goto err_rpc;
-	}
-	old_cred = override_creds(cred);
 
 	r = restore_local_app(msg->app_id, msg->chkpt_sn, n, duplicate,
 			      msg->substitution_pgrp, msg->substitution_sid);
 
 	revert_creds(old_cred);
-	put_cred(cred);
 send_res:
 	r = rpc_pack_type(desc, r);
 	if (r)
@@ -1008,24 +1000,17 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	struct restart_request_msg *msg = _msg;
 	struct app_struct *app = find_local_app(msg->app_id);
 	struct task_struct *fake = NULL;
-	struct cred *cred;
 	const struct cred *old_cred = NULL;
 
 	BUG_ON(app == NULL);
 
 	BUG_ON(app->cred);
-	cred = prepare_creds();
-	if (!cred) {
-		r = -ENOMEM;
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		r = PTR_ERR(old_cred);
 		goto error;
 	}
-	r = unpack_creds(desc, cred);
-	if (r) {
-		put_cred(cred);
-		goto error;
-	}
-	old_cred = override_creds(cred);
-	app->cred = cred;
+	app->cred = current_cred();
 
 	/* return the list of orphan sessions and pgrp */
 	r = return_orphan_sessions_and_prgps(app, desc);
@@ -1107,7 +1092,6 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 error:
 	if (app->cred) {
 		app->cred = NULL;
-		put_cred(cred);
 		revert_creds(old_cred);
 	}
 

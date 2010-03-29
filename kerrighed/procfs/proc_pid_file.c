@@ -76,7 +76,6 @@ static void handle_read_proc_pid_environ(struct rpc_desc *desc,
 {
 	struct environ_read_msg *msg = _msg;
 	struct task_struct *tsk;
-	struct cred *cred;
 	const struct cred *old_cred;
 	unsigned long page = 0;
 	int res;
@@ -88,17 +87,11 @@ static void handle_read_proc_pid_environ(struct rpc_desc *desc,
 	get_task_struct(tsk);
 	rcu_read_unlock();
 
-	cred = prepare_creds();
-	if (!cred) {
-		err = -ENOMEM;
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		err = PTR_ERR(old_cred);
 		goto out_err_cancel;
 	}
-	err = unpack_creds(desc, cred);
-	if (err) {
-		put_cred(cred);
-		goto out_err_cancel;
-	}
-	old_cred = override_creds(cred);
 
 	page = __get_free_page(GFP_TEMPORARY);
 	if (!page)
@@ -109,7 +102,6 @@ static void handle_read_proc_pid_environ(struct rpc_desc *desc,
 					     &msg->pos);
 
 	revert_creds(old_cred);
-	put_cred(cred);
 
 	err = rpc_pack_type(desc, res);
 	if (err)
@@ -308,7 +300,6 @@ static void handle_generic_proc_read(struct rpc_desc *desc, void *_msg,
 {
 	struct generic_proc_read_msg *msg = _msg;
 	struct task_struct *tsk;
-	struct cred *cred;
 	const struct cred *old_cred = NULL;
 	unsigned long page = 0;
 	int res;
@@ -320,17 +311,14 @@ static void handle_generic_proc_read(struct rpc_desc *desc, void *_msg,
 	get_task_struct(tsk);
 	rcu_read_unlock();
 
-	res = -ENOMEM;
-	cred = prepare_creds();
-	if (!cred)
-		goto out_res;
-	err = unpack_creds(desc, cred);
-	if (err) {
-		put_cred(cred);
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		err = res = PTR_ERR(old_cred);
+		old_cred = NULL;
+		if (res == -ENOMEM)
+			goto out_res;
 		goto out_err_cancel;
 	}
-	old_cred = override_creds(cred);
-	put_cred(cred);
 
 	page = __get_free_page(GFP_TEMPORARY);
 	if (!page)
@@ -684,7 +672,6 @@ static void handle_generic_proc_show(struct rpc_desc *desc, void *_msg,
 	struct generic_proc_show_msg *msg = _msg;
 	struct pid_namespace *ns = find_get_krg_pid_ns();
 	struct task_struct *tsk;
-	struct cred *cred;
 	const struct cred *old_cred = NULL;
 	unsigned long page = 0;
 	int fd = -1;
@@ -698,17 +685,12 @@ static void handle_generic_proc_show(struct rpc_desc *desc, void *_msg,
 	get_task_struct(tsk);
 	rcu_read_unlock();
 
-	res = -ENOMEM;
-	cred = prepare_creds();
-	if (!cred)
-		goto out_err;
-	err = unpack_creds(desc, cred);
-	if (err) {
-		put_cred(cred);
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		res = PTR_ERR(old_cred);
+		old_cred = NULL;
 		goto out_err;
 	}
-	old_cred = override_creds(cred);
-	put_cred(cred);
 
 	page = __get_free_page(GFP_KERNEL);
 	if (!page)

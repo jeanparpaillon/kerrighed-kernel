@@ -383,25 +383,18 @@ static void handle_do_chkpt(struct rpc_desc *desc, void *_msg, size_t size)
 {
 	struct checkpoint_request_msg *msg = _msg;
 	struct app_struct *app = find_local_app(msg->app_id);
-	struct cred *cred;
 	const struct cred *old_cred = NULL;
 	int r;
 
 	BUG_ON(!app);
 
 	BUG_ON(app->cred);
-	cred = prepare_creds();
-	if (!cred) {
-		r = -ENOMEM;
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		r = PTR_ERR(old_cred);
 		goto send_res;
 	}
-	r = unpack_creds(desc, cred);
-	if (r) {
-		put_cred(cred);
-		goto send_res;
-	}
-	old_cred = override_creds(cred);
-	app->cred = cred;
+	app->cred = current_cred();
 
 	app->checkpoint.flags = msg->flags;
 
@@ -425,7 +418,6 @@ error:
 	if (app->cred) {
 		app->cred = NULL;
 		revert_creds(old_cred);
-		put_cred(cred);
 	}
 }
 

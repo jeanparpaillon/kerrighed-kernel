@@ -668,33 +668,23 @@ static void handle_app_stop(struct rpc_desc *desc, void *_msg, size_t size)
 	int r;
 	struct app_stop_msg *msg = _msg;
 	struct app_struct *app;
-	struct cred *cred;
 	const struct cred *old_cred;
 
 	app = find_local_app(msg->app_id);
 	BUG_ON(!app);
 
-	cred = prepare_creds();
-	if (!cred) {
-		r = -ENOMEM;
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		r = PTR_ERR(old_cred);
 		goto send_res;
 	}
-	r = unpack_creds(desc, cred);
-	if (r) {
-		put_cred(cred);
-		goto rpc_err;
-	}
-	old_cred = override_creds(cred);
 
 	r = __local_stop(app);
 
 	revert_creds(old_cred);
-	put_cred(cred);
 
 send_res:
 	r = rpc_pack_type(desc, r);
-
-rpc_err:
 	if (r)
 		rpc_cancel(desc);
 }
@@ -870,27 +860,19 @@ static void handle_app_kill(struct rpc_desc *desc, void *_msg, size_t size)
 	int r;
 	struct app_kill_msg *msg = _msg;
 	struct app_struct *app = find_local_app(msg->app_id);
-	struct cred *cred;
 	const struct cred *old_cred;
 
 	BUG_ON(!app);
 
-	cred = prepare_creds();
-	if (!cred) {
-		r = -ENOMEM;
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		r = PTR_ERR(old_cred);
 		goto send_res;
 	}
-	r = unpack_creds(desc, cred);
-	if (r) {
-		put_cred(cred);
-		goto err;
-	}
-	old_cred = override_creds(cred);
 
 	r = __local_kill(app, msg->signal);
 
 	revert_creds(old_cred);
-	put_cred(cred);
 
 send_res:
 	r = rpc_pack_type(desc, r);

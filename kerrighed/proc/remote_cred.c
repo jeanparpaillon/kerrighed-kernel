@@ -56,6 +56,27 @@ out:
 	return err;
 }
 
+const struct cred *unpack_override_creds(struct rpc_desc *desc)
+{
+	const struct cred *old_cred;
+	struct cred *cred;
+	int err;
+
+	cred = prepare_creds();
+	if (!cred)
+		return ERR_PTR(-ENOMEM);
+	err = unpack_creds(desc, cred);
+	if (err) {
+		put_cred(cred);
+		return ERR_PTR(err);
+	}
+
+	old_cred = override_creds(cred);
+	put_cred(cred);
+
+	return old_cred;
+}
+
 #ifdef CONFIG_KRG_EPM
 
 int export_cred(struct epm_action *action,

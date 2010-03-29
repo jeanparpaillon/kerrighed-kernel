@@ -165,24 +165,18 @@ void handle_get_appid_from_pid(struct rpc_desc *desc, void *_msg, size_t size)
 {
 	struct getappid_request_msg *msg = _msg;
 	long app_id;
-	struct cred *cred;
 	const struct cred *old_cred;
 	int err;
 
-	cred = prepare_creds();
-	if (!cred) {
-		err = -ENOMEM;
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		err = PTR_ERR(old_cred);
 		goto out;
 	}
-	err = unpack_creds(desc, cred);
-	if (err)
-		goto out;
-	old_cred = override_creds(cred);
 
 	app_id = __get_appid_from_local_pid(msg->pid);
 
 	revert_creds(old_cred);
-	put_cred(cred);
 
 	err = rpc_pack_type(desc, app_id);
 

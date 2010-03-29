@@ -1342,21 +1342,14 @@ EXPORT_SYMBOL_GPL(kill_pid_info_as_uid);
 static int handle_kill_pg_info(struct rpc_desc *desc, void *_msg, size_t size)
 {
 	struct kill_info_msg *msg = _msg;
-	struct cred *cred;
 	const struct cred *old_cred;
 	struct pid *pgrp;
 	struct task_struct *p;
 	int retval, err, success;
 
-	cred = prepare_creds();
-	if (!cred)
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred))
 		goto err_cancel;
-	err = unpack_creds(desc, cred);
-	if (err) {
-		put_cred(cred);
-		goto err_cancel;
-	}
-	old_cred = override_creds(cred);
 
 	read_lock(&tasklist_lock);
 
@@ -1375,7 +1368,6 @@ static int handle_kill_pg_info(struct rpc_desc *desc, void *_msg, size_t size)
 	read_unlock(&tasklist_lock);
 
 	revert_creds(old_cred);
-	put_cred(cred);
 
 	return retval;
 

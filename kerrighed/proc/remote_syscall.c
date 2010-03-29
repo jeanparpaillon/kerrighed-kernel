@@ -110,7 +110,6 @@ struct pid *krg_handle_remote_syscall_begin(struct rpc_desc *desc,
 {
 	const struct remote_syscall_header *hdr = _msg;
 	struct pid *pid;
-	struct cred *cred;
 	int err;
 
 	if (hdr->payload) {
@@ -119,16 +118,11 @@ struct pid *krg_handle_remote_syscall_begin(struct rpc_desc *desc,
 			goto err_cancel;
 	}
 
-	err = -ENOMEM;
-	cred = prepare_creds();
-	if (!cred)
-		goto err_cancel;
-	err = unpack_creds(desc, cred);
-	if (err) {
-		put_cred(cred);
+	*old_cred = unpack_override_creds(desc);
+	if (IS_ERR(*old_cred)) {
+		err = PTR_ERR(*old_cred);
 		goto err_cancel;
 	}
-	*old_cred = override_creds(cred);
 
 	rcu_read_lock();
 	pid = get_pid(find_kpid(hdr->pid));
@@ -146,11 +140,7 @@ err_cancel:
 
 void krg_handle_remote_syscall_end(struct pid *pid, const struct cred *old_cred)
 {
-	const struct cred *cred = current_cred();
-
 	revert_creds(old_cred);
-	put_cred(cred);
-
 	put_pid(pid);
 }
 
