@@ -401,6 +401,12 @@ static int export_one_vma (struct epm_action *action,
 	vm_ops_type = krgsyms_export (vma->vm_ops);
 	if (vma->vm_ops && vm_ops_type == KRGSYMS_UNDEF)
 		goto out;
+
+	/* shmem_vm_ops (posix shm) is supported only for checkpoint/restart */
+	if (action->type != EPM_CHECKPOINT
+	    && vma->vm_ops && vm_ops_type == KRGSYMS_VM_OPS_SHMEM)
+		goto out;
+
 	initial_vm_ops_type = krgsyms_export (vma->initial_vm_ops);
 	if (vma->initial_vm_ops && initial_vm_ops_type == KRGSYMS_UNDEF)
 		goto out;
