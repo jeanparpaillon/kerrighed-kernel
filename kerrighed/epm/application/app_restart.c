@@ -155,14 +155,17 @@ static int was_checkpointed(struct app_struct *app, pid_t pid)
 	int error;
 	struct nameidata nd;
 	struct prev_root prev_root;
-
-	char *filename = get_chkpt_filebase("%s/task_%d.bin",
-					    app->restart.storage_dir,
-					    pid);
-	if (IS_ERR(filename))
-		return PTR_ERR(filename);
-
+	char *filename;
 	chroot_to_physical_root(&prev_root);
+
+	filename = get_chkpt_filebase("%s/task_%d.bin",
+				      app->restart.storage_dir,
+				      pid);
+	if (IS_ERR(filename)) {
+		chroot_to_prev_root(&prev_root);
+		return PTR_ERR(filename);
+	}
+
 	error = path_lookup(filename, 0, &nd);
 	chroot_to_prev_root(&prev_root);
 	if (!error)

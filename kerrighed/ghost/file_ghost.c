@@ -174,6 +174,56 @@ void unset_ghost_fs(const ghost_fs_t *oldfs)
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
+void refresh_nfs_cache(const char *filename)
+{
+	int error, len;
+	struct path path;
+	char *copy, *delim, *tmp;
+
+	copy = kstrdup(filename, GFP_KERNEL);
+	if (!copy)
+		return;
+
+	tmp = copy;
+
+	while (1) {
+		delim = strchr(tmp, '/');
+		if (!delim)
+			goto end_of_path;
+
+		*delim = '\0';
+		len = strlen(copy);
+		if (len) {
+
+			error = kern_path(copy, LOOKUP_FOLLOW | LOOKUP_REVAL, &path);
+
+			printk("%s: %d\n", copy, error);
+
+/* 			if (error) */
+/* 				goto out; */
+
+			/* chown empties the cache */
+/* 			error = chown(copy, statbuf.st_uid, statbuf.st_gid); */
+/* 			if (error) */
+/* 				goto out; */
+		}
+		*delim = '/';
+		tmp = delim + 1;
+	}
+
+end_of_path:
+	error = kern_path(filename, LOOKUP_FOLLOW | LOOKUP_REVAL, &path);
+
+/* 	error = stat(checkpoint_dir, &statbuf); */
+/* 	if (error) */
+/* 		goto out; */
+
+/* 	error = chown(checkpoint_dir, statbuf.st_uid, statbuf.st_gid); */
+
+/* out: */
+	kfree(copy);
+	return;
+}
 
 char *get_chkpt_filebase(const char *format, ...)
 {
@@ -186,6 +236,8 @@ char *get_chkpt_filebase(const char *format, ...)
 
 	if (!filename)
 		filename = ERR_PTR(-ENOMEM);
+
+	refresh_nfs_cache(filename);
 
 	return filename;
 }
@@ -256,6 +308,8 @@ ghost_t *create_file_ghost(int access, const char *format, ...)
 		r = -ENOMEM;
 		goto err;
 	}
+
+	refresh_nfs_cache(filename);
 
 	if (access & GHOST_WRITE)/* fail if already exists */
 		file = filp_open(filename, O_CREAT|O_EXCL|O_WRONLY, S_IRUSR|S_IWUSR);
