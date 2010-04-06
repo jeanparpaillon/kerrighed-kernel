@@ -164,6 +164,8 @@ int __send_iovec(struct tipc_connection *conn, int nr_iov, struct iovec *iov)
 	struct __rpc_header *h = iov[0].iov_base;
 	int err;
 
+	h->source_conn_id = conn->conn.id;
+	h->target_conn_id = conn->conn.peer_id;
 	h->link_ack_id = conn->recv_seq_id - 1;
 	lockdep_off();
 	err = tipc_send2name(per_cpu(tipc_send_ref, smp_processor_id()),
@@ -1195,6 +1197,11 @@ static void tipc_handler(void *usr_handle,
 	BUG_ON(size != __buf->len);
 
 	conn = to_ll(rpc_find_get_connection(h->from));
+	if (conn->peer_id == -1)
+		conn->peer_id = h->source_conn_id;
+	else
+		BUG_ON(conn->peer_id != h->source_conn_id);
+
 	queue = &conn->rx_queue;
 
 	spin_lock(&queue->lock);
