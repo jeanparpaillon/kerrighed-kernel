@@ -7,9 +7,12 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/smp.h>
+#include <linux/rcupdate.h>
 #include <linux/list.h>
+#include <linux/idr.h>
 #include <linux/slab.h>
 #include <linux/irqflags.h>
+#include <linux/hardirq.h>
 #include <linux/spinlock.h>
 #include <linux/lockdep.h>
 #include <linux/string.h>
@@ -22,6 +25,9 @@
 
 struct rpc_service** rpc_services;
 
+static DEFINE_IDR(rpc_conn_idr);
+static DEFINE_SPINLOCK(rpc_conn_lock);
+static DEFINE_SPINLOCK(rpc_comm_lock);
 struct rpc_communicator static_communicator;
 
 DEFINE_PER_CPU(struct hlist_head, rpc_desc_trash);
@@ -194,39 +200,129 @@ void rpc_disable_all(void)
 		rpc_disable(i);
 }
 
-struct rpc_connection *
+int
 rpc_connection_alloc(struct rpc_communicator *comm, kerrighed_node_t node)
 {
 	struct rpc_connection *conn;
 	int err;
 
+	err = -ENOMEM;
 	conn = rpc_connection_alloc_ll(comm, node);
 	if (!conn)
-		return NULL;
+		return err;
 
 	rpc_desc_table_init(conn->desc_srv);
 	conn->desc_done_id = 0;
 	spin_lock_init(&conn->desc_done_lock);
 
+	/* Will be used by communicator and IDR table */
 	kref_init(&conn->kref);
+	kref_get(&conn->kref);
 	rpc_communicator_get(comm);
 	conn->comm = comm;
 	conn->peer = node;
 
-	return conn;
+	conn->peer_id = -1;
+
+	for (;;) {
+		err = -ENOMEM;
+		if (!idr_pre_get(&rpc_conn_idr, GFP_ATOMIC))
+			goto err_idr;
+
+		spin_lock_bh(&rpc_comm_lock);
+
+		err = -EBUSY;
+		if (comm->conn[node])
+			goto unlock;
+
+		spin_lock_irq(&rpc_conn_lock);
+		err = idr_get_new_above(&rpc_conn_idr, conn, node, &conn->id);
+		spin_unlock_irq(&rpc_conn_lock);
+		if (err)
+			goto unlock;
+
+		rcu_assign_pointer(comm->conn[node], conn);
+		err = 0;
+
+unlock:
+		spin_unlock_bh(&rpc_comm_lock);
+
+		if (err == -EAGAIN)
+			continue;
+		if (err)
+			goto err_idr;
+		break;
+	}
+
+	return err;
+
+err_idr:
+	rpc_connection_free_ll(conn);
+	rpc_communicator_put(comm);
+	return err;
 }
 
-void rpc_connection_release(struct kref *kref)
+static void rpc_connection_free(struct rcu_head *rcu)
 {
 	struct rpc_communicator *comm;
 	struct rpc_connection *conn;
 
-	BUG();
+	conn = container_of(rcu, struct rpc_connection, rcu);
 
-	conn = container_of(kref, struct rpc_connection, kref);
 	comm = conn->comm;
 	rpc_connection_free_ll(conn);
 	rpc_communicator_put(comm);
+}
+
+void rpc_connection_release(struct kref *kref)
+{
+	struct rpc_connection *conn;
+	unsigned long flags;
+
+	BUG();
+
+	conn = container_of(kref, struct rpc_connection, kref);
+
+	BUG_ON(conn->comm->conn[conn->peer] == conn);
+
+	spin_lock_irqsave(&rpc_conn_lock, flags);
+	idr_remove(&rpc_conn_idr, conn->id);
+	spin_unlock_irqrestore(&rpc_conn_lock, flags);
+
+	call_rcu(&conn->rcu, rpc_connection_free);
+}
+
+static inline bool rpc_connection_try_get(struct rpc_connection *conn)
+{
+	return atomic_add_unless(&conn->kref.refcount, 1, 0);
+}
+
+struct rpc_connection *rpc_find_get_connection(int id)
+{
+	struct rpc_connection *conn;
+
+	rcu_read_lock();
+	conn = idr_find(&rpc_conn_idr, id);
+	if (conn && !rpc_connection_try_get(conn))
+		conn = NULL;
+	rcu_read_unlock();
+
+	return conn;
+}
+
+struct rpc_connection *
+rpc_communicator_get_connection(struct rpc_communicator *comm,
+				kerrighed_node_t node)
+{
+	struct rpc_connection *conn;
+
+	rcu_read_lock();
+	conn = rcu_dereference(comm->conn[node]);
+	if (conn && !rpc_connection_try_get(conn))
+		conn = NULL;
+	rcu_read_unlock();
+
+	return conn;
 }
 
 struct rpc_connection_set *__rpc_connection_set_alloc(void)
@@ -383,7 +479,6 @@ int init_rpc(void)
 {
 	int i, res;
 	struct rpc_service *rpc_undef_service;
-	struct rpc_connection *conn;
 
 	rpc_desc_cachep = kmem_cache_create("rpc_desc",
 					    sizeof(struct rpc_desc),
@@ -443,11 +538,10 @@ int init_rpc(void)
 	if (res)
 		panic("kerrighed: Couldn't allocate static_communicator!\n");
 	for (i = 0; i < KERRIGHED_MAX_NODES; i++) {
-		conn = rpc_connection_alloc(&static_communicator, i);
-		if (!conn)
+		if (rpc_connection_alloc(&static_communicator, i))
 			panic("kerrighed: Couldn't allocate static"
 			      "connection!\n");
-		static_communicator.conn[i] = conn;
+		BUG_ON(static_communicator.conn[i]->id != i);
 	}
 
 	res = thread_pool_init();
