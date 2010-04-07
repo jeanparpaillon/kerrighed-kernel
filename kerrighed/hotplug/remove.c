@@ -9,6 +9,7 @@
 #include <linux/fs.h>
 #include <linux/reboot.h>
 #include <linux/workqueue.h>
+#include <linux/wait.h>
 #include <linux/uaccess.h>
 #include <linux/nsproxy.h>
 #include <kerrighed/namespace.h>
@@ -25,13 +26,18 @@
 
 #include "hotplug_internal.h"
 
+static int nr_to_remove;
+static DECLARE_WAIT_QUEUE_HEAD(all_removed_wq);
+
 static void do_local_node_remove(struct hotplug_context *ctx)
 {
 	struct rpc_communicator *comm = ctx->ns->rpc_comm;
-	krgnodemask_t new_online;
+	krgnodemask_t prev_online, new_online;
 
 	SET_KERRIGHED_NODE_FLAGS(KRGFLAGS_STOPPING);
 	printk("do_local_node_remove\n");
+
+	krgnodes_copy(prev_online, krgnode_online_map);
 
 	printk("...notify local\n");
 	hotplug_remove_notify(ctx, HOTPLUG_NOTIFY_REMOVE_LOCAL);
@@ -55,6 +61,7 @@ static void do_local_node_remove(struct hotplug_context *ctx)
 	hooks_stop();
 	up_write(&kerrighed_init_sem);
 
+	rpc_close_mask(comm, &prev_online);
 	rpc_communicator_put(comm);
 	ctx->ns->rpc_comm = NULL;
 
@@ -68,7 +75,11 @@ static void do_local_node_remove(struct hotplug_context *ctx)
 static void do_other_node_remove(struct hotplug_context *ctx)
 {
 	printk("do_other_node_remove\n");
+	nr_to_remove = krgnodes_weight(ctx->node_set.v);
 	hotplug_remove_notify(ctx, HOTPLUG_NOTIFY_REMOVE_ADVERT);
+	wait_event(all_removed_wq, nr_to_remove == 0);
+
+	rpc_close_mask(ctx->ns->rpc_comm, &ctx->node_set.v);
 }
 
 static void handle_node_remove(struct rpc_desc *desc, void *data, size_t size)
@@ -111,12 +122,19 @@ static void handle_node_remove(struct rpc_desc *desc, void *data, size_t size)
 }
 
 /* cluster receive the confirmation about the remove operation */
-static int handle_node_remove_confirm(struct rpc_desc *desc, void *data, size_t size)
+static void handle_node_remove_confirm(struct rpc_desc *desc, void *data, size_t size)
 {
+	int dummy;
+
 	BUG_ON(desc->client == kerrighed_node_id);
 	hotplug_remove_notify((void*)&desc->client, HOTPLUG_NOTIFY_REMOVE_ACK);
+	if (rpc_pack_type(desc, dummy))
+		rpc_cancel(desc);
+
+	nr_to_remove--;
+	if (!nr_to_remove)
+		wake_up(&all_removed_wq);
 	printk("Kerrighed: node %d removed\n", desc->client);
-	return 0;
 }
 
 static int do_nodes_remove(struct hotplug_context *ctx)
@@ -289,7 +307,7 @@ int hotplug_remove_init(void)
 {
 	rpc_register(NODE_POWEROFF, handle_node_poweroff, 0);
 	rpc_register_void(NODE_REMOVE, handle_node_remove, 0);
-	rpc_register_int(NODE_REMOVE_CONFIRM, handle_node_remove_confirm, 0);
+	rpc_register_void(NODE_REMOVE_CONFIRM, handle_node_remove_confirm, 0);
 
 	register_proc_service(KSYS_HOTPLUG_REMOVE, nodes_remove);
 	register_proc_service(KSYS_HOTPLUG_POWEROFF, nodes_poweroff);

@@ -32,19 +32,26 @@ static void handle_node_add(struct rpc_desc *rpc_desc, void *data, size_t size)
 {
 	struct hotplug_context *ctx;
 	struct krg_namespace *ns = find_get_krg_ns();
+	bool master = rpc_desc_get_client(rpc_desc) == kerrighed_node_id;
 	char *page;
 	int ret;
 
 	BUG_ON(!ns);
 	ctx = hotplug_ctx_alloc(ns);
 	put_krg_ns(ns);
-	if (!ctx) {
-		printk("kerrighed: [ADD] Failed to add nodes!\n");
-		return;
-	}
+	if (!ctx)
+		goto out_failed;
 	ctx->node_set = *(struct hotplug_node_set *)data;
 
-	__nodes_add(ctx);
+	if (!master) {
+		ret = rpc_connect_mask(ctx->ns->rpc_comm, &ctx->node_set.v);
+		if (ret)
+			goto out_failed_put;
+	}
+
+	ret = __nodes_add(ctx);
+	if (ret)
+		goto out_failed_close;
 
 	hotplug_ctx_put(ctx);
 
@@ -58,10 +65,20 @@ static void handle_node_add(struct rpc_desc *rpc_desc, void *data, size_t size)
 	} else {
 		printk("Kerrighed is running on %d nodes\n", num_online_krgnodes());
 	}
+	return;
+
+out_failed_close:
+	if (!master)
+		rpc_close_mask(ctx->ns->rpc_comm, &ctx->node_set.v);
+out_failed_put:
+	hotplug_ctx_put(ctx);
+out_failed:
+	printk("kerrighed: [ADD] Failed to add nodes!\n");
 }
 
 static int do_nodes_add(struct hotplug_context *ctx)
 {
+	struct rpc_communicator *comm;
 	char *page;
 	kerrighed_node_t node;
 	int ret;
@@ -77,6 +94,11 @@ static int do_nodes_add(struct hotplug_context *ctx)
 
 	free_page((unsigned long)page);
 
+	comm = ctx->ns->rpc_comm;
+	ret = rpc_connect_mask(comm, &ctx->node_set.v);
+	if (ret)
+		goto out;
+
 	/*
 	 * Send request to all new members
 	 * Current limitation: only not-started nodes can be added to a
@@ -84,11 +106,11 @@ static int do_nodes_add(struct hotplug_context *ctx)
 	 */
 	ret = do_cluster_start(ctx);
 	if (ret)
-		goto out;
+		goto err_close;
 
 	/* Send request to all members of the current cluster */
 	for_each_online_krgnode(node)
-		rpc_async(NODE_ADD, ctx->ns->rpc_comm, node,
+		rpc_async(NODE_ADD, comm, node,
 			  &ctx->node_set, sizeof(ctx->node_set));
 
 	printk("kerrighed: [ADD] Adding nodes succeeded.\n");
@@ -98,6 +120,10 @@ out:
 		printk(KERN_ERR "kerrighed: [ADD] Adding nodes failed! err=%d\n",
 		       ret);
 	return ret;
+
+err_close:
+	rpc_close_mask(comm, &ctx->node_set.v);
+	goto out;
 }
 
 static int nodes_add(void __user *arg)
