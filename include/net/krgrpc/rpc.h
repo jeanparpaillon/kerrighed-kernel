@@ -347,6 +347,12 @@ void rpc_communicator_put(struct rpc_communicator *communicator)
 }
 struct rpc_communicator *rpc_find_get_communicator(int id);
 
+int rpc_connect(struct rpc_communicator *comm, kerrighed_node_t node);
+void rpc_close(struct rpc_communicator *comm, kerrighed_node_t node);
+
+int rpc_connect_mask(struct rpc_communicator *comm, const krgnodemask_t *nodes);
+void rpc_close_mask(struct rpc_communicator *comm, const krgnodemask_t *nodes);
+
 kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc);
 
 extern struct task_struct *first_krgrpc;

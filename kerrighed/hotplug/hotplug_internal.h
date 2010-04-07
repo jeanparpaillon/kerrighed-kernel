@@ -14,6 +14,8 @@ extern struct workqueue_struct *krg_ha_wq;
 
 extern struct work_struct fail_work;
 
+extern struct mutex hotplug_mutex;
+
 int hooks_start(void);
 void hooks_stop(void);
 

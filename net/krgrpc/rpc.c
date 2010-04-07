@@ -308,6 +308,49 @@ struct rpc_communicator *rpc_find_get_communicator(int id)
 	return &static_communicator;
 }
 
+int rpc_connect(struct rpc_communicator *comm, kerrighed_node_t node)
+{
+	return 0;
+}
+
+void rpc_close(struct rpc_communicator *comm, kerrighed_node_t node)
+{
+}
+
+static
+void __rpc_close_mask(struct rpc_communicator *comm, const krgnodemask_t *nodes,
+		      kerrighed_node_t max_node)
+{
+	kerrighed_node_t node;
+
+	__for_each_krgnode_mask(node, nodes) {
+		if (node == max_node)
+			break;
+		rpc_close(comm, node);
+	}
+}
+
+int rpc_connect_mask(struct rpc_communicator *comm, const krgnodemask_t *nodes)
+{
+	kerrighed_node_t node;
+	int err = 0;
+
+	__for_each_krgnode_mask(node, nodes) {
+		err = rpc_connect(comm, node);
+		if (err) {
+			__rpc_close_mask(comm, nodes, node);
+			break;
+		}
+	}
+
+	return err;
+}
+
+void rpc_close_mask(struct rpc_communicator *comm, const krgnodemask_t *nodes)
+{
+	__rpc_close_mask(comm, nodes, KERRIGHED_MAX_NODES);
+}
+
 /** Initialisation of the rpc module.
  *  @author Pascal Gallard
  */
