@@ -590,7 +590,9 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 {
 	struct cluster_start_msg *msg = data;
 	struct hotplug_context *ctx = NULL;
-	int master = rpc_desc_get_client(desc) == kerrighed_node_id;
+	struct rpc_communicator *comm = desc->comm;
+	kerrighed_node_t master_id = rpc_desc_get_client(desc);
+	bool master = master_id == kerrighed_node_id;
 	char *page;
 	int ret = 0;
 	int err;
@@ -627,27 +629,35 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 	if (!master) {
 		struct krg_namespace *ns;
 
+		mutex_lock(&hotplug_mutex);
+
+		err = rpc_connect_mask(comm, &msg->node_set.v);
+		if (err) {
+			rpc_cancel(desc);
+			goto err_unlock;
+		}
+
 		init_completion(&krg_container_continue);
 		ns = create_krg_container(find_get_krg_ns());
 		if (!ns)
-			goto cancel;
+			goto err_close;
 
 		ctx = hotplug_ctx_alloc(ns);
 		put_krg_ns(ns);
 		if (!ctx)
-			goto cancel;
+			goto err_close;
 		ctx->node_set = msg->node_set;
 
-		rpc_communicator_get(desc->comm);
-		ctx->ns->rpc_comm = desc->comm;
+		rpc_communicator_get(comm);
+		ctx->ns->rpc_comm = comm;
 	}
 
 	err = rpc_pack_type(desc, ret);
 	if (err)
-		goto cancel;
+		goto err_check_comm;
 	err = rpc_unpack_type(desc, ret);
 	if (err)
-		goto cancel;
+		goto err_check_comm;
 
 	kerrighed_subsession_id = ctx->node_set.subclusterid;
 	__nodes_add(ctx);
@@ -679,6 +689,7 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 		complete(&krg_container_continue);
 		wait_for_completion(&krg_container_done);
 
+		mutex_unlock(&hotplug_mutex);
 		local_add_done(desc);
 	}
 
@@ -689,11 +700,19 @@ out:
 	return;
 
 cancel:
-	if (ctx && !master) {
-		rpc_communicator_put(ctx->ns->rpc_comm);
-		ctx->ns->rpc_comm = NULL;
-	}
 	rpc_cancel(desc);
+	goto out;
+
+err_check_comm:
+	if (master)
+		goto cancel;
+	rpc_communicator_put(ctx->ns->rpc_comm);
+	ctx->ns->rpc_comm = NULL;
+err_close:
+	rpc_cancel(desc);
+	rpc_close_mask(comm, &msg->node_set.v);
+err_unlock:
+	mutex_unlock(&hotplug_mutex);
 	goto out;
 }
 
@@ -721,15 +740,22 @@ static void cluster_start_worker(struct work_struct *work)
 	boot = krgnode_isset(kerrighed_node_id, cluster_start_ctx->node_set.v);
 	if (boot) {
 		BUG_ON(cluster_start_ctx->ns->rpc_comm);
-		cluster_start_ctx->ns->rpc_comm = rpc_find_get_communicator(0);
-		if (!cluster_start_ctx->ns->rpc_comm)
+		comm = rpc_find_get_communicator(0);
+		if (!comm)
 			goto out;
-	}
-	comm = cluster_start_ctx->ns->rpc_comm;
+		cluster_start_ctx->ns->rpc_comm = comm;
 
+		err = rpc_connect_mask(comm, &cluster_start_ctx->node_set.v);
+		if (err)
+			goto out_check_comm;
+	} else {
+		comm = cluster_start_ctx->ns->rpc_comm;
+	}
+
+	err = -ENOMEM;
 	desc = rpc_begin_m(CLUSTER_START, comm, &cluster_start_ctx->node_set.v);
 	if (!desc)
-		goto out_check_comm;
+		goto out_close;
 	err = rpc_pack_type(desc, cluster_start_msg);
 	if (err)
 		goto end;
@@ -755,6 +781,9 @@ static void cluster_start_worker(struct work_struct *work)
 end:
 	rpc_end(desc, 0);
 
+out_close:
+	if (err && boot)
+		rpc_close_mask(comm, &cluster_start_ctx->node_set.v);
 out_check_comm:
 	if (err && boot) {
 		rpc_communicator_put(comm);

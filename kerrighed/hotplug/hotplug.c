@@ -23,6 +23,8 @@ struct hotplug_request {
 	int id;
 };
 
+DEFINE_MUTEX(hotplug_mutex);
+
 struct workqueue_struct *krg_ha_wq;
 static struct workqueue_struct *krg_hotplug_wq;
 

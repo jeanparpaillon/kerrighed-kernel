@@ -42,19 +42,28 @@ static void handle_node_add(struct rpc_desc *rpc_desc, void *data, size_t size)
 {
 	struct hotplug_context *ctx;
 	struct krg_namespace *ns = find_get_krg_ns();
+	bool master = rpc_desc_get_client(rpc_desc) == kerrighed_node_id;
 	char *page;
 	int ret;
 
 	BUG_ON(!ns);
 	ctx = hotplug_ctx_alloc(ns);
 	put_krg_ns(ns);
-	if (!ctx) {
-		printk("kerrighed: [ADD] Failed to add nodes!\n");
-		return;
-	}
+	if (!ctx)
+		goto out_failed;
 	ctx->node_set = *(struct hotplug_node_set *)data;
 
-	__nodes_add(ctx);
+	if (!master) {
+		mutex_lock(&hotplug_mutex);
+
+		ret = rpc_connect_mask(ctx->ns->rpc_comm, &ctx->node_set.v);
+		if (ret)
+			goto out_failed_unlock;
+	}
+
+	ret = __nodes_add(ctx);
+	if (ret)
+		goto out_failed_close;
 
 	hotplug_ctx_put(ctx);
 
@@ -68,8 +77,22 @@ static void handle_node_add(struct rpc_desc *rpc_desc, void *data, size_t size)
 	} else {
 		printk("Kerrighed is running on %d nodes\n", num_online_krgnodes());
 	}
+	if (!master)
+		mutex_unlock(&hotplug_mutex);
 
 	local_add_done(rpc_desc);
+	return;
+
+out_failed_close:
+	if (master)
+		goto out_failed_put;
+	rpc_close_mask(ctx->ns->rpc_comm, &ctx->node_set.v);
+out_failed_unlock:
+	mutex_unlock(&hotplug_mutex);
+out_failed_put:
+	hotplug_ctx_put(ctx);
+out_failed:
+	printk("kerrighed: [ADD] Failed to add nodes!\n");
 }
 
 static void handle_node_add_ack(struct rpc_desc *desc, void *_msg, size_t size)
@@ -93,6 +116,7 @@ static int check_add_req(struct hotplug_context *ctx)
 
 static int do_nodes_add(struct hotplug_context *ctx)
 {
+	struct rpc_communicator *comm;
 	char *page;
 	kerrighed_node_t node;
 	int ret;
@@ -100,6 +124,8 @@ static int do_nodes_add(struct hotplug_context *ctx)
 	ret = hotplug_start_request(ctx);
 	if (ret)
 		goto out;
+
+	mutex_lock(&hotplug_mutex);
 
 	ret = check_add_req(ctx);
 	if (ret)
@@ -116,6 +142,11 @@ static int do_nodes_add(struct hotplug_context *ctx)
 
 	free_page((unsigned long)page);
 
+	comm = ctx->ns->rpc_comm;
+	ret = rpc_connect_mask(comm, &ctx->node_set.v);
+	if (ret)
+		goto out_finish;
+
 	atomic_set(&nr_to_wait,
 		   num_online_krgnodes() + krgnodes_weight(ctx->node_set.v));
 
@@ -126,23 +157,28 @@ static int do_nodes_add(struct hotplug_context *ctx)
 	 */
 	ret = do_cluster_start(ctx);
 	if (ret)
-		goto out_finish;
+		goto err_close;
 
 	/* Send request to all members of the current cluster */
 	for_each_online_krgnode(node)
-		rpc_async(NODE_ADD, ctx->ns->rpc_comm, node,
+		rpc_async(NODE_ADD, comm, node,
 			  &ctx->node_set, sizeof(ctx->node_set));
 
 	wait_event(all_added_wqh, atomic_read(&nr_to_wait) == 0);
 	printk("kerrighed: [ADD] Adding nodes succeeded.\n");
 
 out_finish:
+	mutex_unlock(&hotplug_mutex);
 	hotplug_finish_request(ctx);
 out:
 	if (ret)
 		printk(KERN_ERR "kerrighed: [ADD] Adding nodes failed! err=%d\n",
 		       ret);
 	return ret;
+
+err_close:
+	rpc_close_mask(comm, &ctx->node_set.v);
+	goto out_finish;
 }
 
 static void nodes_add_work(struct work_struct *work)
