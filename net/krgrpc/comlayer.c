@@ -228,6 +228,42 @@ static void __rpc_tx_elem_free(struct rpc_tx_elem *elem)
 	kmem_cache_free(rpc_tx_elem_cachep, elem);
 }
 
+static void __rpc_tx_elem_init(struct rpc_tx_elem *elem,
+			       struct rpc_connection_set *conn_set,
+			       const krgnodemask_t *nodes,
+			       enum rpcid rpcid,
+			       int flags,
+			       size_t size)
+{
+	struct tipc_connection *conn;
+	int link_seq_index;
+	kerrighed_node_t node;
+
+	rpc_connection_set_get(conn_set);
+	elem->conn_set = conn_set;
+	__krgnodes_copy(&elem->nodes, nodes);
+
+	link_seq_index = 0;
+	__for_each_krgnode_mask(node, nodes) {
+		conn = to_ll(conn_set->conn[node]);
+		elem->link_seq_id[link_seq_index] =
+			atomic_long_inc_return(&conn->send_seq_id);
+		link_seq_index++;
+	}
+
+	elem->index = 0;
+	elem->link_seq_index = 0;
+
+	elem->h.from = kerrighed_node_id;
+	elem->h.rpcid = rpcid;
+	elem->h.flags = flags;
+
+	elem->iov[0].iov_base = &elem->h;
+	elem->iov[0].iov_len = sizeof(elem->h);
+	elem->iov[1].iov_base = elem->data;
+	elem->iov[1].iov_len = size;
+}
+
 static int __rpc_tx_elem_send(struct rpc_tx_elem *elem, int link_seq_index,
 			      kerrighed_node_t node)
 {
@@ -243,6 +279,51 @@ static int __rpc_tx_elem_send(struct rpc_tx_elem *elem, int link_seq_index,
 
 out:
 	return err;
+}
+
+static void __rpc_tx_elem_queue(struct rpc_tx_elem *elem)
+{
+	struct tx_engine *engine;
+	kerrighed_node_t node;
+	int link_seq_index;
+	int err;
+
+	preempt_disable();
+	engine = &per_cpu(tipc_tx_engine, smp_processor_id());
+
+	if (irqs_disabled()) {
+		/* Add the packet in the tx_queue */
+		lockdep_off();
+		spin_lock(&tipc_tx_queue_lock);
+		list_add_tail(&elem->tx_queue, &engine->delayed_tx_queue);
+		spin_unlock(&tipc_tx_queue_lock);
+		lockdep_on();
+
+		/* Schedule the work ASAP */
+		queue_work(krgcom_wq, &engine->delayed_tx_work.work);
+		preempt_enable();
+		return;
+	}
+
+	err = 0;
+	link_seq_index = 0;
+	for_each_krgnode_mask(node, elem->nodes) {
+		err = __rpc_tx_elem_send(elem, link_seq_index, node);
+		if (err < 0)
+			break;
+
+		link_seq_index++;
+	}
+
+	spin_lock_bh(&tipc_tx_queue_lock);
+	if (err < 0)
+		list_add_tail(&elem->tx_queue, &engine->retx_queue);
+	else
+		/* Add the packet in the not_retx_queue */
+		list_add_tail(&elem->tx_queue, &engine->not_retx_queue);
+	spin_unlock_bh(&tipc_tx_queue_lock);
+
+	preempt_enable();
 }
 
 static void send_acks(struct tipc_connection *conn)
@@ -602,11 +683,7 @@ int __rpc_send_ll(struct rpc_desc* desc,
 			 const void* data, size_t size,
 			 int rpc_flags)
 {
-	struct tipc_connection *conn;
 	struct rpc_tx_elem* elem;
-	struct tx_engine *engine;
-	kerrighed_node_t node;
-	int link_seq_index;
 
 	elem = __rpc_tx_elem_alloc(size, __krgnodes_weight(nodes));
 	if (!elem) {
@@ -616,85 +693,22 @@ int __rpc_send_ll(struct rpc_desc* desc,
 			return -ENOMEM;
 	}
 
-	rpc_connection_set_get(desc->conn_set);
-	elem->conn_set = desc->conn_set;
+	if (desc->type == RPC_RQ_SRV)
+		__flags |= __RPC_HEADER_FLAGS_SRV_REPLY;
+	__rpc_tx_elem_init(elem, desc->conn_set, nodes, desc->rpcid, __flags, size);
 
-	link_seq_index = 0;
-	__for_each_krgnode_mask(node, nodes) {
-		conn = to_ll(elem->conn_set->conn[node]);
-		elem->link_seq_id[link_seq_index] =
-			atomic_long_inc_return(&conn->send_seq_id);
-		link_seq_index++;
-	}
 	if (rpc_flags & RPC_FLAGS_NEW_DESC_ID)
 		rpc_new_desc_id_unlock(desc->comm, desc->type == RPC_RQ_CLT);
 
-	elem->h.from = kerrighed_node_id;
 	elem->h.client = desc->client;
 	elem->h.server = desc->server;
 	elem->h.desc_id = desc->desc_id;
 	elem->h.client_desc_id = desc->client_desc_id;
 	elem->h.seq_id = seq_id;
-	
-	elem->h.flags = __flags;
-	if(desc->type == RPC_RQ_SRV)
-		elem->h.flags |= __RPC_HEADER_FLAGS_SRV_REPLY;
-
-	elem->h.rpcid = desc->rpcid;
-
-	elem->iov[0].iov_base = &elem->h;
-	elem->iov[0].iov_len = sizeof(elem->h);
-	
-	elem->iov[1].iov_base = (void *) data;
-	elem->iov[1].iov_len = size;
-
-	elem->index = 0;
-	elem->link_seq_index = 0;
 
 	memcpy(elem->data, data, size);
-	elem->iov[1].iov_base = elem->data;
-		
-	__krgnodes_copy(&elem->nodes, nodes);	
 
-	preempt_disable();
-	engine = &per_cpu(tipc_tx_engine, smp_processor_id());
-	if (irqs_disabled()) {
-		/* Add the packet in the tx_queue */
-		lockdep_off();
-		spin_lock(&tipc_tx_queue_lock);
-		list_add_tail(&elem->tx_queue, &engine->delayed_tx_queue);
-		spin_unlock(&tipc_tx_queue_lock);
-		lockdep_on();
-
-		/* Schedule the work ASAP */
-		queue_work(krgcom_wq, &engine->delayed_tx_work.work);
-
-	} else {
-		int err = 0;
-
-		link_seq_index = 0;
-		__for_each_krgnode_mask(node, nodes){
-
-			err = __rpc_tx_elem_send(elem, link_seq_index, node);
-			if(err<0){
-				spin_lock_bh(&tipc_tx_queue_lock);
-				list_add_tail(&elem->tx_queue,
-						&engine->retx_queue);
-				spin_unlock_bh(&tipc_tx_queue_lock);
-				break;
-			}
-
-			link_seq_index++;
-		}
-
-		if(err>=0){
-			/* Add the packet in the not_retx_queue */
-			spin_lock_bh(&tipc_tx_queue_lock);
-			list_add_tail(&elem->tx_queue, &engine->not_retx_queue);
-			spin_unlock_bh(&tipc_tx_queue_lock);
-		}
-	}
-	preempt_enable();
+	__rpc_tx_elem_queue(elem);
 	return 0;
 }
 
