@@ -332,6 +332,7 @@ enum cr_file_desc_type {
 
 struct cr_file_link {
 	enum cr_file_desc_type desc_type;
+	bool from_substitution;
 	unsigned long dvfs_objid;
 	void *desc;
 };
@@ -680,6 +681,7 @@ static int prepare_restart_data_unsupported_file(void **returned_data,
 
 	file_link->desc_type = CR_FILE_NONE;
 	file_link->desc = NULL;
+	file_link->from_substitution = false;
 
 	*returned_data = file_link;
 
@@ -699,6 +701,7 @@ static int prepare_restart_data_local_file(struct file *f,
 
 	file_link->desc_type = CR_FILE_POINTER;
 	file_link->desc = f;
+	file_link->from_substitution = false;
 
 	*returned_data = file_link;
 
@@ -721,6 +724,7 @@ static int prepare_restart_data_dvfs_file(struct file *f,
 	file_link->desc = &file_link[1];
 	file_link->desc_type = CR_FILE_REGULAR_DESC;
 	file_link->dvfs_objid = f->f_objid;
+	file_link->from_substitution = false;
 	memcpy(file_link->desc, desc, desc_size);
 
 	*returned_data = file_link;
@@ -745,6 +749,7 @@ static int prepare_restart_data_faf_file(struct file *f,
 	file_link->desc = &file_link[1];
 	file_link->desc_type = CR_FILE_FAF_DESC;
 	file_link->dvfs_objid = f->f_objid;
+	file_link->from_substitution = false;
 
 	if (f->f_flags & O_FAF_SRV)
 		fill_faf_file_krg_desc(file_link->desc, f);
@@ -761,31 +766,57 @@ static int prepare_restart_data_faf_file(struct file *f,
 #endif
 
 int prepare_restart_data_shared_file(struct file *f,
-				     int local_only,
 				     void *fdesc, int fdesc_size,
-				     void **returned_data, size_t *data_size)
+				     void **returned_data, size_t *data_size,
+				     bool from_substitution)
+{
+	int r;
+	struct cr_file_link *file_link;
+
+#ifdef CONFIG_KRG_FAF
+	if (f->f_flags & (O_FAF_CLT | O_FAF_SRV))
+		r = prepare_restart_data_faf_file(f, returned_data,
+						  data_size);
+	else
+#endif
+		r = prepare_restart_data_dvfs_file(f, fdesc, fdesc_size,
+						   returned_data,
+						   data_size);
+
+	if (r)
+		goto error;
+
+	file_link = (struct cr_file_link *)(*returned_data);
+	file_link->from_substitution = from_substitution;
+error:
+	return r;
+}
+
+
+static int prepare_restart_data_supported_file(
+	struct file *f, int local_only,
+	void *fdesc, int fdesc_size,
+	void **returned_data, size_t *data_size)
 {
 	int r;
 
 	if (!local_only) {
-		/* get a new dvfs objid */
-		r = create_kddm_file_object(f);
-		if (r)
-			goto error;
+
+		if (!f->f_objid) {
+			/* get a new dvfs objid */
+			r = create_kddm_file_object(f);
+			if (r)
+				goto error;
+		}
 
 #ifdef CONFIG_KRG_FAF
 		r = setup_faf_file_if_needed(f);
 		if (r)
 			goto error;
-
-		if (f->f_flags & (O_FAF_CLT | O_FAF_SRV))
-			r = prepare_restart_data_faf_file(f, returned_data,
-							  data_size);
-		else
 #endif
-			r = prepare_restart_data_dvfs_file(f, fdesc, fdesc_size,
-							   returned_data,
-							   data_size);
+		r = prepare_restart_data_shared_file(f, fdesc, fdesc_size,
+						     returned_data, data_size,
+						     false);
 	} else
 		r = prepare_restart_data_local_file(f, returned_data,
 						    data_size);
@@ -833,8 +864,8 @@ static int cr_import_now_file(struct epm_action *action,
 	if (r)
 		goto err_free_desc;
 
-	r = prepare_restart_data_shared_file(f, local_only, desc, desc_size,
-					     returned_data, data_size);
+	r = prepare_restart_data_supported_file(f, local_only, desc, desc_size,
+						returned_data, data_size);
 
 err_free_desc:
 	kfree(desc);
@@ -851,7 +882,8 @@ static int cr_import_complete_file(struct task_struct *fake, void *_file_link)
 	struct cr_file_link *file_link = _file_link;
 	struct file *file;
 
-	if (file_link->desc_type == CR_FILE_NONE)
+	if (file_link->desc_type == CR_FILE_NONE
+	    || file_link->from_substitution)
 		/* the file has not been imported */
 		return 0;
 
@@ -883,7 +915,8 @@ static int cr_delete_file(struct task_struct *fake, void *_file_link)
 	struct cr_file_link *file_link = _file_link;
 	struct file *file;
 
-	if (file_link->desc_type == CR_FILE_NONE)
+	if (file_link->desc_type == CR_FILE_NONE
+	    || file_link->from_substitution)
 		/* the file has not been imported */
 		return 0;
 

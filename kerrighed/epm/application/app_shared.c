@@ -1550,8 +1550,9 @@ static int insert_one_substitution_file(struct rb_root *files,
 	if (r)
 		goto err_put_file;
 
-	r = prepare_restart_data_shared_file(file, 0, fdesc, fdesc_size,
-					     &cr_file_link, &file_link_size);
+	r = prepare_restart_data_shared_file(file, fdesc, fdesc_size,
+					     &cr_file_link, &file_link_size,
+					     true);
 	if (r)
 		goto err_free_desc;
 
