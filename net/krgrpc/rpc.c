@@ -14,7 +14,6 @@
 #include <linux/lockdep.h>
 #include <linux/string.h>
 #include <kerrighed/krgnodemask.h>
-#include <linux/hashtable.h>
 
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
@@ -23,10 +22,11 @@
 
 struct rpc_service** rpc_services;
 unsigned long rpc_desc_id;
-hashtable_t* desc_srv[KERRIGHED_MAX_NODES];
-hashtable_t* desc_clt;
+struct hlist_head desc_srv[KERRIGHED_MAX_NODES][RPC_DESC_TABLE_SIZE];
+struct hlist_head desc_clt[RPC_DESC_TABLE_SIZE];
 spinlock_t rpc_desc_done_lock[KERRIGHED_MAX_NODES];
 unsigned long rpc_desc_done_id[KERRIGHED_MAX_NODES];
+DEFINE_SPINLOCK(desc_clt_lock);
 
 unsigned long rpc_link_send_seq_id[KERRIGHED_MAX_NODES];
 unsigned long rpc_link_send_ack_id[KERRIGHED_MAX_NODES];
@@ -299,19 +299,11 @@ int init_rpc(void)
 	rpc_desc_id = 1;
 
 	for(i=0;i<KERRIGHED_MAX_NODES;i++){
-		desc_srv[i] = hashtable_new(32);
-		if(!desc_srv[i])
-			return -ENOMEM;
-
-		lockdep_set_class(&desc_srv[i]->lock, &rpc_desc_srv_lock_key);
-
+		rpc_desc_table_init(&desc_srv[i]);
 		rpc_desc_done_id[i] = 0;
 		spin_lock_init(&rpc_desc_done_lock[i]);
-
 	};
-	desc_clt = hashtable_new(32);
-	if(!desc_clt)
-		return -ENOMEM;
+	rpc_desc_table_init(&desc_clt);
 
 	lockdep_set_class(&desc_clt->lock, &rpc_desc_clt_lock_key);
 

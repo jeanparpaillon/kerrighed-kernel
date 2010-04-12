@@ -15,7 +15,6 @@
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/krgnodemask.h>
-#include <linux/hashtable.h>
 
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
@@ -36,13 +35,13 @@ void rpc_new_desc_id_lock(bool lock_table)
 		local_bh_disable();
 	spin_lock(&lock_id);
 	if (lock_table)
-		hashtable_lock(desc_clt);
+		spin_lock(&desc_clt_lock);
 }
 
 void rpc_new_desc_id_unlock(bool unlock_table)
 {
 	if (unlock_table)
-		hashtable_unlock(desc_clt);
+		spin_unlock(&desc_clt_lock);
 	spin_unlock(&lock_id);
 	if (!irqs_disabled())
 		local_bh_enable();
@@ -62,23 +61,15 @@ int __rpc_send(struct rpc_desc* desc,
 		if (desc->desc_id == 0) {
 			bool is_client = desc->type == RPC_RQ_CLT;
 
-			BUG_ON(desc->table);
+			BUG_ON(desc->hash_lock);
 
 			rpc_new_desc_id_lock(is_client);
 
 			rpc_desc_set_id(desc->desc_id);
 			if (is_client) {
 				desc->client_desc_id = desc->desc_id;
-				if (__hashtable_add(desc_clt, desc->desc_id,
-						    desc)) {
-					rpc_new_desc_id_unlock(true);
-
-					desc->desc_id = 0;
-					desc->client_desc_id = 0;
-
-					return -ENOMEM;
-				}
-				desc->table = desc_clt;
+				rpc_desc_table_add(desc_clt, desc);
+				desc->hash_lock = &desc_clt_lock;
 			}
 
 			/* Calls rpc_new_desc_id_unlock() on success */
@@ -88,9 +79,8 @@ int __rpc_send(struct rpc_desc* desc,
 					    rpc_flags | RPC_FLAGS_NEW_DESC_ID);
 			if (err) {
 				if (is_client) {
-					__hashtable_remove(desc_clt,
-							   desc->desc_id);
-					desc->table = NULL;
+					rpc_desc_table_remove(desc);
+					desc->hash_lock = NULL;
 				}
 				rpc_new_desc_id_unlock(is_client);
 
@@ -272,17 +262,16 @@ int rpc_end(struct rpc_desc* desc, int flags)
 		BUG();
 	}
 
-	if (desc->table) {
+	if (desc->hash_lock) {
 		spin_lock_bh(&desc->desc_lock);
-		hashtable_lock(desc->table);
+		spin_lock(desc->hash_lock);
 
 		desc->state = RPC_STATE_END;
 
-		__hashtable_remove(desc->table, desc->desc_id);
-		BUG_ON(__hashtable_find(desc->table, desc->desc_id));
+		rpc_desc_table_remove(desc);
 
-		hashtable_unlock(desc->table);
-		desc->table = NULL;
+		spin_unlock(desc->hash_lock);
+		desc->hash_lock = NULL;
 		spin_unlock_bh(&desc->desc_lock);
 	}
 
@@ -421,7 +410,7 @@ forward_rpc_desc_setup(struct rpc_desc *desc, kerrighed_node_t target)
 	fwd_desc->rpcid = desc->rpcid;
 	/* fwd_desc->service = NULL; */
 	/* fwd_desc->thread = NULL; */
-	/* fwd_desc->table = NULL; */
+	/* fwd_desc->hash_lock = NULL; */
 
 	if (__rpc_emergency_send_buf_alloc(fwd_desc, 0))
 		goto err_emergency_buf;
