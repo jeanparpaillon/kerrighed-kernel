@@ -3,6 +3,7 @@
 
 #include <linux/uio.h>
 #include <linux/list.h>
+#include <linux/hash.h>
 #include <linux/spinlock.h>
 #include <linux/radix-tree.h>
 #include <linux/slab.h>
@@ -124,12 +125,15 @@ struct rpc_tx_elem {
 
 extern struct rpc_service** rpc_services;
 
-struct hashtable_t;
-extern struct hashtable_t* desc_srv[KERRIGHED_MAX_NODES];
-extern struct hashtable_t* desc_clt;
+#define RPC_DESC_TABLE_BITS 5
+#define RPC_DESC_TABLE_SIZE (1 << RPC_DESC_TABLE_BITS)
+
+extern struct hlist_head desc_srv[KERRIGHED_MAX_NODES][RPC_DESC_TABLE_SIZE];
+extern struct hlist_head desc_clt[RPC_DESC_TABLE_SIZE];
 extern unsigned long rpc_desc_id;
 extern unsigned long rpc_desc_done_id[KERRIGHED_MAX_NODES];
 extern spinlock_t rpc_desc_done_lock[KERRIGHED_MAX_NODES];
+extern spinlock_t desc_clt_lock;
 
 extern struct kmem_cache* rpc_desc_cachep;
 extern struct kmem_cache* rpc_desc_send_cachep;
@@ -155,6 +159,44 @@ void rpc_desc_elem_free(struct rpc_desc_elem *elem);
 
 void rpc_desc_get(struct rpc_desc* desc);
 void rpc_desc_put(struct rpc_desc* desc);
+
+static inline int rpc_desc_hash_fn(unsigned long id)
+{
+	return hash_long(id, RPC_DESC_TABLE_BITS);
+}
+
+static inline
+struct rpc_desc *rpc_desc_table_find(struct hlist_head *table, unsigned long id)
+{
+	struct hlist_head *head;
+	struct rpc_desc *desc;
+	struct hlist_node *node;
+
+	head = &table[rpc_desc_hash_fn(id)];
+	hlist_for_each_entry(desc, node, head, list)
+		if (desc->desc_id == id)
+			return desc;
+	return NULL;
+}
+
+static inline
+void rpc_desc_table_add(struct hlist_head *table, struct rpc_desc *desc)
+{
+	hlist_add_head(&desc->list, &table[rpc_desc_hash_fn(desc->desc_id)]);
+}
+
+static inline void rpc_desc_table_remove(struct rpc_desc *desc)
+{
+	hlist_del(&desc->list);
+}
+
+static inline void rpc_desc_table_init(struct hlist_head *table)
+{
+	int i;
+
+	for (i = 0; i < RPC_DESC_TABLE_SIZE; i++)
+		INIT_HLIST_HEAD(&table[i]);
+}
 
 void rpc_do_signal(struct rpc_desc *desc,
 		   struct rpc_desc_elem *signal_elem);
