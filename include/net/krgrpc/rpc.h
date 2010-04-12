@@ -83,7 +83,6 @@ enum rpc_rq_state {
  | RPC_STATE_WAIT1)
 
 struct rpc_service;
-struct hashtable_t;
 
 struct rpc_desc {
 	struct rpc_desc_send* desc_send;
@@ -91,8 +90,8 @@ struct rpc_desc {
 	struct rpc_service* service;
 	krgnodemask_t nodes;
 	enum rpc_rq_type type;
-	struct hashtable_t *table;
 	struct hlist_node list;
+	spinlock_t *hash_lock;
 	unsigned in_interrupt:1;
 	unsigned forwarded:1;
 	unsigned long desc_id;

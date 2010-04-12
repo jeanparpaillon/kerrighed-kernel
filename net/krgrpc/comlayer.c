@@ -22,7 +22,6 @@
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
-#include <linux/hashtable.h>
 
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
@@ -876,16 +875,12 @@ static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
 	rpc_desc_get(desc);
 
 	BUG_ON(h->desc_id != desc->desc_id);
-	if (__hashtable_add(desc_srv[h->from], h->desc_id, desc))
-		goto err_hashtable;
-	desc->table = desc_srv[h->from];
+	rpc_desc_table_add(desc_srv[h->from], desc);
+	desc->hash_lock = &rpc_desc_done_lock[h->from];
 
 out:
 	return desc;
 
-err_hashtable:
-	rpc_desc_put(desc);
-	__rpc_emergency_send_buf_free(desc);
 err_emergency_send:
 	kmem_cache_free(rpc_desc_recv_cachep, desc->desc_recv[0]);
 err_desc_recv:
@@ -909,7 +904,7 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 	struct rpc_desc *desc;
 	struct rpc_desc_elem* descelem;
 	struct rpc_desc_recv* desc_recv;
-	struct hashtable_t* desc_ht;
+	spinlock_t *hash_lock;
 	int err = 0;
 
 	iter = data;
@@ -920,13 +915,16 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 	   __RPC_HEADER_FLAGS_SRV_REPLY: we are the client side -> desc_clt
 	   else: we are the server side -> desc_srv[]
 	*/
-	desc_ht = (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY) ? desc_clt : desc_srv[h->from];
-
-	hashtable_lock(desc_ht);
 	if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
-		desc = __hashtable_find(desc_ht, h->client_desc_id);
+		hash_lock = &desc_clt_lock;
 	else
-		desc = __hashtable_find(desc_ht, h->desc_id);
+		hash_lock = &rpc_desc_done_lock[h->from];
+
+	spin_lock(hash_lock);
+	if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
+		desc = rpc_desc_table_find(desc_clt, h->client_desc_id);
+	else
+		desc = rpc_desc_table_find(desc_srv[h->from], h->desc_id);
 
 	if (desc) {
 
@@ -938,18 +936,14 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 
 			// requesting desc is already closed (most probably an async request
 			// just discard this packet
-			hashtable_unlock(desc_ht);
+			spin_unlock(hash_lock);
 			goto out;
 
 		}else{
 
-			spin_lock(&rpc_desc_done_lock[h->from]);
 			if (unlikely(h->desc_id <= rpc_desc_done_id[h->from])) {
-
-				spin_unlock(&rpc_desc_done_lock[h->from]);
-				hashtable_unlock(desc_ht);
+				spin_unlock(hash_lock);
 				goto out;
-
 			}
 
 			desc = server_rpc_desc_setup(h);
@@ -960,20 +954,18 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 				 * packets to decrease memory pressure, or keep
 				 * the packet and retry handling it later.
 				 */
-				spin_unlock(&rpc_desc_done_lock[h->from]);
-				hashtable_unlock(desc_ht);
+				spin_unlock(hash_lock);
 				err = -ENOMEM;
 				goto out;
 			}
 
 			rpc_desc_done_id[h->from] = h->desc_id;
-			spin_unlock(&rpc_desc_done_lock[h->from]);
 
 		}
 
 	}
 
-	BUG_ON(desc->table != desc_ht);
+	BUG_ON(desc->hash_lock != hash_lock);
 	if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
 		BUG_ON(desc->desc_id != h->client_desc_id);
 	else
@@ -982,12 +974,11 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 	/* Optimization: do not allocate memory if we already know that it is
 	 * useless to.
 	 * If desc is valid after double check, desc_recv retrieved below will
-	 * be valid too, since hashtable's lock acts as a memory barrier between
+	 * be valid too, since hash_lock acts as a memory barrier between
 	 * the processor having allocated desc (and inserted it in the table)
 	 * and us.
 	 * If desc has a valid state here, as long as we do not release
-	 * hashtable's lock desc_recv retrieved below is valid too (see
-	 * rpc_end()).
+	 * hash_lock desc_recv retrieved below is valid too (see rpc_end()).
 	 */
 	switch (desc->type) {
 	case RPC_RQ_CLT:
@@ -1011,18 +1002,18 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 	/* Is the transaction still accepting packets? */
 	if (!(desc->state & RPC_STATE_MASK_VALID) ||
 	    (desc_recv->flags & RPC_FLAGS_CLOSED)) {
-		hashtable_unlock(desc_ht);
+		spin_unlock(hash_lock);
 		goto out_put;
 	}
 
-	hashtable_unlock(desc_ht);
+	spin_unlock(hash_lock);
 
 	descelem = kmem_cache_alloc(rpc_desc_elem_cachep, GFP_ATOMIC);
 	if (!descelem) {
 		/*
 		 * Same OOM handling as for new rpc_desc above, except that we
 		 * keep the rpc_desc, even if we just created it, because it is
-		 * now visible in the hashtable and it would just add
+		 * now visible in the hash table and it would just add
 		 * complexity to try to free it.
 		 */
 		err = -ENOMEM;
