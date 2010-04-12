@@ -272,17 +272,19 @@ int rpc_end(struct rpc_desc* desc, int flags)
 		BUG();
 	}
 
-	spin_lock_bh(&desc->desc_lock);
-	hashtable_lock(desc->table);
+	if (desc->table) {
+		spin_lock_bh(&desc->desc_lock);
+		hashtable_lock(desc->table);
 
-	desc->state = RPC_STATE_END;
+		desc->state = RPC_STATE_END;
 
-	__hashtable_remove(desc->table, desc->desc_id);
-	BUG_ON(__hashtable_find(desc->table, desc->desc_id));
+		__hashtable_remove(desc->table, desc->desc_id);
+		BUG_ON(__hashtable_find(desc->table, desc->desc_id));
 
-	hashtable_unlock(desc->table);
-	desc->table = NULL;
-	spin_unlock_bh(&desc->desc_lock);
+		hashtable_unlock(desc->table);
+		desc->table = NULL;
+		spin_unlock_bh(&desc->desc_lock);
+	}
 
 	__rpc_emergency_send_buf_free(desc);
 
