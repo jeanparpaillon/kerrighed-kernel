@@ -474,6 +474,18 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 
 }
 
+static void cleanup_not_retx(void)
+{
+	struct tx_engine *engine;
+	int cpu;
+
+	for_each_online_cpu(cpu) {
+		engine = &per_cpu(tipc_tx_engine, cpu);
+		queue_delayed_work_on(cpu, krgcom_wq,
+				      &engine->cleanup_not_retx_work,0);
+	}
+}
+
 static
 void tipc_unreachable_node_worker(struct work_struct *work){
 }
@@ -1134,15 +1146,8 @@ static void tipc_handler(void *usr_handle,
 		rpc_link_send_ack_id[h->from] = h->link_ack_id;
 		if(rpc_link_send_ack_id[h->from] - last_cleanup_ack[h->from]
 			> ack_cleanup_window_size){
-			int cpuid;
 			last_cleanup_ack[h->from] = h->link_ack_id;
-			for_each_online_cpu(cpuid){
-				struct tx_engine *engine = &per_cpu(tipc_tx_engine,
-									cpuid);
-				queue_delayed_work_on(cpuid, krgcom_wq,
-							&engine->cleanup_not_retx_work,0);
-
-			}
+			cleanup_not_retx();
 		}
 
 	}
@@ -1321,15 +1326,8 @@ void rpc_disable_lowmem_mode(kerrighed_node_t nodeid){
 }
 
 void rpc_enable_local_lowmem_mode(void){
-	int cpuid;
-
 	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE__LOWMEM_MODE;
-
-	for_each_online_cpu(cpuid){
-		struct tx_engine *engine = &per_cpu(tipc_tx_engine, cpuid);
-		queue_delayed_work_on(cpuid, krgcom_wq,
-			&engine->cleanup_not_retx_work, 0);
-	}
+	cleanup_not_retx();
 }
 
 void rpc_disable_local_lowmem_mode(void){
