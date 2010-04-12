@@ -940,9 +940,6 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 
 			}
 
-			rpc_desc_done_id[h->from] = h->desc_id;
-			spin_unlock(&rpc_desc_done_lock[h->from]);
-
 			desc = server_rpc_desc_setup(h);
 			if (!desc) {
 				/*
@@ -951,10 +948,14 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 				 * packets to decrease memory pressure, or keep
 				 * the packet and retry handling it later.
 				 */
+				spin_unlock(&rpc_desc_done_lock[h->from]);
 				hashtable_unlock(desc_ht);
 				err = -ENOMEM;
 				goto out;
 			}
+
+			rpc_desc_done_id[h->from] = h->desc_id;
+			spin_unlock(&rpc_desc_done_lock[h->from]);
 
 		}
 
