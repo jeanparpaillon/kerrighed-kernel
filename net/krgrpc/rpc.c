@@ -32,7 +32,7 @@ unsigned long rpc_link_send_seq_id[KERRIGHED_MAX_NODES];
 unsigned long rpc_link_send_ack_id[KERRIGHED_MAX_NODES];
 unsigned long rpc_link_recv_seq_id[KERRIGHED_MAX_NODES];
 
-DEFINE_PER_CPU(struct list_head, rpc_desc_trash);
+DEFINE_PER_CPU(struct hlist_head, rpc_desc_trash);
 
 struct kmem_cache* rpc_desc_cachep;
 struct kmem_cache* rpc_desc_send_cachep;
@@ -93,17 +93,17 @@ struct rpc_desc* rpc_desc_alloc(void){
 	int cpu = smp_processor_id();
 	
 	in_interrupt = 0;
-	if(list_empty(&per_cpu(rpc_desc_trash, cpu))){
+	if(hlist_empty(&per_cpu(rpc_desc_trash, cpu))){
 		desc = kmem_cache_alloc(rpc_desc_cachep, GFP_ATOMIC);
 		if(!desc)
 			return NULL;
 		
 		in_interrupt = 1;
 	}else{
-		desc = container_of(per_cpu(rpc_desc_trash, cpu).next,
+		desc = container_of(per_cpu(rpc_desc_trash, cpu).first,
 				    struct rpc_desc,
 				    list);
-		list_del(&desc->list);
+		hlist_del(&desc->list);
 	};
 
 	memset(desc, 0, sizeof(*desc));
@@ -293,7 +293,7 @@ int init_rpc(void)
 		rpc_services[i] = rpc_undef_service;
 	
 	for_each_possible_cpu(i){
-		INIT_LIST_HEAD(&per_cpu(rpc_desc_trash, i));
+		INIT_HLIST_HEAD(&per_cpu(rpc_desc_trash, i));
 	};
 		
 	rpc_desc_id = 1;

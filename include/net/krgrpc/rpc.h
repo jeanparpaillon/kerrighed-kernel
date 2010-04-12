@@ -86,7 +86,7 @@ struct rpc_desc {
 	krgnodemask_t nodes;
 	enum rpc_rq_type type;
 	struct hashtable_t *table;
-	struct list_head list;
+	struct hlist_node list;
 	unsigned in_interrupt:1;
 	unsigned forwarded:1;
 	unsigned long desc_id;
