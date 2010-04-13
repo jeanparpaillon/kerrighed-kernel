@@ -621,6 +621,7 @@ int export_files_struct (struct epm_action *action,
 	int r = 0, export_fdt;
 	int last_open_fd;
 	struct fdtable *fdt;
+	struct files_struct *exported_files;
 
 	BUG_ON (!tsk);
 
@@ -641,34 +642,37 @@ int export_files_struct (struct epm_action *action,
 
 	/* Export the main files structure */
 
-	r = ghost_write (ghost, tsk->files, sizeof (struct files_struct));
-	if (r)
+	exported_files = dup_fd (tsk->files, &r);
+	if (!exported_files)
 		goto err;
+
+	r = ghost_write (ghost, exported_files, sizeof (struct files_struct));
+	if (r)
+		goto exit_put_files;
 
 	/* Export the bit vector close_on_exec */
 
-	spin_lock(&tsk->files->file_lock);
-	fdt = files_fdtable(tsk->files);
+	fdt = files_fdtable(exported_files);
 
 	last_open_fd = count_open_files(fdt);
 	r = ghost_write (ghost, &last_open_fd, sizeof (int));
 	if (r)
-		goto exit_unlock;
+		goto exit_put_files;
 
-	export_fdt = (fdt != &tsk->files->fdtab);
+	export_fdt = (fdt != &exported_files->fdtab);
 	r = ghost_write (ghost, &export_fdt, sizeof (int));
 	if (r)
-		goto exit_unlock;
+		goto exit_put_files;
 
 	if (export_fdt) {
 		int nr = last_open_fd / BITS_PER_BYTE;
 		r = ghost_write (ghost, fdt->close_on_exec, nr);
 		if (r)
-			goto exit_unlock;
+			goto exit_put_files;
 
 		r = ghost_write (ghost, fdt->open_fds, nr);
 		if (r)
-			goto exit_unlock;
+			goto exit_put_files;
 
 	}
 
@@ -677,7 +681,7 @@ int export_files_struct (struct epm_action *action,
 
 		r = ghost_write (ghost, &magic, sizeof (int));
 		if (r)
-			goto exit_unlock;
+			goto exit_put_files;
 	}
 
 	if (action->type == EPM_CHECKPOINT) {
@@ -687,7 +691,7 @@ int export_files_struct (struct epm_action *action,
 		r = export_open_files (action, ghost, tsk, fdt, last_open_fd);
 
 	if (r)
-		goto exit_unlock;
+		goto exit_put_files;
 
 	{
 		int magic = 380574;
@@ -695,8 +699,8 @@ int export_files_struct (struct epm_action *action,
 		r = ghost_write (ghost, &magic, sizeof (int));
 	}
 
-exit_unlock:
-	spin_unlock(&tsk->files->file_lock);
+exit_put_files:
+	put_files_struct (exported_files);
 
 err:
 	return r;
@@ -1140,6 +1144,7 @@ int import_files_struct (struct epm_action *action,
 
 		BUG_ON (!r && magic != 380574);
 	}
+
 	return 0;
 
 exit_free_fdt:
