@@ -263,7 +263,7 @@ static int try_to_flush_one(struct page *page, struct vm_area_struct *vma)
 
 	objid = page->index;
 	if (vma->vm_file)
-		objid += vma->vm_start;
+		objid += (vma->vm_start >> PAGE_SHIFT) - vma->vm_pgoff;
 
         address = objid * PAGE_SIZE;
 
