@@ -7,6 +7,7 @@
 #include <linux/fs.h>
 #include <linux/workqueue.h>
 #include <linux/sysdev.h>
+#include <linux/if.h>
 
 #include <kerrighed/version.h>
 #include <kerrighed/types.h>
@@ -529,6 +530,47 @@ static ssize_t abi_show(struct kobject *obj, struct kobj_attribute *attr,
 static struct kobj_attribute kobj_attr_abi =
 		__ATTR_RO(abi);
 
+static ssize_t net_devices_store(struct kobject *obj,
+				 struct kobj_attribute *attr,
+				 const char *page, size_t count)
+{
+	char buf[IFNAMSIZ + 2];
+	char *name;
+	int err;
+
+	if (sysfs_streq(page, "+ALL") || sysfs_streq(page, "ALL")) {
+		rpc_enable_alldev();
+		return count;
+	} else if (sysfs_streq(page, "-ALL")) {
+		rpc_disable_alldev();
+		return count;
+	}
+
+	name = strncpy(buf, page, IFNAMSIZ + 2);
+	if (buf[IFNAMSIZ + 1])
+		return -EINVAL;
+	name = strstrip(name);
+
+	switch (name[0]) {
+	case '-':
+		err = rpc_disable_dev(name + 1);
+		break;
+	case '+':
+		name++;
+		/* Fallthrough */
+	default:
+		err = rpc_enable_dev(name);
+		break;
+	}
+	if (err)
+		return err;
+
+	return count;
+}
+
+static struct kobj_attribute kobj_attr_net_devices =
+	__ATTR(net_devices, 0200, NULL, net_devices_store);
+
 static struct attribute *attrs[] = {
 	&kobj_attr_node_id.attr,
 	&kobj_attr_session_id.attr,
@@ -536,6 +578,7 @@ static struct attribute *attrs[] = {
 	&kobj_attr_max_nodes.attr,
 	&kobj_attr_max_subclusters.attr,
 	&kobj_attr_abi.attr,
+	&kobj_attr_net_devices.attr,
 	NULL
 };
 
@@ -594,5 +637,4 @@ void __init kerrighed_init(void){
 	printk("Kerrighed... loaded!\n");
 
 	rpc_enable(CLUSTER_START);
-	rpc_connect();
 }

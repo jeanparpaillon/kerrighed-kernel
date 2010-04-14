@@ -1224,32 +1224,57 @@ void port_wakeup(struct tipc_port *p_ptr){
 	queue_delayed_work_on(cpuid, krgcom_wq, &engine->delayed_tx_work, 1);
 }
 
-static
-void enable_all_netdev(void){
-	struct net_device *netdev;
+int comlayer_enable_dev(const char *name)
+{
 	char buf[256];
+	int res;
 
-	read_lock(&dev_base_lock);
-	for_each_netdev(&init_net, netdev){
-		int res;
+	printk("Try to enable bearer on %s:", name);
 
-		printk("Try to enable bearer on %s:", netdev->name);
+	snprintf(buf, sizeof(buf), "eth:%s", name);
 
-		snprintf(buf, sizeof(buf), "eth:%s", netdev->name);
+	res = tipc_enable_bearer(buf, tipc_addr(1, 1, 0), TIPC_MEDIA_LINK_PRI);
+	if (res)
+		printk("failed\n");
+	else
+		printk("ok\n");
 
-		res = tipc_enable_bearer(buf, tipc_addr(1, 1, 0), TIPC_MEDIA_LINK_PRI);
-		if (res){
-			printk("failed\n");
-		}else{
-			printk("ok\n");
-		}
-	}
-	read_unlock(&dev_base_lock);
+	return res;
 }
 
 void comlayer_enable(void)
 {
-	enable_all_netdev();
+	struct net_device *netdev;
+
+	read_lock(&dev_base_lock);
+	for_each_netdev(&init_net, netdev)
+		comlayer_enable_dev(netdev->name);
+	read_unlock(&dev_base_lock);
+}
+
+int comlayer_disable_dev(const char *name)
+{
+	int res;
+
+	printk("Try to disable bearer on %s:", name);
+
+	res = tipc_disable_bearer(name);
+	if (res)
+		printk("failed\n");
+	else
+		printk("ok\n");
+
+	return res;
+}
+
+void comlayer_disable(void)
+{
+	struct net_device *netdev;
+
+	read_lock(&dev_base_lock);
+	for_each_netdev(&init_net, netdev)
+		comlayer_disable_dev(netdev->name);
+	read_unlock(&dev_base_lock);
 }
 
 void krg_node_reachable(kerrighed_node_t nodeid){

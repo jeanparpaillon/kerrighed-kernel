@@ -181,6 +181,9 @@ int rpc_synchro_lookup(struct rpc_desc* desc);
 
 int comlayer_init(void);
 void comlayer_enable(void);
+int comlayer_enable_dev(const char *name);
+void comlayer_disable(void);
+int comlayer_disable_dev(const char *name);
 int thread_pool_init(void);
 int rpclayer_init(void);
 int rpc_monitor_init(void);

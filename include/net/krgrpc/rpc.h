@@ -303,7 +303,10 @@ void rpc_enable(enum rpcid rpcid);
 void rpc_enable_all(void);
 void rpc_disable(enum rpcid rpcid);
 
-void rpc_connect(void);
+void rpc_enable_alldev(void);
+int rpc_enable_dev(const char *name);
+void rpc_disable_alldev(void);
+int rpc_disable_dev(const char *name);
 
 kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc);
 

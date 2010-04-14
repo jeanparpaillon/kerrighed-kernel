@@ -208,9 +208,24 @@ void rpc_undef_handler (struct rpc_desc *desc){
 	printk("service %d not registered\n", desc->rpcid);
 };
 
-void rpc_connect(void)
+void rpc_enable_alldev(void)
 {
 	comlayer_enable();
+}
+
+int rpc_enable_dev(const char *name)
+{
+	return comlayer_enable_dev(name);
+}
+
+void rpc_disable_alldev(void)
+{
+	comlayer_disable();
+}
+
+int rpc_disable_dev(const char *name)
+{
+	return comlayer_disable_dev(name);
 }
 
 int init_rpc(void)
