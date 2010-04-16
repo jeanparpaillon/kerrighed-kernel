@@ -16,6 +16,7 @@
 #include <linux/sysfs.h>
 #include <linux/kobject.h>
 #include <linux/ipc.h>
+#include <linux/reboot.h>
 #include <asm/uaccess.h>
 #include <asm/ioctl.h>
 #include <kerrighed/sys/types.h>
@@ -835,6 +836,34 @@ int krgnodemask_copy_from_user(krgnodemask_t *dstp, __krgnodemask_t *srcp)
 	return 0;
 }
 
+static void handle_node_poweroff(struct rpc_desc *desc)
+{
+	emergency_sync();
+	emergency_remount();
+
+	set_current_state(TASK_INTERRUPTIBLE);
+	schedule_timeout(5 * HZ);
+
+	kernel_power_off();
+
+	// should never be reached
+	BUG();
+}
+
+static void handle_node_reboot(struct rpc_desc *desc)
+{
+	emergency_sync();
+	emergency_remount();
+
+	set_current_state(TASK_INTERRUPTIBLE);
+	schedule_timeout(5 * HZ);
+
+	kernel_restart(NULL);
+
+	// should never be reached
+	BUG();
+}
+
 int hotplug_cluster_init(void)
 {
 	int bcl;
@@ -847,7 +876,9 @@ int hotplug_cluster_init(void)
 	}
 
 	rpc_register_void(CLUSTER_START, handle_cluster_start, 0);
-
+	rpc_register(NODE_POWEROFF, handle_node_poweroff, 0);
+	rpc_register(NODE_REBOOT, handle_node_reboot, 0);
+	
 	register_proc_service(KSYS_HOTPLUG_READY, node_ready);
 	register_proc_service(KSYS_HOTPLUG_SHUTDOWN, cluster_stop);
 	register_proc_service(KSYS_HOTPLUG_RESTART, cluster_restart);

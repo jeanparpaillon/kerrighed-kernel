@@ -40,7 +40,7 @@
 #include <linux/syscalls.h>
 #include <linux/kprobes.h>
 #include <linux/user_namespace.h>
-#ifdef CONFIG_KRG_PROC
+#if defined(CONFIG_KRG_PROC) || defined(CONFIG_KRG_HOTPLUG)
 #include <net/krgrpc/rpc.h>
 #include <net/krgrpc/rpcid.h>
 #include <kerrighed/remote_syscall.h>
@@ -372,6 +372,7 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 {
 	char buffer[256];
 	int ret = 0;
+	krgnodemask_t copyset;
 
 	/* We only trust the superuser with rebooting the system. */
 	if (!capable(CAP_SYS_BOOT))
@@ -391,9 +392,17 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 	if ((cmd == LINUX_REBOOT_CMD_POWER_OFF) && !pm_power_off)
 		cmd = LINUX_REBOOT_CMD_HALT;
 
+	/* Get present nodes and remove current node */
+	krgnodes_copy(copyset, krgnode_present_map);
+	krgnode_clear(kerrighed_node_id, copyset);
+
 	lock_kernel();
 	switch (cmd) {
 	case LINUX_REBOOT_CMD_RESTART:
+#ifdef CONFIG_KRG_HOTPLUG
+		printk("Calling present nodes for reboot.\n");
+		rpc_async_m(NODE_REBOOT, &copyset, NULL, 0);
+#endif
 		kernel_restart(NULL);
 		break;
 
@@ -406,12 +415,20 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		break;
 
 	case LINUX_REBOOT_CMD_HALT:
+#ifdef CONFIG_KRG_HOTPLUG
+		printk("Calling present nodes for halt.\n");
+		rpc_async_m(NODE_POWEROFF, &copyset, NULL, 0);
+#endif
 		kernel_halt();
 		unlock_kernel();
 		do_exit(0);
 		panic("cannot halt");
 
 	case LINUX_REBOOT_CMD_POWER_OFF:
+#ifdef CONFIG_KRG_HOTPLUG
+		printk("Calling present nodes for poweroff.\n");
+		rpc_async_m(NODE_POWEROFF, &copyset, NULL, 0);
+#endif
 		kernel_power_off();
 		unlock_kernel();
 		do_exit(0);
@@ -424,6 +441,10 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		}
 		buffer[sizeof(buffer) - 1] = '\0';
 
+#ifdef CONFIG_KRG_HOTPLUG
+		printk("Calling present nodes for reboot.\n");
+		rpc_async_m(NODE_REBOOT, &copyset, NULL, 0);
+#endif
 		kernel_restart(buffer);
 		break;
 
