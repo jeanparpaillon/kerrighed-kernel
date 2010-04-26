@@ -8,6 +8,7 @@
 #include <linux/fs_struct.h>
 #include <linux/mount.h>
 #include <linux/file.h>
+#include <linux/uio.h>
 #include <linux/namei.h>
 #include <linux/socket.h>
 #include <linux/sched.h>
@@ -319,6 +320,134 @@ err:
 	kfree (kbuff);
 
 	return r;
+}
+
+ssize_t krg_faf_readv(struct file *file, const struct iovec __user *vec,
+		      unsigned long vlen, loff_t *pos)
+{
+	faf_client_data_t *data = file->private_data;
+	struct faf_rw_msg msg;
+	struct faf_rw_ret ret;
+	struct iovec iovstack[UIO_FASTIOV];
+	struct iovec *iov = iovstack;
+	int iovcnt;
+	size_t total_len;
+	struct rpc_desc *desc;
+	int err;
+
+	ret.ret = rw_copy_check_uvector(READ, vec, vlen,
+					ARRAY_SIZE(iovstack), iovstack, &iov);
+	if (ret.ret < 0)
+		return ret.ret;
+	iovcnt = vlen;
+	total_len = ret.ret;
+
+	ret.ret = -ENOMEM;
+	desc = rpc_begin(RPC_FAF_READV, data->server_id);
+	if (!desc)
+		goto out;
+
+	msg.server_fd = data->server_fd;
+	msg.count = total_len;
+	msg.pos = *pos;
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
+	err = unpack_remote_sleep_res_type(desc, ret);
+	if (err)
+		goto cancel;
+
+	*pos = ret.pos;
+	if (ret.ret <= 0)
+		goto out_end;
+
+	err = recv_iov(desc, iov, iovcnt, ret.ret, MSG_USER);
+	if (err)
+		goto cancel;
+
+out_end:
+	rpc_end(desc, 0);
+
+out:
+	if (iov != iovstack)
+		kfree(iov);
+
+	return ret.ret;
+
+cancel:
+	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
+	ret.ret = err;
+	goto out_end;
+}
+
+ssize_t krg_faf_writev(struct file *file, const struct iovec __user *vec,
+		       unsigned long vlen, loff_t *pos)
+{
+	faf_client_data_t *data = file->private_data;
+	struct faf_rw_msg msg;
+	struct faf_rw_ret ret;
+	struct iovec iovstack[UIO_FASTIOV];
+	struct iovec *iov = iovstack;
+	int iovcnt;
+	size_t total_len;
+	struct rpc_desc *desc;
+	int err;
+
+	ret.ret = rw_copy_check_uvector(WRITE, vec, vlen,
+					ARRAY_SIZE(iovstack), iovstack, &iov);
+	if (ret.ret < 0)
+		return ret.ret;
+	iovcnt = vlen;
+	total_len = ret.ret;
+
+	ret.ret = -ENOMEM;
+	desc = rpc_begin(RPC_FAF_WRITEV, data->server_id);
+	if (!desc)
+		goto out;
+
+	msg.server_fd = data->server_fd;
+	msg.count = total_len;
+	msg.pos = *pos;
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = send_iov(desc, iov, iovcnt, total_len, MSG_USER);
+	if (err)
+		goto cancel;
+
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
+	err = unpack_remote_sleep_res_type(desc, ret);
+	if (err)
+		goto cancel;
+
+	*pos = ret.pos;
+	if (ret.ret == -EPIPE)
+		send_sig(SIGPIPE, current, 0);
+
+out_end:
+	rpc_end(desc, 0);
+
+out:
+	if (iov != iovstack)
+		kfree(iov);
+
+	return ret.ret;
+
+cancel:
+	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
+	ret.ret = err;
+	goto out_end;
 }
 
 /** Kerrighed kernel hook for FAF ioctl function.

@@ -7,6 +7,7 @@
 #include <linux/namei.h>
 
 struct file;
+struct iovec;
 struct kstat;
 struct statfs;
 
@@ -36,6 +37,10 @@ long krg_faf_llseek(struct file *file, unsigned long offset_high,
 ssize_t krg_faf_read(struct file *file, char *buf, size_t count);
 ssize_t krg_faf_write(struct file *file, const char *buf,
 		      size_t count);
+ssize_t krg_faf_readv(struct file *file, const struct iovec __user *vec,
+		      unsigned long vlen, loff_t *pos);
+ssize_t krg_faf_writev(struct file *file, const struct iovec __user *vec,
+		       unsigned long vlen, loff_t *pos);
 long krg_faf_fcntl(struct file *file, unsigned int cmd,
 		   unsigned long arg);
 long krg_faf_fcntl64(struct file *file, unsigned int cmd,

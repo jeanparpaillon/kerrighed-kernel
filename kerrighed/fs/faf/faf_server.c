@@ -283,6 +283,100 @@ err:
 	return;
 }
 
+static void handle_faf_readv(struct rpc_desc *desc, void *__msg, size_t size)
+{
+	struct faf_rw_msg *msg = __msg;
+	struct faf_rw_ret ret;
+	struct file *file;
+	struct iovec *iov;
+	int iovcnt, err;
+
+	err = alloc_iov(&iov, &iovcnt, msg->count);
+	if (err) {
+		ret.ret = err;
+		iov = NULL;
+	}
+
+	err = remote_sleep_prepare(desc);
+	if (err)
+		goto cancel;
+
+	ret.pos = msg->pos;
+	if (iov) {
+		file = fget(msg->server_fd);
+		ret.ret = vfs_readv(file, iov, iovcnt, &ret.pos);
+		fput(file);
+	}
+
+	remote_sleep_finish();
+
+	err = rpc_pack_type(desc, ret);
+	if (err)
+		goto cancel;
+	if (ret.ret <= 0)
+		goto out_free;
+
+	err = send_iov(desc, iov, iovcnt, ret.ret, 0);
+	if (err)
+		goto cancel;
+
+out_free:
+	if (iov)
+		free_iov(iov, iovcnt);
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto out_free;
+}
+
+static void handle_faf_writev(struct rpc_desc *desc, void *__msg, size_t size)
+{
+	struct faf_rw_msg *msg = __msg;
+	struct faf_rw_ret ret;
+	struct file *file;
+	struct iovec *iov;
+	int iovcnt, err;
+
+	err = alloc_iov(&iov, &iovcnt, msg->count);
+	if (!err) {
+		err = recv_iov(desc, iov, iovcnt, msg->count, 0);
+		if (err)
+			goto cancel;
+	} else {
+		ret.ret = err;
+		iov = NULL;
+	}
+
+	err = remote_sleep_prepare(desc);
+	if (err)
+		goto cancel;
+
+	ret.pos = msg->pos;
+	if (iov) {
+		file = fget(msg->server_fd);
+		ret.ret = vfs_writev(file, iov, iovcnt, &ret.pos);
+		fput(file);
+	}
+
+	remote_sleep_finish();
+
+	err = rpc_pack_type(desc, ret);
+	if (err)
+		goto cancel;
+
+out_free:
+	if (iov)
+		free_iov(iov, iovcnt);
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto out_free;
+}
+
 /** Handler for doing an IOCTL in a FAF open file.
  *  @author Renaud Lottiaux
  *
@@ -1360,6 +1454,8 @@ void faf_server_init (void)
 {
 	rpc_register_void(RPC_FAF_READ, handle_faf_read, 0);
 	rpc_register_void(RPC_FAF_WRITE, handle_faf_write, 0);
+	rpc_register_void(RPC_FAF_READV, handle_faf_readv, 0);
+	rpc_register_void(RPC_FAF_WRITEV, handle_faf_writev, 0);
 	faf_poll_init();
 	rpc_register_void(RPC_FAF_IOCTL, handle_faf_ioctl, 0);
 	rpc_register_void(RPC_FAF_FCNTL, handle_faf_fcntl, 0);

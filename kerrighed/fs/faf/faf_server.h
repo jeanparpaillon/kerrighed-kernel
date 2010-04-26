@@ -18,6 +18,12 @@
 struct faf_rw_msg {
 	int server_fd;
 	size_t count;
+	loff_t pos;
+};
+
+struct faf_rw_ret {
+	ssize_t ret;
+	loff_t pos;
 };
 
 struct faf_d_path_msg {
