@@ -564,11 +564,24 @@ static int cr_export_now_file(struct epm_action *action, ghost_t *ghost,
 					args->file_args.file);
 
 error:
-	if (r)
-		ckpt_err(action, r,
-			 "Fail to save file %d of process %d (%s)",
-			 args->file_args.index,
-			 task_pid_knr(task), task->comm);
+	if (r) {
+		char *buffer, *filename;
+		filename = alloc_filename(args->file_args.file, &buffer);
+		if (!IS_ERR(filename)) {
+			ckpt_err(action, r,
+				 "Fail to save information needed to reopen "
+				 "file %s as fd %d of process %d (%s)",
+				 filename, args->file_args.index,
+				 task_pid_knr(task), task->comm);
+			free_filename(buffer);
+		} else {
+			ckpt_err(action, r,
+				 "Fail to save information needed to reopen "
+				 "fd %d of process %d (%s)",
+				 args->file_args.index,
+				 task_pid_knr(task), task->comm);
+		}
+	}
 
 	return r;
 }
@@ -589,17 +602,10 @@ int cr_export_user_info_file(struct epm_action *action, ghost_t *ghost,
 
 	file = export->args.file_args.file;
 
-	tmp = (char *) __get_free_page (GFP_KERNEL);
-	if (!tmp) {
-		r = -ENOMEM;
+	file_name = alloc_filename(file, &tmp);
+	if (IS_ERR(file_name)) {
+		r = PTR_ERR(file_name);
 		goto exit;
-	}
-
-	file_name = get_filename(file, tmp);
-
-	if (!file_name) {
-		file_name = tmp;
-		sprintf(file_name, "-");
 	}
 
 	if (is_socket(file))
@@ -630,7 +636,7 @@ int cr_export_user_info_file(struct epm_action *action, ghost_t *ghost,
 		r = ghost_printf(ghost, "file    ");
 
 	if (r)
-		goto err_free_page;
+		goto err_free_filename;
 
 	if (file->f_objid)
 		/* if the file is shared, there is no host node */
@@ -648,7 +654,7 @@ int cr_export_user_info_file(struct epm_action *action, ghost_t *ghost,
 			 nodelen, file_node, keylen, key,
 			 file_name, task_pid_knr(task), index);
 	if (r)
-		goto err_free_page;
+		goto err_free_filename;
 
 	list_for_each_entry(_export, &export->next, next) {
 		task = _export->task;
@@ -657,13 +663,13 @@ int cr_export_user_info_file(struct epm_action *action, ghost_t *ghost,
 		r = ghost_printf(ghost, ",%d:%d",
 				 task_pid_knr(task), index);
 		if (r)
-			goto err_free_page;
+			goto err_free_filename;
 	}
 
 	r = ghost_printf(ghost, "\n");
 
-err_free_page:
-	free_page ((unsigned long) tmp);
+err_free_filename:
+	free_filename(tmp);
 exit:
 	return r;
 }

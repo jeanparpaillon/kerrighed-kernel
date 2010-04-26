@@ -46,6 +46,10 @@ char *get_phys_filename(struct file *file, char *buffer, bool del_ok);
  */
 char *get_filename(struct file *file, char *buffer);
 
+char *alloc_filename(struct file *file, char **buffer);
+
+void free_filename(char *buffer);
+
 int can_checkpoint_file(const struct file *file);
 
 #endif

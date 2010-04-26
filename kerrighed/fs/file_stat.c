@@ -147,6 +147,31 @@ char *get_filename(struct file *file, char *buffer)
 	return get_phys_filename(file, buffer, true);
 }
 
+char *alloc_filename(struct file *file, char **buffer)
+{
+	char *file_name;
+
+	*buffer = (char *)__get_free_page(GFP_KERNEL);
+	if (!*buffer) {
+		file_name = ERR_PTR(-ENOMEM);
+		goto exit;
+	}
+
+	file_name = get_filename(file, *buffer);
+	if (!file_name) {
+		file_name = *buffer;
+		sprintf(file_name, "?");
+	}
+
+exit:
+	return file_name;
+}
+
+void free_filename(char *buffer)
+{
+	free_page((unsigned long)buffer);
+}
+
 int can_checkpoint_file(const struct file *file)
 {
 	if (is_socket(file)) {
