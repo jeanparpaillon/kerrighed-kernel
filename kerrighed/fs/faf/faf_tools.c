@@ -10,11 +10,12 @@
 #include "faf_tools.h"
 
 static
-int send_user_iov(struct rpc_desc *desc, struct msghdr *msg, int total_len)
+int send_user_iov(struct rpc_desc *desc, struct iovec *iov, int iovcnt, size_t total_len)
 {
 	void *page;
 	void __user *iov_base;
-	int i, iov_len, iov_offset, page_offset, max_page_offset, sent, err = 0;
+	size_t iov_len, iov_offset, sent;
+	int i, page_offset, max_page_offset, err = 0;
 
 	page = (void *)__get_free_page(GFP_KERNEL);
 	if (!page)
@@ -29,11 +30,11 @@ int send_user_iov(struct rpc_desc *desc, struct msghdr *msg, int total_len)
 
 		page_offset = 0;
 		while (page_offset < max_page_offset) {
-			BUG_ON(i >= msg->msg_iovlen);
+			BUG_ON(i >= iovcnt);
 
-			iov_base = (__force void __user *)msg->msg_iov[i].iov_base
+			iov_base = (__force void __user *)iov[i].iov_base
 				+ iov_offset;
-			iov_len = msg->msg_iov[i].iov_len - iov_offset;
+			iov_len = iov[i].iov_len - iov_offset;
 
 			if (iov_len > max_page_offset - page_offset) {
 				iov_len = max_page_offset - page_offset;
@@ -64,20 +65,21 @@ out_free:
 }
 
 static
-int send_kernel_iov(struct rpc_desc *desc, struct msghdr *msg, int total_len)
+int send_kernel_iov(struct rpc_desc *desc, struct iovec *iov, int iovcnt, size_t total_len)
 {
-	int iov_len, i, sent, err = 0;
+	size_t iov_len, sent;
+	int i, err = 0;
 
 	/* FAF server is supposed to have page-backed iovecs */
 	for (sent = 0, i = 0; sent < total_len; sent += PAGE_SIZE, i++) {
-		BUG_ON(i >= msg->msg_iovlen);
+		BUG_ON(i >= iovcnt);
 
-		iov_len = msg->msg_iov[i].iov_len;
+		iov_len = iov[i].iov_len;
 		BUG_ON(iov_len != PAGE_SIZE && sent + iov_len < total_len);
 
 		if (sent + iov_len > total_len)
 			iov_len = total_len - sent;
-		err = rpc_pack(desc, 0, msg->msg_iov[i].iov_base, iov_len);
+		err = rpc_pack(desc, 0, iov[i].iov_base, iov_len);
 		if (err)
 			break;
 	}
@@ -85,33 +87,26 @@ int send_kernel_iov(struct rpc_desc *desc, struct msghdr *msg, int total_len)
 	return err;
 }
 
-static
 int
-send_iov(struct rpc_desc *desc, struct msghdr *msg, int total_len, int flags)
+send_iov(struct rpc_desc *desc, struct iovec *iov, int iovcnt, size_t total_len, int flags)
 {
 	int err;
 
-	err = rpc_pack_type(desc, total_len);
-	if (err)
-		return err;
-
-	if (flags & MSG_HDR_ONLY)
-		return err;
-
 	if (flags & MSG_USER)
-		err = send_user_iov(desc, msg, total_len);
+		err = send_user_iov(desc, iov, iovcnt, total_len);
 	else
-		err = send_kernel_iov(desc, msg, total_len);
+		err = send_kernel_iov(desc, iov, iovcnt, total_len);
 
 	return err;
 }
 
 static
-int recv_user_iov(struct rpc_desc *desc, struct msghdr *msg, int total_len)
+int recv_user_iov(struct rpc_desc *desc, struct iovec *iov, int iovcnt, size_t total_len)
 {
 	void *page;
 	void __user *iov_base;
-	int i, iov_len, iov_offset, page_offset, max_page_offset, rcvd, err = 0;
+	size_t iov_len, iov_offset, rcvd;
+	int i, page_offset, max_page_offset, err = 0;
 
 	page = (void *)__get_free_page(GFP_KERNEL);
 	if (!page)
@@ -133,11 +128,11 @@ int recv_user_iov(struct rpc_desc *desc, struct msghdr *msg, int total_len)
 
 		page_offset = 0;
 		while (page_offset < max_page_offset) {
-			BUG_ON(i >= msg->msg_iovlen);
+			BUG_ON(i >= iovcnt);
 
-			iov_base = (__force void __user *)msg->msg_iov[i].iov_base
+			iov_base = (__force void __user *)iov[i].iov_base
 				+ iov_offset;
-			iov_len = msg->msg_iov[i].iov_len - iov_offset;
+			iov_len = iov[i].iov_len - iov_offset;
 
 			if (iov_len > max_page_offset - page_offset) {
 				iov_len = max_page_offset - page_offset;
@@ -164,20 +159,21 @@ out_free:
 }
 
 static
-int recv_kernel_iov(struct rpc_desc *desc, struct msghdr *msg, int total_len)
+int recv_kernel_iov(struct rpc_desc *desc, struct iovec *iov, int iovcnt, size_t total_len)
 {
-	int iov_len, i, rcvd, err = 0;
+	size_t iov_len, rcvd;
+	int i, err = 0;
 
 	/* FAF server is supposed to have page-backed iovecs */
 	for (rcvd = 0, i = 0; rcvd < total_len; rcvd += PAGE_SIZE, i++) {
-		BUG_ON(i >= msg->msg_iovlen);
+		BUG_ON(i >= iovcnt);
 
-		iov_len = msg->msg_iov[i].iov_len;
+		iov_len = iov[i].iov_len;
 		BUG_ON(iov_len != PAGE_SIZE && rcvd + iov_len < total_len);
 
 		if (rcvd + iov_len > total_len)
 			iov_len = total_len - rcvd;
-		err = rpc_unpack(desc, 0, msg->msg_iov[i].iov_base, iov_len);
+		err = rpc_unpack(desc, 0, iov[i].iov_base, iov_len);
 		if (err) {
 			if (err > 0)
 				err = -EPIPE;
@@ -188,82 +184,63 @@ int recv_kernel_iov(struct rpc_desc *desc, struct msghdr *msg, int total_len)
 	return err;
 }
 
-static int alloc_iov(struct msghdr *msg, int total_len)
+int alloc_iov(struct iovec **iov, int *iovcnt, size_t total_len)
 {
-	struct iovec *iov;
+	struct iovec *__iov;
 	int i, iovlen;
 
 	iovlen = DIV_ROUND_UP(total_len, PAGE_SIZE);
-	iov = kmalloc(sizeof(*iov) * iovlen, GFP_KERNEL);
-	if (!iov)
+	__iov = kmalloc(sizeof(*__iov) * iovlen, GFP_KERNEL);
+	if (!__iov)
 		return -ENOMEM;
 
-	msg->msg_iov = iov;
-	msg->msg_iovlen = iovlen;
+	*iov = __iov;
+	*iovcnt = iovlen;
 
 	if (!iovlen)
 		return 0;
 
 	for (i = 0; i < iovlen; i++) {
-		iov[i].iov_base = (void *)__get_free_page(GFP_KERNEL);
-		if (!iov[i].iov_base)
+		__iov[i].iov_base = (void *)__get_free_page(GFP_KERNEL);
+		if (!__iov[i].iov_base)
 			goto out_free;
-		iov[i].iov_len = PAGE_SIZE;
+		__iov[i].iov_len = PAGE_SIZE;
 	}
-	iov[iovlen - 1].iov_len = total_len - (iovlen - 1) * PAGE_SIZE;
+	__iov[iovlen - 1].iov_len = total_len - (iovlen - 1) * PAGE_SIZE;
 
 	return 0;
 
 out_free:
 	for (i--; i >= 0; i--)
-		free_page((unsigned long)iov[i].iov_base);
-	kfree(iov);
+		free_page((unsigned long)__iov[i].iov_base);
+	kfree(__iov);
 	return -ENOMEM;
 }
 
-static void free_iov(struct msghdr *msg)
+void free_iov(struct iovec *iov, int iovcnt)
 {
 	int i;
 
-	for (i = 0; i < msg->msg_iovlen; i++)
-		free_page((unsigned long)msg->msg_iov[i].iov_base);
-	kfree(msg->msg_iov);
+	for (i = 0; i < iovcnt; i++)
+		free_page((unsigned long)iov[i].iov_base);
+	kfree(iov);
 }
 
-static int recv_iov(struct rpc_desc *desc, struct msghdr *msg, int flags)
+int recv_iov(struct rpc_desc *desc, struct iovec *iov, int iovcnt, size_t total_len, int flags)
 {
-	int total_len, err;
+	int err;
 
-	err = rpc_unpack_type(desc, total_len);
-	if (err) {
-		if (err > 0)
-			err = -EPIPE;
-		return err;
-	}
-
-	if (!(flags & MSG_USER)) {
-		err = alloc_iov(msg, total_len);
-		if (err)
-			return err;
-	}
-
-	if (flags & MSG_HDR_ONLY)
-		return err;
-
-	if (flags & MSG_USER) {
-		err = recv_user_iov(desc, msg, total_len);
-	} else {
-		err = recv_kernel_iov(desc, msg, total_len);
-		if (err)
-			free_iov(msg);
-	}
+	if (flags & MSG_USER)
+		err = recv_user_iov(desc, iov, iovcnt, total_len);
+	else
+		err = recv_kernel_iov(desc, iov, iovcnt, total_len);
 
 	return err;
 }
 
 int send_msghdr(struct rpc_desc* desc,
 		struct msghdr *msghdr,
-		int total_len,
+		size_t total_len,
 		int flags)
 {
 	int err;
@@ -278,13 +255,15 @@ int send_msghdr(struct rpc_desc* desc,
 		err = rpc_pack(desc, 0, msghdr->msg_control, msghdr->msg_controllen);
 		if (err)
 			return err;
+		err = send_iov(desc, msghdr->msg_iov, msghdr->msg_iovlen, total_len, flags);
 	}
 
-	return send_iov(desc, msghdr, total_len, flags);
+	return err;
 }
 
 int recv_msghdr(struct rpc_desc* desc,
 		struct msghdr *msghdr,
+		size_t total_len,
 		int flags)
 {
 	struct msghdr tmp_msg;
@@ -300,10 +279,20 @@ int recv_msghdr(struct rpc_desc* desc,
 	err = -ENOMEM;
 	if (flags & MSG_USER) {
 		msg->msg_name = msghdr->msg_name;
+
+		msg->msg_iov = msghdr->msg_iov;
+		msg->msg_iovlen = msghdr->msg_iovlen;
 	} else {
+		int msg_iovlen;
+
 		msg->msg_name = kmalloc(msg->msg_namelen, GFP_KERNEL);
 		if (!msg->msg_name)
 			goto out_err;
+
+		err = alloc_iov(&msg->msg_iov, &msg_iovlen, total_len);
+		if (err)
+			goto err_free_name;
+		msg->msg_iovlen = msg_iovlen;
 	}
 
 	/*
@@ -312,13 +301,16 @@ int recv_msghdr(struct rpc_desc* desc,
 	 */
 	msg->msg_control = kmalloc(msg->msg_controllen, GFP_KERNEL);
 	if (!msg->msg_control)
-		goto err_free_name;
+		goto err_free_iov;
 
 	if (!(flags & MSG_HDR_ONLY)) {
 		err = rpc_unpack(desc, 0, msg->msg_name, msg->msg_namelen);
 		if (err)
 			goto err_free_control;
 		err = rpc_unpack(desc, 0, msg->msg_control, msg->msg_controllen);
+		if (err)
+			goto err_free_control;
+		err = recv_iov(desc, msg->msg_iov, msg->msg_iovlen, total_len, flags);
 		if (err)
 			goto err_free_control;
 	}
@@ -334,16 +326,6 @@ int recv_msghdr(struct rpc_desc* desc,
 			err = -EFAULT;
 			goto err_free_control;
 		}
-
-		msg->msg_iov = msghdr->msg_iov;
-		msg->msg_iovlen = msghdr->msg_iovlen;
-	}
-
-	err = recv_iov(desc, msg, flags);
-	if (err)
-		goto err_free_control;
-
-	if (flags & MSG_USER) {
 		kfree(msg->msg_control);
 
 		msghdr->msg_flags = msg->msg_flags;
@@ -353,6 +335,9 @@ int recv_msghdr(struct rpc_desc* desc,
 
 err_free_control:
 	kfree(msg->msg_control);
+err_free_iov:
+	if (!(flags & MSG_USER))
+		free_iov(msg->msg_iov, msg->msg_iovlen);
 err_free_name:
 	if (!(flags & MSG_USER))
 		kfree(msg->msg_name);
@@ -367,5 +352,5 @@ void free_msghdr(struct msghdr *msghdr)
 	kfree(msghdr->msg_name);
 	kfree(msghdr->msg_control);
 
-	free_iov(msghdr);
+	free_iov(msghdr->msg_iov, msghdr->msg_iovlen);
 }

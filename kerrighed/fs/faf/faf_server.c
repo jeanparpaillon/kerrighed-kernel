@@ -1264,7 +1264,7 @@ void handle_faf_sendmsg(struct rpc_desc *desc,
 	int r, err;
 	struct msghdr msghdr;
 
-	err = recv_msghdr(desc, &msghdr, 0);
+	err = recv_msghdr(desc, &msghdr, msg->total_len, 0);
 	if (err) {
 		rpc_cancel(desc);
 		return;
@@ -1299,7 +1299,7 @@ void handle_faf_recvmsg(struct rpc_desc *desc,
 	int r, err;
 	struct msghdr msghdr;
 
-	err = recv_msghdr(desc, &msghdr, MSG_HDR_ONLY);
+	err = recv_msghdr(desc, &msghdr, msg->total_len, MSG_HDR_ONLY);
 	if (err) {
 		rpc_cancel(desc);
 		return;

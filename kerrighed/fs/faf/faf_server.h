@@ -101,6 +101,7 @@ struct faf_getsockopt_msg {
 struct faf_sendmsg_msg {
 	int server_fd;
 	unsigned int flags;
+	size_t total_len;
 };
 
 struct faf_poll_wait_msg {

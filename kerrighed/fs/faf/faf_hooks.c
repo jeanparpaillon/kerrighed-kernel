@@ -1198,7 +1198,7 @@ long krg_faf_sendmsg (struct file * file,
 	struct rpc_desc* desc;
 
 	msg.server_fd = data->server_fd;
-
+	msg.total_len = total_len;
 	msg.flags = msghdr->msg_flags;
 
 	desc = rpc_begin(RPC_FAF_SENDMSG, data->server_id);
@@ -1243,7 +1243,7 @@ long krg_faf_recvmsg(struct file * file,
 	struct rpc_desc* desc;
 
 	msg.server_fd = data->server_fd;
-
+	msg.total_len = total_len;
 	msg.flags = flags;
 
 	desc = rpc_begin(RPC_FAF_RECVMSG, data->server_id);
@@ -1267,7 +1267,7 @@ long krg_faf_recvmsg(struct file * file,
 	if (r < 0)
 		goto out_end;
 
-	err = recv_msghdr(desc, msghdr, MSG_USER);
+	err = recv_msghdr(desc, msghdr, r, MSG_USER);
 	if (err)
 		goto cancel;
 
