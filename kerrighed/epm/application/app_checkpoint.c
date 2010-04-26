@@ -258,10 +258,10 @@ static inline void __chkpt_task_req(struct app_struct *app, task_state_t *tsk)
 		r = PTR_ERR(ghost);
 		ckpt_err(NULL, r,
 			 "Fail to create file /var/chkpt/%ld/v%d/task_%d.bin "
-			 "to checkpoint process %d",
+			 "to checkpoint process %d (%s)",
 			 app->app_id, app->chkpt_sn,
 			 task_pid_knr(task),
-			 task_pid_knr(task));
+			 task_pid_knr(task), task->comm);
 		__set_task_result(task, r);
 		return;
 	}

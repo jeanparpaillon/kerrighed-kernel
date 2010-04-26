@@ -1493,8 +1493,8 @@ static int cr_export_now_files_struct(struct epm_action *action, ghost_t *ghost,
 	r = export_files_struct(action, ghost, task);
 	if (r)
 		ckpt_err(action, r,
-			 "Fail to save struct files_struct of process %d",
-			 task_pid_knr(task));
+			 "Fail to save struct files_struct of process %d (%s)",
+			 task_pid_knr(task), task->comm);
 
 	return r;
 }
@@ -1556,8 +1556,8 @@ static int cr_export_now_fs_struct(struct epm_action *action, ghost_t *ghost,
 	r = export_fs_struct(action, ghost, task);
 	if (r)
 		ckpt_err(action, r,
-			 "Fail to save struct fs_struct of process %d",
-			 task_pid_knr(task));
+			 "Fail to save struct fs_struct of process %d (%s)",
+			 task_pid_knr(task), task->comm);
 
 	return r;
 }

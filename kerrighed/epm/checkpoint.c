@@ -164,8 +164,9 @@ static int checkpoint_task(struct epm_action *action,
 
 	if (r)
 		ckpt_err(action, r,
-			 "Fail to checkpoint process %d",
-			 task_pid_knr(task_to_checkpoint));
+			 "Fail to checkpoint process %d (%s)",
+			 task_pid_knr(task_to_checkpoint),
+			 task_to_checkpoint->comm);
 out:
 	return r;
 }

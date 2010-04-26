@@ -566,9 +566,9 @@ static int cr_export_now_file(struct epm_action *action, ghost_t *ghost,
 error:
 	if (r)
 		ckpt_err(action, r,
-			 "Fail to save file %d of process %d",
+			 "Fail to save file %d of process %d (%s)",
 			 args->file_args.index,
-			 task_pid_knr(task));
+			 task_pid_knr(task), task->comm);
 
 	return r;
 }

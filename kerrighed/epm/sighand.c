@@ -551,8 +551,9 @@ static int cr_export_now_sighand_struct(struct epm_action *action,
 	r = export_sighand_struct(action, ghost, task);
 	if (r)
 		ckpt_err(action, r,
-			 "Fail to save struct sighand_struct of process %d",
-			 task_pid_knr(task));
+			 "Fail to save struct sighand_struct "
+			 "of process %d (%s)",
+			 task_pid_knr(task), task->comm);
 	return r;
 }
 

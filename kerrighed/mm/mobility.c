@@ -1328,8 +1328,8 @@ static int cr_export_now_mm_struct(struct epm_action *action, ghost_t *ghost,
 	r = export_mm_struct(action, ghost, task);
 	if (r)
 		ckpt_err(action, r,
-			 "Fail to save struct mm_struct of process %d",
-			 task_pid_knr(task));
+			 "Fail to save struct mm_struct of process %d (%s)",
+			 task_pid_knr(task), task->comm);
 	return r;
 }
 

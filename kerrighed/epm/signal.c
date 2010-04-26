@@ -1044,8 +1044,8 @@ static int cr_export_now_signal_struct(struct epm_action *action,
 	r = export_signal_struct(action, ghost, task);
 	if (r)
 		ckpt_err(action, r,
-			 "Fail to save struct signal_struct of process %d",
-			 task_pid_knr(task));
+			 "Fail to save struct signal_struct of process %d (%s)",
+			 task_pid_knr(task), task->comm);
 	return r;
 }
 

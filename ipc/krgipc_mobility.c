@@ -509,8 +509,8 @@ static int cr_export_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 err:
 	if (r)
 		ckpt_err(action, r,
-			 "Fail to save semundos of process %d",
-			 task_pid_knr(task));
+			 "Fail to save semundos of process %d (%s)",
+			 task_pid_knr(task), task->comm);
 
 	return r;
 }
