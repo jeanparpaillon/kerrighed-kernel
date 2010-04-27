@@ -173,73 +173,108 @@ restore_context(const struct prev_root *prev_root, const struct cred *old_cred)
 }
 
 /** Handler for reading in a FAF open file.
- *  @author Renaud Lottiaux
+ *  @author Renaud Lottiaux, Matthieu Fertré
  *
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-void handle_faf_read (struct rpc_desc* desc,
-		      void *msgIn, size_t size)
+void handle_faf_read(struct rpc_desc* desc, void *msgIn, size_t size)
 {
 	struct faf_rw_msg *msg = msgIn;
+	struct file *file = NULL;
 	char *buf = NULL;
 	long buf_size = PAGE_SIZE;
 	ssize_t to_read, r;
+	loff_t fpos;
+	int err;
 
-	r = remote_sleep_prepare(desc);
-	if (r) {
+	err = remote_sleep_prepare(desc);
+	if (err) {
 		rpc_cancel(desc);
 		return;
 	}
 
-	r = -ENOMEM;
-	buf = kmalloc (PAGE_SIZE, GFP_KERNEL);
-	if (buf == NULL)
-		goto exit;
-
 	to_read = msg->count;
+	fpos = msg->pos;
+
+	r = -ENOMEM;
+	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf)
+		goto error;
+
+	file = fget(msg->server_fd);
+
 	while (to_read > 0) {
 		if (to_read < PAGE_SIZE)
 			buf_size = to_read;
 
-		r = sys_read (msg->server_fd, buf, buf_size);
+		r = vfs_read(file, buf, buf_size, &fpos);
 
 		if (r > 0) {
-			rpc_pack_type(desc, r);
-			rpc_pack(desc, 0, buf, r);
+			err = rpc_pack_type(desc, r);
+			if (err)
+				goto cancel;
+			err = rpc_pack(desc, 0, buf, r);
+			if (err)
+				goto cancel;
 		}
 
-		/* Check if we have reach the end of the file */
+		/*
+		 * Check if we have reach the end of the file
+		 * or if there is an error
+		 */
 		if (r < buf_size)
 			break;
+
 		to_read -= r;
 	}
-	/* Pack the end of transmission mark (0) */
+
+error:
+	/*
+	 * Pack the end of transmission mark (0)
+	 * or the error returned by vfs_read()
+	 */
 	if (r > 0)
 		r = 0;
-	/* else, pack the error value */
-exit:
-	rpc_pack_type(desc, r);
+	err = rpc_pack_type(desc, r);
+	if (err)
+		goto cancel;
+
+	/* send the updated file position */
+	err = rpc_pack_type(desc, fpos);
+	if (err)
+		goto cancel;
+
+out:
 	if (buf)
-		kfree (buf);
+		kfree(buf);
+	if (file)
+		fput(file);
 
 	remote_sleep_finish();
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto out;
 }
 
 /** Handler for writing in a FAF open file.
- *  @author Renaud Lottiaux
+ *  @author Renaud Lottiaux, Matthieu Fertré
  *
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-void handle_faf_write (struct rpc_desc* desc,
-		       void *msgIn, size_t size)
+void handle_faf_write(struct rpc_desc* desc, void *msgIn, size_t size)
 {
 	struct faf_rw_msg *msg = msgIn;
+	struct file *file = NULL;
 	long to_recv;
 	char *buf = NULL;
 	ssize_t buf_size = PAGE_SIZE;
 	ssize_t r, nr_received = -ENOMEM;
+	loff_t fpos;
+	int err;
 
 	r = remote_sleep_prepare(desc);
 	if (r) {
@@ -247,40 +282,58 @@ void handle_faf_write (struct rpc_desc* desc,
 		return;
 	}
 
-	buf = kmalloc (PAGE_SIZE, GFP_KERNEL);
-	if (buf == NULL)
-		goto err;
+	to_recv = msg->count;
+	fpos = msg->pos;
+
+	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf)
+		goto error;
 
 	nr_received = 0;
-	to_recv = msg->count;
+
+	file = fget(msg->server_fd);
+
 	while (to_recv > 0) {
 		if (to_recv < PAGE_SIZE)
 			buf_size = to_recv;
-		if(rpc_unpack(desc, 0, buf, to_recv) == RPC_ECLOSE) {
-			nr_received = -EPIPE;
-			goto err;
-		}
 
-		r = sys_write (msg->server_fd, buf, buf_size);
+		err = rpc_unpack(desc, 0, buf, to_recv);
+		if (err)
+			goto cancel;
+
+		r = vfs_write(file, buf, buf_size, &fpos);
 
 		/* The last write failed. Break the write sequence */
 		if (r < 0) {
 			nr_received = r;
-			goto err;
+			break;
 		}
 		nr_received += r;
 		to_recv -= buf_size;
 	}
-err:
-	rpc_pack_type(desc, nr_received);
-	if (nr_received < 0)
-		rpc_cancel(desc);
+
+error:
+	err = rpc_pack_type(desc, nr_received);
+	if (err)
+		goto cancel;
+
+	/* send the updated file position */
+	err = rpc_pack_type(desc, fpos);
+	if (err)
+		goto cancel;
+
+out:
 	if (buf)
-		kfree (buf);
+		kfree(buf);
+	if (file)
+		fput(file);
 
 	remote_sleep_finish();
-
 	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto out;
 }
 
 static void handle_faf_readv(struct rpc_desc *desc, void *__msg, size_t size)

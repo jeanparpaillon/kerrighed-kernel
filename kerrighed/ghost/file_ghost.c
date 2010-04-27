@@ -11,12 +11,10 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/sched.h>
+#include <kerrighed/dvfs.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/file_ghost.h>
 #include <kerrighed/physical_fs.h>
-#ifdef CONFIG_KRG_FAF
-#include <kerrighed/faf.h>
-#endif
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -36,9 +34,10 @@
  */
 int file_ghost_read(ghost_t *ghost, void *buff, size_t length)
 {
-	struct file_ghost_data *ghost_data ;
+	struct file_ghost_data *ghost_data;
 	struct file *file = NULL;
-	int r = 0 ;
+	loff_t pos;
+	int r = 0;
 
 	BUG_ON(!ghost);
 	BUG_ON(!buff);
@@ -48,12 +47,9 @@ int file_ghost_read(ghost_t *ghost, void *buff, size_t length)
 	file = ghost_data->file;
 	BUG_ON(!file);
 
-#ifdef CONFIG_KRG_FAF
-	if (file->f_flags & O_FAF_CLT)
-		r = krg_faf_read(file, (char*)buff, length);
-	else
-#endif
-		r = file->f_op->read(file, (char*)buff, length, &file->f_pos);
+	pos = file_pos_read(file);
+	r = vfs_read(file, (char*)buff, length, &pos);
+	file_pos_write(file, pos);
 
 	if (r == length)
 		r = 0;
@@ -74,9 +70,10 @@ int file_ghost_read(ghost_t *ghost, void *buff, size_t length)
  */
 int file_ghost_write(struct ghost *ghost, const void *buff, size_t length)
 {
-	struct file_ghost_data *ghost_data ;
+	struct file_ghost_data *ghost_data;
 	struct file *file = NULL;
-	int r = 0 ;
+	loff_t pos;
+	int r = 0;
 
 	BUG_ON(!ghost);
 	BUG_ON(!buff);
@@ -87,12 +84,9 @@ int file_ghost_write(struct ghost *ghost, const void *buff, size_t length)
 	file = ghost_data->file;
 	BUG_ON(!file);
 
-#ifdef CONFIG_KRG_FAF
-	if (file->f_flags & O_FAF_CLT)
-		r = krg_faf_write(file, (char*)buff, length);
-	else
-#endif
-		r = file->f_op->write(file, (char*)buff, length, &file->f_pos);
+	pos = file_pos_read(file);
+	r = vfs_write(file, (char*)buff, length, &pos);
+	file_pos_write(file, pos);
 
 	if (r == length)
 		r = 0;

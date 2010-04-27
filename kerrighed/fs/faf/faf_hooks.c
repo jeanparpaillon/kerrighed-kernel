@@ -196,130 +196,179 @@ long krg_faf_llseek (struct file *file,
 }
 
 /** Kerrighed kernel hook for FAF read function.
- *  @author Renaud Lottiaux
+ *  @author Renaud Lottiaux, Matthieu Fertré
  *
  *  @param file          File to read from.
  *  @param buf           Buffer to store data in.
  *  @param count         Number of bytes to read.
+ *  @param pos           Offset to read from (updated at the end).
  */
-ssize_t krg_faf_read (struct file * file,
-		      char *buf,
-		      size_t count)
+ssize_t krg_faf_read(struct file * file, char *buf, size_t count, loff_t *pos)
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_rw_msg msg;
 	ssize_t nr;
-	long received = 0;
+	ssize_t received = 0;
+	loff_t fpos;
 	char *kbuff;
 	int err;
-	struct rpc_desc* desc;
+	struct rpc_desc *desc;
 
-	kbuff = kmalloc (PAGE_SIZE, GFP_KERNEL);
+	kbuff = kmalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!kbuff)
 		return -ENOMEM;
 
 	msg.server_fd = data->server_fd;
 	msg.count = count;
+	msg.pos = *pos;
 
+	nr = -ENOMEM;
 	desc = rpc_begin(RPC_FAF_READ, data->server_id);
+	if (!desc)
+		goto out;
 
 	/* Send read request */
-	rpc_pack_type(desc, msg);
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
 
-	nr = unpack_remote_sleep_res_prepare(desc);
-	if (nr)
-		goto err;
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
 
 	/* Get number of bytes to receive */
 	err = unpack_remote_sleep_res_type(desc, nr);
 	if (err)
-		nr = err;
+		goto cancel;
+
 	while (nr > 0) {
 		/* Receive file data */
-		rpc_unpack(desc, 0, kbuff, nr);
-		err = copy_to_user (&buf[received], kbuff, nr);
+		err = rpc_unpack(desc, 0, kbuff, nr);
+		if (err)
+			goto cancel;
+		err = copy_to_user(&buf[received], kbuff, nr);
 		if (err) {
 			nr = -EFAULT;
-			goto err;
+			break;
 		}
 		received += nr;
 		err = unpack_remote_sleep_res_type(desc, nr);
 		if (err)
-			nr = err;
+			goto cancel;
 	}
-	if (nr == 0)
+
+	if (!nr)
+		/* no error occurs when reading */
 		nr = received;
-	/* Else, we received an error */
-err:
+
+	/* Receive the updated offset */
+	err = rpc_unpack_type(desc, fpos);
+	if (err)
+		goto cancel;
+	*pos = fpos;
+
+out_end:
 	rpc_end(desc, 0);
 
-	kfree (kbuff);
+out:
+	kfree(kbuff);
 
 	return nr;
+
+cancel:
+	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
+	nr = err;
+	goto out_end;
 }
 
 /** Kerrighed kernel hook for FAF write function.
- *  @author Renaud Lottiaux
+ *  @author Renaud Lottiaux, Matthieu Fertré
  *
  *  @param file          File to write to.
  *  @param buf           Buffer of data to write.
  *  @param count         Number of bytes to write.
+ *  @param pos           Offset to write from (updated at the end).
  */
-ssize_t krg_faf_write (struct file * file,
-		       const char *buf,
-		       size_t count)
+ssize_t krg_faf_write(struct file * file, const char *buf,
+		      size_t count, loff_t *pos)
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_rw_msg msg;
-	ssize_t buf_size = PAGE_SIZE, r;
+	ssize_t buf_size = PAGE_SIZE, nr;
 	long offset = 0;
 	long to_send = count;
+	loff_t fpos;
 	char *kbuff;
 	int err;
-	struct rpc_desc* desc;
+	struct rpc_desc *desc;
 
-	kbuff = kmalloc (PAGE_SIZE, GFP_KERNEL);
+	kbuff = kmalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!kbuff)
 		return -ENOMEM;
 
 	msg.server_fd = data->server_fd;
 	msg.count = count;
+	msg.pos = *pos;
 
+	nr = -ENOMEM;
 	desc = rpc_begin(RPC_FAF_WRITE, data->server_id);
+	if (!desc)
+		goto out;
 
 	/* Send write request */
-	rpc_pack_type(desc, msg);
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
 
-	r = unpack_remote_sleep_res_prepare(desc);
-	if (r)
-		goto err;
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
 
 	while (to_send > 0) {
 		if (to_send < PAGE_SIZE)
 			buf_size = to_send;
 
-		err = copy_from_user (kbuff, &buf[offset], buf_size);
+		err = copy_from_user(kbuff, &buf[offset], buf_size);
 		if (err) {
-			r = -EFAULT;
-			goto err;
+			nr = -EFAULT;
+			break;
 		}
-		rpc_pack(desc, 0, kbuff, buf_size);
+		err = rpc_pack(desc, 0, kbuff, buf_size);
+		if (err)
+			goto cancel;
 
 		to_send -= buf_size;
 		offset += buf_size;
 	}
-	err = unpack_remote_sleep_res_type(desc, r);
+
+	err = unpack_remote_sleep_res_type(desc, nr);
 	if (err)
-		r = err;
-	else if (r == -EPIPE)
+		nr = err;
+	else if (nr == -EPIPE)
 		send_sig(SIGPIPE, current, 0);
 
-err:
+	/* Receive the updated offset */
+	err = rpc_unpack_type(desc, fpos);
+	if (err)
+		goto cancel;
+	*pos = fpos;
+
+out_end:
 	rpc_end(desc, 0);
 
-	kfree (kbuff);
+out:
+	kfree(kbuff);
 
-	return r;
+	return nr;
+
+cancel:
+	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
+	nr = err;
+	goto out_end;
 }
 
 ssize_t krg_faf_readv(struct file *file, const struct iovec __user *vec,

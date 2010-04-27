@@ -34,9 +34,9 @@ off_t krg_faf_lseek(struct file *file, off_t offset,
 long krg_faf_llseek(struct file *file, unsigned long offset_high,
 		    unsigned long offset_low, loff_t *result,
 		    unsigned int origin);
-ssize_t krg_faf_read(struct file *file, char *buf, size_t count);
+ssize_t krg_faf_read(struct file *file, char *buf, size_t count, loff_t *pos);
 ssize_t krg_faf_write(struct file *file, const char *buf,
-		      size_t count);
+		      size_t count, loff_t *pos);
 ssize_t krg_faf_readv(struct file *file, const struct iovec __user *vec,
 		      unsigned long vlen, loff_t *pos);
 ssize_t krg_faf_writev(struct file *file, const struct iovec __user *vec,

@@ -315,6 +315,10 @@ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 
 	if (!(file->f_mode & FMODE_READ))
 		return -EBADF;
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT)
+		return krg_faf_read(file, buf, count, pos);
+#endif
 	if (!file->f_op || (!file->f_op->read && !file->f_op->aio_read))
 		return -EINVAL;
 	if (unlikely(!access_ok(VERIFY_WRITE, buf, count)))
@@ -370,6 +374,10 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 
 	if (!(file->f_mode & FMODE_WRITE))
 		return -EBADF;
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT)
+		return krg_faf_write(file, buf, count, pos);
+#endif
 	if (!file->f_op || (!file->f_op->write && !file->f_op->aio_write))
 		return -EINVAL;
 	if (unlikely(!access_ok(VERIFY_READ, buf, count)))
@@ -414,17 +422,7 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 
 	file = fget_light(fd, &fput_needed);
 	if (file) {
-#ifdef CONFIG_KRG_FAF
-		loff_t pos;
-		if (file->f_flags & O_FAF_CLT) {
-			ret = krg_faf_read(file, buf, count);
-			fput_light(file, fput_needed);
-			return ret;
-		}
-		pos = file_pos_read(file);
-#else
 		loff_t pos = file_pos_read(file);
-#endif
 		ret = vfs_read(file, buf, count, &pos);
 		file_pos_write(file, pos);
 		fput_light(file, fput_needed);
@@ -442,17 +440,7 @@ SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 
 	file = fget_light(fd, &fput_needed);
 	if (file) {
-#ifdef CONFIG_KRG_FAF
-		loff_t pos;
-		if (file->f_flags & O_FAF_CLT) {
-			ret = krg_faf_write(file, buf, count);
-			fput_light(file, fput_needed);
-			return ret;
-		}
-		pos = file_pos_read(file);
-#else
 		loff_t pos = file_pos_read(file);
-#endif
 		ret = vfs_write(file, buf, count, &pos);
 		file_pos_write(file, pos);
 		fput_light(file, fput_needed);
