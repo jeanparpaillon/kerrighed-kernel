@@ -394,23 +394,17 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 
 EXPORT_SYMBOL(vfs_write);
 
+#ifndef CONFIG_KRG_DVFS
 static inline loff_t file_pos_read(struct file *file)
 {
-#ifdef CONFIG_KRG_DVFS
-	if (file->f_flags & O_KRG_SHARED)
-		file->f_pos = krg_file_pos_read(file);
-#endif
 	return file->f_pos;
 }
 
 static inline void file_pos_write(struct file *file, loff_t pos)
 {
-#ifdef CONFIG_KRG_DVFS
-	if (file->f_flags & O_KRG_SHARED)
-		krg_file_pos_write(file, pos);
-#endif
 	file->f_pos = pos;
 }
+#endif
 
 SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 {
