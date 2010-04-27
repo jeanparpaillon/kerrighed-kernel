@@ -1078,13 +1078,10 @@ exit:
 	return r;
 }
 
-void do_ckpt_msg(struct epm_action *action, int err, char *fmt, ...)
+void do_ckpt_msg(int err, char *fmt, ...)
 {
 	va_list args;
 	char *buffer;
-
-	if (action && action->type != EPM_CHECKPOINT)
-		return;
 
 	va_start(args, fmt);
 	buffer = kvasprintf(GFP_KERNEL, fmt, args);
