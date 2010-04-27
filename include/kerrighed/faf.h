@@ -79,10 +79,10 @@ long krg_faf_setsockopt(struct file *file, int level, int optname,
 			char __user *optval, int optlen);
 long krg_faf_getsockopt(struct file *file, int level, int optname,
 			char __user *optval, int __user *optlen);
-long krg_faf_sendmsg(struct file *file, struct msghdr *msg,
-		     int total_len);
-long krg_faf_recvmsg(struct file *file, struct msghdr *msg,
-		     int total_len, unsigned int flags);
+ssize_t krg_faf_sendmsg(struct file *file, struct msghdr *msg,
+			size_t total_len);
+ssize_t krg_faf_recvmsg(struct file *file, struct msghdr *msg,
+			size_t total_len, unsigned int flags);
 int krg_faf_poll_wait(struct file *file, int wait);
 void krg_faf_poll_dequeue(struct file *file);
 

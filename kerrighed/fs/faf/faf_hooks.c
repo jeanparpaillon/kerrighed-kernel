@@ -1317,13 +1317,13 @@ err_cancel:
 	goto out_end;
 }
 
-long krg_faf_sendmsg (struct file * file,
-		      struct msghdr *msghdr,
-		      int total_len)
+ssize_t krg_faf_sendmsg(struct file *file, struct msghdr *msghdr,
+			size_t total_len)
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_sendmsg_msg msg;
-	int r, err;
+	ssize_t r;
+	int err;
 	struct rpc_desc* desc;
 
 	msg.server_fd = data->server_fd;
@@ -1361,14 +1361,13 @@ cancel:
 	goto out_end;
 }
 
-long krg_faf_recvmsg(struct file * file,
-		     struct msghdr *msghdr,
-		     int total_len,
-		     unsigned int flags)
+ssize_t krg_faf_recvmsg(struct file *file, struct msghdr *msghdr,
+			size_t total_len, unsigned int flags)
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_sendmsg_msg msg;
-	int r, err;
+	ssize_t r;
+	int err;
 	struct rpc_desc* desc;
 
 	msg.server_fd = data->server_fd;

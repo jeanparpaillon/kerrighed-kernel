@@ -1355,7 +1355,8 @@ void handle_faf_sendmsg(struct rpc_desc *desc,
 			void *msgIn, size_t size)
 {
 	struct faf_sendmsg_msg *msg = msgIn;
-	int r, err;
+	ssize_t r;
+	int err;
 	struct msghdr msghdr;
 
 	err = recv_msghdr(desc, &msghdr, msg->total_len, 0);
@@ -1390,7 +1391,8 @@ void handle_faf_recvmsg(struct rpc_desc *desc,
 			void *msgIn, size_t size)
 {
 	struct faf_sendmsg_msg *msg = msgIn;
-	int r, err;
+	ssize_t r;
+	int err;
 	struct msghdr msghdr;
 
 	err = recv_msghdr(desc, &msghdr, msg->total_len, MSG_HDR_ONLY);
