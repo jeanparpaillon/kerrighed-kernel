@@ -90,6 +90,7 @@ extern void init_waitqueue_head(wait_queue_head_t *q);
 
 static inline void init_waitqueue_entry(wait_queue_t *q, struct task_struct *p)
 {
+	BUG_ON(p == krg_current);
 	q->flags = 0;
 	q->private = p;
 	q->func = default_wake_function;
@@ -114,6 +115,7 @@ extern void remove_wait_queue(wait_queue_head_t *q, wait_queue_t *wait);
 
 static inline void __add_wait_queue(wait_queue_head_t *head, wait_queue_t *new)
 {
+	BUG_ON(krg_current);
 	list_add(&new->task_list, &head->task_list);
 }
 
@@ -123,6 +125,7 @@ static inline void __add_wait_queue(wait_queue_head_t *head, wait_queue_t *new)
 static inline void __add_wait_queue_tail(wait_queue_head_t *head,
 						wait_queue_t *new)
 {
+	BUG_ON(krg_current);
 	list_add_tail(&new->task_list, &head->task_list);
 }
 
@@ -442,7 +445,7 @@ int wake_bit_function(wait_queue_t *wait, unsigned mode, int sync, void *key);
 
 #define DEFINE_WAIT_FUNC(name, function)				\
 	wait_queue_t name = {						\
-		.private	= current,				\
+		.private	= ({ BUG_ON(krg_current); current;}),				\
 		.func		= function,				\
 		.task_list	= LIST_HEAD_INIT((name).task_list),	\
 	}
@@ -453,7 +456,7 @@ int wake_bit_function(wait_queue_t *wait, unsigned mode, int sync, void *key);
 	struct wait_bit_queue name = {					\
 		.key = __WAIT_BIT_KEY_INITIALIZER(word, bit),		\
 		.wait	= {						\
-			.private	= current,			\
+			.private	= ({ BUG_ON(krg_current); current;}),			\
 			.func		= wake_bit_function,		\
 			.task_list	=				\
 				LIST_HEAD_INIT((name).wait.task_list),	\
@@ -462,6 +465,7 @@ int wake_bit_function(wait_queue_t *wait, unsigned mode, int sync, void *key);
 
 #define init_wait(wait)							\
 	do {								\
+		BUG_ON(krg_current);					\
 		(wait)->private = current;				\
 		(wait)->func = autoremove_wake_function;		\
 		INIT_LIST_HEAD(&(wait)->task_list);			\

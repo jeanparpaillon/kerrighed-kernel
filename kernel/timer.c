@@ -1339,6 +1339,8 @@ signed long __sched schedule_timeout(signed long timeout)
 	struct timer_list timer;
 	unsigned long expire;
 
+	BUG_ON(krg_current);
+
 	switch (timeout)
 	{
 	case MAX_SCHEDULE_TIMEOUT:
