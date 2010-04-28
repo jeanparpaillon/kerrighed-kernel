@@ -315,7 +315,11 @@ EXPORT_SYMBOL(set_bdi_congested);
  * write congestion.  If no backing_devs are congested then just wait for the
  * next write to be completed.
  */
+#ifdef CONFIG_KRG_EPM
+static long __congestion_wait(int rw, long timeout)
+#else
 long congestion_wait(int rw, long timeout)
+#endif
 {
 	long ret;
 	DEFINE_WAIT(wait);
@@ -326,5 +330,20 @@ long congestion_wait(int rw, long timeout)
 	finish_wait(wqh, &wait);
 	return ret;
 }
+
+#ifdef CONFIG_KRG_EPM
+long congestion_wait(int rw, long timeout)
+{
+	struct task_struct *krg_cur;
+	long ret;
+
+	krg_cur = krg_current;
+	krg_current = NULL;
+	ret = __congestion_wait(rw, timeout);
+	krg_current = krg_cur;
+
+	return ret;
+}
+#endif
 EXPORT_SYMBOL(congestion_wait);
 
