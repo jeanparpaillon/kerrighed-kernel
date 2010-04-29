@@ -570,7 +570,7 @@ void krg_finish_exit_notify(struct task_struct *task, int signal, void *cookie)
 		struct children_kddm_object *parent_children_obj = cookie;
 		pid_t parent_pid;
 
-		if (task->parent == baby_sitter)
+		if (task->task_obj)
 			parent_pid = task->task_obj->parent;
 		else
 			parent_pid = task_pid_knr(task->parent);
