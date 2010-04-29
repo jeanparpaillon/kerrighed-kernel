@@ -26,9 +26,9 @@ static inline void free_kddm_ns_entry(struct kddm_ns *ns)
 	{   /// JUST FOR DEBUGGING: BEGIN
 		struct kddm_ns *_ns;
 
-		read_lock_irq(&ns_tree_lock);
+		read_lock(&ns_tree_lock);
 		_ns = radix_tree_lookup(&kddm_ns_tree, ns->id);
-		read_unlock_irq(&ns_tree_lock);
+		read_unlock(&ns_tree_lock);
 
 		BUG_ON (_ns != NULL);
 	}   /// JUST FOR DEBUGGING: END
@@ -69,12 +69,12 @@ struct kddm_ns * create_kddm_ns(int ns_id,
 
 	error = radix_tree_preload(GFP_KERNEL);
 	if (likely(error == 0)) {
-		write_lock_irq(&ns_tree_lock);
+		write_lock(&ns_tree_lock);
 		error = radix_tree_insert(&kddm_ns_tree, ns_id, ns);
 		if (unlikely(error))
 			free_kddm_ns_entry(ns);
 
-		write_unlock_irq(&ns_tree_lock);
+		write_unlock(&ns_tree_lock);
 		radix_tree_preload_end();
 	}
 
@@ -90,9 +90,9 @@ int remove_kddm_ns(int ns_id)
 {
 	struct kddm_ns *ns;
 
-	write_lock_irq(&ns_tree_lock);
+	write_lock(&ns_tree_lock);
 	ns = radix_tree_delete(&kddm_ns_tree, ns_id);
-	write_unlock_irq(&ns_tree_lock);
+	write_unlock(&ns_tree_lock);
 
 	if (ns == NULL)
 		return -EINVAL;
@@ -108,11 +108,11 @@ struct kddm_ns *kddm_ns_get(int ns_id)
 {
 	struct kddm_ns *ns;
 
-	read_lock_irq(&ns_tree_lock);
+	read_lock(&ns_tree_lock);
 	ns = radix_tree_lookup(&kddm_ns_tree, ns_id);
 	if (ns)
 		atomic_inc(&ns->count);
-	read_unlock_irq(&ns_tree_lock);
+	read_unlock(&ns_tree_lock);
 
 	return ns;
 }

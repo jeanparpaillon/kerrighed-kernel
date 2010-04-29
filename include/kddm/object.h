@@ -8,6 +8,7 @@
 #define __KDDM_OBJECT__
 
 #include <linux/highmem.h>
+#include <linux/hardirq.h>
 
 #include <kddm/kddm_types.h>
 #include <kddm/kddm_set.h>
@@ -111,23 +112,14 @@ extern const char *state_name[]; /*< Printable state name */
 static inline void kddm_obj_path_lock (struct kddm_set *set,
 				       objid_t objid)
 {
-	spinlock_t *lock = &set->obj_lock[objid % NR_OBJ_ENTRY_LOCKS];
-
-	if (irqs_disabled ())
-		spin_lock (lock);
-	else
-		spin_lock_bh (lock);
+	BUG_ON(in_interrupt() || irqs_disabled());
+	spin_lock (&set->obj_lock[objid % NR_OBJ_ENTRY_LOCKS]);
 }
 
 static inline void kddm_obj_path_unlock (struct kddm_set *set,
 					 objid_t objid)
 {
-	spinlock_t *lock = &set->obj_lock[objid % NR_OBJ_ENTRY_LOCKS];
-
-	if (irqs_disabled ())
-		spin_unlock (lock);
-	else
-		spin_unlock_bh (lock);
+	spin_unlock (&set->obj_lock[objid % NR_OBJ_ENTRY_LOCKS]);
 }
 
 
