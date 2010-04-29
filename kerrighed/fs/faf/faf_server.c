@@ -294,10 +294,17 @@ void handle_faf_write(struct rpc_desc* desc, void *msgIn, size_t size)
 	file = fget(msg->server_fd);
 
 	while (to_recv > 0) {
-		if (to_recv < PAGE_SIZE)
-			buf_size = to_recv;
+		err = rpc_unpack_type(desc, buf_size);
+		if (err)
+			goto cancel;
 
-		err = rpc_unpack(desc, 0, buf, to_recv);
+		/* copy_from_user has failed on the other side */
+		if (buf_size < 0) {
+			nr_received = buf_size;
+			break;
+		}
+
+		err = rpc_unpack(desc, 0, buf, buf_size);
 		if (err)
 			goto cancel;
 

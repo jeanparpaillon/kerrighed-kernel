@@ -331,10 +331,16 @@ ssize_t krg_faf_write(struct file * file, const char *buf,
 			buf_size = to_send;
 
 		err = copy_from_user(kbuff, &buf[offset], buf_size);
-		if (err) {
-			nr = -EFAULT;
+		if (err)
+			buf_size = -EFAULT;
+
+		err = rpc_pack_type(desc, buf_size);
+		if (err)
+			goto cancel;
+
+		if (buf_size < 0) /* copy_from_user has failed */
 			break;
-		}
+
 		err = rpc_pack(desc, 0, kbuff, buf_size);
 		if (err)
 			goto cancel;
