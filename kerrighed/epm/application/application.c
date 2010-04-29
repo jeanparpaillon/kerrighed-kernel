@@ -333,8 +333,6 @@ void unregister_task_to_app(struct app_struct *app, struct task_struct *task)
 		t = list_entry(element, task_state_t, next_task);
 		if (task == t->task) {
 			list_del(element);
-			mutex_unlock(&app->mutex);
-
 			free_task_state(t);
 			goto exit;
 		}
@@ -342,6 +340,7 @@ void unregister_task_to_app(struct app_struct *app, struct task_struct *task)
 	BUG();
 
 exit:
+	mutex_unlock(&app->mutex);
 	delete_app(app);
 }
 
@@ -350,14 +349,12 @@ exit:
 task_state_t *__set_task_result(struct task_struct *task, int result)
 {
 	struct app_struct *app;
-	struct list_head *tmp, *element;
 	task_state_t *t, *ret = NULL;
 	int done_for_all_tasks = 1;
 
 	app = task->application;
 
-	list_for_each_safe(element, tmp, &app->tasks) {
-		t = list_entry(element, task_state_t, next_task);
+	list_for_each_entry(t, &app->tasks, next_task) {
 		if (task == t->task) {
 			t->result = result;
 			ret = t;
@@ -420,18 +417,25 @@ static int get_local_tasks_stop_result(struct app_struct* app)
 	int r = 0, pcus_result = 0;
 	task_state_t *t;
 
+	mutex_lock(&app->mutex);
+
 	list_for_each_entry(t, &app->tasks, next_task) {
 		pcus_result = t->result;
 		if (pcus_result == PCUS_RUNNING) {
 			/* one process has been forgotten! try again!! */
-			return pcus_result;
+			r = pcus_result;
+			goto exit;
 		} else if (pcus_result == PCUS_STOP_IN_PROGRESS)
 			/* Process is zombie !! */
-			if (t->task->state == TASK_DEAD)
-				return -E_CR_TASKDEAD;
-
+			if (t->task->state == TASK_DEAD) {
+				r = -E_CR_TASKDEAD;
+				goto exit;
+			}
 		r = r | pcus_result;
 	}
+
+exit:
+	mutex_unlock(&app->mutex);
 
 	return r;
 }
@@ -442,15 +446,20 @@ int get_local_tasks_chkpt_result(struct app_struct* app)
 	int r = 0, pcus_result = 0;
 	task_state_t *t;
 
+	mutex_lock(&app->mutex);
+
 	list_for_each_entry(t, &app->tasks, next_task) {
 		pcus_result = t->result;
 		if (pcus_result == PCUS_RUNNING) {
 			/* one process has been forgotten! try again!! */
-			return pcus_result;
+			r = pcus_result;
+			goto exit;
 		} else if (pcus_result == PCUS_STOP_IN_PROGRESS)
 			/* Process is zombie !! */
-			if (t->task->state == TASK_DEAD)
-				return -E_CR_TASKDEAD;
+			if (t->task->state == TASK_DEAD) {
+				r = -E_CR_TASKDEAD;
+				goto exit;
+			}
 
 		if (t->checkpoint.ghost) {
 			if (pcus_result < 0)
@@ -460,6 +469,9 @@ int get_local_tasks_chkpt_result(struct app_struct* app)
 		}
 		r = r | pcus_result;
 	}
+
+exit:
+	mutex_unlock(&app->mutex);
 
 	return r;
 }
@@ -632,6 +644,8 @@ stop_all_running:
 	/* Stop all the local processes of the application */
 	init_completion(&app->tasks_chkpted);
 
+	mutex_lock(&app->mutex);
+
 	list_for_each_entry(tsk, &app->tasks, next_task) {
 		if (tsk->result == PCUS_RUNNING) {
 			tsk->result = PCUS_STOP_IN_PROGRESS;
@@ -640,6 +654,9 @@ stop_all_running:
 				set_task_result(tsk->task, r);
 		}
 	}
+
+	mutex_unlock(&app->mutex);
+
 	r = PCUS_STOP_IN_PROGRESS;
 
 	while (r == PCUS_STOP_IN_PROGRESS) {
