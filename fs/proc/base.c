@@ -2883,8 +2883,21 @@ struct dentry *proc_pid_lookup(struct inode *dir, struct dentry * dentry, struct
 	result = proc_pid_instantiate(dir, dentry, task, NULL);
 #if defined(CONFIG_KRG_PROCFS) && defined(CONFIG_KRG_EPM)
 	if (current->nsproxy->krg_ns
-	    && IS_ERR(result) && task->exit_state == EXIT_MIGRATION)
-		result = krg_proc_pid_lookup(dir, dentry, tgid);
+	    && IS_ERR(result) && task->exit_state == EXIT_MIGRATION) {
+		/*
+		 * proc_pid_instantiate() may have instantiated dentry, but we
+		 * don't know, so restart with a fresh one.
+		 */
+		result = ERR_PTR(-ENOMEM);
+		dentry = d_alloc(dentry->d_parent, &dentry->d_name);
+		if (dentry) {
+			result = krg_proc_pid_lookup(dir, dentry, tgid);
+			if (!result)
+				result = dentry;
+			else
+				dput(dentry);
+		}
+	}
 #endif
 	put_task_struct(task);
 out:
