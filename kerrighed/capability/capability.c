@@ -177,9 +177,9 @@ static int krg_set_father_cap(struct task_struct *tsk,
 
 	read_lock(&tasklist_lock);
 #ifdef CONFIG_KRG_EPM
-	if (tsk->parent != baby_sitter) {
+	if (tsk->real_parent != baby_sitter) {
 #endif
-		retval = krg_set_cap(tsk->parent, requested_cap);
+		retval = krg_set_cap(tsk->real_parent, requested_cap);
 		read_unlock(&tasklist_lock);
 #ifdef CONFIG_KRG_EPM
 	} else {
@@ -283,9 +283,9 @@ static int krg_get_father_cap(struct task_struct *son,
 
 	read_lock(&tasklist_lock);
 #ifdef CONFIG_KRG_EPM
-	if (son->parent != baby_sitter) {
+	if (son->real_parent != baby_sitter) {
 #endif
-		retval = krg_get_cap(son->parent, resulting_cap);
+		retval = krg_get_cap(son->real_parent, resulting_cap);
 		read_unlock(&tasklist_lock);
 #ifdef CONFIG_KRG_EPM
 	} else {
@@ -304,7 +304,7 @@ static int krg_get_father_cap(struct task_struct *son,
 					   resulting_cap);
 		krg_get_parent(parent_children_obj, son,
 			       &parent_pid, &real_parent_pid);
-		retval = remote_get_pid_cap(parent_pid, resulting_cap);
+		retval = remote_get_pid_cap(real_parent_pid, resulting_cap);
 		krg_children_unlock(parent_children_obj);
 	}
 #endif
