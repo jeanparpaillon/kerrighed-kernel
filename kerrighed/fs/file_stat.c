@@ -92,6 +92,20 @@ int is_link(const struct file *file)
 	return S_ISLNK(get_inode_mode(file));
 }
 
+int is_anon_shared_mmap(const struct file *file)
+{
+	if (file->f_flags)
+		return 0;
+
+	if (file->f_op != &shmem_file_operations)
+		return 0;
+
+	if (strcmp("dev/zero", file->f_dentry->d_name.name) == 0)
+		return 1;
+
+	return 0;
+}
+
 extern const struct file_operations tty_fops;
 extern const struct file_operations hung_up_tty_fops;
 

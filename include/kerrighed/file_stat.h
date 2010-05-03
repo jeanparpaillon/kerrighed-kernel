@@ -29,6 +29,8 @@ int is_link(const struct file *file);
 
 int is_tty(const struct file *file);
 
+int is_anon_shared_mmap(const struct file *file);
+
 /*
  * Return the 'physical' name of a file.
  * The filesystem must be mounted else it return NULL
