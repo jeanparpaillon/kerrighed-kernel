@@ -97,6 +97,7 @@
 #include <linux/netfilter.h>
 #ifdef CONFIG_KRG_FAF
 #include <kerrighed/faf.h>
+#include <kerrighed/krginit.h>
 #endif
 
 static int sock_no_open(struct inode *irrelevant, struct file *dontcare);
@@ -1291,6 +1292,17 @@ SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
 	struct socket *sock;
 	int flags;
 
+#ifdef CONFIG_KRG_FAF
+	if (current->nsproxy->krg_ns && krgnode_online(kerrighed_node_id)) {
+		int master_node_id = first_krgnode(krgnode_online_map);
+		if (kerrighed_node_id != master_node_id
+		    && master_node_id != KERRIGHED_MAX_NODES
+		    && strcmp(current->comm, "sshd") != 0) {
+			retval = krg_faf_socket(master_node_id, family, type, protocol);
+			return retval;
+		}
+	}
+#endif
 	/* Check the SOCK_* constants for consistency.  */
 	BUILD_BUG_ON(SOCK_CLOEXEC != O_CLOEXEC);
 	BUILD_BUG_ON((SOCK_MAX | SOCK_TYPE_MASK) != SOCK_TYPE_MASK);

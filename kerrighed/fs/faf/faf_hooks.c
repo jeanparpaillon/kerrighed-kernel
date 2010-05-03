@@ -11,6 +11,7 @@
 #include <linux/file.h>
 #include <linux/uio.h>
 #include <linux/namei.h>
+#include <linux/net.h>
 #include <linux/socket.h>
 #include <linux/sched.h>
 #include <linux/wait.h>
@@ -1020,7 +1021,75 @@ exit:
 	return err;
 }
 
-long krg_faf_bind (struct file * file,
+int krg_faf_socket(int master_node_id, int family, int type, int protocol)
+{
+	struct faf_socket_msg msg;
+	int fd, remotefd;
+	int flags;
+	int retval = 0;
+	struct file *newfile;
+	struct rpc_desc *desc;
+
+	BUG_ON(master_node_id == kerrighed_node_id);
+
+	flags = type & ~SOCK_TYPE_MASK;
+
+	fd = alloc_fd(0, flags);
+	if (fd < 0)
+		goto out;
+
+	msg.family = family;
+	msg.type = type;
+	msg.protocol = protocol;
+
+	desc = rpc_begin(RPC_FAF_SOCKET, master_node_id);
+
+	retval = rpc_pack_type(desc, msg);
+	if (retval)
+		goto err_cancel;
+
+	retval = rpc_unpack_type(desc, remotefd);
+	if (retval)
+		goto err_cancel;
+
+	if (remotefd < 0) {
+		retval = remotefd;
+		goto out_end;
+	}
+
+	newfile = rcv_faf_file_desc(desc);
+	if (IS_ERR(newfile)) {
+		retval = PTR_ERR(newfile);
+		goto err_cancel;
+	}
+
+	fd_install(fd, newfile);
+
+	/*
+	 * to tell the server that we have successfully
+	 * imported the file
+	 * no need to rollback in case of error
+	 */
+	retval = rpc_pack_type(desc, fd);
+	if (retval)
+		rpc_cancel(desc);
+
+	rpc_end(desc, 0);
+
+out:
+	return fd;
+
+err_cancel:
+	rpc_cancel(desc);
+out_end:
+	rpc_end(desc, 0);
+	put_unused_fd(fd);
+
+	fd = retval;
+	goto out;
+}
+
+long krg_faf_bind(struct file *file,
 		   struct sockaddr __user *umyaddr,
 		   int addrlen)
 {

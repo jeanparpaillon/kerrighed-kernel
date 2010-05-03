@@ -79,6 +79,12 @@ struct faf_llseek_msg {
 	unsigned int origin;
 };
 
+struct faf_socket_msg {
+	int family;
+	int type;
+	int protocol;
+};
+
 struct faf_bind_msg {
 	int server_fd;
 	int addrlen;

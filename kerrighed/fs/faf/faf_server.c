@@ -1218,9 +1218,49 @@ err_cancel:
 	goto out;
 }
 
+void handle_faf_socket(struct rpc_desc *desc,
+		       void *msgIn, size_t size)
+{
+	struct faf_socket_msg *msg = msgIn;
+	int fd, err, retval;
+	struct file *file;
 
+	fd = sys_socket(msg->family, msg->type, msg->protocol);
 
-int handle_faf_bind (struct rpc_desc* desc,
+	err = rpc_pack_type(desc, fd);
+	if (err)
+		goto err_cancel;
+
+	if (fd < 0)
+		return;
+
+	file = fget(fd);
+	if (!file)
+		goto err_cancel;
+
+	err = send_faf_file_desc(desc, file);
+	if (err)
+		goto put_file;
+
+	/*
+	 * we don't care the value of retval, it is only used
+	 * to avoid closing the file too fast
+	 */
+	err = rpc_unpack_type(desc, retval);
+
+put_file:
+	fput(file);
+out:
+	sys_close(fd);
+
+	return;
+
+err_cancel:
+	rpc_cancel(desc);
+	goto out;
+}
+
+int handle_faf_bind (struct rpc_desc *desc,
                      void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
@@ -1641,6 +1681,7 @@ void faf_server_init (void)
 	rpc_register_void(RPC_FAF_LLSEEK, handle_faf_llseek, 0);
 	rpc_register_void(RPC_FAF_D_PATH, handle_faf_d_path, 0);
 
+	rpc_register_void(RPC_FAF_SOCKET, handle_faf_socket, 0);
 	rpc_register_int(RPC_FAF_BIND, handle_faf_bind, 0);
 	rpc_register_void(RPC_FAF_CONNECT, handle_faf_connect, 0);
 	rpc_register_int(RPC_FAF_LISTEN, handle_faf_listen, 0);

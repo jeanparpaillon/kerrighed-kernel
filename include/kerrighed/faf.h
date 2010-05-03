@@ -69,6 +69,7 @@ void krg_faf_srv_close(struct file *file);
 struct sockaddr;
 struct msghdr;
 
+int krg_faf_socket(int master_node_id, int family, int type, int protocol);
 long krg_faf_bind(struct file *file, struct sockaddr __user *umyaddr,
 		  int addrlen);
 long krg_faf_connect(struct file *file,
