@@ -219,7 +219,10 @@ static inline void shmem_unacct_blocks(unsigned long flags, long pages)
 
 static const struct super_operations shmem_ops;
 static const struct address_space_operations shmem_aops;
-static const struct file_operations shmem_file_operations;
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+const struct file_operations shmem_file_operations;
 static const struct inode_operations shmem_inode_operations;
 static const struct inode_operations shmem_dir_inode_operations;
 static const struct inode_operations shmem_special_inode_operations;
@@ -2431,7 +2434,10 @@ static const struct address_space_operations shmem_aops = {
 	.migratepage	= migrate_page,
 };
 
-static const struct file_operations shmem_file_operations = {
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+const struct file_operations shmem_file_operations = {
 	.mmap		= shmem_mmap,
 #ifdef CONFIG_TMPFS
 	.llseek		= generic_file_llseek,

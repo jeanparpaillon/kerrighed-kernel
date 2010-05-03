@@ -30,6 +30,8 @@ extern struct file_operations krg_shm_file_operations;
 extern const struct file_operations shm_file_operations;
 #endif
 
+extern const struct file_operations shmem_file_operations;
+
 /*--------------------------------------------------------------------------*
  *                                                                          *
  *                              EXTERN FUNCTIONS                            *
