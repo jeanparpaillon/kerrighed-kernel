@@ -58,11 +58,6 @@ enum {
 
 static char clusters_status[KERRIGHED_MAX_CLUSTERS];
 
-static struct hotplug_context __cluster_autostart_ctx = {
-	.kref = { ATOMIC_INIT(1) },
-};
-static struct hotplug_context *cluster_autostart_ctx;
-
 static struct hotplug_context *cluster_start_ctx;
 static struct cluster_start_msg {
 	struct hotplug_node_set node_set;
@@ -700,95 +695,6 @@ static void do_cluster_wait_for_start(void)
 	wait_for_completion(&cluster_started);
 }
 
-static int cluster_start(void *arg)
-{
-	int r = 0;
-	struct __hotplug_node_set __node_set;
-	struct hotplug_context *ctx;
-
-	if (!capable(CAP_SYS_ADMIN))
-		return -EPERM;
-
-	if (copy_from_user(&__node_set, arg, sizeof(__node_set)))
-		return -EFAULT;
-
-	if (!current->nsproxy->krg_ns)
-		return -EPERM;
-
-	ctx = hotplug_ctx_alloc(current->nsproxy->krg_ns);
-	ctx->node_set.subclusterid = __node_set.subclusterid;
-	r = krgnodemask_copy_from_user(&ctx->node_set.v, &__node_set.v);
-	if (r)
-		goto out;
-
-	r = do_cluster_start(ctx);
-	if (!r)
-		do_cluster_wait_for_start();
-
-out:
-	hotplug_ctx_put(ctx);
-	return r;
-}
-
-void krg_cluster_autostart(void)
-{
-	struct krg_namespace *ns;
-	static int already_start = 0;
-	int i, nb;
-
-	if (likely(already_start)
-	   || kerrighed_nb_nodes_min < 0)
-		return;
-
-	ns = find_get_krg_ns();
-	if (!ns)
-		return;
-
-	spin_lock(&cluster_start_lock);
-	if (cluster_autostart_ctx) {
-		spin_unlock(&cluster_start_lock);
-		goto out;
-	}
-	cluster_autostart_ctx = &__cluster_autostart_ctx;
-	spin_unlock(&cluster_start_lock);
-
-	cluster_autostart_ctx->ns = ns;
-	cluster_autostart_ctx->node_set.subclusterid = 0;
-	nb = 0;
-
-	krgnodes_clear(cluster_autostart_ctx->node_set.v);
-	for (i=0; i<KERRIGHED_MAX_NODES; i++) {
-		if ((universe[i].state == 0
-		    && i != kerrighed_node_id)
-		    || universe[i].subid != -1)
-			continue;
-
-		if (i < kerrighed_node_id)
-			goto abort;
-
-		nb++;
-		krgnode_set(i, cluster_autostart_ctx->node_set.v);
-	}
-
-	if (nb >= kerrighed_nb_nodes_min) {
-		already_start = 1;
-		do_cluster_start(cluster_autostart_ctx);
-	}
-
-abort:
-	spin_lock(&cluster_start_lock);
-	cluster_autostart_ctx = NULL;
-	spin_unlock(&cluster_start_lock);
-out:
-	put_krg_ns(ns);
-}
-
-static int cluster_wait_for_start(void __user *arg)
-{
-	do_cluster_wait_for_start();
-	return 0;
-}
-
 static int boot_node_ready(struct krg_namespace *ns)
 {
 	struct hotplug_context *ctx;
@@ -941,11 +847,8 @@ int hotplug_cluster_init(void)
 	}
 
 	rpc_register_void(CLUSTER_START, handle_cluster_start, 0);
-	
-	register_proc_service(KSYS_HOTPLUG_START, cluster_start);
+
 	register_proc_service(KSYS_HOTPLUG_READY, node_ready);
-	register_proc_service(KSYS_HOTPLUG_WAIT_FOR_START,
-			      cluster_wait_for_start);
 	register_proc_service(KSYS_HOTPLUG_SHUTDOWN, cluster_stop);
 	register_proc_service(KSYS_HOTPLUG_RESTART, cluster_restart);
 	register_proc_service(KSYS_HOTPLUG_STATUS, cluster_status);

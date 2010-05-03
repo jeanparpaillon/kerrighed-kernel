@@ -14,7 +14,6 @@ struct universe_elem universe[KERRIGHED_MAX_NODES];
 
 void krg_node_reachable(kerrighed_node_t);
 void krg_node_unreachable(kerrighed_node_t);
-void krg_cluster_autostart(void);
 
 void krg_node_arrival(kerrighed_node_t nodeid)
 {
@@ -22,7 +21,6 @@ void krg_node_arrival(kerrighed_node_t nodeid)
 	krg_node_reachable(nodeid);
 #ifdef CONFIG_KRG_HOTPLUG
 	universe[nodeid].state = 1;
-	krg_cluster_autostart();
 #endif
 }
 
