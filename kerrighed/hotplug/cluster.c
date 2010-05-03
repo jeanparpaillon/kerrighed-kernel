@@ -789,12 +789,32 @@ static int cluster_wait_for_start(void __user *arg)
 	return 0;
 }
 
-static int node_ready(void __user *arg)
+static int boot_node_ready(struct krg_namespace *ns)
 {
-	struct krg_namespace *ns = current->nsproxy->krg_ns;
+	struct hotplug_context *ctx;
+	int r;
 
-	if (!ns || ns != cluster_init_helper_ns)
+	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
+
+	ctx = hotplug_ctx_alloc(ns);
+	if (!ctx)
+		return -ENOMEM;
+	ctx->node_set.subclusterid = 0;
+	ctx->node_set.v = krgnodemask_of_node(kerrighed_node_id);
+
+	r = do_cluster_start(ctx);
+	hotplug_ctx_put(ctx);
+
+	if (!r)
+		do_cluster_wait_for_start();
+
+	return r;
+}
+
+static int other_node_ready(struct krg_namespace *ns)
+{
+	BUG_ON(ns != cluster_init_helper_ns);
 
 	if (krg_container_may_conflict(ns))
 		return -EBUSY;
@@ -803,6 +823,19 @@ static int node_ready(void __user *arg)
 
 	krg_container_run();
 	return 0;
+}
+
+static int node_ready(void __user *arg)
+{
+	struct krg_namespace *ns = current->nsproxy->krg_ns;
+
+	if (!ns)
+		return -EPERM;
+
+	if (!cluster_init_helper_ns)
+		return boot_node_ready(ns);
+	else
+		return other_node_ready(ns);
 }
 
 static int cluster_restart(void *arg)
