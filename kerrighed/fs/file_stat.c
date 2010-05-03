@@ -194,6 +194,8 @@ int can_checkpoint_file(const struct file *file)
 	} else if (is_named_pipe(file)) {
 		printk("Checkpoint of FIFO file (nammed pipe) is not supported\n");
 		return 0;
+	} else if (is_anon_shared_mmap(file)) {
+		printk("Checkpoint of anonymous shared mmap file is not supported\n");
 	}
 
 	return 1;
