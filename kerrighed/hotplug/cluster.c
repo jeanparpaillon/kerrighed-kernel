@@ -441,8 +441,8 @@ static int krg_container_init(void *arg)
 			    cluster_init_helper_envp);
 	BUG_ON(!err);
 	printk(KERN_ERR
-	       "kerrighed: Kerrighed container userspace init failed: err=%d\n",
-	       err);
+	       "kerrighed: Could not execute container init '%s': err=%d\n",
+	       cluster_init_helper_path, err);
 
 	krg_container_abort(err);
 
