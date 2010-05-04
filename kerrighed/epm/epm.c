@@ -13,6 +13,8 @@
 #include <kerrighed/debug.h>
 #include "epm_internal.h"
 
+#include "debug_epm.h"
+
 struct task_struct *baby_sitter;
 
 static void init_baby_sitter(void)
@@ -29,6 +31,9 @@ static void init_baby_sitter(void)
 	baby_sitter->real_parent = baby_sitter;
 	baby_sitter->parent = baby_sitter;
 	strncpy(baby_sitter->comm, "baby sitter", 15);
+	DEBUG(DBG_MODULE, 1,
+	      "created a baby_sitter at %p of pid %d\n",
+	      baby_sitter, baby_sitter->pid);
 }
 
 /* Krgsyms to register for restart_blocks in ghost processes */

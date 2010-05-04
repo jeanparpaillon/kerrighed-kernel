@@ -10,6 +10,11 @@
 #include <asm/system.h>
 #include <asm/uaccess.h>
 #include <asm/i387.h>
+
+#define MODULE_NAME "Arch Ghost"
+
+#include "debug_x86.h"
+
 #include <kerrighed/ghost.h>
 #include <kerrighed/ghost_helpers.h>
 
@@ -18,6 +23,9 @@ struct epm_action;
 void prepare_to_export(struct task_struct *task)
 {
 	unlazy_fpu(task);
+
+	DEBUG(DBG_GHOST, 1, "fpu_counter=%d ti.status=%x\n",
+	      task->fpu_counter, task_thread_info(task)->status);
 }
 
 /* struct thread_info */
@@ -65,6 +73,7 @@ int import_thread_info(struct epm_action *action,
 		goto exit_free_thread_info;
 
 	p->exec_domain = import_exec_domain(action, ghost);
+	DEBUG(DBG_GHOST, 1, "%p exec_domain %p\n", p, p->exec_domain);
 
 	p->preempt_count = 0;
 	p->addr_limit = USER_DS;
@@ -111,8 +120,14 @@ int export_thread_struct(struct epm_action *action,
 	savesegment(es, tsk->thread.es);
 	savesegment(ds, tsk->thread.ds);
 
+	DEBUG(DBG_GHOST, 1, "fsindex=0x%04hx gsindex=0x%04hx"
+	      "ds=0x%04hx es=0x%04hx\n",
+	      tsk->thread.fsindex, tsk->thread.gsindex,
+	      tsk->thread.ds, tsk->thread.es);
 #else /* CONFIG_X86_32 */
 	lazy_save_gs(tsk->thread.gs);
+
+	DEBUG(DBG_GHOST, 1, "gs=0x%08lx\n", tsk->thread.gs);
 
 	WARN_ON(tsk->thread.vm86_info);
 #endif /* CONFIG_X86_32 */
@@ -135,6 +150,19 @@ int import_thread_struct(struct epm_action *action,
 	r = ghost_read(ghost, &tsk->thread, sizeof (tsk->thread));
 	if (r)
 		goto out;
+
+#ifdef CONFIG_X86_64
+	DEBUG(DBG_GHOST, 1, "fsindex=0x%04hx gsindex=0x%04hx"
+	      "ds=0x%04hx es=0x%04hx"
+	      "fpu_counter=%d ti.status=%x\n",
+	      tsk->thread.fsindex, tsk->thread.gsindex,
+	      tsk->thread.ds, tsk->thread.es,
+	      tsk->fpu_counter, task_thread_info(tsk)->status);
+#else /* CONFIG_X86_32 */
+	DEBUG(DBG_GHOST, 1, "gs=0x%08lx fpu_counter=%d ti.status=%lx\n",
+	      tsk->thread.gs,
+	      tsk->fpu_counter, task_thread_info(tsk)->status);
+#endif /* CONFIG_X86_32 */
 
 	if (tsk->thread.xstate) {
 		r = -ENOMEM;

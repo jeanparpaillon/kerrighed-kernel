@@ -11,14 +11,25 @@
 #include <linux/sched.h>
 #include <linux/spinlock.h>
 #include <asm/atomic.h>
+#include <kerrighed/pid.h>
 #include <kerrighed/capabilities.h>
 #include <kerrighed/action.h>
+
+#include "debug_epm.h"
 
 static int action_to_cap_mapping[] = {
 	[EPM_MIGRATE] = CAP_CAN_MIGRATE,
 	[EPM_REMOTE_CLONE] = CAP_DISTANT_FORK,
 	[EPM_CHECKPOINT] = CAP_CHECKPOINTABLE,
 };
+
+#ifdef CONFIG_KRG_DEBUG
+static const char *action_name[] = {
+	[EPM_MIGRATE] = "migrate",
+	[EPM_REMOTE_CLONE] = "remote clone",
+	[EPM_CHECKPOINT] = "checkpoint",
+};
+#endif
 
 DEFINE_RWLOCK(krg_action_lock);
 
@@ -61,6 +72,8 @@ int krg_action_disable(struct task_struct *task, krg_epm_action_t action,
 		return -EINVAL;
 
 	action_lock_lock();
+	DEBUG(DBG_ACTION, 2, "%s %d(%s) flags=%x\n",
+	      action_name[action], task_pid_knr(task), task->comm, task->krg_action_flags);
 	if (unlikely(task->krg_action_flags & flag))
 		retval = -EAGAIN;
 	else {
@@ -74,6 +87,8 @@ int krg_action_disable(struct task_struct *task, krg_epm_action_t action,
 	}
 	action_lock_unlock();
 
+	DEBUG(DBG_ACTION, 1, "%s %d(%s) retval=%d\n",
+	      action_name[action], task_pid_knr(task), task->comm, retval);
 	return retval;
 }
 
@@ -86,6 +101,9 @@ int krg_action_enable(struct task_struct *task, krg_epm_action_t action,
 	cap = action_to_cap(action);
 	if (unlikely(cap < 0))
 		return -EINVAL;
+
+	DEBUG(DBG_ACTION, 1, "%s %d(%s)\n",
+	      action_name[action], task_pid_knr(task), task->comm);
 
 	if (inheritable)
 		array = task->krg_cap_unavailable;
@@ -107,6 +125,8 @@ int krg_action_start(struct task_struct *task, krg_epm_action_t action)
 		return -EINVAL;
 
 	action_lock_lock();
+	DEBUG(DBG_ACTION, 2, "%s %d(%s) flags=%x\n",
+	      action_name[action], task_pid_knr(task), task->comm, task->krg_action_flags);
 	if (!can_use_krg_cap(task, action_to_cap(action)))
 		retval = -EPERM;
 	else if (unlikely(task->krg_action_flags & flag))
@@ -117,6 +137,8 @@ int krg_action_start(struct task_struct *task, krg_epm_action_t action)
 		task->krg_action_flags |= flag;
 	action_lock_unlock();
 
+	DEBUG(DBG_ACTION, 1, "%s %d(%s) retval=%d\n",
+	      action_name[action], task_pid_knr(task), task->comm, retval);
 	return retval;
 }
 
@@ -129,7 +151,12 @@ int krg_action_stop(struct task_struct *task, krg_epm_action_t action)
 	if (unlikely(!flag))
 		return -EINVAL;
 
+	DEBUG(DBG_ACTION, 1, "%s %d(%s)\n",
+	      action_name[action], task_pid_knr(task), task->comm);
+
 	action_lock_lock();
+	DEBUG(DBG_ACTION, 2, "%s %d(%s) flags=%x\n",
+	      action_name[action], task_pid_knr(task), task->comm, task->krg_action_flags);
 	task->krg_action_flags &= ~flag;
 	action_lock_unlock();
 
@@ -146,8 +173,12 @@ int krg_action_pending(struct task_struct *task, krg_epm_action_t action)
 		return 0;
 
 	action_lock_lock();
+	DEBUG(DBG_ACTION, 1, "%s %d(%s) flags=%d\n",
+	      action_name[action], task_pid_knr(task), task->comm, task->krg_action_flags);
 	retval = task->krg_action_flags & flag;
 	action_lock_unlock();
 
+	DEBUG(DBG_ACTION, 1, "%s %d(%s) retval=%d\n",
+	      action_name[action], task_pid_knr(task), task->comm, retval);
 	return retval;
 }

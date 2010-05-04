@@ -15,6 +15,9 @@
 #include <linux/workqueue.h>
 #include <kerrighed/pid.h>
 #include <kerrighed/task.h>
+
+#include "debug_epm.h"
+
 #include <kerrighed/workqueue.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
@@ -136,6 +139,8 @@ static int pid_remove_object(void *object,
 	struct pid_kddm_object *obj = object;
 	struct pid *pid = obj->pid;
 
+	DEBUG(DBG_PID, 3, "%d\n", pid_knr(pid));
+
 	spin_lock(&pid_kddm_lock);
 	pid->kddm_obj = NULL;
 	obj->pid = NULL;
@@ -168,6 +173,8 @@ static void __get_pid(struct pid_kddm_object *obj)
 	if (!obj->active) {
 		obj->node_count++;
 		obj->active = 1;
+		DEBUG(DBG_PID, 4, "%d node_count=%d\n",
+		      pid_knr(obj->pid), obj->node_count);
 	}
 }
 
@@ -271,12 +278,18 @@ static int may_put_pid(struct pid_kddm_object *obj)
 	struct pid *pid = obj->pid;
 	int tmp;
 
+	DEBUG(DBG_PID, 4, "%d attach_pending=%d active=%d\n",
+	      pid_knr(pid), obj->attach_pending, obj->active);
+
 	if (obj->attach_pending || !obj->active)
 		return 0;
 	/* Check if this PID is used by a task struct on this node */
 	for (tmp = PIDTYPE_MAX; --tmp >= 0; )
-		if (!hlist_empty(&pid->tasks[tmp]))
+		if (!hlist_empty(&pid->tasks[tmp])) {
+			DEBUG(DBG_PID, 4, "type %d not empty (%d 0x%p)\n",
+			      tmp, task_pid_knr(pid_task(pid, tmp)), pid_task(pid, tmp));
 			return 0;
+		}
 
 	return 1;
 }
@@ -288,6 +301,8 @@ static void __put_pid(struct pid_kddm_object *obj)
 	int may_put;
 	int grabbed = 0;
 
+	DEBUG(DBG_PID, 4, "%d\n", nr);
+
 	/* Try to avoid grabing the kddm object */
 	read_lock(&tasklist_lock);
 	spin_lock(&pid_kddm_lock);
@@ -296,6 +311,8 @@ static void __put_pid(struct pid_kddm_object *obj)
 	if (!may_put)
 		goto release_work;
 	read_unlock(&tasklist_lock);
+
+	DEBUG(DBG_PID, 4, "%d trying to release\n", nr);
 
 	/* The pid seems to be unused locally. Have to check globally. */
 	/* Prevent pidmaps from changing host nodes. */
@@ -314,6 +331,8 @@ static void __put_pid(struct pid_kddm_object *obj)
 		if (obj->node_count)
 			/* Still used elsewhere */
 			may_put = 0;
+		DEBUG(DBG_PID, 4, "%d node_count=%d\n",
+		      pid_knr(pid), obj->node_count);
 	}
 	spin_unlock(&pid_kddm_lock);
 
@@ -363,10 +382,14 @@ void krg_put_pid(struct pid *pid)
 	spin_lock(&put_pid_wq_lock);
 	lockdep_on();
 
+	DEBUG(DBG_PID, 4, "%d\n", pid_knr(pid));
+
 	if (obj && obj->active && list_empty(&obj->wq)) {
 		BUG_ON(obj->pid != pid);
 		list_add_tail(&obj->wq, &put_pid_wq_head);
 		queue_work(krg_wq, &put_pid_work);
+
+		DEBUG(DBG_PID, 4, "%d scheduled __put_pid\n", pid_knr(pid));
 	}
 
 	lockdep_off();
@@ -399,6 +422,7 @@ static int create_pid_kddm_object(struct pid *pid, int early)
 		obj->active = !early;
 		if (early)
 			obj->node_count = 0;
+		DEBUG(DBG_PID, 4, "%d node_count=%d\n", nr, obj->node_count);
 		BUG_ON(obj->task_obj);
 		if (task_obj) {
 			BUG_ON(task_obj->pid_obj);
@@ -410,6 +434,8 @@ static int create_pid_kddm_object(struct pid *pid, int early)
 			rcu_assign_pointer(obj->task_obj->pid_obj, obj);
 		}
 		pid->kddm_obj = obj;
+
+		DEBUG(DBG_PID, 3, "Pid: %d, Active: %d\n", nr, obj->active);
 	}
 	BUG_ON(pid->kddm_obj != obj);
 	spin_unlock(&pid_kddm_lock);
@@ -431,6 +457,8 @@ int export_pid(struct epm_action *action,
 	struct pid *pid = link->pid;
 	int nr = pid_knr(pid);
 	int retval;
+
+	DEBUG(DBG_PID, 3, "%d\n", nr);
 
 	if (!(nr & GLOBAL_PID_MASK))
 		return -EPERM;
@@ -467,6 +495,9 @@ static int __reserve_pid(pid_t nr)
 	struct pid *pid;
 	int r;
 
+	DEBUG(DBG_PID, 1, "Begin - PID: %d - Node: %d\n",
+	      nr, kerrighed_node_id);
+
 	if (orig_node == kerrighed_node_id)
 		pidmap_ns = pid_ns;
 	else
@@ -502,6 +533,9 @@ static int __reserve_pid(pid_t nr)
 
 out:
 	put_pid_ns(pid_ns);
+
+	DEBUG(DBG_PID, 2, "End - PID: %d, NodeID: %d -> %d\n",
+	      nr, kerrighed_node_id, r);
 	return r;
 }
 
@@ -566,6 +600,9 @@ static int __cancel_pid_reservation(int nr)
 		goto err_no_pid;
 	}
 
+	DEBUG(DBG_PID, 1, "PID: %d (%p)\n",
+	      nr, pid);
+
 	krg_end_get_pid(pid);
 	krg_put_pid(pid);
 
@@ -617,6 +654,8 @@ int import_pid(struct epm_action *action, ghost_t *ghost, struct pid_link *link,
 	retval = ghost_read(ghost, &nr, sizeof(nr));
 	if (retval)
 		return retval;
+
+	DEBUG(DBG_PID, 3, "%d\n", nr);
 
 	if (action->type == EPM_CHECKPOINT) {
 		if ((action->restart.flags & APP_REPLACE_PGRP)
@@ -711,6 +750,7 @@ int krg_pid_link_task(pid_t pid)
 static void __pid_link_task(struct pid *pid, struct task_kddm_object *task_obj)
 {
 	if (task_obj && pid && pid->kddm_obj) {
+		DEBUG(DBG_PID, 3, "%d - task_obj: 0x%p\n", pid_knr(pid), task_obj);
 		rcu_assign_pointer(pid->kddm_obj->task_obj, task_obj);
 		rcu_assign_pointer(task_obj->pid_obj, pid->kddm_obj);
 	}
@@ -721,6 +761,9 @@ int __krg_pid_link_task(pid_t nr)
 	struct pid *pid;
 	struct task_kddm_object *task_obj;
 	int r = 0;
+
+	DEBUG(DBG_PID, 1, "Begin - PID: %d, NodeID: %d\n",
+	      nr, kerrighed_node_id);
 
 	pid = krg_get_pid(nr);
 	if (!pid) {
@@ -734,6 +777,9 @@ int __krg_pid_link_task(pid_t nr)
 	krg_task_unlock(nr);
 	krg_end_get_pid(pid);
 	krg_put_pid(pid);
+
+	DEBUG(DBG_PID, 1, "End - PID: %d, NodeID: %d\n",
+	      nr, kerrighed_node_id);
 
 out:
 	return r;

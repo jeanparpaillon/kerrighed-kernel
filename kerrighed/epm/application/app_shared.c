@@ -39,6 +39,8 @@
 #include "../epm_internal.h"
 #include "app_utils.h"
 
+#include "../debug_epm.h"
+
 /*--------------------------------------------------------------------------*/
 
 extern struct shared_object_operations cr_shared_pipe_inode_ops;
@@ -108,6 +110,9 @@ static struct rb_node * search_node(struct rb_root *root,
 {
 	struct rb_node *node = root->rb_node;
 
+	DEBUG(DBG_APP_CKPT, 3, "(root: %p) type: %d - key: %ld\n",
+	      root, type, key);
+
 	while (node) {
 		struct shared_index *idx =
 			container_of(node, struct shared_index, node);
@@ -138,6 +143,9 @@ static struct shared_index *search_shared_index(struct rb_root *root,
 {
 	struct rb_node *node = root->rb_node;
 
+	DEBUG(DBG_APP_CKPT, 3, "(root: %p) type: %d - key: %lu\n",
+	      root, type, key);
+
 	while (node) {
 		struct shared_index *idx;
 		int result;
@@ -167,6 +175,9 @@ static struct shared_index *__insert_shared_index(struct rb_root *root,
 {
 	struct rb_node **new = &(root->rb_node), *parent = NULL;
 
+	DEBUG(DBG_APP_CKPT, 3, "(root: %p) type: %d - key: %lu\n",
+	      root, idx->type, idx->key);
+
 	/* Figure out where to put new node */
 	while (*new) {
 		struct shared_index *this =
@@ -193,6 +204,9 @@ static struct shared_index *__insert_shared_index(struct rb_root *root,
 	/* Add new node and rebalance tree. */
 	rb_link_node(&idx->node, parent, new);
 	rb_insert_color(&idx->node, root);
+
+	DEBUG(DBG_APP_CKPT, 5, "(root: %p) type: %d - key: %lu inserted\n",
+	      root, idx->type, idx->key);
 
 	return idx;
 }
@@ -444,6 +458,9 @@ static void destroy_one_shared_object(struct rb_node *node,
 		container_of(idx, struct shared_object, index);
 
 	rb_erase(node, &app->shared_objects.root);
+
+	DEBUG(DBG_APP_CKPT, 3, "Destroying object %d:%lu\n",
+	      idx->type, idx->key);
 	this->ops->delete(fake, this->restart.data);
 
 	kfree(this);
@@ -555,6 +572,8 @@ static int export_shared_objects(ghost_t *ghost,
 		if (idx->type > to)
 			goto exit_write_end;
 
+		DEBUG(DBG_APP_CKPT, 3, "%d-%lu\n", idx->type, idx->key);
+
 		r = export_one_shared_object(ghost, user_ghost, &action, this);
 		clear_one_shared_object(node, app);
 
@@ -578,6 +597,8 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 
 	ghost_fs_t oldfs;
 	ghost_t *ghost, *user_ghost;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin: %ld\n", app->app_id);
 
 	__set_ghost_fs(&oldfs);
 
@@ -623,6 +644,7 @@ exit_close_ghost:
 exit_unset_fs:
 	unset_ghost_fs(&oldfs);
 
+	DEBUG(DBG_APP_CKPT, 1, "End: %ld - r=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -634,6 +656,8 @@ static int send_dist_objects_list(struct rpc_desc *desc,
 	enum shared_obj_type end = NO_OBJ;
 	struct rb_node *node;
 	int r;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin: %ld\n", app->app_id);
 
 	for (node = rb_first(&app->shared_objects.root);
 	     node ; node = rb_next(node) ) {
@@ -654,11 +678,15 @@ static int send_dist_objects_list(struct rpc_desc *desc,
 			r = rpc_pack_type(desc, this->checkpoint.locality);
 			if (r)
 				goto err_pack;
+
+			DEBUG(DBG_APP_CKPT, 5, "Object %d:%lu sended\n",
+			      idx->type, idx->key);
 		}
 	}
 	r = rpc_pack_type(desc, end);
 
 err_pack:
+	DEBUG(DBG_APP_CKPT, 1, "End: %ld - r=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -724,6 +752,9 @@ static int rcv_dist_objects_list_from(struct rpc_desc *desc,
 		s->index.key = key;
 		s->master_node = KERRIGHED_NODE_ID_NONE;
 		krgnodes_clear(s->nodes);
+
+		DEBUG(DBG_APP_CKPT, 5, "Object %d:%lu received\n",
+		      s->index.type, s->index.key);
 
 		idx = __insert_shared_index(dist_shared_indexes, &s->index);
 		if (idx != &s->index) {
@@ -791,6 +822,9 @@ static int send_full_dist_objects_list(struct rpc_desc *desc,
 		r = rpc_pack_type(desc, this->nodes);
 		if (r)
 			goto err;
+
+		DEBUG(DBG_APP_CKPT, 5, "Object %d:%lu (node %d) sended\n",
+		      idx->type, idx->key, this->master_node);
 	}
 	r = rpc_pack_type(desc, end);
 
@@ -806,6 +840,8 @@ static int rcv_full_dist_objects_list(struct rpc_desc *desc,
 	int r;
 	struct rb_node *node;
 	struct dist_shared_index s;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin: %ld\n", app->app_id);
 
 	r = rpc_unpack_type(desc, s.index.type);
 	if (r)
@@ -824,6 +860,9 @@ static int rcv_full_dist_objects_list(struct rpc_desc *desc,
 		r = rpc_unpack_type(desc, s.nodes);
 		if (r)
 			goto error;
+
+		DEBUG(DBG_APP_CKPT, 5, "Object %d:%lu (node %d) received\n",
+		      s.index.type, s.index.key, s.master_node);
 
 		node = search_node(&app->shared_objects.root,
 				   s.index.type, s.index.key);
@@ -852,6 +891,7 @@ static int rcv_full_dist_objects_list(struct rpc_desc *desc,
 	}
 
 error:
+	DEBUG(DBG_APP_CKPT, 1, "End: %ld - r=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -861,12 +901,16 @@ int local_chkpt_shared(struct rpc_desc *desc,
 {
 	int r = 0;
 
+	DEBUG(DBG_APP_CKPT, 1, "Begin - appid: %ld\n", app->app_id);
+
 	/* 1) send list of distributed objects */
 	r = send_dist_objects_list(desc, app);
 
 	r = send_result(desc, r);
 	if (r)
 		goto error;
+
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 1 done\n", app->app_id);
 
 	/* 2) receive the list of which node should dump
 	 * which distributed object */
@@ -876,9 +920,12 @@ int local_chkpt_shared(struct rpc_desc *desc,
 	if (r)
 		goto error;
 
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 2 done\n", app->app_id);
+
 	/* 4) dump the shared objects for which we are responsible */
 	r = chkpt_shared_objects(app, chkpt_sn);
 error:
+	DEBUG(DBG_APP_CKPT, 1, "End - appid: %ld, r=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -888,6 +935,8 @@ int global_chkpt_shared(struct rpc_desc *desc,
 	int r = 0;
 	kerrighed_node_t node;
 	struct rb_root dist_shared_indexes = RB_ROOT;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - appid: %ld\n", obj->app_id);
 
 	/* 1) waiting the list of shared objects */
 
@@ -903,6 +952,8 @@ int global_chkpt_shared(struct rpc_desc *desc,
 	r = app_wait_returns_from_nodes(desc, obj->nodes);
 	if (r)
 		goto err_clear_shared;
+
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 1 done\n", obj->app_id);
 
 	/* 2) send the list to every node
 	 * this is not optimized but otherwise, we need to open
@@ -922,11 +973,15 @@ int global_chkpt_shared(struct rpc_desc *desc,
 	if (r)
 		goto err_clear_shared;
 
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 3 done\n", obj->app_id);
+
 	/* 4) request them to dump the shared obj */
 	r = ask_nodes_to_continue(desc, obj->nodes, r);
 
 err_clear_shared:
 	clear_dist_shared_indexes(&dist_shared_indexes);
+
+	DEBUG(DBG_APP_CKPT, 1, "End - appid: %ld, r=%d\n", obj->app_id, r);
 	return r;
 }
 
@@ -968,6 +1023,8 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 		is_local = 0;
 	}
 
+	DEBUG(DBG_APP_CKPT, 5, "key: %lu, type: %d\n",
+	      stmp.index.key, stmp.index.type);
 	/* Look for already imported object.
 	 *
 	 * It can occur with files replaced at restart time
@@ -982,6 +1039,7 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 	/* if stmp.restart.data != NULL, data must be read from the ghost
 	 * but object must not be imported
 	 */
+
 	r = s_ops->import_now(action, ghost, fake, is_local,
 			      &stmp.restart.data,
 			      &stmp.restart.data_size);
@@ -1000,6 +1058,9 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 		s->restart.data = &s[1];
 		memcpy(s->restart.data, stmp.restart.data,s->restart.data_size);
 	}
+
+	DEBUG(DBG_APP_CKPT, 5, "%p: key: %lu, type: %d, data: %p\n",
+	      s, s->index.key, s->index.type, s->restart.data);
 
 	r = insert_shared_index(&fake->application->shared_objects.root,
 				&s->index);
@@ -1032,6 +1093,9 @@ static int import_shared_objects(ghost_t *ghost, struct app_struct *app,
 
 	while (type != NO_OBJ) {
 
+		DEBUG(DBG_APP_CKPT, 5, "Importing object of type %d\n",
+		      type);
+
 		r = import_one_shared_object(ghost, &action, fake, type);
 		if (r)
 			goto error;
@@ -1042,6 +1106,7 @@ static int import_shared_objects(ghost_t *ghost, struct app_struct *app,
 	}
 
 error:
+	DEBUG(DBG_APP_CKPT, 1, "End: %ld, r=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -1052,6 +1117,8 @@ static int send_restored_objects(struct rpc_desc *desc, struct app_struct *app,
 	enum shared_obj_type end = NO_OBJ;
 	struct rb_node *node;
 	int r;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin: %ld\n", app->app_id);
 
 	for (node = rb_first(&app->shared_objects.root);
 	     node ; node = rb_next(node) ) {
@@ -1085,11 +1152,15 @@ static int send_restored_objects(struct rpc_desc *desc, struct app_struct *app,
 				r = rpc_pack_type(desc, this->restart.data);
 			if (r)
 				goto err_pack;
+
+			DEBUG(DBG_APP_CKPT, 5, "Object %d:%lu sended\n",
+			      idx->type, idx->key);
 		}
 	}
 	r = rpc_pack_type(desc, end);
 
 err_pack:
+	DEBUG(DBG_APP_CKPT, 1, "End: %ld, r=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -1172,6 +1243,9 @@ static int rcv_restored_dist_objects_list_from(
 
 		s->data = data;
 
+		DEBUG(DBG_APP_CKPT, 5, "Object %d:%lu (node %d) received\n",
+		      s->index.type, s->index.key, node);
+
 		r = insert_shared_index(dist_shared_indexes, &s->index);
 		if (r) {
 			kfree(s);
@@ -1225,6 +1299,9 @@ static int send_full_restored_dist_objects_list(
 
 		if (r)
 			goto err_pack;
+
+		DEBUG(DBG_APP_CKPT, 5, "Object %d:%lu sended\n",
+		      idx->type, idx->key);
 	}
 	r = rpc_pack_type(desc, end);
 
@@ -1238,6 +1315,8 @@ static int rcv_full_restored_objects(
 {
 	int r;
 	struct restored_dist_shared_index s;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin: %ld\n", app->app_id);
 
 	r = rpc_unpack_type(desc, s.index.type);
 	if (r)
@@ -1277,6 +1356,9 @@ static int rcv_full_restored_objects(
 			goto error;
 		}
 
+		DEBUG(DBG_APP_CKPT, 5, "Object %d:%lu received\n",
+		      s.index.type, s.index.key);
+
 		obj->restart.locality = SHARED_SLAVE;
 		obj->restart.data = s.data;
 		obj->ops = get_shared_ops(obj->index.type);
@@ -1293,6 +1375,8 @@ static int rcv_full_restored_objects(
 	}
 
 error:
+	DEBUG(DBG_APP_CKPT, 1, "End: %ld, r=%d\n", app->app_id, r);
+
 	return r;
 }
 
@@ -1667,6 +1751,11 @@ int local_restart_shared_complete(struct app_struct *app,
 
 		BUG_ON(this->restart.locality == SHARED_ANY);
 
+		DEBUG(DBG_APP_CKPT, 3, "shared_obj: %d, %lu - "
+		      "data: %p locality:%d\n",
+		      idx->type, idx->key, this->restart.data,
+		      this->restart.locality);
+
 		if (this->restart.locality == LOCAL_ONLY
 		    || this->restart.locality == SHARED_MASTER)
 			this->ops->import_complete(fake, this->restart.data);
@@ -1724,6 +1813,9 @@ err_import:
 	if (r)
 		goto err;
 
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 1 (shared files) done\n",
+	      app->app_id);
+
 	/* 2) send list of restored objects that are shared with other nodes */
 	r = send_restored_objects(desc, app, from, to);
 
@@ -1731,10 +1823,15 @@ err_import:
 	if (r)
 		goto err;
 
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 2 done\n", app->app_id);
+
 	/* 3) receive objects information from other nodes */
 	r = rcv_full_restored_objects(desc, app);
 	if (r)
 		goto err;
+
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 3 done\n",
+	      app->app_id);
 
 err:
 	return r;
@@ -1749,6 +1846,8 @@ int local_restart_shared(struct rpc_desc *desc,
 	loff_t *ghost_offsets;
 	ghost_fs_t oldfs;
 	int r, nb_nodes;
+
+	DEBUG(DBG_APP_CKPT, 1, "Begin - appid: %ld\n", app->app_id);
 
 	__set_ghost_fs(&oldfs);
 
@@ -1765,12 +1864,16 @@ int local_restart_shared(struct rpc_desc *desc,
 	if (r)
 		goto err_ghost_offset;
 
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 1 done\n", app->app_id);
+
 	/* 2) restore pipes and files */
 	r = local_restart_shared_objects(desc, app, fake, chkpt_sn,
 					 PIPE_INODE, DVFS_FILE,
 					 ghost_offsets);
 	if (r)
 		goto err_ghost_offset;
+
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 2 done\n", app->app_id);
 
 	/* 3) restore other objects */
 	r = local_restart_shared_objects(desc, app, fake, chkpt_sn,
@@ -1779,11 +1882,14 @@ int local_restart_shared(struct rpc_desc *desc,
 	if (r)
 		goto err_ghost_offset;
 
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 3 done\n", app->app_id);
+
 err_ghost_offset:
 	kfree(ghost_offsets);
 
 err_ghost_fs:
 	unset_ghost_fs(&oldfs);
+	DEBUG(DBG_APP_CKPT, 1, "End - appid: %ld, r=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -1800,6 +1906,8 @@ static int global_restart_shared_objects(struct rpc_desc *desc,
 	if (r)
 		goto error;
 
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 1 done\n", obj->app_id);
+
 	/* 2) request the list of restored distributed objects */
 	err_rpc = rpc_pack_type(desc, r);
 	if (err_rpc)
@@ -1815,6 +1923,8 @@ static int global_restart_shared_objects(struct rpc_desc *desc,
 	r = app_wait_returns_from_nodes(desc, obj->nodes);
 	if (r)
 		goto error;
+
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 2 done\n", obj->app_id);
 
 	/* 3) Send the list to every node
 	 * this is not optimized but otherwise, we need to open
@@ -1849,15 +1959,21 @@ int global_restart_shared(struct rpc_desc *desc,
 	if (r)
 		goto error;
 
+	DEBUG(DBG_APP_CKPT, 1, "Begin - appid: %ld\n", obj->app_id);
+
 	/* manage shared pipes and files */
 	r = global_restart_shared_objects(desc, obj);
 	if (r)
 		goto error;
 
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 1 done\n", obj->app_id);
+
 	/* manage shared objects */
 	r = global_restart_shared_objects(desc, obj);
 	if (r)
 		goto error;
+
+	DEBUG(DBG_APP_CKPT, 3, "(%ld) Step 2 done\n", obj->app_id);
 
 error:
 	clear_substitution_files(&substitute_files);
@@ -1866,6 +1982,7 @@ error:
 			 "Fail to restore shared objects of application %ld",
 			 obj->app_id);
 
+	DEBUG(DBG_APP_CKPT, 1, "End - appid: %ld, r=%d\n", obj->app_id, r);
 	return r;
 }
 

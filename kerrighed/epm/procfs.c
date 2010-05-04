@@ -16,6 +16,9 @@
 #include <kerrighed/krg_services.h>
 #include <kerrighed/procfs.h>
 #include <kerrighed/migration.h>
+
+#include "debug_epm.h"
+
 #include "migration.h"
 #include "application/application_cr_api.h"
 
@@ -30,6 +33,8 @@ static struct proc_dir_entry *proc_epm = NULL;
 static int proc_migrate_process(void __user *arg)
 {
 	migration_infos_t migration_info;
+
+	DEBUG(DBG_PROCFS, 1, "Starting...\n");
 
 	if (copy_from_user(&migration_info, arg, sizeof(migration_info)))
 		return -EFAULT;
@@ -47,6 +52,8 @@ static int proc_migrate_process(void __user *arg)
 static int proc_migrate_thread(void __user *arg)
 {
 	migration_infos_t migration_info;
+
+	DEBUG(DBG_PROCFS, 1, "Starting...\n");
 
 	if (copy_from_user(&migration_info, arg, sizeof(migration_info)))
 		return -EFAULT;
@@ -375,6 +382,8 @@ err:
 
 void epm_procfs_exit(void)
 {
+	DEBUG(DBG_PROCFS, 1, "starting...\n");
+
 	unregister_proc_service(KSYS_PROCESS_MIGRATION);
 	unregister_proc_service(KSYS_THREAD_MIGRATION);
 	unregister_proc_service(KSYS_APP_FREEZE);
@@ -387,5 +396,8 @@ void epm_procfs_exit(void)
 	unregister_proc_service(KSYS_APP_CR_ENABLE);
 	unregister_proc_service(KSYS_APP_CR_EXCLUDE);
 
+	DEBUG(DBG_PROCFS, 2, "procfs_deltree proc_aragorn\n");
 	procfs_deltree(proc_epm);
+
+	DEBUG(DBG_PROCFS, 1, "aragorn services unregistered\n");
 }

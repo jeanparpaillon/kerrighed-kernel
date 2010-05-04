@@ -19,6 +19,9 @@
 #include <kerrighed/task.h>
 #include <kerrighed/pid.h>
 #include <kerrighed/krginit.h>
+
+#include "debug_epm.h"
+
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 #include <kerrighed/krg_exit.h>	/* For remote zombies handling */
@@ -72,13 +75,18 @@ static hashtable_t *krg_parent_table; /* list_head of local children */
 
 void krg_children_get(struct children_kddm_object *obj)
 {
-	if (obj)
+	if (obj) {
 		kref_get(&obj->kref);
+		DEBUG(DBG_CHILDREN, 4, "%d count=%d\n",
+		      obj->tgid, atomic_read(&obj->kref.refcount));
+	}
 }
 
 static void children_free(struct children_kddm_object *obj)
 {
 	struct remote_child *child, *next;
+
+	DEBUG(DBG_CHILDREN, 2, "%d\n", obj->tgid);
 
 	list_for_each_entry_safe(child, next, &obj->children, sibling) {
 		list_del(&child->sibling);
@@ -103,8 +111,11 @@ static void children_free_rcu(struct kref *kref)
 
 void krg_children_put(struct children_kddm_object *obj)
 {
-	if (obj)
+	if (obj) {
+		DEBUG(DBG_CHILDREN, 4, "%d count=%d\n",
+		      obj->tgid, atomic_read(&obj->kref.refcount));
 		kref_put(&obj->kref, children_free_rcu);
+	}
 }
 
 static inline void remove_child_links(struct children_kddm_object *obj,
@@ -152,6 +163,8 @@ static int children_alloc_object(struct kddm_obj *obj_entry,
 	kref_init(&obj->kref);
 	obj_entry->object = obj;
 
+	DEBUG(DBG_CHILDREN, 2, "%d obj=0x%p\n", tgid, obj);
+
 	return 0;
 }
 
@@ -173,6 +186,8 @@ static int children_export_object(struct rpc_desc *desc,
 
 	BUG_ON(!obj);
 	BUG_ON(!(obj->tgid & GLOBAL_PID_MASK));
+
+	DEBUG(DBG_CHILDREN, 3, "%d\n", obj->tgid);
 
 	retval = rpc_pack_type(desc, obj->nr_children);
 	if (unlikely(retval))
@@ -210,6 +225,8 @@ static int children_import_object(struct rpc_desc *desc,
 	BUG_ON(!obj);
 	BUG_ON(!(obj->tgid & GLOBAL_PID_MASK));
 
+	DEBUG(DBG_CHILDREN, 3, "%d\n", obj->tgid);
+
 	retval = rpc_unpack_type(desc, nr_children);
 	if (unlikely(retval))
 		goto out;
@@ -220,6 +237,8 @@ static int children_import_object(struct rpc_desc *desc,
 	if (unlikely(retval))
 		goto out;
 
+	DEBUG(DBG_CHILDREN, 4, "existing=%lu, incoming=%lu\n",
+	      obj->nr_children, nr_children);
 	min_children = min(nr_children, obj->nr_children);
 
 	/* Reuse allocated elements as much as possible */
@@ -247,6 +266,7 @@ static int children_import_object(struct rpc_desc *desc,
 			goto err_free_child;
 		/* Put the child to the obj->children list */
 		set_child_links(obj, child);
+		DEBUG(DBG_CHILDREN, 4, "(existing) #%lu %d\n", i, child->pid);
 		i++;
 	}
 	BUG_ON(i != min_children);
@@ -262,12 +282,14 @@ static int children_import_object(struct rpc_desc *desc,
 		if (unlikely(retval))
 			goto err_free_child;
 		set_child_links(obj, child);
+		DEBUG(DBG_CHILDREN, 4, "(added) #%lu %d\n", i, child->pid);
 	}
 	BUG_ON(i != nr_children);
 
 	obj->nr_children = nr_children;
 
 out:
+	DEBUG(DBG_CHILDREN, 3, "retval=%d\n", retval);
 	return retval;
 
 err_free_child:
@@ -282,6 +304,8 @@ static int children_remove_object(void *object, struct kddm_set *set,
 
 	obj = object;
 	BUG_ON(!obj);
+
+	DEBUG(DBG_CHILDREN, 2, "%d\n", obj->tgid);
 
 	obj->alive = 0;
 	krg_children_put(obj);
@@ -313,9 +337,11 @@ struct children_kddm_object *krg_children_readlock(pid_t tgid)
 		down_read(&obj->sem);
 		/* Marker for unlock. Dirty but temporary. */
 		obj->write_locked = 0;
+		DEBUG(DBG_CHILDREN, 3, "%d down_read\n", tgid);
 	} else {
 		_kddm_put_object(children_kddm_set, tgid);
 	}
+	DEBUG(DBG_CHILDREN, 2, "%d 0x%p\n", tgid, obj);
 
 	return obj;
 }
@@ -341,9 +367,11 @@ static struct children_kddm_object *children_writelock(pid_t tgid, int nested)
 			down_write_nested(&obj->sem, SINGLE_DEPTH_NESTING);
 		/* Marker for unlock. Dirty but temporary. */
 		obj->write_locked = 1;
+		DEBUG(DBG_CHILDREN, 3, "%d down_write\n", tgid);
 	} else {
 		_kddm_put_object(children_kddm_set, tgid);
 	}
+	DEBUG(DBG_CHILDREN, 2, "%d 0x%p\n", tgid, obj);
 
 	return obj;
 }
@@ -374,9 +402,11 @@ static struct children_kddm_object *children_create_writelock(pid_t tgid)
 		down_write(&obj->sem);
 		/* Marker for unlock. Dirty but temporary. */
 		obj->write_locked = 1;
+		DEBUG(DBG_CHILDREN, 3, "%d down_write\n", tgid);
 	} else {
 		_kddm_put_object(children_kddm_set, tgid);
 	}
+	DEBUG(DBG_CHILDREN, 2, "%d 0x%p\n", tgid, obj);
 
 	return obj;
 }
@@ -385,10 +415,16 @@ void krg_children_unlock(struct children_kddm_object *obj)
 {
 	pid_t tgid = obj->tgid;
 
-	if (obj->write_locked)
+	DEBUG(DBG_CHILDREN, 2, "%d\n", tgid);
+
+	DEBUG(DBG_CHILDREN, 3, "%d 0x%p\n", tgid, obj);
+	if (obj->write_locked) {
+		DEBUG(DBG_CHILDREN, 3, "%d up_write\n", tgid);
 		up_write(&obj->sem);
-	else
+	} else {
+		DEBUG(DBG_CHILDREN, 3, "%d up_read\n", tgid);
 		up_read(&obj->sem);
+	}
 
 	_kddm_put_object(children_kddm_set, tgid);
 }
@@ -401,6 +437,8 @@ children_alloc(struct task_struct *task, pid_t tgid)
 
 	/* Filter well known cases of no children kddm object. */
 	BUG_ON(!(tgid & GLOBAL_PID_MASK));
+
+	DEBUG(DBG_CHILDREN, 1, "%d\n", tgid);
 
 	obj = children_create_writelock(tgid);
 	if (obj) {
@@ -426,6 +464,8 @@ static void free_children(struct task_struct *task)
 	BUG_ON(!list_empty(&obj->children));
 	BUG_ON(obj->nr_threads);
 
+	DEBUG(DBG_CHILDREN, 1, "%d\n", obj->tgid);
+
 	rcu_assign_pointer(task->children_obj, NULL);
 
 	up_write(&obj->sem);
@@ -435,6 +475,7 @@ static void free_children(struct task_struct *task)
 void __krg_children_share(struct task_struct *task)
 {
 	struct children_kddm_object *obj = task->children_obj;
+	DEBUG(DBG_CHILDREN, 1, "%d by %d\n", obj->tgid, task_pid_knr(task));
 	obj->nr_threads++;
 }
 
@@ -455,6 +496,8 @@ void krg_children_exit(struct task_struct *task)
 {
 	struct children_kddm_object *obj = task->children_obj;
 	int free;
+
+	DEBUG(DBG_CHILDREN, 1, "%d\n", obj->tgid);
 
 	free = !(--obj->nr_threads);
 	if (free) {
@@ -481,6 +524,8 @@ static int new_child(struct children_kddm_object *obj,
 	if (!obj)
 		return 0;
 	BUG_ON(parent_pid == 1);
+
+	DEBUG(DBG_CHILDREN, 2, "%d welcomes %d\n", obj->tgid, pid_knr(pid));
 
 	item = kmem_cache_alloc(remote_child_cachep, GFP_ATOMIC);
 	if (!item)
@@ -606,6 +651,8 @@ void krg_set_child_location(struct children_kddm_object *obj,
 static void remove_child(struct children_kddm_object *obj,
 			 struct remote_child *child)
 {
+	DEBUG(DBG_CHILDREN, 2, "%d abandons %d\n", obj->tgid, child->pid);
+
 	remove_child_links(obj, child);
 	kmem_cache_free(remote_child_cachep, child);
 	obj->nr_children--;
@@ -707,6 +754,7 @@ static int krg_eligible_child(struct children_kddm_object *obj,
 {
 	int retval = 0;
 
+	DEBUG(DBG_CHILDREN, 3, "%d check pid/pgid\n", child->pid);
 	switch (type) {
 	case PIDTYPE_PID:
 		if (child->pid != pid)
@@ -722,6 +770,7 @@ static int krg_eligible_child(struct children_kddm_object *obj,
 		BUG();
 	}
 
+	DEBUG(DBG_CHILDREN, 3, "%d check options\n", child->pid);
 	/* Wait for all children (clone and not) if __WALL is set;
 	 * otherwise, wait for clone children *only* if __WCLONE is
 	 * set; otherwise, wait for non-clone children *only*.  (Note:
@@ -736,6 +785,7 @@ static int krg_eligible_child(struct children_kddm_object *obj,
 	retval = 1;
 
 out:
+	DEBUG(DBG_CHILDREN, 3, "%d retval=%d\n", child->pid, retval);
 	return retval;
 }
 
@@ -777,6 +827,7 @@ bool krg_wait_consider_task(struct children_kddm_object *obj,
 		 * We aren't allowed to see it now, but eventually we will.
 		 */
 		*notask_error = 0;
+		DEBUG(DBG_CHILDREN, 3, "%d ptraced\n", child->pid);
 		return false;
 	}
 
@@ -794,10 +845,14 @@ bool krg_wait_consider_task(struct children_kddm_object *obj,
 	if (child->exit_state == EXIT_ZOMBIE
 	    && !krg_delay_group_leader(child)) {
 		/* Avoid doing an RPC when we already know the result */
-		if (!likely(options & WEXITED))
+		if (!likely(options & WEXITED)) {
+			DEBUG(DBG_CHILDREN, 3,
+			      "%d zombie && !WEXITED\n", child->pid);
 			return false;
+		}
 
 		krg_children_unlock(current->children_obj);
+		DEBUG(DBG_CHILDREN, 3, "%d zombie\n", child->pid);
 		*tsk_result = krg_wait_task_zombie(child->pid, child->node,
 						   options,
 						   infop, stat_addr, ru);
@@ -810,6 +865,8 @@ bool krg_wait_consider_task(struct children_kddm_object *obj,
 	 */
 	*notask_error = 0;
 
+	DEBUG(DBG_CHILDREN, 3,
+	      "%d skipped (stopped or continued?)\n", child->pid);
 	/* Check for stopped and continued task is not implemented right now. */
 	return false;
 }
@@ -836,6 +893,7 @@ int krg_do_wait(struct children_kddm_object *obj, int *notask_error,
 	if (!is_krg_pid_ns_root(task_active_pid_ns(current)))
 		goto out_unlock;
 
+	DEBUG(DBG_CHILDREN, 2, "\n");
 	/*
 	 * Children attached by ptrace cannot be remote, so we only examine
 	 * regular children.
@@ -845,8 +903,11 @@ retry:
 	/* Remote version of do_wait_thread() */
 	list_for_each_entry(item, &obj->children, sibling) {
 		if ((options & __WNOTHREAD)
-		    && item->real_parent != current_pid)
+		    && item->real_parent != current_pid) {
+			DEBUG(DBG_CHILDREN, 3,
+			      "%d skipped (other's child)\n", item->pid);
 			continue;
+		}
 
 		/*
 		 * Do not consider detached threads.
@@ -862,12 +923,16 @@ retry:
 				__krg_children_readlock(current);
 				goto retry;
 			}
+		} else {
+			DEBUG(DBG_CHILDREN, 3,
+			      "%d skipped (detached)\n", item->pid);
 		}
 	}
 
 out_unlock:
 	krg_children_unlock(current->children_obj);
 out:
+	DEBUG(DBG_CHILDREN, 2, "ret=%d\n", ret);
 	return ret;
 }
 
@@ -982,9 +1047,13 @@ krg_parent_children_writelock(struct task_struct *task, pid_t *parent_tgid)
 	BUG_ON(!tgid);
 	reaper_tgid = task_tgid_knr(task_active_pid_ns(task)->child_reaper);
 	if (!obj || tgid == reaper_tgid) {
+		DEBUG(DBG_CHILDREN, 2, "%d no parent_children_obj\n",
+		      task_pid_knr(task));
 		obj = NULL;
 		goto out;
 	}
+
+	DEBUG(DBG_CHILDREN, 2, "try %d -> %d\n", task_pid_knr(task), tgid);
 
 	obj = krg_children_writelock(tgid);
 	/*
@@ -1003,6 +1072,7 @@ krg_parent_children_writelock(struct task_struct *task, pid_t *parent_tgid)
 	}
 
 out:
+	DEBUG(DBG_CHILDREN, 2, "%d -> %d\n", task_pid_knr(task), tgid);
 	*parent_tgid = tgid;
 	return obj;
 }
@@ -1022,9 +1092,13 @@ krg_parent_children_readlock(struct task_struct *task, pid_t *parent_tgid)
 	BUG_ON(!tgid);
 	reaper_tgid = task_tgid_knr(task_active_pid_ns(task)->child_reaper);
 	if (!obj || tgid == reaper_tgid) {
+		DEBUG(DBG_CHILDREN, 2, "%d no parent_children_obj\n",
+		      task_pid_knr(task));
 		obj = NULL;
 		goto out;
 	}
+
+	DEBUG(DBG_CHILDREN, 2, "try %d -> %d\n", task_pid_knr(task), tgid);
 
 	obj = krg_children_readlock(tgid);
 	/*
@@ -1043,6 +1117,7 @@ krg_parent_children_readlock(struct task_struct *task, pid_t *parent_tgid)
 	}
 
 out:
+	DEBUG(DBG_CHILDREN, 2, "%d -> %d\n", task_pid_knr(task), tgid);
 	*parent_tgid = tgid;
 	return obj;
 }
@@ -1283,12 +1358,18 @@ static void reparent_to_baby_sitter(struct task_struct *orphan,
 static void leave_baby_sitter(struct task_struct *tsk, pid_t old_parent)
 {
 	BUG_ON(tsk->real_parent != baby_sitter);
+	DEBUG(DBG_CHILDREN, 2,
+	      "%d old_parent=%d -> real_parent=%d parent=%d\n",
+	      task_pid_knr(tsk), old_parent,
+	      tsk->task_obj->real_parent, tsk->task_obj->parent);
 	update_relatives(tsk);
 	BUG_ON(tsk->parent == baby_sitter);
 	BUG_ON(tsk->real_parent == baby_sitter);
 
 	remove_from_krg_parent(tsk, old_parent);
 	list_add_tail(&tsk->sibling, &tsk->real_parent->children);
+	DEBUG(DBG_CHILDREN, 2, "%d real_parent=%d, parent=%d\n",
+	      task_pid_knr(tsk), task_pid_knr(tsk->real_parent), task_pid_knr(tsk->parent));
 }
 
 /*
@@ -1666,6 +1747,8 @@ void epm_children_start(void)
 	krg_parent_table = hashtable_new(PROCESS_HASH_TABLE_SIZE);
 	if (!krg_parent_table)
 		OOM;
+
+	DEBUG(DBG_CHILDREN, 1, "Done\n");
 }
 
 /**

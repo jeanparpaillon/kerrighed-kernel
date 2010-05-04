@@ -19,6 +19,9 @@
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
+
+#include "../debug_epm.h"
+
 #include "../epm_internal.h"
 #include "../checkpoint.h"
 #include "app_checkpoint.h"
@@ -49,6 +52,8 @@ static int app_alloc_object(struct kddm_obj *obj_entry,
 {
 	struct app_kddm_object *a;
 
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid %ld\n", objid);
+
 	a = kmem_cache_alloc(app_kddm_obj_cachep, GFP_KERNEL);
 	if (a == NULL)
 		return -ENOMEM;
@@ -59,6 +64,7 @@ static int app_alloc_object(struct kddm_obj *obj_entry,
 	a->user_data = 0;
 	obj_entry->object = a;
 
+	DEBUG(DBG_APPLICATION, 1, "End - Appid %ld\n", objid);
 	return 0;
 }
 
@@ -86,6 +92,8 @@ struct app_struct *new_local_app(long app_id)
 	struct app_struct *app;
 	int r;
 
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid %ld\n", app_id);
+
 	app = kmem_cache_zalloc(app_struct_cachep, GFP_KERNEL);
 	if (!app) {
 		app = ERR_PTR(-ENOMEM);
@@ -112,6 +120,7 @@ struct app_struct *new_local_app(long app_id)
 		goto error_hash;
 
 exit:
+	DEBUG(DBG_APPLICATION, 1, "End - Appid %ld\n", app_id);
 	return app;
 
 error_hash:
@@ -127,6 +136,9 @@ int __delete_local_app(struct app_struct *app)
 	/* should be really rare ...*/
 	if (!local_tasks_list_empty(app))
 		goto exit_wo_deleting;
+
+	DEBUG(DBG_APPLICATION, 1, "Removing local reference to app %ld\n",
+	      app->app_id);
 
 	hashtable_remove(app_struct_table, app->app_id);
 	mutex_unlock(&app->mutex);
@@ -164,12 +176,15 @@ void delete_app(struct app_struct *app)
 	krgnode_clear(kerrighed_node_id, obj->nodes);
 
 	if (krgnodes_empty(obj->nodes)) {
+		DEBUG(DBG_APPLICATION, 1, "DESTROYING APP %ld\n",
+		      obj->app_id);
 		_kddm_remove_frozen_object(app_kddm_set, obj->app_id);
 		goto exit;
 	}
 
 exit_put:
 	_kddm_put_object(app_kddm_set, obj->app_id);
+	DEBUG(DBG_APPLICATION, 1, "End - Appid %ld\n", obj->app_id);
 exit:
 	return;
 }
@@ -188,6 +203,8 @@ int create_application(struct task_struct *task)
 	if (obj->app_id == app_id) {
 		_kddm_put_object(app_kddm_set, app_id);
 		r = -EBUSY;
+		DEBUG(DBG_APPLICATION, 1, "AppID %ld already exists\n",
+		      app_id);
 		goto exit;
 	}
 
@@ -207,6 +224,7 @@ int create_application(struct task_struct *task)
 	register_task_to_app(app, task);
 	_kddm_put_object(app_kddm_set, app_id);
 exit:
+	DEBUG(DBG_APPLICATION, 1, "End - Appid %ld\n", app_id);
 	return r;
 }
 
@@ -273,8 +291,13 @@ int register_task_to_app(struct app_struct *app,
 	int r = 0;
 	task_state_t *t;
 
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid %ld\n", app->app_id);
+
 	BUG_ON(!app);
 	BUG_ON(!task);
+
+	DEBUG(DBG_APPLICATION, 1, "Task %d (%s) registers to application %ld\n",
+	      task_pid_knr(task), task->comm, app->app_id);
 
 	t = alloc_task_state_from_task(task);
 	if (IS_ERR(t)) {
@@ -288,6 +311,7 @@ int register_task_to_app(struct app_struct *app,
 	list_add_tail(&t->next_task, &app->tasks);
 	mutex_unlock(&app->mutex);
 
+	DEBUG(DBG_APPLICATION, 1, "End - Appid %ld\n", app->app_id);
 err:
 	return r;
 }
@@ -298,6 +322,9 @@ static int register_task_to_appid(long app_id,
 	int r;
 	struct app_struct *app;
 	struct app_kddm_object *obj;
+
+	DEBUG(DBG_APPLICATION, 1, "Task %d (%s) registers to APPID %ld\n",
+	      task->pid, task->comm, app_id);
 
 	obj = _kddm_grab_object_no_ft(app_kddm_set, app_id);
 	BUG_ON(!obj);
@@ -323,7 +350,12 @@ void unregister_task_to_app(struct app_struct *app, struct task_struct *task)
 	struct list_head *tmp, *element;
 	task_state_t *t;
 
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid %ld, PID %d\n",
+	      app->app_id, task_pid_knr(task));
+
 	BUG_ON(!app);
+	DEBUG(DBG_APPLICATION, 1, "Task %d (%s) UNregisters to application %ld\n",
+	      task_pid_knr(task), task->comm, app->app_id);
 
 	/* remove the task */
 	mutex_lock(&app->mutex);
@@ -342,6 +374,8 @@ void unregister_task_to_app(struct app_struct *app, struct task_struct *task)
 exit:
 	mutex_unlock(&app->mutex);
 	delete_app(app);
+
+	DEBUG(DBG_APPLICATION, 1, "End - PID %d\n", task_pid_knr(task));
 }
 
 /*--------------------------------------------------------------------------*/
@@ -354,6 +388,9 @@ task_state_t *__set_task_result(struct task_struct *task, int result)
 
 	app = task->application;
 
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid: %ld, Pid: %d, result: %d\n",
+	      app->app_id, task_pid_knr(task), result);
+
 	list_for_each_entry(t, &app->tasks, next_task) {
 		if (task == t->task) {
 			t->result = result;
@@ -365,8 +402,13 @@ task_state_t *__set_task_result(struct task_struct *task, int result)
 			done_for_all_tasks = 0;
 	}
 
-	if (done_for_all_tasks)
+	if (done_for_all_tasks) {
+		DEBUG(DBG_APPLICATION, 3, "Done for all tasks!\n");
 		complete(&app->tasks_chkpted);
+	}
+
+	DEBUG(DBG_APPLICATION, 1, "End - Appid: %ld, Pid: %d\n",
+	      app->app_id, task_pid_knr(task));
 
 	BUG_ON(!ret);
 
@@ -486,6 +528,8 @@ int krg_copy_application(struct task_struct *task)
 	if (!task->nsproxy->krg_ns)
 		return 0;
 
+	DEBUG(DBG_APPLICATION, 4, "Begin - Pid %d\n", task_pid_knr(task));
+
 	/* father is no more checkpointable? */
 	if (!cap_raised(current->krg_caps.effective, CAP_CHECKPOINTABLE) &&
 	    current->application)
@@ -518,6 +562,8 @@ int krg_copy_application(struct task_struct *task)
 	   r = create_application(task);*/
 
 err:
+	DEBUG(DBG_APPLICATION, 4, "End - Pid %d, r=%d\n", task_pid_knr(task), r);
+
 	return r;
 }
 
@@ -554,6 +600,7 @@ int export_application(struct epm_action *action,
 	else
 		app_id = task->application->app_id;
 
+	DEBUG(DBG_GHOST_MNGMT, 1, "%ld\n", app_id);
 	r = ghost_write(ghost, &app_id, sizeof(long));
 
 	return r;
@@ -570,6 +617,8 @@ int import_application(struct epm_action *action,
 	r = ghost_read(ghost, &app_id, sizeof(long));
 	if (r)
 		goto out;
+
+	DEBUG(DBG_GHOST_MNGMT, 1, "%ld\n", app_id);
 
 	if (action->type == EPM_CHECKPOINT)
 		return 0;
@@ -638,6 +687,8 @@ static inline int __local_stop(struct app_struct *app)
 	task_state_t *tsk;
 	int r = 0;
 
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid: %ld\n", app->app_id);
+
 	BUG_ON(list_empty(&app->tasks));
 
 stop_all_running:
@@ -672,6 +723,7 @@ stop_all_running:
 			goto stop_all_running;
 	}
 
+	DEBUG(DBG_APPLICATION, 1, "End - Appid: %ld, r=%d\n", app->app_id, r);
 	return r;
 }
 
@@ -687,6 +739,8 @@ static void handle_app_stop(struct rpc_desc *desc, void *_msg, size_t size)
 	struct app_struct *app;
 	const struct cred *old_cred;
 
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid: %ld\n", msg->app_id);
+
 	app = find_local_app(msg->app_id);
 	BUG_ON(!app);
 
@@ -701,6 +755,7 @@ static void handle_app_stop(struct rpc_desc *desc, void *_msg, size_t size)
 	revert_creds(old_cred);
 
 send_res:
+	DEBUG(DBG_APPLICATION, 1, "End - Appid: %ld - r=%d\n", msg->app_id, r);
 	r = rpc_pack_type(desc, r);
 	if (r)
 		rpc_cancel(desc);
@@ -731,6 +786,7 @@ int global_stop(struct app_kddm_object *obj)
 exit:
 	rpc_end(desc, 0);
 
+	DEBUG(DBG_APPLICATION, 1, "End - Appid: %ld\n", obj->app_id);
 	return r;
 err_rpc:
 	rpc_cancel(desc);
@@ -744,6 +800,11 @@ static void __continue_task(task_state_t *tsk, int first_run)
 {
 	BUG_ON(!tsk);
 
+	DEBUG(DBG_APPLICATION, 1, "Begin - Pid: %d, first_run: %d\n",
+	      task_pid_knr(tsk->task), first_run);
+	DEBUG(DBG_APPLICATION, 1, "Wake up process %d\n",
+			task_pid_knr(tsk->task));
+
 	krg_action_stop(tsk->task, EPM_CHECKPOINT);
 
 	if (!first_run)
@@ -752,11 +813,17 @@ static void __continue_task(task_state_t *tsk, int first_run)
 		wake_up_new_task(tsk->task, CLONE_VM);
 
 	tsk->result = PCUS_RUNNING;
+
+	DEBUG(DBG_APPLICATION, 1, "End - Pid: %d, first_run: %d\n",
+	      task_pid_knr(tsk->task), first_run);
+
 }
 
 static void __local_continue(struct app_struct *app, int first_run)
 {
 	task_state_t *tsk;
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid: %ld, first_run: %d\n",
+	      app->app_id, first_run);
 
 	BUG_ON(!app);
 
@@ -785,6 +852,8 @@ static void handle_app_continue(struct rpc_desc *desc, void *_msg, size_t size)
 	struct app_continue_msg *msg = _msg;
 	struct app_struct *app = find_local_app(msg->app_id);
 
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid: %ld, first_run: %d\n",
+	      msg->app_id, msg->first_run);
 	BUG_ON(!app);
 
 	__local_continue(app, msg->first_run);
@@ -816,6 +885,9 @@ static int global_continue(struct app_kddm_object *obj)
 	else
 		msg.first_run = 0;
 
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid: %ld, first_run: %d\n",
+	      obj->app_id, msg.first_run);
+
 	desc = rpc_begin_m(APP_CONTINUE, &obj->nodes);
 
 	r = rpc_pack_type(desc, msg);
@@ -828,6 +900,8 @@ static int global_continue(struct app_kddm_object *obj)
 exit:
 	rpc_end(desc, 0);
 
+	DEBUG(DBG_APPLICATION, 1, "End - Appid: %ld, first_run: %d\n",
+	      obj->app_id, msg.first_run);
 	return r;
 
 err_rpc:
@@ -858,6 +932,8 @@ static inline int __local_kill(struct app_struct *app, int signal)
 	int retval = 0;
 	int r = 0;
 	task_state_t *tsk;
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid: %ld, signal: %d\n",
+	      app->app_id, signal);
 
 	BUG_ON(!app);
 
@@ -889,6 +965,7 @@ static void handle_app_kill(struct rpc_desc *desc, void *_msg, size_t size)
 	struct app_struct *app = find_local_app(msg->app_id);
 	const struct cred *old_cred;
 
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid: %ld\n", msg->app_id);
 	BUG_ON(!app);
 
 	old_cred = unpack_override_creds(desc);
@@ -917,6 +994,8 @@ static int global_kill(struct app_kddm_object *obj, int signal)
 	struct app_kill_msg msg;
 	int r = 0;
 
+	DEBUG(DBG_APPLICATION, 1, "Begin - Appid: %ld\n", obj->app_id);
+
 	/* prepare message */
 	msg.requester = kerrighed_node_id;
 	msg.app_id = obj->app_id;
@@ -937,6 +1016,7 @@ static int global_kill(struct app_kddm_object *obj, int signal)
 exit:
 	rpc_end(desc, 0);
 
+	DEBUG(DBG_APPLICATION, 1, "End - Appid: %ld\n", obj->app_id);
 	return r;
 
 err_rpc:
@@ -1136,6 +1216,8 @@ void application_cr_server_init(void)
 	cache_flags |= SLAB_POISON;
 #endif
 
+	DEBUG(DBG_APPLICATION, 1, "Application Checkpoint Server init\n");
+
 	app_struct_table = hashtable_new(5);
 
 	/*------------------------------------------------------------------*/
@@ -1160,6 +1242,8 @@ void application_cr_server_init(void)
 	application_frontier_rpc_init();
 	application_checkpoint_rpc_init();
 	application_restart_rpc_init();
+
+	DEBUG(DBG_APPLICATION, 1, "Done\n");
 }
 
 void application_cr_server_finalize(void)

@@ -21,6 +21,9 @@
 #endif
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
+
+#include "debug_epm.h"
+
 #include "network_ghost.h"
 
 struct vfork_done_proxy {
@@ -70,6 +73,7 @@ int krg_do_fork(unsigned long clone_flags,
 	}
 
 	retval = krg_action_start(task, EPM_REMOTE_CLONE);
+	DEBUG(DBG_RCLONE, 3, "action_start: retval=%d\n", retval);
 	if (retval)
 		goto out;
 
@@ -80,8 +84,12 @@ int krg_do_fork(unsigned long clone_flags,
 		distant_node = kerrighed_node_id;
 	distant_node = krgnode_next_online_in_ring(distant_node);
 #endif
-	if (distant_node < 0 || distant_node == kerrighed_node_id)
+	DEBUG(DBG_RCLONE, 2, "%d(%s) -> %d\n",
+	      task_pid_knr(current), current->comm, distant_node);
+	if (distant_node < 0 || distant_node == kerrighed_node_id) {
+		DEBUG(DBG_RCLONE, 1, "No need to use distant_fork\n");
 		goto out_action_stop;
+	}
 
 	retval = -ENOMEM;
 	desc = rpc_begin(RPC_EPM_REMOTE_CLONE, distant_node);
@@ -118,6 +126,8 @@ out_action_stop:
 	krg_action_stop(task, EPM_REMOTE_CLONE);
 
 out:
+	DEBUG(DBG_RCLONE, 1, "remote_pid=%d\n", remote_pid);
+
 	return remote_pid;
 }
 
@@ -126,15 +136,20 @@ static void handle_remote_clone(struct rpc_desc *desc, void *msg, size_t size)
 	struct epm_action *action = msg;
 	struct task_struct *task;
 
+	DEBUG(DBG_RCLONE, 1, "start\n");
 	task = recv_task(desc, action);
 	if (!task) {
 		rpc_cancel(desc);
+		DEBUG(DBG_RCLONE, 1, "failed\n");
 		return;
 	}
 
+	DEBUG(DBG_RCLONE, 1, "0x%p:%d\n", task, task_pid_knr(task));
 	krg_action_stop(task, EPM_REMOTE_CLONE);
 
+	DEBUG(DBG_RCLONE, 3, "before wake up\n");
 	wake_up_new_task(task, CLONE_VM);
+	DEBUG(DBG_RCLONE, 1, "done\n");
 }
 
 bool in_krg_do_fork(void)
@@ -283,7 +298,12 @@ void register_remote_clone_hooks(void)
 
 int epm_remote_clone_start(void)
 {
-	vfork_done_proxy_cachep = KMEM_CACHE(vfork_done_proxy, SLAB_PANIC);
+	unsigned long cache_flags = SLAB_PANIC;
+
+#ifdef CONFIG_DEBUG_SLAB
+	cache_flags |= SLAB_POISON;
+#endif
+	vfork_done_proxy_cachep = KMEM_CACHE(vfork_done_proxy, cache_flags);
 
 	if (rpc_register_void(RPC_EPM_REMOTE_CLONE, handle_remote_clone, 0))
 		BUG();
