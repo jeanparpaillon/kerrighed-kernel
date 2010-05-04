@@ -201,8 +201,8 @@ void cr_free_mm_exclusions(struct app_struct *app)
  *           0 if no page has been exported.
  *           Negative value otherwise.
  */
-static int export_one_page(struct app_struct *app, ghost_t *ghost,
-			   struct vm_area_struct *vma, unsigned long addr)
+static int cr_export_one_page(struct app_struct *app, ghost_t *ghost,
+			      struct vm_area_struct *vma, unsigned long addr)
 {
 	struct kddm_set *set = NULL;
 	unsigned long pfn;
@@ -288,8 +288,8 @@ exit:
  *  @return  0 if everything ok.
  *           Negative value otherwise.
  */
-static int export_vma_pages(struct app_struct *app, ghost_t *ghost,
-			    struct vm_area_struct *vma)
+static int cr_export_vma_pages(struct app_struct *app, ghost_t *ghost,
+			       struct vm_area_struct *vma)
 {
 	unsigned long addr;
 	int nr_pages_sent = 0;
@@ -299,7 +299,7 @@ static int export_vma_pages(struct app_struct *app, ghost_t *ghost,
 		goto done;
 
 	for (addr = vma->vm_start; addr < vma->vm_end; addr += PAGE_SIZE) {
-		r = export_one_page(app, ghost, vma, addr);
+		r = cr_export_one_page(app, ghost, vma, addr);
 		if (r < 0)
 			goto out;
 		nr_pages_sent += r;
@@ -308,11 +308,11 @@ static int export_vma_pages(struct app_struct *app, ghost_t *ghost,
 done:
 	/* Mark the end of the page exported */
 	addr = 0;
-	r = ghost_write (ghost, &addr, sizeof (unsigned long));
+	r = ghost_write(ghost, &addr, sizeof (unsigned long));
 	if (r)
 		goto out;
 
-	r = ghost_write (ghost, &nr_pages_sent, sizeof (int)) ;
+	r = ghost_write(ghost, &nr_pages_sent, sizeof (int)) ;
 
 out:
 	return r;
@@ -328,9 +328,9 @@ out:
  *  @return  0 if everything ok.
  *           Negative value otherwise.
  */
-int export_process_pages(struct app_struct *app,
-			 ghost_t * ghost,
-                         struct mm_struct *mm)
+int cr_export_process_pages(struct app_struct *app,
+			    ghost_t * ghost,
+			    struct mm_struct *mm)
 {
 	struct vm_area_struct *vma;
 	int r = 0;
@@ -344,7 +344,7 @@ int export_process_pages(struct app_struct *app,
 
 	while (vma) {
 		if (vma->vm_ops != &special_mapping_vmops) {
-			r = export_vma_pages(app, ghost, vma);
+			r = cr_export_vma_pages(app, ghost, vma);
 			if (r)
 				goto out;
 		}
@@ -696,7 +696,7 @@ up_mmap_sem:
 		goto out;
 
 	if (action->type == EPM_CHECKPOINT) {
-		r = export_process_pages(tsk->application, ghost, mm);
+		r = cr_export_process_pages(tsk->application, ghost, mm);
 		if (r)
 			goto out;
 	}
@@ -718,9 +718,9 @@ exit_put_mm:
 /*                                                                           */
 /*****************************************************************************/
 
-int import_vma_pages(ghost_t *ghost,
-		     struct mm_struct *mm,
-		     struct vm_area_struct *vma)
+int cr_import_vma_pages(ghost_t *ghost,
+			struct mm_struct *mm,
+			struct vm_area_struct *vma)
 {
 	void *page_addr;
 	unsigned long address = 0;
@@ -802,9 +802,9 @@ err_read:
  *  @return  0 if everything ok.
  *           Negative value otherwise.
  */
-int import_process_pages(struct epm_action *action,
-			 ghost_t *ghost,
-			 struct mm_struct *mm)
+int cr_import_process_pages(struct epm_action *action,
+			    ghost_t *ghost,
+			    struct mm_struct *mm)
 {
 	struct vm_area_struct *vma;
 	int r = 0;
@@ -817,7 +817,7 @@ int import_process_pages(struct epm_action *action,
 	while (vma) {
 
 		if (vma->vm_ops != &special_mapping_vmops) {
-			r = import_vma_pages(ghost, mm, vma);
+			r = cr_import_vma_pages(ghost, mm, vma);
 			if (r)
 				goto exit;
 		}
@@ -1292,7 +1292,7 @@ int import_mm_struct (struct epm_action *action,
 		mm->locked_vm = 0;
 
 	if (action->type == EPM_CHECKPOINT)
-		r = import_process_pages(action, ghost, mm);
+		r = cr_import_process_pages(action, ghost, mm);
 	else
 		r = import_mm_struct_end(mm, tsk);
 
