@@ -30,6 +30,7 @@
 #include <kerrighed/krginit.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
+#include <kerrighed/file_stat.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/ghost_helpers.h>
 #include <kerrighed/action.h>
@@ -526,7 +527,8 @@ static int cr_add_vmas_files_to_shared_table(struct task_struct *task)
 
 	while (vma != NULL) {
 
-		if (vma->vm_file) {
+		if (vma->vm_file
+		    && !is_anon_shared_mmap(vma->vm_file)) {
 			r = cr_add_file_to_shared_table(task, -1,
 							vma->vm_file, 0);
 			if (r == -ENOKEY) /* the file was already in the list */

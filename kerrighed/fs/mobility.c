@@ -258,6 +258,13 @@ error:
 static int cr_write_vma_phys_file_id(ghost_t *ghost, struct vm_area_struct *vma)
 {
 	int r;
+	int anon_shared;
+
+	anon_shared = is_anon_shared_mmap(vma->vm_file);
+
+	r = ghost_write_type(ghost, anon_shared);
+	if (r || anon_shared)
+		goto exit;
 
 	r = cr_ghost_write_file_id(ghost, vma->vm_file, 0);
 	if (r)
@@ -1163,6 +1170,19 @@ static int cr_link_to_vma_phys_file(struct epm_action *action,
 				    struct file **file)
 {
 	int r;
+	int anon_shared;
+
+	r = ghost_read_type(ghost, anon_shared);
+	if (r)
+		goto exit;
+
+	if (anon_shared) {
+		vma->vm_file = NULL;
+		r = shmem_zero_setup(vma);
+		*file = vma->vm_file;
+		goto exit;
+	}
+
 	r = cr_link_to_file(action, ghost, tsk, file);
 	if (r)
 		goto exit;
@@ -1207,7 +1227,7 @@ int import_vma_phys_file(struct epm_action *action,
 
 	if (action->type == EPM_CHECKPOINT) {
 		r = cr_link_to_vma_phys_file(action, ghost, tsk, vma, &file);
-		if (r)
+		if (r || is_anon_shared_mmap(file))
 			goto err;
 		goto map_file;
 	}
