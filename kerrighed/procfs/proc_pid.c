@@ -575,8 +575,11 @@ static int krg_proc_pid_fill_cache(struct file *filp,
 
 	obj = krg_task_readlock(iter.tgid);
 	if (iter.task
-	    && ((!obj && iter.task->exit_state != EXIT_MIGRATION)
-		|| obj->task == iter.task)) {
+#ifdef CONFIG_KRG_EPM
+	    && ((!obj && iter.task->real_parent != baby_sitter)
+		|| (obj && obj->task == iter.task))
+#endif
+	    ) {
 		/* Task is local and not a remaining part of a migrated task. */
 		retval = proc_pid_fill_cache(filp, dirent, filldir, iter);
 		krg_task_unlock(iter.tgid);
