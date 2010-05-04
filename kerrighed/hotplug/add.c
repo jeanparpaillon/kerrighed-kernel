@@ -39,7 +39,7 @@ static void handle_node_add(struct rpc_desc *rpc_desc, void *data, size_t size)
 	ctx = hotplug_ctx_alloc(ns);
 	put_krg_ns(ns);
 	if (!ctx) {
-		printk("kerrighed: Failed to add nodes!\n");
+		printk("kerrighed: [ADD] Failed to add nodes!\n");
 		return;
 	}
 	ctx->node_set = *(struct hotplug_node_set *)data;
@@ -72,7 +72,7 @@ static int do_nodes_add(struct hotplug_context *ctx)
 
 	ret = krgnodelist_scnprintf(page, PAGE_SIZE, ctx->node_set.v);
 	BUG_ON(ret >= PAGE_SIZE);
-	printk("kerrighed: Adding nodes %s ...\n", page);
+	printk("kerrighed: [ADD] Adding nodes %s ...\n", page);
 
 	free_page((unsigned long)page);
 
@@ -83,7 +83,7 @@ static int do_nodes_add(struct hotplug_context *ctx)
 	 */
 	ret = do_cluster_start(ctx);
 	if (ret) {
-		printk(KERN_ERR "kerrighed: Adding nodes failed! err=%d\n",
+		printk(KERN_ERR "kerrighed: [ADD] Adding nodes failed! err=%d\n",
 		       ret);
 		return ret;
 	}
@@ -92,7 +92,7 @@ static int do_nodes_add(struct hotplug_context *ctx)
 	for_each_online_krgnode(node)
 		rpc_async(NODE_ADD, node, &ctx->node_set, sizeof(ctx->node_set));
 
-	printk("kerrighed: Adding nodes succeeded.\n");
+	printk("kerrighed: [ADD] Adding nodes succeeded.\n");
 
 	return ret;
 }

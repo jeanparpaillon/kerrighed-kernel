@@ -617,7 +617,7 @@ static void cluster_start_worker(struct work_struct *work)
 	ret = krgnodelist_scnprintf(page, PAGE_SIZE,
 				    cluster_start_ctx->node_set.v);
 	BUG_ON(ret >= PAGE_SIZE);
-	printk("kerrighed: Cluster start on nodes %s ...\n", page);
+	printk("kerrighed: [ADD] Setting up new nodes %s ...\n", page);
 
 	free_page((unsigned long)page);
 
@@ -645,10 +645,10 @@ end:
 	rpc_end(desc, 0);
 out:
 	if (err)
-		printk(KERN_ERR "kerrighed: Cluster start failed! err=%d\n",
+		printk(KERN_ERR "kerrighed: [ADD] Setting up new nodes failed! err=%d\n",
 		       err);
 	else
-		printk("kerrighed: Cluster start succeeded.\n");
+		printk("kerrighed: [ADD] Setting up new nodes succeeded.\n");
 	spin_lock(&cluster_start_lock);
 	hotplug_ctx_put(cluster_start_ctx);
 	cluster_start_ctx = NULL;
@@ -671,8 +671,8 @@ int do_cluster_start(struct hotplug_context *ctx)
 	if (!cluster_start_ctx) {
 		r = -EPERM;
 		if (cluster_start_msg.seq_id == ULONG_MAX) {
-			printk(KERN_WARNING "kerrighed: "
-					"Max number of cluster start attempts "
+			printk(KERN_WARNING "kerrighed: [ADD] "
+					"Max number of add attempts "
 					"reached! You should reboot host.\n");
 		} else {
 			r = 0;
