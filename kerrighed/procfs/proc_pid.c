@@ -585,6 +585,10 @@ static int krg_proc_pid_fill_cache(struct file *filp,
 		krg_task_unlock(iter.tgid);
 		return retval;
 	}
+#if defined(CONFIG_KRG_EPM) && defined(CONFIG_KRG_CAP)
+	if (can_use_krg_cap(current, CAP_SEE_LOCAL_PROC_STAT))
+		return retval;
+#endif
 
 	if (obj) {
 		proc_task.task_obj = obj;
