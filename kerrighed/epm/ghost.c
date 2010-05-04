@@ -1878,6 +1878,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	obj = __krg_task_writelock(tskRecv);
 
 	krg_current = tskRecv;
+	tskRecv->exit_state = EXIT_MIGRATION + 1;
 	newTsk = copy_process(flags, stack_start, l_regs, stack_size,
 			      child_tidptr, pid, 0);
 	krg_current = NULL;
@@ -1894,6 +1895,15 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 
 	BUG_ON(newTsk->task_obj);
 	BUG_ON(obj->task);
+	write_lock_irq(&tasklist_lock);
+	if (zombie) {
+		tskRecv->exit_state = EXIT_ZOMBIE;
+		newTsk->exit_state = EXIT_ZOMBIE;
+	} else {
+		tskRecv->exit_state = 0;
+		newTsk->exit_state = 0;
+	}
+	write_unlock_irq(&tasklist_lock);
 	BUG_ON(newTsk->parent_children_obj != tskRecv->parent_children_obj);
 	if (!zombie)
 		BUG_ON(!newTsk->children_obj);

@@ -1428,7 +1428,7 @@ struct task_struct *copy_process(unsigned long clone_flags,
 		if (in_krg_do_fork()) {
 			/* Remote clone */
 			p->pdeath_signal = 0;
-			p->exit_state = 0;
+			/* p->exit_state = 0; */
 		}
 	}
 #endif

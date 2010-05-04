@@ -2363,6 +2363,10 @@ static int try_to_wake_up(struct task_struct *p, unsigned int state, int sync)
 	long old_state;
 	struct rq *rq;
 
+#ifdef CONFIG_KRG_EPM
+	BUG_ON(p->exit_state == EXIT_MIGRATION + 1);
+#endif
+
 	if (!sched_feat(SYNC_WAKEUPS))
 		sync = 0;
 
