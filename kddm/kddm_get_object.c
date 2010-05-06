@@ -34,6 +34,7 @@ void *generic_kddm_get_object(struct kddm_set *set,
 			      int flags)
 {
 	struct kddm_obj *obj_entry;
+	void *object = NULL;
 
 	inc_get_object_counter (set);
 
@@ -117,9 +118,10 @@ exit:
 		set_object_frozen(obj_entry, set);
 
 exit_no_freeze:
+	object = obj_entry->object;
 	put_kddm_obj_entry(set, obj_entry, objid);
 
-	return obj_entry->object;
+	return object;
 }
 
 
