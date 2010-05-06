@@ -175,7 +175,6 @@ static inline int save_local_app(struct app_struct *app, int chkpt_sn)
 	int r = 0;
 	int null = -1;
 	task_state_t *t;
-	struct list_head *tmp, *element;
 
 	__set_ghost_fs(&oldfs);
 
@@ -201,8 +200,7 @@ static inline int save_local_app(struct app_struct *app, int chkpt_sn)
 	 * there is no need to lock the application list of processes because
 	 * all application processes are already stopped
 	 */
-	list_for_each_safe(element, tmp, &app->tasks) {
-		t = list_entry(element, task_state_t, next_task);
+	list_for_each_entry(t, &app->tasks, next_task) {
 		r = write_task_parent_links(t, ghost);
 		if (r)
 			goto err_write;
@@ -342,14 +340,15 @@ static inline int __local_do_chkpt(struct app_struct *app, int chkpt_sn)
 
 	app->chkpt_sn = chkpt_sn;
 
+	/* application is frozen, locking here is paranoiac */
+	mutex_lock(&app->mutex);
+
 	r = save_local_app(app, chkpt_sn);
 	if (r)
-		goto exit;
+		goto err;
 
 	/* Checkpoint all local processes involved in the checkpoint */
 	init_completion(&app->tasks_chkpted);
-
-	mutex_lock(&app->mutex);
 
 	list_for_each_entry(tsk, &app->tasks, next_task) {
 		tmp = tsk->task;
@@ -363,8 +362,11 @@ static inline int __local_do_chkpt(struct app_struct *app, int chkpt_sn)
 
 	wait_for_completion(&app->tasks_chkpted);
 	r = get_local_tasks_chkpt_result(app);
-exit:
+out:
 	return r;
+err:
+	mutex_unlock(&app->mutex);
+	goto out;
 }
 
 struct checkpoint_request_msg {
