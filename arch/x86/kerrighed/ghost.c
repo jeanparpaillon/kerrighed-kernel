@@ -90,7 +90,7 @@ void unimport_thread_info(struct task_struct *task)
 
 void free_ghost_thread_info(struct task_struct *ghost)
 {
-	__free_thread_info(ghost->stack);
+	free_thread_info(ghost->stack);
 }
 
 int export_thread_struct(struct epm_action *action,

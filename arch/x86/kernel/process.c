@@ -28,9 +28,6 @@ DEFINE_TRACE(power_end);
 int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 {
 	*dst = *src;
-#ifdef CONFIG_KRG_EPM
-	if (!krg_current)
-#endif
 	if (src->thread.xstate) {
 		dst->thread.xstate = kmem_cache_alloc(task_xstate_cachep,
 						      GFP_KERNEL);
