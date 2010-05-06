@@ -759,6 +759,9 @@ static void __local_continue(struct app_struct *app, int first_run)
 	task_state_t *tsk;
 
 	BUG_ON(!app);
+
+	mutex_lock(&app->mutex);
+
 	BUG_ON(list_empty(&app->tasks));
 
 	/* make all the local processes of the application going back to
@@ -766,6 +769,8 @@ static void __local_continue(struct app_struct *app, int first_run)
 	list_for_each_entry(tsk, &app->tasks, next_task) {
 		__continue_task(tsk, first_run);
 	}
+
+	mutex_unlock(&app->mutex);
 }
 
 struct app_continue_msg {
@@ -855,6 +860,9 @@ static inline int __local_kill(struct app_struct *app, int signal)
 	task_state_t *tsk;
 
 	BUG_ON(!app);
+
+	mutex_lock(&app->mutex);
+
 	BUG_ON(list_empty(&app->tasks));
 
 	/* signal all the local processes of the application */
@@ -862,6 +870,8 @@ static inline int __local_kill(struct app_struct *app, int signal)
 		retval = _kill_process(tsk, signal);
 		r = retval | r;
 	}
+
+	mutex_unlock(&app->mutex);
 
 	return r;
 }
