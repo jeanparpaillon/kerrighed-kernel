@@ -194,7 +194,6 @@ int msq_insert_object (struct kddm_obj * obj_entry,
 		put_ipc_ns(ns);
 	}
 
-exit:
 	return r;
 }
 
