@@ -38,24 +38,33 @@ int setup_faf_file(struct file *file)
 {
 	int server_fd = 0;
 	int res = 0;
+	struct files_struct *files = first_krgrpc->files;
 
 	/* Install the file in the destination task file array */
-
-	if (!test_and_set_bit(O_FAF_SRV_BIT_NR, &file->f_flags)) {
-		server_fd = __get_unused_fd(first_krgrpc);
-
-		if (server_fd >= 0) {
-			get_file (file);
-			file->f_faf_srv_index = server_fd;
-			file->f_flags |= O_FAF_SRV;
-			__fd_install(first_krgrpc->files, server_fd, file);
-		}
-		else
-			res = server_fd;
-	}
-	else
+	if (file->f_flags & O_FAF_SRV) {
 		res = -EALREADY;
+		goto out;
+	}
 
+	server_fd = __get_unused_fd(first_krgrpc);
+	if (server_fd < 0) {
+		res = server_fd;
+		goto out;
+	}
+
+	spin_lock(&files->file_lock);
+	if (unlikely(file->f_flags & O_FAF_SRV)) {
+		__put_unused_fd(files, server_fd);
+		res = -EALREADY;
+	} else {
+		file->f_flags |= O_FAF_SRV;
+		get_file(file);
+		file->f_faf_srv_index = server_fd;
+		__fd_install(files, server_fd, file);
+	}
+	spin_unlock(&files->file_lock);
+
+out:
 	return res;
 }
 

@@ -1025,19 +1025,19 @@ EXPORT_SYMBOL(put_unused_fd);
  * will follow.
  */
 #ifdef CONFIG_KRG_FAF
-void fd_install(unsigned int fd, struct file *file)
-{
-	return __fd_install(current->files, fd, file);
-}
-
 void __fd_install(struct files_struct *files,
 		  unsigned int fd, struct file *file)
 {
-#else
+	struct fdtable *fdt;
+	fdt = files_fdtable(files);
+	BUG_ON(fdt->fd[fd] != NULL);
+	rcu_assign_pointer(fdt->fd[fd], file);
+}
+#endif
+
 void fd_install(unsigned int fd, struct file *file)
 {
 	struct files_struct *files = current->files;
-#endif
 	struct fdtable *fdt;
 	spin_lock(&files->file_lock);
 	fdt = files_fdtable(files);
