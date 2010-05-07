@@ -283,9 +283,10 @@ int scheduler_policy_type_register(struct scheduler_policy_type *type)
 	spin_unlock(&policies_lock);
 	if (ret)
 		kfree(tmp_attrs);
-
-	printk(KERN_INFO "successfully registered scheduler_policy_type %s\n",
-	       type->name);
+	else
+		printk(KERN_INFO
+		       "successfully registered scheduler_policy_type %s\n",
+		       type->name);
 
 	return ret;
 }
