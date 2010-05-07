@@ -221,7 +221,7 @@ int send_faf_file_desc(struct rpc_desc *desc, struct file *file)
 
 	if (!(file->f_flags & (O_FAF_SRV|O_FAF_CLT))) {
 		r = setup_faf_file(file);
-		if (r)
+		if (r && r != -EALREADY)
 			goto out;
 	}
 

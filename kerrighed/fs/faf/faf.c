@@ -208,11 +208,12 @@ exit:
 	return r;
 }
 
-void check_activate_faf (struct task_struct *tsk,
-			 int index,
-			 struct file *file,
-			 struct epm_action *action)
+int check_activate_faf(struct task_struct *tsk,
+		       int index,
+		       struct file *file,
+		       struct epm_action *action)
 {
+	int r = 0;
 
 	/* Index < 0 means a mapped file. We do not use FAF for this  */
 	if (index < 0)
@@ -228,10 +229,11 @@ void check_activate_faf (struct task_struct *tsk,
 /* 	    file->f_dentry->d_inode->i_mapping->a_ctnr != NULL) */
 /* 		activate_faf = 0; */
 
-	setup_faf_file_if_needed(file);
-
+	r = setup_faf_file_if_needed(file);
+	if (r == -EALREADY)
+		r = 0;
 done:
-	return;
+	return r;
 }
 
 /*****************************************************************************/

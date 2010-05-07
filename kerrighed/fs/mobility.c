@@ -148,7 +148,9 @@ int export_one_open_file (struct epm_action *action,
 	}
 
 #ifdef CONFIG_KRG_FAF
-	check_activate_faf (tsk, index, file, action);
+	r = check_activate_faf(tsk, index, file, action);
+	if (r)
+		goto err;
 #endif
 	ops = get_dvfs_mobility_ops(file);
 
@@ -156,16 +158,16 @@ int export_one_open_file (struct epm_action *action,
 
 	r = ghost_write(ghost, &dvfs_ops_type, sizeof(krgsyms_val_t));
 	if (r)
-		goto err_write;
+		goto err;
 
 	r = ghost_write(ghost, &file->f_objid,
 			sizeof (unsigned long));
 	if (r)
-		goto err_write;
+		goto err;
 
 	r = ops->file_export (action, ghost, tsk, index, file);
 
-err_write:
+err:
 	return r;
 }
 

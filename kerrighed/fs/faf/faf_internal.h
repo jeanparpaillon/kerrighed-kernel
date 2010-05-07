@@ -30,8 +30,8 @@ struct dvfs_file_struct;
 void faf_init (void);
 void faf_finalize (void);
 
-void check_activate_faf (struct task_struct *tsk, int index, struct file *file,
-			 struct epm_action *action);
+int check_activate_faf(struct task_struct *tsk, int index, struct file *file,
+		       struct epm_action *action);
 
 void check_last_faf_client_close(struct file *file,
 				 struct dvfs_file_struct *dvfs_file);
