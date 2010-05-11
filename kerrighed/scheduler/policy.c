@@ -81,27 +81,31 @@ static ssize_t scheduler_policy_attribute_store(struct config_item *item,
 	struct scheduler_policy_attribute *policy_attr =
 		to_scheduler_policy_attr(attr);
 	struct scheduler_policy *policy = to_scheduler_policy(item);
-	struct string_list_object *list;
+	struct string_list_object *list = NULL;
 	ssize_t ret = -EACCES;
 
 	if (!(current->flags & PF_KTHREAD) && !current->nsproxy->krg_ns)
 		return -EPERM;
 
 	if (policy_attr->store) {
-		list = global_config_attr_store_begin(item);
-		if (IS_ERR(list))
-			return PTR_ERR(list);
+		if (!policy_attr->local) {
+			list = global_config_attr_store_begin(item);
+			if (IS_ERR(list))
+				return PTR_ERR(list);
+		}
 
 		spin_lock(&policy->lock);
 		ret = policy_attr->store(policy, page, count);
 		spin_unlock(&policy->lock);
 
-		if (ret >= 0)
-			ret = global_config_attr_store_end(list,
-							   item, attr,
-							   page, ret);
-		else
-			global_config_attr_store_error(list, item);
+		if (!policy_attr->local) {
+			if (ret >= 0)
+				ret = global_config_attr_store_end(list,
+								   item, attr,
+								   page, ret);
+			else
+				global_config_attr_store_error(list, item);
+		}
 	}
 
 	return ret;
