@@ -23,6 +23,10 @@ static atomic_t migration_on_going = ATOMIC_INIT(0);
 static struct scheduler_probe *migration_probe;
 static struct scheduler_probe_source *migration_probe_sources[3];
 
+static struct notifier_block migration_start_nb;
+static struct notifier_block migration_end_nb;
+static struct notifier_block migration_abort_nb;
+
 DEFINE_SCHEDULER_PROBE_SOURCE_GET(migration_probe_last_migration,
 				  ktime_t, last_p, nr)
 {
@@ -88,9 +92,10 @@ static void migration_probe_migration_start(struct task_struct *task)
 	scheduler_probe_source_notify_update(migration_probe_sources[0]);
 }
 
-static void kmcb_migration_start(unsigned long arg)
+static int kmcb_migration_start(struct notifier_block *notifier, unsigned long arg, void *data)
 {
-	migration_probe_migration_start((struct task_struct *) arg);
+	migration_probe_migration_start(data);
+	return NOTIFY_DONE;
 }
 
 static void migration_probe_migration_end(struct task_struct *task)
@@ -102,14 +107,16 @@ static void migration_probe_migration_end(struct task_struct *task)
 	}
 }
 
-static void kmcb_migration_end(unsigned long arg)
+static int kmcb_migration_end(struct notifier_block *notifier, unsigned long arg, void *data)
 {
-	migration_probe_migration_end((struct task_struct *) arg);
+	migration_probe_migration_end(data);
+	return NOTIFY_DONE;
 }
 
-static void kmcb_migration_aborted(unsigned long arg)
+static int kmcb_migration_aborted(struct notifier_block *notifier, unsigned long arg, void *data)
 {
 	migration_probe_migration_end(NULL);
+	return NOTIFY_DONE;
 }
 
 static int probe_not_registered;
@@ -138,21 +145,21 @@ int migration_probe_start(void)
 	if (!migration_probe)
 		goto err_probe;
 
+	migration_start_nb.notifier_call = kmcb_migration_start;
+	migration_end_nb.notifier_call = kmcb_migration_end;
+	migration_abort_nb.notifier_call = kmcb_migration_aborted;
+
 	/*
 	 * We cannot call unregister in init, so the system may have to live
 	 * with partial hook init until module is unloaded.
 	 */
-	err = module_hook_register(&kmh_migration_start, kmcb_migration_start,
-				   THIS_MODULE);
+	err = atomic_notifier_chain_register(&kmh_migration_start, &migration_start_nb);
 	if (err)
 		goto err_hooks;
-	err = module_hook_register(&kmh_migration_end, kmcb_migration_end,
-				   THIS_MODULE);
+	err = atomic_notifier_chain_register(&kmh_migration_end, &migration_end_nb);
 	if (err)
 		goto err_other_hooks;
-	err = module_hook_register(&kmh_migration_aborted,
-				   kmcb_migration_aborted,
-				   THIS_MODULE);
+	err = atomic_notifier_chain_register(&kmh_migration_aborted, &migration_abort_nb);
 	if (err)
 		goto err_other_hooks;
 
@@ -195,9 +202,9 @@ void migration_probe_exit(void)
 	if (!probe_not_registered)
 		scheduler_probe_unregister(migration_probe);
 
-	module_hook_unregister(&kmh_migration_aborted, kmcb_migration_aborted);
-	module_hook_unregister(&kmh_migration_end, kmcb_migration_end);
-	module_hook_unregister(&kmh_migration_start, kmcb_migration_start);
+	atomic_notifier_chain_unregister(&kmh_migration_aborted, &migration_abort_nb);
+	atomic_notifier_chain_unregister(&kmh_migration_end, &migration_end_nb);
+	atomic_notifier_chain_unregister(&kmh_migration_start, &migration_start_nb);
 
 	scheduler_probe_free(migration_probe);
 	for (i = 0; migration_probe_sources[i] != NULL; i++)

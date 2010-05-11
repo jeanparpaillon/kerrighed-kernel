@@ -23,6 +23,7 @@
 #include <linux/pid_namespace.h>
 #include <linux/rcupdate.h>
 #include <linux/uaccess.h>
+#include <linux/notifier.h>
 #include <kerrighed/kerrighed_signal.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
@@ -48,9 +49,9 @@
 #include "epm_internal.h"
 
 #if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
-struct module_hook_desc kmh_migration_start;
-struct module_hook_desc kmh_migration_end;
-struct module_hook_desc kmh_migration_aborted;
+ATOMIC_NOTIFIER_HEAD(kmh_migration_start);
+ATOMIC_NOTIFIER_HEAD(kmh_migration_end);
+ATOMIC_NOTIFIER_HEAD(kmh_migration_aborted);
 EXPORT_SYMBOL(kmh_migration_start);
 EXPORT_SYMBOL(kmh_migration_end);
 EXPORT_SYMBOL(kmh_migration_aborted);
@@ -136,7 +137,7 @@ EXPORT_SYMBOL(may_migrate);
 void migration_aborted(struct task_struct *tsk)
 {
 #ifdef CONFIG_KRG_SCHED
-	module_hook_call(&kmh_migration_aborted, (unsigned long) tsk);
+	atomic_notifier_call_chain(&kmh_migration_aborted, 0, tsk);
 #endif
 	krg_action_stop(tsk, EPM_MIGRATE);
 }
@@ -234,7 +235,7 @@ static void krg_task_migrate(int sig, struct siginfo *info,
 
 	if (!r) {
 #ifdef CONFIG_KRG_SCHED
-		module_hook_call(&kmh_migration_end, 0);
+		atomic_notifier_call_chain(&kmh_migration_end, 0, NULL);
 #endif
 		do_exit_wo_notify(0); /* Won't return */
 	}
@@ -259,7 +260,7 @@ static void handle_migrate(struct rpc_desc *desc, void *msg, size_t size)
 	}
 
 #ifdef CONFIG_KRG_SCHED
-	module_hook_call(&kmh_migration_end, (unsigned long)task);
+	atomic_notifier_call_chain(&kmh_migration_end, 0, action);
 #endif
 	krg_action_stop(task, EPM_MIGRATE);
 
@@ -290,7 +291,7 @@ static int do_migrate_process(struct task_struct *task,
 		return retval;
 
 #ifdef CONFIG_KRG_SCHED
-	module_hook_call(&kmh_migration_start, (unsigned long)task);
+	atomic_notifier_call_chain(&kmh_migration_start, 0, task);
 #endif
 
 	info.si_errno = 0;

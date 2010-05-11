@@ -1149,7 +1149,7 @@ unsigned long avenrun[3];
 EXPORT_SYMBOL(avenrun);
 
 #if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
-struct module_hook_desc kmh_calc_load;
+ATOMIC_NOTIFIER_HEAD(kmh_calc_load);
 EXPORT_SYMBOL(kmh_calc_load);
 #endif
 
@@ -1173,7 +1173,7 @@ static inline void calc_load(unsigned long ticks)
 		} while (count < 0);
 	}
 #if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
-	module_hook_call(&kmh_calc_load, ticks);
+	atomic_notifier_call_chain(&kmh_calc_load, ticks, NULL);
 #endif
 }
 

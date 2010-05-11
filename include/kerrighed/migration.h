@@ -26,11 +26,11 @@ typedef struct migration_infos_struct migration_infos_t;
 #ifdef CONFIG_KRG_EPM
 
 #if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
-#include <linux/module_hook.h>
+#include <linux/notifier.h>
 
-extern struct module_hook_desc kmh_migration_start;
-extern struct module_hook_desc kmh_migration_aborted;
-extern struct module_hook_desc kmh_migration_end;
+extern struct atomic_notifier_head kmh_migration_start;
+extern struct atomic_notifier_head kmh_migration_aborted;
+extern struct atomic_notifier_head kmh_migration_end;
 #endif
 
 struct task_struct;

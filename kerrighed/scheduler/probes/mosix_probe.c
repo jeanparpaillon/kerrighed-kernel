@@ -104,6 +104,9 @@ enum mosix_probe_source_t {
 };
 static struct scheduler_probe_source *mosix_probe_sources[NR_VALUES + 1];
 
+static struct notifier_block mp_process_on_nb;
+static struct notifier_block mp_process_off_nb;
+static struct notifier_block mp_accumulate_load_nb;
 
 /* static u64 curr_jiffies; */
 /* static u64 prev_jiffies; */
@@ -258,9 +261,10 @@ static void mp_process_off(struct task_struct *tsk)
 	rcu_read_unlock();
 }
 
-static void kmcb_process_off(unsigned long arg)
+static int kmcb_process_off(struct notifier_block *notifier, unsigned long arg, void *data)
 {
-	mp_process_off((struct task_struct *) arg);
+	mp_process_off(data);
+	return NOTIFY_DONE;
 }
 
 /**
@@ -280,9 +284,10 @@ static void mp_process_on(struct task_struct *tsk)
 	rcu_read_unlock();
 }
 
-static void kmcb_process_on(unsigned long arg)
+static int kmcb_process_on(struct notifier_block *notifier, unsigned long arg, void *data)
 {
-	mp_process_on((struct task_struct *) arg);
+	mp_process_on(data);
+	return NOTIFY_DONE;
 }
 
 /**
@@ -342,7 +347,7 @@ static void mp_calc_load(void)
  *
  *  @param ticks   Clock ticks since last called.
  */
-static void kmcb_accumulate_load(unsigned long ticks)
+static int kmcb_accumulate_load(struct notifier_block *notifier, unsigned long ticks, void *data)
 {
 	unsigned long load;
 
@@ -367,6 +372,8 @@ static void kmcb_accumulate_load(unsigned long ticks)
 /*		if (load >= ALARM_THRESHOLD) */
 /*			send_alarm_to_analyzer(); */
 	}
+
+	return NOTIFY_DONE;
 }
 
 static void mosix_probe_init_variables(void)
@@ -685,21 +692,21 @@ int mosix_probe_init(void)
 
 /*	curr_jiffies = get_jiffies_64(); */
 /*	prev_jiffies = get_jiffies_64(); */
+	mp_process_on_nb.notifier_call = kmcb_process_on;
+	mp_process_off_nb.notifier_call = kmcb_process_off;
+	mp_accumulate_load_nb.notifier_call = kmcb_accumulate_load;
 
 	/*
 	 * We cannot call unregister in init, so the system may have to live
 	 * with partial hook init until module is unloaded.
 	 */
-	err = module_hook_register(&kmh_process_on, kmcb_process_on,
-				   THIS_MODULE);
+	err = atomic_notifier_chain_register(&kmh_process_on, &mp_process_on_nb);
 	if (err)
 		goto err_hooks;
-	err = module_hook_register(&kmh_process_off, kmcb_process_off,
-				   THIS_MODULE);
+	err = atomic_notifier_chain_register(&kmh_process_off, &mp_process_off_nb);
 	if (err)
 		goto err_other_hooks;
-	err = module_hook_register(&kmh_calc_load, kmcb_accumulate_load,
-				   THIS_MODULE);
+	err = atomic_notifier_chain_register(&kmh_calc_load, &mp_accumulate_load_nb);
 	if (err)
 		goto err_other_hooks;
 
@@ -752,9 +759,9 @@ void mosix_probe_exit(void)
 	if (!mod_info_not_registered)
 		krg_sched_module_info_unregister(&mosix_probe_module_info_type);
 
-	module_hook_unregister(&kmh_calc_load, kmcb_accumulate_load);
-	module_hook_unregister(&kmh_process_off, kmcb_process_off);
-	module_hook_unregister(&kmh_process_on, kmcb_process_on);
+	atomic_notifier_chain_unregister(&kmh_calc_load, &mp_accumulate_load_nb);
+	atomic_notifier_chain_unregister(&kmh_process_off, &mp_process_off_nb);
+	atomic_notifier_chain_unregister(&kmh_process_on, &mp_process_on_nb);
 
 	scheduler_probe_free(mosix_probe);
 	while (mosix_probe_sources[i] != NULL) {
