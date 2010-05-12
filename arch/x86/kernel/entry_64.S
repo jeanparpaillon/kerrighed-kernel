@@ -523,6 +523,10 @@ system_call_fastpath:
 	movq %r10,%rcx
 	call *sys_call_table(,%rax,8)  # XXX:	 rip relative
 	movq %rax,RAX-ARGOFFSET(%rsp)
+#ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
+	movq ORIG_RAX-ARGOFFSET(%rsp),%rdi
+	call syscall_exit_hook
+#endif
 /*
  * Syscall return path ending with SYSRET (fast path)
  * Has incomplete stack frame and undefined top of stack.
@@ -648,6 +652,10 @@ tracesys:
 	movq %r10,%rcx	/* fixup for C */
 	call *sys_call_table(,%rax,8)
 	movq %rax,RAX-ARGOFFSET(%rsp)
+#ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
+	movq ORIG_RAX-ARGOFFSET(%rsp),%rdi
+	call syscall_exit_hook
+#endif
 	/* Use IRET because user could have changed frame */
 
 /*
@@ -767,6 +775,10 @@ ENTRY(stub_execve)
 	RESTORE_TOP_OF_STACK %r11
 	movq %rax,RAX(%rsp)
 	RESTORE_REST
+#ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
+	movq ORIG_RAX-ARGOFFSET(%rsp),%rdi
+	call syscall_exit_hook
+#endif
 	jmp int_ret_from_sys_call
 	CFI_ENDPROC
 END(stub_execve)
@@ -785,6 +797,10 @@ ENTRY(stub_rt_sigreturn)
 	call sys_rt_sigreturn
 	movq %rax,RAX(%rsp) # fixme, this could be done at the higher layer
 	RESTORE_REST
+#ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
+	movq ORIG_RAX-ARGOFFSET(%rsp),%rdi
+	call syscall_exit_hook
+#endif
 	jmp int_ret_from_sys_call
 	CFI_ENDPROC
 END(stub_rt_sigreturn)
