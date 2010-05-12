@@ -72,7 +72,7 @@ void (*rpc_handlers[RPC_HANDLER_MAX])(struct rpc_desc* desc);
         .fd_array       = { NULL, }                     \
 }
 
-static struct files_struct krgrpc_files = KRGRPC_INIT_FILES;
+struct files_struct krgrpc_files = KRGRPC_INIT_FILES;
 struct task_struct *first_krgrpc = NULL;
 
 static struct completion init_complete;

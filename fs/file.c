@@ -20,6 +20,10 @@
 #include <linux/rcupdate.h>
 #include <linux/workqueue.h>
 
+#ifdef CONFIG_KRG_FAF
+#include <net/krgrpc/rpc.h>
+#endif
+
 struct fdtable_defer {
 	spinlock_t lock;
 	struct work_struct wq;
@@ -249,12 +253,7 @@ static int expand_fdtable(struct files_struct *files, int nr)
  * expanded and execution may have blocked.
  * The files->file_lock should be held on entry, and will be held on exit.
  */
-#ifdef CONFIG_KRG_FAF
-static int __expand_files(struct task_struct *task, struct files_struct *files,
-			  int nr)
-#else
 int expand_files(struct files_struct *files, int nr)
-#endif
 {
 	struct fdtable *fdt;
 
@@ -265,10 +264,9 @@ int expand_files(struct files_struct *files, int nr)
 	 * will limit the total number of files that can be opened.
 	 */
 #ifdef CONFIG_KRG_FAF
-	if (nr >= task->signal->rlim[RLIMIT_NOFILE].rlim_cur)
-#else
-	if (nr >= current->signal->rlim[RLIMIT_NOFILE].rlim_cur)
+	if (files != &krgrpc_files)
 #endif
+	if (nr >= current->signal->rlim[RLIMIT_NOFILE].rlim_cur)
 		return -EMFILE;
 
 	/* Do we need to expand? */
@@ -276,19 +274,15 @@ int expand_files(struct files_struct *files, int nr)
 		return 0;
 
 	/* Can we expand? */
+#ifdef CONFIG_KRG_FAF
+	if (files != &krgrpc_files)
+#endif
 	if (nr >= sysctl_nr_open)
 		return -EMFILE;
 
 	/* All good, so we try */
 	return expand_fdtable(files, nr);
 }
-
-#ifdef CONFIG_KRG_FAF
-int expand_files(struct files_struct *files, int nr)
-{
-	return __expand_files(current, files, nr);
-}
-#endif
 
 #ifndef CONFIG_KRG_DVFS
 static
@@ -475,6 +469,10 @@ int alloc_fd(unsigned start, unsigned flags)
 	int error;
 	struct fdtable *fdt;
 
+#ifdef CONFIG_KRG_FAF
+	BUG_ON(task != current && files != &krgrpc_files);
+#endif
+
 	spin_lock(&files->file_lock);
 repeat:
 	fdt = files_fdtable(files);
@@ -486,11 +484,7 @@ repeat:
 		fd = find_next_zero_bit(fdt->open_fds->fds_bits,
 					   fdt->max_fds, fd);
 
-#ifdef CONFIG_KRG_FAF
-	error = __expand_files(task, files, fd);
-#else
 	error = expand_files(files, fd);
-#endif
 	if (error < 0)
 		goto out;
 
