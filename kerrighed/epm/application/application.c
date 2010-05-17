@@ -346,6 +346,7 @@ exit:
 
 /*--------------------------------------------------------------------------*/
 
+/* app->mutex must be taken */
 task_state_t *__set_task_result(struct task_struct *task, int result)
 {
 	struct app_struct *app;
@@ -371,19 +372,6 @@ task_state_t *__set_task_result(struct task_struct *task, int result)
 	BUG_ON(!ret);
 
 	return ret;
-}
-
-void set_task_result(struct task_struct *task, int result)
-{
-	struct app_struct *app;
-
-	app = task->application;
-	if (!app)
-		return;
-
-	mutex_lock(&app->mutex);
-	__set_task_result(task, result);
-	mutex_unlock(&app->mutex);
 }
 
 void set_result_wait(int result)
@@ -651,7 +639,7 @@ stop_all_running:
 			tsk->result = PCUS_STOP_IN_PROGRESS;
 			r = __stop_task(tsk->task);
 			if (r != 0)
-				set_task_result(tsk->task, r);
+				__set_task_result(tsk->task, r);
 		}
 	}
 
