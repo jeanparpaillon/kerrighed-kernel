@@ -449,6 +449,12 @@ sysenter_do_call:
 	jae syscall_badsys
 	call *sys_call_table(,%eax,4)
 	movl %eax,PT_EAX(%esp)
+#ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
+	movl PT_ORIG_EAX(%esp),%eax
+	pushl %eax
+	call syscall_exit_hook
+	popl %eax
+#endif
 	LOCKDEP_SYS_EXIT
 	DISABLE_INTERRUPTS(CLBR_ANY)
 	TRACE_IRQS_OFF
@@ -529,6 +535,12 @@ ENTRY(system_call)
 syscall_call:
 	call *sys_call_table(,%eax,4)
 	movl %eax,PT_EAX(%esp)		# store the return value
+#ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
+	movl PT_ORIG_EAX(%esp),%eax
+	pushl %eax
+	call syscall_exit_hook
+	popl %eax
+#endif
 syscall_exit:
 	LOCKDEP_SYS_EXIT
 	DISABLE_INTERRUPTS(CLBR_ANY)	# make sure we don't miss an interrupt
