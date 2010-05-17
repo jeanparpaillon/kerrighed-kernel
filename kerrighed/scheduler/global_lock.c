@@ -119,7 +119,7 @@ int global_lock_start(void)
 	lock_set = create_new_kddm_set(kddm_def_ns, GLOBAL_LOCK_KDDM_SET_ID,
 				       GLOBAL_LOCK_LINKER,
 				       KDDM_RR_DEF_OWNER,
-				       0, 0);
+				       0, KDDM_LOCAL_EXCLUSIVE);
 	BUG_ON(!lock_set);
 	if (IS_ERR(lock_set))
 		return PTR_ERR(lock_set);
