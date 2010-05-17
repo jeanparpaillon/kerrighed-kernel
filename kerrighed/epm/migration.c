@@ -456,6 +456,9 @@ void syscall_exit_hook(long syscall_nr)
 	if (!can_use_krg_cap(current, CAP_SYSCALL_EXIT_HOOK))
 		return;
 
+	if (can_use_krg_cap(current, CAP_CAN_MIGRATE))
+		printk("%d (%s): syscall %lu\n",
+		       task_pid_knr(current), current->comm, syscall_nr);
 	__migrate_linux_threads(current, MIGR_LOCAL_PROCESS,
 				krgnode_next_online_in_ring(kerrighed_node_id));
 }
