@@ -106,20 +106,20 @@ extern const char *state_name[]; /*< Printable state name */
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-#define ASSERT_OBJ_PATH_LOCKED(set, objid) assert_spin_locked(&(set)->obj_lock[(objid) % NR_OBJ_ENTRY_LOCKS])
+#define ASSERT_OBJ_PATH_LOCKED(set, objid) BUG_ON(!mutex_is_locked(&(set)->obj_lock[(objid) % NR_OBJ_ENTRY_LOCKS]))
 
 /** Lock the object (take care about the interrupt context) **/
 static inline void kddm_obj_path_lock (struct kddm_set *set,
 				       objid_t objid)
 {
 	BUG_ON(in_interrupt() || irqs_disabled());
-	spin_lock (&set->obj_lock[objid % NR_OBJ_ENTRY_LOCKS]);
+	mutex_lock (&set->obj_lock[objid % NR_OBJ_ENTRY_LOCKS]);
 }
 
 static inline void kddm_obj_path_unlock (struct kddm_set *set,
 					 objid_t objid)
 {
-	spin_unlock (&set->obj_lock[objid % NR_OBJ_ENTRY_LOCKS]);
+	mutex_unlock (&set->obj_lock[objid % NR_OBJ_ENTRY_LOCKS]);
 }
 
 

@@ -106,7 +106,7 @@ int init_kddm_set (struct kddm_set *set,
 	spin_lock_init(&set->table_lock);
 
 	for (i = 0; i < NR_OBJ_ENTRY_LOCKS; i++) {
-		spin_lock_init(&set->obj_lock[i]);
+		mutex_init(&set->obj_lock[i]);
 		lockdep_set_class(&set->obj_lock[i], &obj_lock_key[i]);
 	}
 

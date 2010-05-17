@@ -552,12 +552,12 @@ void __for_each_kddm_object(struct kddm_set *set,
 	int i;
 
 	for (i = 0; i < NR_OBJ_ENTRY_LOCKS; i++)
-		spin_lock(&(set->obj_lock[i]));
+		mutex_lock(&(set->obj_lock[i]));
 
 	set->ops->for_each_obj_entry(set, f, data);
 
 	for (i = 0; i < NR_OBJ_ENTRY_LOCKS; i++)
-		spin_unlock(&(set->obj_lock[i]));
+		mutex_unlock(&(set->obj_lock[i]));
 }
 
 

@@ -3,6 +3,7 @@
 
 #include <kddm/kddm_tree.h>
 #include <linux/wait.h>
+#include <linux/mutex.h>
 #include <kerrighed/types.h>
 
 
@@ -232,7 +233,7 @@ typedef struct kddm_set {
 	void *private_data;                  /**< Data used to instantiate */
 	int private_data_size;               /**< Size of private data... */
 
-	spinlock_t obj_lock[NR_OBJ_ENTRY_LOCKS];    /**< Objects lock */
+	struct mutex obj_lock[NR_OBJ_ENTRY_LOCKS];  /**< Objects lock */
 	struct list_head event_list;
 	spinlock_t event_lock;
 	atomic_t nr_masters;
