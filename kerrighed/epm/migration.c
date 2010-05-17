@@ -32,9 +32,6 @@
 #ifdef CONFIG_KRG_CAP
 #include <kerrighed/capabilities.h>
 #endif
-#ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
-#include <kerrighed/syscalls.h>
-#endif
 #include <kerrighed/task.h>
 #include <kerrighed/pid.h>
 #include <kerrighed/signal.h>
@@ -454,8 +451,11 @@ int sys_migrate_thread(pid_t pid, kerrighed_node_t dest_node)
 }
 
 #ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
-void krg_syscall_exit(long syscall_nr)
+void syscall_exit_hook(long syscall_nr)
 {
+	if (!can_use_krg_cap(current, CAP_SYSCALL_EXIT_HOOK))
+		return;
+
 	__migrate_linux_threads(current, MIGR_LOCAL_PROCESS,
 				krgnode_next_online_in_ring(kerrighed_node_id));
 }
