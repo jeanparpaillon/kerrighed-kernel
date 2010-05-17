@@ -160,6 +160,10 @@ sysenter_do_call:
 sysenter_dispatch:
 	call	*ia32_sys_call_table(,%rax,8)
 	movq	%rax,RAX-ARGOFFSET(%rsp)
+#ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
+	movq ORIG_RAX-ARGOFFSET(%rsp),%rdi
+	call syscall_exit_hook
+#endif
 	GET_THREAD_INFO(%r10)
 	DISABLE_INTERRUPTS(CLBR_NONE)
 	TRACE_IRQS_OFF
@@ -317,6 +321,10 @@ cstar_do_call:
 cstar_dispatch:
 	call *ia32_sys_call_table(,%rax,8)
 	movq %rax,RAX-ARGOFFSET(%rsp)
+#ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
+	movq ORIG_RAX-ARGOFFSET(%rsp),%rdi
+	call syscall_exit_hook
+#endif
 	GET_THREAD_INFO(%r10)
 	DISABLE_INTERRUPTS(CLBR_NONE)
 	TRACE_IRQS_OFF
@@ -425,6 +433,10 @@ ia32_do_call:
 	call *ia32_sys_call_table(,%rax,8) # xxx: rip relative
 ia32_sysret:
 	movq %rax,RAX-ARGOFFSET(%rsp)
+#ifdef CONFIG_KRG_SYSCALL_EXIT_HOOK
+	movq ORIG_RAX-ARGOFFSET(%rsp),%rdi
+	call syscall_exit_hook
+#endif
 	jmp int_ret_from_sys_call 
 
 ia32_tracesys:			 
