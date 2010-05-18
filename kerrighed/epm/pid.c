@@ -648,8 +648,9 @@ void unimport_pid(struct pid_link *link)
 {
 	struct pid *pid = link->pid;
 
-	if (pid && pid->kddm_obj)
-		krg_put_pid(pid);
+	if (pid->kddm_obj)
+		krg_end_get_pid(pid);
+	krg_put_pid(pid);
 }
 
 /* Must be called under rcu_read_lock() */
