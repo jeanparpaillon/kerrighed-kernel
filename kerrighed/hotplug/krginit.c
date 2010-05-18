@@ -42,7 +42,12 @@ kerrighed_session_t kerrighed_session_id = 0;
 kerrighed_subsession_t kerrighed_subsession_id = -1;
 
 /* Initialisation flags */
-int kerrighed_init_flags = 0;
+#ifdef CONFIG_KRG_AUTONODEID_ON
+#define IF_AUTONODEID (1<<KRG_INITFLAGS_AUTONODEID)
+#else
+#define IF_AUTONODEID (0)
+#endif
+int kerrighed_init_flags = IF_AUTONODEID;
 
 /* lock around process transformation and hooks install */
 DECLARE_RWSEM(kerrighed_init_sem);
@@ -108,6 +113,8 @@ static int __init  parse_autonodeid(char *str) {
 	get_option(&str, &v);
 	if(v)
 		SET_KRG_INIT_FLAGS(KRG_INITFLAGS_AUTONODEID);
+	else
+		CLR_KRG_INIT_FLAGS(KRG_INITFLAGS_AUTONODEID);
 	return 0;
 }
 __setup("autonodeid=",parse_autonodeid);

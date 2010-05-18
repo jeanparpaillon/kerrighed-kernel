@@ -45,20 +45,52 @@ config KRG_COMMUNICATION_FRAMEWORK
          All-purpose communication layer
 
 config KRG_AUTONODEID
-       bool "Set nodeid automatically"
-       depends on KRG_COMMUNICATION_FRAMEWORK
-       default y
-       help
-         During the boot, if the IP address is available
-	 (dhcp, command line, etc.), this nodeid is set to the less
-	 significant byte of the IP address.
+	bool "Allow node id to bet set automatically"
+	depends on KRG_COMMUNICATION_FRAMEWORK
+	default y
+	help
+	  Compile support to let the kernel automatically set the node id.
+	  The method to compute the node id can be chosen with kernel boot
+	  parameter "autonodeid", which default value can be changed with
+	  the choice menu below. Available methods are described in that
+	  menu.
 
-	 In order to avoid any headache, be sure that all your nodes are
-	 on the same /24 network.
+	  Enabling this option will use 8 bits instead of 7 bits for node ids,
+	  which doubles the size of various node id masks, especially used in
+	  KDDM metadata.
 
-	 This value may be overrided by the kernel boot parameter autonodeid.
+	  If unsure, say Y.
 
-	 If unsure, say Y.
+choice
+	prompt "Default value of boot parameter autonodeid"
+	default KRG_AUTONODEID_ON
+	depends on KRG_AUTONODEID
+
+config KRG_AUTONODEID_ON
+	bool "IP address (autonodeid=1)"
+	help
+	  During the boot the kernel must be able to get an IP address
+	  (dhcp, command line, etc.), and will set the node id to the least
+	  significant byte of the IP address.
+
+	  In order to avoid any headache, be sure that all your nodes are
+	  on the same /24 network.
+
+	  This value can be overridden by kernel boot parameter autonodeid.
+
+	  If unsure, say Y.
+
+config KRG_AUTONODEID_OFF
+	bool "off (autonodeid=0)"
+	help
+	  The kernel will not attempt to automatically set the node id. A valid
+	  node id must be provided with kernel boot parameter "node_id".
+
+	  This value can be overridden by kernel boot parameter "autonodeid".
+
+	  If unsure, say N.
+
+endchoice
 
 config KRG_HOTPLUG
 	bool "KerHotplug"
