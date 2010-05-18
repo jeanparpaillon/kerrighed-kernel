@@ -1027,6 +1027,15 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 		goto error;
 	}
 
+#ifdef CONFIG_KRG_DEBUG
+	{
+		int magic;
+		r = rpc_unpack_type(desc, magic);
+		BUG_ON(r);
+		BUG_ON(magic != 40);
+	}
+#endif
+
 	r = local_restart_shared(desc, app, fake, app->chkpt_sn);
 	if (r)
 		goto error;
@@ -1089,6 +1098,15 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	/* complete the import of shared objects */
 	local_restart_shared_complete(app, fake);
 
+#ifdef CONFIG_KRG_DEBUG
+	{
+		int magic;
+		r = rpc_unpack_type(desc, magic);
+		BUG_ON(r);
+		BUG_ON(magic != 48);
+	}
+#endif
+
 error:
 	if (app->cred) {
 		app->cred = NULL;
@@ -1148,12 +1166,20 @@ static int global_do_restart(struct app_kddm_object *obj,
 	if (r)
 		goto error;
 
+#ifdef CONFIG_KRG_DEBUG
+	{
+		int magic = 40;
+		r = rpc_pack_type(desc, magic);
+		BUG_ON(r);
+	}
+#endif
+
 	r = global_restart_shared(desc, obj, req);
 	if (r)
 		goto error;
 
-	/* asking to rebuild session leader(s) */
-	r = ask_nodes_to_continue(desc, obj->nodes, r);
+	/* waiting for clients to have rebuild session leader(s) */
+	r = app_wait_returns_from_nodes(desc, obj->nodes);
 	if (r)
 		goto error;
 
@@ -1197,6 +1223,14 @@ static int global_do_restart(struct app_kddm_object *obj,
 	r = rpc_pack_type(desc, r);
 	if (r)
 		goto error;
+
+#ifdef CONFIG_KRG_DEBUG
+	{
+		int magic = 48;
+		r = rpc_pack_type(desc, magic);
+		BUG_ON(r);
+	}
+#endif
 
 exit_free_pid:
 	free_pids_list(&orphan_pids);
