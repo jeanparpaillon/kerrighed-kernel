@@ -7,6 +7,7 @@
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
+#include <linux/mount.h>
 #include <linux/stat.h>
 #include <kerrighed/fcntl.h>
 #include <kerrighed/file.h>
@@ -100,10 +101,12 @@ int is_anon_shared_mmap(const struct file *file)
 	if (file->f_op != &shmem_file_operations)
 		return 0;
 
-	if (strcmp("dev/zero", file->f_dentry->d_name.name) == 0)
-		return 1;
+	if (file->f_path.mnt->mnt_ns)
+		return 0;
 
-	return 0;
+	BUG_ON(strcmp("dev/zero", file->f_dentry->d_name.name) != 0);
+
+	return 1;
 }
 
 extern const struct file_operations tty_fops;
