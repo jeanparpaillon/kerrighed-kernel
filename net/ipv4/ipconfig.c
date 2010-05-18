@@ -1395,7 +1395,7 @@ static int __init ip_auto_config(void)
 	ic_proto_used = ic_got_reply | (ic_proto_enabled & IC_USE_DHCP);
 #endif
 
-#ifdef CONFIG_KRGRPC
+#ifdef CONFIG_KRG_AUTONODEID
  	if(ISSET_KRG_INIT_FLAGS(KRG_INITFLAGS_AUTONODEID)){
 		kerrighed_node_id = ((unsigned char *)&ic_myaddr)[3];
 		SET_KRG_INIT_FLAGS(KRG_INITFLAGS_NODEID);
