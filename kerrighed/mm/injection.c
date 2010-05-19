@@ -235,17 +235,24 @@ static int flush_page(struct page *page,
 	if (mm->mm_id == 0)
 		return SWAP_FAIL;
 
-	dest_node = select_injection_node_rr();
-	if (dest_node == KERRIGHED_NODE_ID_NONE)
-		return SWAP_FAIL;
+	if (PageMigratable(page))
+		dest_node = select_injection_node_rr();
+	else
+		dest_node = KERRIGHED_NODE_ID_NONE;
 
 	SetPageSwapCache(page);
 	r = _kddm_flush_object(set, objid, dest_node);
 	ClearPageSwapCache(page);
-	if (r)
-		return SWAP_FAIL;
 
-	ClearPageMigratable(page);
+	if (r) {
+		if ((r == -ENOSPC) && (dest_node == KERRIGHED_NODE_ID_NONE))
+			return SWAP_FLUSH_FAIL;
+		else
+			return SWAP_FAIL;
+	}
+	else
+		ClearPageMigratable(page);
+
 
 	return SWAP_SUCCESS;
 }

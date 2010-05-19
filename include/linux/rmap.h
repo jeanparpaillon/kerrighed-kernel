@@ -148,6 +148,9 @@ static inline int page_mkclean(struct page *page)
 #define SWAP_AGAIN	1
 #define SWAP_FAIL	2
 #define SWAP_MLOCK	3
+#ifdef CONFIG_KRG_MM
+#define SWAP_FLUSH_FAIL	4
+#endif
 
 #ifdef CONFIG_KRG_MM
 extern struct kmem_cache *anon_vma_cachep;
