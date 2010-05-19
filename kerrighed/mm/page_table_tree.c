@@ -456,19 +456,6 @@ done:
 
 
 
-static inline void check_create_vma(struct mm_struct *mm, unsigned long addr)
-{
-	struct vm_area_struct *vma;
-
-	vma = find_vma(mm, addr);
-	if (vma && (vma->vm_start <= addr))
-		return;
-
-	BUG();
-}
-
-
-
 static struct kddm_obj *kddm_pt_lookup_obj_entry (struct kddm_set *set,
 						  objid_t objid)
 {
@@ -496,9 +483,6 @@ static struct kddm_obj *kddm_pt_get_obj_entry (struct kddm_set *set,
 	obj_entry = get_obj_entry_from_pte(mm, addr, ptep, new_obj);
 
 	pte_unmap_unlock(ptep, ptl);
-
-	if (obj_entry == new_obj)
-		check_create_vma(mm, addr);
 
 	return obj_entry;
 }
