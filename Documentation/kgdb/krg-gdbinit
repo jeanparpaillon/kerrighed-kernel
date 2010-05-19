@@ -208,3 +208,182 @@ end
 document taskkpid
 	print informations on a task given its Kerrighed pid
 end
+
+
+set $O_FAF_CLT = (1<<22)
+set $O_FAF_SRV = (1<<23)
+set $O_DVFS = (1<<24)
+set $O_FAF_TTY = (1<<25)
+
+# in octal
+set $S_IFMT = 00170000
+set $S_IFSOCK = 0140000
+set $S_IFLNK = 0120000
+set $S_IFREG = 0100000
+set $S_IFBLK = 0060000
+set $S_IFDIR = 0040000
+set $S_IFCHR = 0020000
+set $S_IFIFO = 0010000
+set $S_ISUID = 0004000
+set $S_ISGID = 0002000
+set $S_ISVTX = 0001000
+
+set $O_ACCMODE   = 00000003
+set $O_RDONLY    = 00000000
+set $O_WRONLY    = 00000001
+set $O_RDWR      = 00000002
+set $O_CREAT     = 00000100
+set $O_EXCL      = 00000200
+set $O_NOCTTY    = 00000400
+set $O_TRUNC     = 00001000
+set $O_APPEND    = 00002000
+set $O_NONBLOCK  = 00004000
+set $O_SYNC      = 00010000
+set $FASYNC      = 00020000
+set $O_DIRECT    = 00040000
+set $O_LARGEFILE = 00100000
+set $O_DIRECTORY = 00200000
+set $O_NOFOLLOW	 = 00400000
+set $O_NOATIME	 = 01000000
+set $O_CLOEXEC	 = 02000000
+set $O_NDELAY	 = $O_NONBLOCK
+
+define get_inode_mode
+  set $file = (struct file *)$arg0
+  if ($file->f_flags & $O_FAF_CLT)
+    set $imode = ((struct faf_client_data*)$file->private_data)->i_mode
+  else if ($file->f_path.dentry)
+    set $imode = $file->f_path.dentry->d_inode->i_mode
+  else
+    set $imode = 0
+  end
+  print $imode
+end
+
+define is_pipe
+  set $imode = $arg0
+  if (($imode & $S_IFMT) == $S_IFIFO)
+    printf "PIPE "
+  end
+end
+
+define is_socket
+  set $imode = $arg0
+  if (($imode & $S_IFMT) == $S_IFSOCK)
+    printf "SOCKET "
+  end
+end
+
+define is_char_device
+  set $imode = $arg0
+  if (($imode & $S_IFMT) == $S_IFCHR)
+    printf "CHAR "
+  end
+end
+
+define is_block_device
+  set $imode = $arg0
+  if (($imode & $S_IFMT) == $S_IFBLK)
+    printf "CHAR "
+  end
+end
+
+define is_directory
+  set $imode = $arg0
+  if (($imode & $S_IFMT) == $S_IFDIR)
+    printf "CHAR "
+  end
+end
+
+define is_link
+  set $imode = $arg0
+  if (($imode & $S_IFMT) == $S_IFLNK)
+    printf "CHAR "
+  end
+end
+
+define fileinfo
+  set $file = (struct file *)$arg0
+  if ($file->f_path.dentry)
+    printf "%s\n", $file->f_path.dentry->d_name.name
+  end
+
+  printf "flags: 0x%x ", $file->f_flags
+  if ($file->f_flags & $O_ACCMODE)
+    printf "ACCMODE "
+  end
+  if ($file->f_flags & $O_WRONLY)
+    printf "WRONLY "
+  end
+  if ($file->f_flags & $O_RDWR)
+    printf "RDWR "
+  end
+  if ($file->f_flags & $O_CREAT)
+    printf "CREAT "
+  end
+  if ($file->f_flags & $O_EXCL)
+    printf "EXCL "
+  end
+  if ($file->f_flags & $O_NOCTTY)
+    printf "NOCTTY "
+  end
+  if ($file->f_flags & $O_TRUNC)
+    printf "TRUNC "
+  end
+  if ($file->f_flags & $O_APPEND)
+    printf "APPEND "
+  end
+  if ($file->f_flags & $O_NONBLOCK)
+    printf "NONBLOCK "
+  end
+  if ($file->f_flags & $O_SYNC)
+    printf "SYNC "
+  end
+  if ($file->f_flags & $O_LARGEFILE)
+    printf "LARGEFILE "
+  end
+  if ($file->f_flags & $O_DIRECTORY)
+    printf "DIRECTORY "
+  end
+  if ($file->f_flags & $O_NOFOLLOW)
+    printf "NOFOLLOW "
+  end
+  if ($file->f_flags & $O_NOATIME)
+    printf "NOATIME "
+  end
+  if ($file->f_flags & $O_CLOEXEC)
+    printf "CLOEXEC "
+  end
+
+  if ($file->f_flags & $O_FAF_CLT)
+    printf "FAF_CLT "
+  end
+  if ($file->f_flags & $O_FAF_SRV)
+    printf "FAF_SRV "
+  end
+  if ($file->f_flags & $O_DVFS)
+    printf "DVFS "
+  end
+  if ($file->f_flags & $O_FAF_TTY)
+    printf "FAF_TTY "
+  end
+  printf "\n"
+
+  get_inode_mode $file
+
+  is_pipe $imode
+  is_socket $imode
+  is_char_device $imode
+  is_block_device $imode
+  is_directory $imode
+  is_link $imode
+
+  printf "\n"
+
+  printf "count: %d\n", $file->f_count.counter
+
+  print /a  $file->f_op
+end
+document fileinfo
+print various information about a given struct file
+end
