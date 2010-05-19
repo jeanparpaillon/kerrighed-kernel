@@ -176,6 +176,9 @@ extern unsigned int nr_free_pagecache_pages(void);
 /* Definition of global_page_state not available yet */
 #define nr_free_pages() global_page_state(NR_FREE_PAGES)
 
+#ifdef CONFIG_KRG_MM
+int page_swapcount(struct page *page);
+#endif
 
 /* linux/mm/swap.c */
 extern void __lru_cache_add(struct page *, enum lru_list lru);

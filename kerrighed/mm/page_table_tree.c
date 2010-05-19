@@ -605,29 +605,50 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 	unsigned long addr = objid * PAGE_SIZE;
 	spinlock_t *ptl;
 	pte_t *ptep;
+	int count, swap_count = 0;
 
 	if (!old_page)
 		return obj_entry;
 
-	BUG_ON(page_kddm_count(old_page) == 0);
+	wait_lock_kddm_page(old_page);
+	if (page_kddm_count(old_page) == 0) {
+		unlock_kddm_page(old_page);
+		return obj_entry;
+	}
+
 	BUG_ON(obj_entry_count(obj_entry) == 0);
 	BUG_ON(!TEST_OBJECT_LOCKED(obj_entry));
 	BUG_ON(swap_pte_page(old_page));
 
-	wait_lock_kddm_page(old_page);
 	if (page_kddm_count(old_page) == 1) {
-		if (page_mapcount(old_page) == 1) {
+		count = page_mapcount(old_page);
+		BUG_ON(count == 0);
+		if (PageSwapCache(old_page))
+			swap_count = page_swapcount(old_page);
+		count += swap_count;
+		if (count == 1) {
 			/* Page not shared, nothing to do */
 			unlock_kddm_page(old_page);
 			return obj_entry;
 		}
 		else {
-			/* Page shared with a regular MM, no KDDM COW but a
-			 * regular page COW is needed. Reuse the obj entry. */
+			/* Page shared */
 			atomic_dec(&old_page->_kddm_count);
 			old_page->obj_entry = NULL;
+			if (obj_entry_count(obj_entry) != 1) {
+				/* Page shared with another KDDM through the
+				 * swap cache. COW the obj entry. */
+				atomic_dec(&obj_entry->count);
+				new_obj = dup_kddm_obj_entry(obj_entry);
+				CLEAR_OBJECT_LOCKED(obj_entry);
+			}
+			else {
+				/* Page shared with a regular MM, no KDDM COW
+				 * but a regular page COW is needed.
+				 * Reuse the obj entry. */
+				new_obj = obj_entry;
+			}
 			unlock_kddm_page(old_page);
-			new_obj = obj_entry;
 		}
 	}
 	else {
@@ -653,11 +674,14 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 
 	ptep = get_locked_pte(mm, addr, &ptl);
 	BUG_ON (!ptep);
-	BUG_ON (!pte_present(*ptep));
 
-	/* Unmap old page and map the new one in the set mm */
+	if (pte_present(*ptep))
+		unmap_page (mm, addr, old_page, ptep);
+	else
+		/* The page has been unmapped while we was doing the copy... */
+		old_page = NULL;
 
-	unmap_page (mm, addr, old_page, ptep);
+	/* Map the new page in the set mm */
 
 	__kddm_pt_insert_object (mm, new_page, addr, ptep, new_obj);
 
@@ -666,7 +690,8 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 	if (new_page)
 		add_page_anon_rmap (mm, new_page, addr);
 
-	page_cache_release (old_page);
+	if (old_page)
+		page_cache_release (old_page);
 
 	return new_obj;
 }

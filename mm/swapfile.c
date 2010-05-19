@@ -512,7 +512,11 @@ void swap_free(swp_entry_t entry)
 /*
  * How many references to page are currently swapped out?
  */
+#ifdef CONFIG_KRG_MM
+int page_swapcount(struct page *page)
+#else
 static inline int page_swapcount(struct page *page)
+#endif
 {
 	int count = 0;
 	struct swap_info_struct *p;
