@@ -9,6 +9,7 @@
 #include <net/krgrpc/rpc.h>
 #include "mm_struct.h"
 #include "mm_server.h"
+#include "memory_int_linker.h"
 
 /** Handler for remote mmap.
  *  @author Renaud Lottiaux
@@ -17,6 +18,7 @@ int handle_do_mmap_region (struct rpc_desc* desc,
 			   void *msgIn, size_t size)
 {
 	struct mm_mmap_msg *msg = msgIn;
+	struct vm_area_struct *vma;
 	struct mm_struct *mm;
 
 	mm = krg_get_mm(msg->mm_id);
@@ -28,6 +30,11 @@ int handle_do_mmap_region (struct rpc_desc* desc,
 
 	__mmap_region(mm, NULL, msg->start, msg->len, msg->flags,
 		      msg->vm_flags, 0, 1);
+
+	vma = find_vma(mm, msg->start);
+	BUG_ON(!vma || vma->vm_start != msg->start);
+
+	check_link_vma_to_anon_memory_kddm_set (vma);
 
 	up_write(&mm->mmap_sem);
 
