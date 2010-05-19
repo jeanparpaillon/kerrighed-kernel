@@ -1548,7 +1548,10 @@ void krg_children_finish_de_thread(struct children_kddm_object *obj,
 
 /* exit()/release_task() */
 
-/* Expects tasklist and task KDDM object writelocked */
+/*
+ * Expects tasklist and task KDDM object writelocked,
+ * and real parent's children KDDM object locked
+ */
 void
 krg_update_parents(struct task_struct *task, pid_t parent, pid_t real_parent)
 {
@@ -1556,9 +1559,16 @@ krg_update_parents(struct task_struct *task, pid_t parent, pid_t real_parent)
 		remove_from_krg_parent(task, task->task_obj->real_parent);
 		list_add_tail(&task->sibling, &baby_sitter->children);
 	}
+
 	task->task_obj->parent = parent;
 	task->task_obj->real_parent = real_parent;
-	update_relatives(task);
+
+	/* Real parent is alive */
+	if (task->parent == baby_sitter)
+		task->parent = find_relative(parent);
+	if (task->real_parent == baby_sitter)
+		task->real_parent = find_relative(real_parent);
+
 	fix_chain_to_parent(task, real_parent);
 }
 
