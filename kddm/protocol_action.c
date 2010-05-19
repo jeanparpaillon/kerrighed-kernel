@@ -623,10 +623,10 @@ int object_first_touch_no_wakeup(struct kddm_set * set,
 
 	res = kddm_io_first_touch_object(obj_entry, set, objid, flags);
 
+	kddm_obj_path_lock(set, objid);
+
 	if (res)
 		return res;
-
-	kddm_obj_path_lock(set, objid);
 
 	if (object_state != INV_FILLING) {
 		kddm_change_obj_state(set, obj_entry, objid, object_state);
