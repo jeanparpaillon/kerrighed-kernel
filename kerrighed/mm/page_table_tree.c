@@ -723,9 +723,15 @@ static void *kddm_pt_alloc (struct kddm_set *set, void *_data)
 	else
 		atomic_inc(&mm->mm_users);
 
+	down_write(&mm->mmap_sem);
+
+	mm->anon_vma_kddm_id = set->id;
+
 	init_kddm_pt(set, mm);
 
-	set_anon_vma_kddm_set(mm, set);
+	mm->anon_vma_kddm_set = set;
+
+	up_write(&mm->mmap_sem);
 
 	return mm;
 }
