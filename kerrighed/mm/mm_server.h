@@ -31,10 +31,12 @@ typedef struct mm_mmap_msg {
 	union {
 		unsigned long new_len;
 		unsigned int vm_flags;
+		unsigned long prot;
 	};
 	union {
 		unsigned long flags;
 		unsigned long data_limit;
+		int personality;
 	};
 	unsigned long old_len;
 	unsigned long new_addr;

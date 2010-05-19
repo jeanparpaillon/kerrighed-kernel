@@ -112,6 +112,9 @@ void krg_do_brk(struct mm_struct *mm, unsigned long brk,
 
 int krg_expand_stack(struct vm_area_struct *vma, unsigned long address);
 
+void krg_do_mprotect(struct mm_struct *mm, unsigned long start, size_t len,
+		     unsigned long prot, int personality);
+
 #define TestClearPageLRU(page)  test_and_clear_bit(PG_lru, &(page)->flags)
 
 #endif // __KKRG_MM__

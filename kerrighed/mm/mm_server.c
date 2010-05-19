@@ -141,6 +141,27 @@ int handle_expand_stack (struct rpc_desc* desc,
 	return r;
 }
 
+/** Handler for remote mprotect.
+ *  @author Renaud Lottiaux
+ */
+int handle_do_mprotect (struct rpc_desc* desc,
+			void *msgIn, size_t size)
+{
+	struct mm_mmap_msg *msg = msgIn;
+	struct mm_struct *mm;
+
+	mm = krg_get_mm(msg->mm_id);
+
+	if (!mm)
+		return 0;
+
+	do_mprotect (mm, msg->start, msg->len, msg->prot, msg->personality);
+
+	krg_put_mm(msg->mm_id);
+
+	return 0;
+}
+
 /* MM handler Initialisation */
 
 void mm_server_init (void)
@@ -150,6 +171,7 @@ void mm_server_init (void)
 	rpc_register_int(RPC_MM_MUNMAP, handle_do_munmap, 0);
 	rpc_register_int(RPC_MM_DO_BRK, handle_do_brk, 0);
 	rpc_register_int(RPC_MM_EXPAND_STACK, handle_expand_stack, 0);
+	rpc_register_int(RPC_MM_MPROTECT, handle_do_mprotect, 0);
 }
 
 

@@ -553,6 +553,33 @@ int krg_expand_stack(struct vm_area_struct *vma,
 	return r;
 }
 
+void krg_do_mprotect(struct mm_struct *mm,
+		     unsigned long start,
+		     size_t len,
+		     unsigned long prot,
+		     int personality)
+{
+	struct mm_mmap_msg msg;
+	krgnodemask_t copyset;
+
+	if (!mm->mm_id)
+		return;
+
+	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
+		return;
+
+	msg.mm_id = mm->mm_id;
+	msg.start = start;
+	msg.len = len;
+	msg.prot = prot;
+	msg.personality = personality;
+
+	krgnodes_copy(copyset, mm->copyset);
+	krgnode_clear(kerrighed_node_id, copyset);
+
+	rpc_sync_m(RPC_MM_MPROTECT, &copyset, &msg, sizeof(msg));
+}
+
 
 /*****************************************************************************/
 /*                                                                           */

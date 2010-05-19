@@ -866,6 +866,8 @@ extern unsigned long move_page_tables(struct vm_area_struct *vma,
 		unsigned long old_addr, struct vm_area_struct *new_vma,
 		unsigned long new_addr, unsigned long len);
 #ifdef CONFIG_KRG_MM
+int do_mprotect(struct mm_struct *mm, unsigned long start, size_t len,
+		unsigned long prot, int personality);
 unsigned long __do_mremap(struct mm_struct *mm, unsigned long addr,
 			  unsigned long old_len, unsigned long new_len,
 			  unsigned long flags, unsigned long new_addr,
