@@ -1194,8 +1194,9 @@ extern int do_munmap(struct mm_struct *, unsigned long, size_t);
 
 #ifdef CONFIG_KRG_MM
 extern unsigned long __do_brk(struct mm_struct * mm, unsigned long addr,
-			      unsigned long len, unsigned long _lock_limit,
-			      int handler_call);
+			      unsigned long len, unsigned long _lock_limit);
+unsigned long __sys_brk(struct mm_struct *mm, unsigned long brk,
+			unsigned long lock_limit, unsigned long data_limit);
 #endif
 extern unsigned long do_brk(unsigned long, unsigned long);
 

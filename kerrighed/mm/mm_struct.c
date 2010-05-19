@@ -478,9 +478,9 @@ void krg_do_munmap(struct mm_struct *mm,
 }
 
 void krg_do_brk(struct mm_struct *mm,
-		unsigned long start,
-		size_t len,
-		unsigned long lock_limit)
+		unsigned long brk,
+		unsigned long lock_limit,
+		unsigned long data_limit)
 {
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
@@ -491,9 +491,9 @@ void krg_do_brk(struct mm_struct *mm,
 		return;
 
 	msg.mm_id = mm->mm_id;
-	msg.start = start;
-	msg.len = len;
-	msg.flags = lock_limit;
+	msg.brk = brk;
+	msg.lock_limit = lock_limit;
+	msg.data_limit = data_limit;
 
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);

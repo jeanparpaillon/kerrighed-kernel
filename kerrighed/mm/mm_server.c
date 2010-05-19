@@ -77,7 +77,7 @@ int handle_do_brk (struct rpc_desc* desc,
 
 	down_write(&mm->mmap_sem);
 
-	__do_brk(mm, msg->start, msg->len, msg->flags, 1);
+	__sys_brk(mm, msg->brk, msg->lock_limit, msg->data_limit);
 
 	up_write(&mm->mmap_sem);
 

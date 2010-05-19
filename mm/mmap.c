@@ -274,6 +274,14 @@ struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
 	return next;
 }
 
+#ifdef CONFIG_KRG_MM
+unsigned long __sys_brk(struct mm_struct *mm, unsigned long brk,
+			unsigned long lock_limit, unsigned long data_limit)
+{
+	unsigned long rlim = data_limit, retval;
+	unsigned long newbrk, oldbrk;
+	unsigned long min_brk;
+#else
 SYSCALL_DEFINE1(brk, unsigned long, brk)
 {
 	unsigned long rlim, retval;
@@ -282,6 +290,7 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 	unsigned long min_brk;
 
 	down_write(&mm->mmap_sem);
+#endif
 
 #ifdef CONFIG_COMPAT_BRK
 	min_brk = mm->end_code;
@@ -297,7 +306,9 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 	 * segment grow beyond its set limit the in case where the limit is
 	 * not page aligned -Ram Gupta
 	 */
+#ifndef CONFIG_KRG_MM
 	rlim = current->signal->rlim[RLIMIT_DATA].rlim_cur;
+#endif
 	if (rlim < RLIM_INFINITY && (brk - mm->start_brk) +
 			(mm->end_data - mm->start_data) > rlim)
 		goto out;
@@ -319,15 +330,44 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 		goto out;
 
 	/* Ok, looks good - let it rip. */
+#ifdef CONFIG_KRG_MM
+	if (__do_brk(mm, oldbrk, newbrk-oldbrk, lock_limit) != oldbrk)
+#else
 	if (do_brk(oldbrk, newbrk-oldbrk) != oldbrk)
+#endif
 		goto out;
 set_brk:
 	mm->brk = brk;
 out:
 	retval = mm->brk;
+#ifndef CONFIG_KRG_MM
 	up_write(&mm->mmap_sem);
+#endif
 	return retval;
 }
+
+#ifdef CONFIG_KRG_MM
+SYSCALL_DEFINE1(brk, unsigned long, brk)
+{
+	struct mm_struct *mm = current->mm;
+	unsigned long retval;
+
+	down_write(&mm->mmap_sem);
+
+	retval = __sys_brk(mm, brk,
+			   current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur,
+			   current->signal->rlim[RLIMIT_DATA].rlim_cur);
+
+	up_write(&mm->mmap_sem);
+
+	if (mm->anon_vma_kddm_set)
+		krg_do_brk(mm, brk,
+			   current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur,
+			   current->signal->rlim[RLIMIT_DATA].rlim_cur);
+
+	return retval;
+}
+#endif
 
 #ifdef DEBUG_MM_RB
 static int browse_rb(struct rb_root *root)
@@ -2078,11 +2118,10 @@ static inline void verify_mm_writelocked(struct mm_struct *mm)
 unsigned long do_brk(unsigned long addr, unsigned long len)
 {
 	return __do_brk(current->mm, addr, len,
-			current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur, 0);
+			current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur);
 }
 unsigned long __do_brk(struct mm_struct * mm, unsigned long addr,
-		       unsigned long len, unsigned long _lock_limit,
-		       int handler_call)
+		       unsigned long len, unsigned long _lock_limit)
 {
 #else
 unsigned long do_brk(unsigned long addr, unsigned long len)
@@ -2186,14 +2225,6 @@ unsigned long do_brk(unsigned long addr, unsigned long len)
 	vma->vm_page_prot = vm_get_page_prot(flags);
 	vma_link(mm, vma, prev, rb_link, rb_parent);
 out:
-#ifdef CONFIG_KRG_MM
-	if (mm->anon_vma_kddm_set) {
-		krg_check_vma_link(vma);
-		if (!handler_call)
-			krg_do_brk(mm, addr, len,
-				current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur);
-	}
-#endif
 	mm->total_vm += len >> PAGE_SHIFT;
 	if (flags & VM_LOCKED) {
 		if (!mlock_vma_pages_range(vma, addr, addr + len))
