@@ -171,6 +171,10 @@ static inline unsigned long zone_lru_pages(struct zone *zone)
 {
 	return (zone_page_state(zone, NR_ACTIVE_ANON)
 		+ zone_page_state(zone, NR_ACTIVE_FILE)
+#ifdef CONFIG_KRG_MM
+		+ zone_page_state(zone, NR_ACTIVE_MIGR)
+		+ zone_page_state(zone, NR_INACTIVE_MIGR)
+#endif
 		+ zone_page_state(zone, NR_INACTIVE_ANON)
 		+ zone_page_state(zone, NR_INACTIVE_FILE));
 }
