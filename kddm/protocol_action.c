@@ -343,7 +343,6 @@ void send_copy_on_write(struct kddm_set * set,
 {
 	kddm_obj_state_t state = WRITE_OWNER;
 
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
 	BUG_ON (!TEST_OBJECT_LOCKED(obj_entry));
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
@@ -363,7 +362,14 @@ struct kddm_obj *send_copy_on_write_and_inv(struct kddm_set *set,
 					    kerrighed_node_t dest,
 					    int flags)
 {
+	/* Unlock the path to allow sleeping function un send_copy_on_write
+	 * The object itself if still locked.
+	 */
+	kddm_obj_path_unlock(set, objid);
+
 	send_copy_on_write (set, obj_entry, objid, dest, 0);
+
+	kddm_obj_path_lock(set, objid);
 
 	kddm_invalidate_local_object_and_unlock(obj_entry, set, objid,
 						INV_COPY);
