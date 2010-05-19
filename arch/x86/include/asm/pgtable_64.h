@@ -154,7 +154,7 @@ extern int direct_gbpages;
 #define MAX_SWAPFILES_CHECK() BUILD_BUG_ON(MAX_SWAPFILES_SHIFT > SWP_TYPE_BITS)
 
 #ifdef CONFIG_KRG_MM
-#define __swp_type(x)			(((x).val >> (_PAGE_BIT_OBJ_ENTRY + 1)) \
+#define __swp_type(x)			(((x).val >> (_PAGE_BIT_FILE + 1)) \
 					 & ((1U << SWP_TYPE_BITS) - 1))
 #else
 #define __swp_type(x)			(((x).val >> (_PAGE_BIT_PRESENT + 1)) \
@@ -163,7 +163,7 @@ extern int direct_gbpages;
 #define __swp_offset(x)			((x).val >> SWP_OFFSET_SHIFT)
 #ifdef CONFIG_KRG_MM
 #define __swp_entry(type, offset)	((swp_entry_t) { \
-					 ((type) << (_PAGE_BIT_OBJ_ENTRY + 1)) \
+					 ((type) << (_PAGE_BIT_FILE + 1)) \
 					 | ((offset) << SWP_OFFSET_SHIFT) })
 #else
 #define __swp_entry(type, offset)	((swp_entry_t) { \
