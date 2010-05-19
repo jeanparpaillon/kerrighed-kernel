@@ -22,19 +22,23 @@ typedef struct mm_mmap_msg {
 	union {
 		unsigned long start;
 		unsigned long brk;
+		unsigned long addr;
 	};
 	union {
 		size_t len;
 		unsigned long lock_limit;
 	};
 	union {
+		unsigned long new_len;
+		unsigned int vm_flags;
+	};
+	union {
 		unsigned long flags;
 		unsigned long data_limit;
 	};
-	unsigned int vm_flags;
+	unsigned long old_len;
+	unsigned long new_addr;
 } mm_mmap_msg_t;
-
-
 
 /*--------------------------------------------------------------------------*
  *                                                                          *

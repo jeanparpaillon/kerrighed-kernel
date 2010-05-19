@@ -865,6 +865,12 @@ int clear_page_dirty_for_io(struct page *page);
 extern unsigned long move_page_tables(struct vm_area_struct *vma,
 		unsigned long old_addr, struct vm_area_struct *new_vma,
 		unsigned long new_addr, unsigned long len);
+#ifdef CONFIG_KRG_MM
+unsigned long __do_mremap(struct mm_struct *mm, unsigned long addr,
+			  unsigned long old_len, unsigned long new_len,
+			  unsigned long flags, unsigned long new_addr,
+			  unsigned long _lock_limit);
+#endif
 extern unsigned long do_mremap(unsigned long addr,
 			       unsigned long old_len, unsigned long new_len,
 			       unsigned long flags, unsigned long new_addr);

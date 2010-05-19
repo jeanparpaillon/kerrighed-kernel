@@ -36,6 +36,32 @@ int handle_do_mmap_region (struct rpc_desc* desc,
 	return 0;
 }
 
+/** Handler for remote mremap.
+ *  @author Renaud Lottiaux
+ */
+int handle_do_mremap (struct rpc_desc* desc,
+		      void *msgIn, size_t size)
+{
+	struct mm_mmap_msg *msg = msgIn;
+	struct mm_struct *mm;
+
+	mm = krg_get_mm(msg->mm_id);
+
+	if (!mm)
+		return 0;
+
+	down_write(&mm->mmap_sem);
+
+	__do_mremap(mm, msg->addr, msg->old_len, msg->new_len, msg->flags,
+		    msg->new_addr, msg->lock_limit);
+
+	up_write(&mm->mmap_sem);
+
+	krg_put_mm(msg->mm_id);
+
+	return 0;
+}
+
 /** Handler for remote munmap.
  *  @author Renaud Lottiaux
  */
@@ -120,6 +146,7 @@ int handle_expand_stack (struct rpc_desc* desc,
 void mm_server_init (void)
 {
 	rpc_register_int(RPC_MM_MMAP_REGION, handle_do_mmap_region, 0);
+	rpc_register_int(RPC_MM_MREMAP, handle_do_mremap, 0);
 	rpc_register_int(RPC_MM_MUNMAP, handle_do_munmap, 0);
 	rpc_register_int(RPC_MM_DO_BRK, handle_do_brk, 0);
 	rpc_register_int(RPC_MM_EXPAND_STACK, handle_expand_stack, 0);

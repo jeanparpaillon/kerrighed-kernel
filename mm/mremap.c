@@ -254,11 +254,27 @@ static unsigned long move_vma(struct vm_area_struct *vma,
  * MREMAP_FIXED option added 5-Dec-1999 by Benjamin LaHaise
  * This option implies MREMAP_MAYMOVE.
  */
+#ifdef CONFIG_KRG_MM
+unsigned long do_mremap(unsigned long addr,
+			unsigned long old_len, unsigned long new_len,
+			unsigned long flags, unsigned long new_addr)
+{
+	return __do_mremap(current->mm, addr, old_len, new_len, flags, new_addr,
+			   current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur);
+}
+
+unsigned long __do_mremap(struct mm_struct *mm, unsigned long addr,
+			  unsigned long old_len, unsigned long new_len,
+			  unsigned long flags, unsigned long new_addr,
+			  unsigned long _lock_limit)
+{
+#else
 unsigned long do_mremap(unsigned long addr,
 	unsigned long old_len, unsigned long new_len,
 	unsigned long flags, unsigned long new_addr)
 {
 	struct mm_struct *mm = current->mm;
+#endif
 	struct vm_area_struct *vma;
 	unsigned long ret = -EINVAL;
 	unsigned long charged = 0;
@@ -344,7 +360,11 @@ unsigned long do_mremap(unsigned long addr,
 	if (vma->vm_flags & VM_LOCKED) {
 		unsigned long locked, lock_limit;
 		locked = mm->locked_vm << PAGE_SHIFT;
+#ifdef CONFIG_KRG_MM
+		lock_limit = _lock_limit;
+#else
 		lock_limit = current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur;
+#endif
 		locked += new_len - old_len;
 		ret = -EAGAIN;
 		if (locked > lock_limit && !capable(CAP_IPC_LOCK))
@@ -357,7 +377,11 @@ unsigned long do_mremap(unsigned long addr,
 
 	if (vma->vm_flags & VM_ACCOUNT) {
 		charged = (new_len - old_len) >> PAGE_SHIFT;
+#ifdef CONFIG_KRG_MM
+		if (security_vm_enough_memory_mm(mm, charged))
+#else
 		if (security_vm_enough_memory(charged))
+#endif
 			goto out_nc;
 	}
 
@@ -429,5 +453,13 @@ SYSCALL_DEFINE5(mremap, unsigned long, addr, unsigned long, old_len,
 	down_write(&current->mm->mmap_sem);
 	ret = do_mremap(addr, old_len, new_len, flags, new_addr);
 	up_write(&current->mm->mmap_sem);
+
+#ifdef CONFIG_KRG_MM
+	if (!(ret & ~PAGE_MASK) && current->mm->anon_vma_kddm_set)
+		krg_do_mremap(current->mm, addr, old_len, new_len, flags,
+			      new_addr,
+			      current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur);
+#endif
+
 	return ret;
 }

@@ -102,6 +102,11 @@ void krg_do_mmap_region(struct vm_area_struct *vma, unsigned long flags,
 
 void krg_do_munmap(struct mm_struct *mm, unsigned long start, size_t len);
 
+void krg_do_mremap(struct mm_struct *mm, unsigned long addr,
+		   unsigned long old_len, unsigned long new_len,
+		   unsigned long flags, unsigned long new_addr,
+		   unsigned long lock_limit);
+
 void krg_do_brk(struct mm_struct *mm, unsigned long brk,
 		unsigned long lock_limit, unsigned long data_limit);
 

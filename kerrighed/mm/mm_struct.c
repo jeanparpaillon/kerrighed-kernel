@@ -476,6 +476,34 @@ void krg_do_munmap(struct mm_struct *mm,
 	rpc_sync_m(RPC_MM_MUNMAP, &copyset, &msg, sizeof(msg));
 }
 
+void krg_do_mremap(struct mm_struct *mm, unsigned long addr,
+		   unsigned long old_len, unsigned long new_len,
+		   unsigned long flags, unsigned long new_addr,
+		   unsigned long lock_limit)
+{
+	struct mm_mmap_msg msg;
+	krgnodemask_t copyset;
+
+	if (!mm->mm_id)
+		return;
+
+	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
+		return;
+
+	msg.mm_id = mm->mm_id;
+	msg.addr = addr;
+	msg.old_len = old_len;
+	msg.new_len = new_len;
+	msg.flags = flags;
+	msg.new_addr = new_addr;
+	msg.lock_limit = lock_limit;
+
+	krgnodes_copy(copyset, mm->copyset);
+	krgnode_clear(kerrighed_node_id, copyset);
+
+	rpc_sync_m(RPC_MM_MREMAP, &copyset, &msg, sizeof(msg));
+}
+
 void krg_do_brk(struct mm_struct *mm,
 		unsigned long brk,
 		unsigned long lock_limit,
