@@ -7,9 +7,10 @@
 #include <linux/mm.h>
 #include <linux/hugetlb.h>
 #include <linux/rmap.h>
-#include <linux/swap.h>
 #include <linux/pagemap.h>
 #include <asm/pgtable.h>
+#include <linux/swap.h>
+#include <linux/swapops.h>
 
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
@@ -94,20 +95,81 @@ static inline struct page *replace_zero_page(struct mm_struct *mm,
 }
 
 
+static inline struct kddm_obj *init_pte_alloc_obj_entry(struct kddm_set *set,
+						objid_t objid,
+						struct kddm_obj **_obj_entry)
+{
+	struct kddm_obj *obj_entry;
+
+	if (!*_obj_entry) {
+		obj_entry = alloc_kddm_obj_entry(set, objid);
+		if (!obj_entry)
+			BUG();
+	}
+	else {
+		obj_entry = *_obj_entry;
+		*_obj_entry = NULL;
+		change_prob_owner(obj_entry,
+				  kddm_io_default_owner(set, objid));
+	}
+
+	return obj_entry;
+}
+
+
+static inline struct kddm_obj *init_swap_pte(struct mm_struct *mm,
+					     pte_t *ptep,
+					     struct kddm_set *set,
+					     objid_t objid,
+					     struct kddm_obj *_obj_entry)
+{
+	struct kddm_obj *obj_entry;
+	swp_entry_t entry;
+
+	if (pte_none(*ptep))
+		return _obj_entry;
+
+	if (pte_obj_entry(ptep)) {
+		obj_entry = get_obj_entry_from_pte(mm, objid * PAGE_SIZE,
+						   ptep, NULL);
+		atomic_inc(&obj_entry->count);
+		BUG_ON(obj_entry_count(obj_entry) == 1);
+		return _obj_entry;
+	}
+
+	/* pte_file not yet supported */
+	BUG_ON (pte_file(*ptep));
+
+	/* OK, we have a swap entry. */
+	entry = pte_to_swp_entry(*ptep);
+
+	/* Migration entries not yet supported */
+	BUG_ON(is_migration_entry(entry));
+
+	obj_entry = init_pte_alloc_obj_entry(set, objid, &_obj_entry);
+
+	/* Set the first bit in order to distinguish pages from swap ptes */
+	obj_entry->object = (void *) mk_swap_pte_page(ptep);
+	kddm_change_obj_state(set, obj_entry, objid, WRITE_OWNER);
+
+	set_swap_pte_obj_entry(ptep, obj_entry);
+
+	return _obj_entry;
+}
 
 static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 					pte_t *ptep,
 					struct kddm_set *set,
 					objid_t objid,
 					struct vm_area_struct *vma,
-					struct kddm_obj *obj_entry)
+					struct kddm_obj *_obj_entry)
 {
 	struct page *page = NULL, *new_page;
 	unsigned long addr = objid * PAGE_SIZE;
-	int obj_entry_used = 0;
+	struct kddm_obj *obj_entry;
 
 	if (!pte_present(*ptep))
-		return obj_entry;
+		return init_swap_pte(mm, ptep, set, objid, _obj_entry);
 
 	page = pfn_to_page(pte_pfn(*ptep));
 
@@ -130,16 +192,7 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 		goto done;
 	}
 
-	if (!obj_entry) {
-		obj_entry = alloc_kddm_obj_entry(set, objid);
-		if (!obj_entry)
-			BUG();
-	}
-	else {
-		change_prob_owner(obj_entry,
-				  kddm_io_default_owner(set, objid));
-		obj_entry_used = 1;
-	}
+	obj_entry = init_pte_alloc_obj_entry(set, objid, &_obj_entry);
 
 	BUG_ON (kddm_io_default_owner(set, objid) != kerrighed_node_id);
 	obj_entry->object = page;
@@ -153,10 +206,7 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 done:
 	unlock_kddm_page(page);
 
-	if (obj_entry_used)
-		return NULL;
-	else
-		return obj_entry;
+	return _obj_entry;
 }
 
 
@@ -561,6 +611,7 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 	BUG_ON(page_kddm_count(old_page) == 0);
 	BUG_ON(obj_entry_count(obj_entry) == 0);
 	BUG_ON(!TEST_OBJECT_LOCKED(obj_entry));
+	BUG_ON(swap_pte_page(old_page));
 
 	wait_lock_kddm_page(old_page);
 	if (page_kddm_count(old_page) == 1) {

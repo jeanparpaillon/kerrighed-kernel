@@ -12,6 +12,8 @@
 #include <asm/mman.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/swap.h>
+#include <linux/swapops.h>
 #include <asm/pgtable.h>
 #include <asm/uaccess.h>
 #include <kerrighed/krgsyms.h>

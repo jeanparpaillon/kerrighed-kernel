@@ -618,15 +618,31 @@ static inline void set_pte_obj_entry(pte_t *ptep, struct kddm_obj *obj)
 	set_pte(ptep, pte);
 }
 
+static inline void set_swap_pte_obj_entry(pte_t *ptep, struct kddm_obj *obj)
+{
+	pte_t pte = __pte((unsigned long)obj);
+	pte = pte_set_flags(pte, _PAGE_OBJ_ENTRY | _PAGE_FILE);
+	set_pte(ptep, pte);
+}
+
 static inline struct kddm_obj *get_pte_obj_entry(pte_t *ptep)
 {
-	return (struct kddm_obj *)(pte_val(*ptep) & (~_PAGE_OBJ_ENTRY));
+	return (struct kddm_obj *)(pte_val(*ptep) & (~(_PAGE_OBJ_ENTRY |
+						       _PAGE_FILE)));
 }
 
 static inline int pte_obj_entry(pte_t *ptep)
 {
 	return ((pte_val(*ptep) & _PAGE_OBJ_ENTRY) && (!pte_present(*ptep)));
 }
+
+static inline int swap_pte_obj_entry(pte_t *ptep)
+{
+	return ((pte_val(*ptep) & _PAGE_OBJ_ENTRY) &&
+		(pte_val(*ptep) & _PAGE_FILE) &&
+		(!pte_present(*ptep)));
+}
+
 #endif /* KRG_MM */
 
 #include <asm-generic/pgtable.h>

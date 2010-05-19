@@ -16,7 +16,6 @@
  *--------------------------------------------------------------------------*/
 
 
-
 extern struct kddm_set_ops kddm_pt_set_ops;
 
 
@@ -26,6 +25,24 @@ extern struct kddm_set_ops kddm_pt_set_ops;
  *                              EXTERN FUNCTIONS                            *
  *                                                                          *
  *--------------------------------------------------------------------------*/
+
+static inline unsigned long mk_swap_pte_page(pte_t *ptep)
+{
+	return (pte_val(*ptep) | 1);
+}
+
+static inline unsigned long swap_pte_page(struct page *page)
+{
+	return ((unsigned long) page) & 1 ;
+}
+
+static inline swp_entry_t get_swap_entry_from_page(struct page *page)
+{
+	pte_t pte;
+
+	pte = __pte(((unsigned long) page) & ~1UL);
+	return pte_to_swp_entry(pte);
+}
 
 static inline void wait_lock_page (struct page *page)
 {

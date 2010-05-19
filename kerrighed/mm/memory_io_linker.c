@@ -12,6 +12,7 @@
 #include <linux/slab.h>
 #include <linux/swap.h>
 #include <linux/rmap.h>
+#include <linux/swapops.h>
 #include <linux/pagemap.h>
 #include <linux/mm_inline.h>
 #include <asm/tlbflush.h>

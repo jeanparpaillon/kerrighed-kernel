@@ -15,6 +15,8 @@
 #include <linux/pagemap.h>
 #include <linux/rmap.h>
 #include <linux/acct.h>
+#include <linux/swap.h>
+#include <linux/swapops.h>
 #include <kerrighed/pid.h>
 #include <kerrighed/page_table_tree.h>
 #include <asm/tlb.h>
