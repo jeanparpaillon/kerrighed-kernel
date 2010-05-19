@@ -249,7 +249,7 @@ int anon_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 			page = _kddm_get_object_manual_ft (set, objid);
 
 		if (page != NULL)
-			goto done;
+			goto check_swap_page;
 
 		/* Ok, the page is not present in the anon kddm set, let's
 		 * load it */
@@ -260,6 +260,9 @@ int anon_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 		/* Copy the cache page into an anonymous page (copy on write
 		 * will be done later on)
+		 *
+		 * TODO : check if this is still usefull
+		 *
 		 */
 		new_page = alloc_page_vma(GFP_HIGHUSER, vma, address);
 		if (!new_page)
@@ -293,7 +296,14 @@ int anon_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 			page = _kddm_get_object (set, objid);
 	}
 
-done:
+check_swap_page:
+	if (swap_pte_obj_entry(&vmf->pte)) {
+		ret = kddm_pt_swap_in (vma->vm_mm, address, &vmf->pte);
+
+		/* The page mapping is done in kddm_pt_swap_in */
+		goto exit_no_map;
+	}
+
 	if (page->mapping) {
 		if (page_mapcount(page) == 0) {
 			printk ("Null mapping count, non null mapping address "
@@ -327,6 +337,7 @@ done:
 
 	map_kddm_page(vma, objid * PAGE_SIZE, page, write_access);
 
+exit_no_map:
 	vmf->page = page;
 
 exit_error:

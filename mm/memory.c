@@ -2788,6 +2788,8 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	vmf.page = NULL;
 
 #ifdef CONFIG_KRG_MM
+	vmf.pte = orig_pte;
+
 	if (flags & FAULT_FLAG_WRITE
 	    && !vma->anon_vma
 	    && !(vma->vm_flags & VM_SHARED)) {
