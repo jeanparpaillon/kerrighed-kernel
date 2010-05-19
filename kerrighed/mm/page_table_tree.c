@@ -29,26 +29,6 @@
 
 
 
-static inline void page_put_kddm_count(struct kddm_set *set,
-				       struct page *page,
-				       unsigned long objid)
-{
-	struct kddm_obj *obj_entry = page->obj_entry;
-
-	BUG_ON(obj_entry == NULL);
-
-	if (!atomic_dec_and_test(&page->_kddm_count))
-		return;
-
-	/* Kill obj_entry->object field to avoid removal in IO linker.
-	 * Such removal would lead to a double page free...
-	 */
-	obj_entry->object = NULL;
-	page->obj_entry = NULL;
-}
-
-
-
 static inline void unmap_page(struct mm_struct *mm,
 			      unsigned long addr,
 			      struct page *page,
@@ -865,7 +845,7 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 {
 	struct kddm_set *set = mm->anon_vma_kddm_set;
 	struct kddm_obj *obj_entry;
-	struct page *page;
+	struct page *page = NULL;
 	objid_t objid = addr / PAGE_SIZE;
 
 	BUG_ON(!set);
@@ -876,17 +856,31 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 		return;
 
 	if (pte_obj_entry(ptep)) {
-		put_obj_entry_count(set, obj_entry, objid);
+		if (swap_pte_obj_entry(ptep))
+			page = obj_entry->object;
 		pte_clear(mm, addr, ptep);
+		if (page) {
+			swp_entry_t swp_entry;
+			if (swap_pte_page(page))
+				swp_entry = get_swap_entry_from_page(page);
+			else
+				swp_entry.val = page_private(page);
+			free_swap_and_cache(swp_entry);
+		}
 	}
 	else {
-		page = (struct page *) obj_entry->object;
+		page = pfn_to_page(pte_pfn(*ptep));
 		BUG_ON(!page);
 
 		wait_lock_kddm_page(page);
-		page_put_kddm_count(set, page, objid);
-		put_obj_entry_count(set, obj_entry, objid);
+		if (atomic_dec_and_test(&page->_kddm_count))
+			page->obj_entry = NULL;
 		unlock_kddm_page(page);
+	}
+
+	if (atomic_dec_and_test(&obj_entry->count)) {
+		obj_entry->object = NULL;
+		free_kddm_obj_entry(set, obj_entry, objid);
 	}
 }
 
