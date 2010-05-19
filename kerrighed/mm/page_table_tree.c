@@ -27,20 +27,6 @@
 
 
 
-/* Used to ensure atomicity of operations on kddm_count and obj_entry fields */
-static inline void wait_lock_kddm_page (struct page *page)
-{
-       while (TestSetPageLockedKDDM(page))
-		cpu_relax();
-}
-
-static inline void unlock_kddm_page (struct page *page)
-{
-	ClearPageLockedKDDM(page);
-}
-
-
-
 static inline void page_put_kddm_count(struct kddm_set *set,
 				       struct page *page,
 				       unsigned long objid)

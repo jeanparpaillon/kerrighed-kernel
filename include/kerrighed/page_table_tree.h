@@ -33,6 +33,18 @@ static inline void wait_lock_page (struct page *page)
 		cpu_relax();
 }
 
+/* Used to ensure atomicity of operations on kddm_count and obj_entry fields */
+static inline void wait_lock_kddm_page (struct page *page)
+{
+       while (TestSetPageLockedKDDM(page))
+		cpu_relax();
+}
+
+static inline void unlock_kddm_page (struct page *page)
+{
+	ClearPageLockedKDDM(page);
+}
+
 int kddm_pt_invalidate (struct kddm_set *set, objid_t objid,
 			struct kddm_obj *obj_entry, struct page *page);
 
