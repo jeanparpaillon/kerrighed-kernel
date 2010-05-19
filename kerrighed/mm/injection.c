@@ -245,7 +245,7 @@ static int flush_page(struct page *page,
        if (r)
                return SWAP_FAIL;
 
-       ClearPageInjectable(page);
+       ClearPageMigratable(page);
 
        return SWAP_SUCCESS;
 }

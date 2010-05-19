@@ -199,7 +199,7 @@ void activate_page(struct page *page)
 		__count_vm_event(PGACTIVATE);
 #ifdef CONFIG_KRG_MM
 		update_page_reclaim_stat(zone, page, !!file,
-					 page_is_kddm(page), 1);
+					 page_is_migratable(page), 1);
 #else
 		update_page_reclaim_stat(zone, page, !!file, 1);
 #endif

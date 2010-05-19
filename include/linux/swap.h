@@ -8,6 +8,9 @@
 #include <linux/memcontrol.h>
 #include <linux/sched.h>
 #include <linux/node.h>
+#ifdef CONFIG_KRG_MM
+#include <linux/page-flags.h>
+#endif
 
 #include <asm/atomic.h>
 #include <asm/page.h>
@@ -193,8 +196,8 @@ extern void add_page_to_unevictable_list(struct page *page);
 static inline void lru_cache_add_anon(struct page *page)
 {
 #ifdef CONFIG_KRG_MM
-	if (page->obj_entry)
-		__lru_cache_add(page, LRU_INACTIVE_KDDM);
+	if (PageMigratable(page))
+		__lru_cache_add(page, LRU_INACTIVE_MIGR);
 	else
 #endif
 	__lru_cache_add(page, LRU_INACTIVE_ANON);
@@ -203,8 +206,8 @@ static inline void lru_cache_add_anon(struct page *page)
 static inline void lru_cache_add_active_anon(struct page *page)
 {
 #ifdef CONFIG_KRG_MM
-	if (page->obj_entry)
-		__lru_cache_add(page, LRU_ACTIVE_KDDM);
+	if (PageMigratable(page))
+		__lru_cache_add(page, LRU_ACTIVE_MIGR);
 	else
 #endif
 	__lru_cache_add(page, LRU_ACTIVE_ANON);

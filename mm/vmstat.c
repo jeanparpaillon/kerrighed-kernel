@@ -728,8 +728,8 @@ static void zoneinfo_show_print(struct seq_file *m, pg_data_t *pgdat,
 		   zone->lru[LRU_ACTIVE_FILE].nr_scan,
 		   zone->lru[LRU_INACTIVE_FILE].nr_scan,
 #ifdef CONFIG_KRG_MM
-		   zone->lru[LRU_ACTIVE_KDDM].nr_scan,
-		   zone->lru[LRU_INACTIVE_KDDM].nr_scan,
+		   zone->lru[LRU_ACTIVE_MIGR].nr_scan,
+		   zone->lru[LRU_INACTIVE_MIGR].nr_scan,
 #endif
 		   zone->spanned_pages,
 		   zone->present_pages);

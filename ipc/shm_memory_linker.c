@@ -245,7 +245,7 @@ int shmem_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	}
 
 	map_kddm_page (vma, address, page, write_access);
-	ClearPageInjectable(page);
+	ClearPageMigratable(page);
 
 	inc_mm_counter(vma->vm_mm, file_rss);
 	page_add_file_rmap(page);

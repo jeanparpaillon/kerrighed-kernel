@@ -197,7 +197,7 @@ void map_kddm_page(struct vm_area_struct *vma,
 	pte_unmap_unlock(ptep, ptl);
 
 	if (cap_raised(current->krg_caps.effective, CAP_USE_REMOTE_MEMORY))
-		SetPageInjectable(page);
+		SetPageMigratable(page);
 }
 
 /** Handle a nopage fault on an anonymous VMA.

@@ -68,8 +68,8 @@ int meminfo_proc_show(struct seq_file *m, void *v)
 		"Active(file):   %8lu kB\n"
 		"Inactive(file): %8lu kB\n"
 #ifdef CONFIG_KRG_MM
-		"Active(KDDM):   %8lu kB\n"
-		"Inactive(KDDM): %8lu kB\n"
+		"Active(migr):   %8lu kB\n"
+		"Inactive(migr): %8lu kB\n"
 #endif
 #ifdef CONFIG_UNEVICTABLE_LRU
 		"Unevictable:    %8lu kB\n"
@@ -112,9 +112,9 @@ int meminfo_proc_show(struct seq_file *m, void *v)
 		K(total_swapcache_pages),
 #ifdef CONFIG_KRG_MM
 		K(pages[LRU_ACTIVE_ANON]   + pages[LRU_ACTIVE_FILE] +
-		  pages[LRU_ACTIVE_KDDM]),
+		  pages[LRU_ACTIVE_MIGR]),
 		K(pages[LRU_INACTIVE_ANON] + pages[LRU_INACTIVE_FILE] +
-		  pages[LRU_INACTIVE_KDDM]),
+		  pages[LRU_INACTIVE_MIGR]),
 #else
 		K(pages[LRU_ACTIVE_ANON]   + pages[LRU_ACTIVE_FILE]),
 		K(pages[LRU_INACTIVE_ANON] + pages[LRU_INACTIVE_FILE]),
@@ -124,8 +124,8 @@ int meminfo_proc_show(struct seq_file *m, void *v)
 		K(pages[LRU_ACTIVE_FILE]),
 		K(pages[LRU_INACTIVE_FILE]),
 #ifdef CONFIG_KRG_MM
-		K(pages[LRU_ACTIVE_KDDM]),
-		K(pages[LRU_INACTIVE_KDDM]),
+		K(pages[LRU_ACTIVE_MIGR]),
+		K(pages[LRU_INACTIVE_MIGR]),
 #endif
 #ifdef CONFIG_UNEVICTABLE_LRU
 		K(pages[LRU_UNEVICTABLE]),

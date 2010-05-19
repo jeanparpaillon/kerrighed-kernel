@@ -688,8 +688,8 @@ void page_add_new_anon_rmap(struct page *page,
 	if (page_evictable(page, vma))
 #ifdef CONFIG_KRG_MM
 	{
-		if (page->obj_entry)
-			lru_cache_add_lru(page, LRU_ACTIVE_KDDM);
+		if (PageMigratable(page))
+			lru_cache_add_lru(page, LRU_ACTIVE_MIGR);
 		else
 			lru_cache_add_lru(page, LRU_ACTIVE_ANON);
 	}

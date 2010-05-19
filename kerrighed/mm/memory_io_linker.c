@@ -157,7 +157,7 @@ int memory_invalidate_page (struct kddm_obj * obj_entry,
 		/* Invalidate page table entry */
 		kddm_pt_invalidate (set, objid, obj_entry, page);
 
-		ClearPageInjectable(page);
+		ClearPageMigratable(page);
 
 		/* Free the page */
 		page_cache_release(page);
@@ -221,7 +221,7 @@ int memory_remove_page (void *object,
 		/* Invalidate page table entry */
 		kddm_pt_invalidate (set, objid, obj_entry, page);
 
-		ClearPageInjectable(page);
+		ClearPageMigratable(page);
 
 		/* Free the page */
 		page_cache_release(page);
