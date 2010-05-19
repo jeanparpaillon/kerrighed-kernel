@@ -221,33 +221,33 @@ static int flush_page(struct page *page,
 		      pte_t *pte,
 		      spinlock_t *ptl)
 {
-       struct kddm_set *set = mm->anon_vma_kddm_set;
-       kerrighed_node_t dest_node;
-       int r = SWAP_FAIL;
+	struct kddm_set *set = mm->anon_vma_kddm_set;
+	kerrighed_node_t dest_node;
+	int r = SWAP_FAIL;
 
-       pte_unmap_unlock(pte, ptl);
+	pte_unmap_unlock(pte, ptl);
 
-       /* Check if the KDDM has not been destroyed since the page selection */
-       if (mm->anon_vma_kddm_set == NULL)
-	       return SWAP_FAIL;
+	/* Check if the KDDM has not been destroyed since the page selection */
+	if (mm->anon_vma_kddm_set == NULL)
+		return SWAP_FAIL;
 
-       /* mm_id == 0 means the mm is being freed */
-       if (mm->mm_id == 0)
-	       return SWAP_FAIL;
+	/* mm_id == 0 means the mm is being freed */
+	if (mm->mm_id == 0)
+		return SWAP_FAIL;
 
-       dest_node = select_injection_node_rr();
-       if (dest_node == KERRIGHED_NODE_ID_NONE)
-               return SWAP_FAIL;
+	dest_node = select_injection_node_rr();
+	if (dest_node == KERRIGHED_NODE_ID_NONE)
+		return SWAP_FAIL;
 
-       SetPageSwapCache(page);
-       r = _kddm_flush_object(set, objid, dest_node);
-       ClearPageSwapCache(page);
-       if (r)
-               return SWAP_FAIL;
+	SetPageSwapCache(page);
+	r = _kddm_flush_object(set, objid, dest_node);
+	ClearPageSwapCache(page);
+	if (r)
+		return SWAP_FAIL;
 
-       ClearPageMigratable(page);
+	ClearPageMigratable(page);
 
-       return SWAP_SUCCESS;
+	return SWAP_SUCCESS;
 }
 
 
