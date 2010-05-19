@@ -8,6 +8,7 @@
 #include <linux/hugetlb.h>
 #include <linux/rmap.h>
 #include <linux/pagemap.h>
+#include <linux/delayacct.h>
 #include <asm/pgtable.h>
 #include <linux/swap.h>
 #include <linux/swapops.h>
@@ -211,10 +212,10 @@ done:
 
 
 
-static inline struct kddm_obj *get_obj_entry_from_pte(struct mm_struct *mm,
-						      unsigned long addr,
-						      pte_t *ptep,
-						      struct kddm_obj *new_obj)
+struct kddm_obj *get_obj_entry_from_pte(struct mm_struct *mm,
+					unsigned long addr,
+					pte_t *ptep,
+					struct kddm_obj *new_obj)
 {
 	struct kddm_obj *obj_entry = NULL;
 	struct page *page;
@@ -809,6 +810,29 @@ void kcb_fill_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 	BUG_ON ((vma == NULL) || (addr < vma->vm_start));
 
 	init_pte(mm, ptep, mm->anon_vma_kddm_set, addr / PAGE_SIZE, vma, NULL);
+}
+
+int kddm_pt_swap_in (struct mm_struct *mm,
+		     unsigned long addr,
+		     pte_t *orig_pte)
+{
+	struct vm_area_struct *vma;
+        pgd_t *pgd;
+        pud_t *pud;
+        pmd_t *pmd;
+        pte_t *pte;
+
+        pgd = pgd_offset(mm, addr);
+        pud = pud_alloc(mm, pgd, addr);
+        pmd = pmd_alloc(mm, pud, addr);
+        pte = pte_alloc_map(mm, pmd, addr);
+
+	vma = find_vma(mm, addr);
+
+	if (!orig_pte)
+		orig_pte = pte;
+
+	return do_swap_page(mm, vma, addr, pte, pmd, 0, *orig_pte);
 }
 
 /* Call-back called during page table destruction for each valid pte */

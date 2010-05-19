@@ -61,7 +61,9 @@
 #include <asm/tlb.h>
 #include <asm/tlbflush.h>
 #include <asm/pgtable.h>
-
+#ifdef CONFIG_KRG_MM
+#include <kerrighed/page_table_tree.h>
+#endif
 #include "internal.h"
 
 #ifndef CONFIG_NEED_MULTIPLE_NODES
@@ -2552,9 +2554,15 @@ int vmtruncate_range(struct inode *inode, loff_t offset, loff_t end)
  * but allow concurrent faults), and pte mapped but not yet locked.
  * We return with mmap_sem still held, but pte unmapped and unlocked.
  */
+#ifdef CONFIG_KRG_MM
+int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
+		 unsigned long address, pte_t *page_table, pmd_t *pmd,
+		 int write_access, pte_t orig_pte)
+#else
 static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		unsigned long address, pte_t *page_table, pmd_t *pmd,
 		int write_access, pte_t orig_pte)
+#endif
 {
 	spinlock_t *ptl;
 	struct page *page;
@@ -2562,10 +2570,25 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	pte_t pte;
 	struct mem_cgroup *ptr = NULL;
 	int ret = 0;
+#ifdef CONFIG_KRG_MM
+	struct kddm_obj *obj_entry = NULL;
+#endif
 
 	if (!pte_unmap_same(mm, pmd, page_table, orig_pte))
 		goto out;
 
+#ifdef CONFIG_KRG_MM
+	if (pte_obj_entry(&orig_pte)) {
+		obj_entry = get_obj_entry_from_pte(mm, address, &orig_pte,
+						   NULL);
+		page = obj_entry->object;
+		if (swap_pte_page(page))
+			entry = get_swap_entry_from_page(page);
+		else
+			entry.val = page_private(page);
+	}
+	else
+#endif
 	entry = pte_to_swp_entry(orig_pte);
 	if (is_migration_entry(entry)) {
 		migration_entry_wait(mm, pmd, address);
@@ -2635,6 +2658,19 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		write_access = 0;
 	}
 	flush_icache_page(vma, page);
+#ifdef CONFIG_KRG_MM
+	if (obj_entry) {
+		BUG_ON (!swap_pte_obj_entry(&orig_pte));
+		wait_lock_kddm_page(page);
+		BUG_ON(page->obj_entry && page->obj_entry != obj_entry);
+		if (swap_pte_page(obj_entry->object))
+			obj_entry->object = page;
+                page->obj_entry = obj_entry;
+                atomic_inc(&page->_kddm_count);
+		unlock_kddm_page(page);
+                pte = pte_wrprotect(pte);
+	}
+#endif
 	set_pte_at(mm, address, page_table, pte);
 	page_add_anon_rmap(page, vma, address);
 	/* It's better to call commit-charge after rmap is established */
@@ -2643,10 +2679,6 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	swap_free(entry);
 	if (vm_swap_full() || (vma->vm_flags & VM_LOCKED) || PageMlocked(page))
 		try_to_free_swap(page);
-#ifdef CONFIG_KRG_MM
-	if (mm->anon_vma_kddm_set)
-		KRGFCT(kh_fill_pte)(mm, address, page_table);
-#endif
 	unlock_page(page);
 
 	if (write_access) {

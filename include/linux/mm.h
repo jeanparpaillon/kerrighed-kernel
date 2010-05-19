@@ -844,6 +844,12 @@ static inline int handle_mm_fault(struct mm_struct *mm,
 }
 #endif
 
+#ifdef CONFIG_KRG_MM
+int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
+		 unsigned long address, pte_t *page_table, pmd_t *pmd,
+		 int write_access, pte_t orig_pte);
+#endif
+
 extern int make_pages_present(unsigned long addr, unsigned long end);
 extern int access_process_vm(struct task_struct *tsk, unsigned long addr, void *buf, int len, int write);
 
