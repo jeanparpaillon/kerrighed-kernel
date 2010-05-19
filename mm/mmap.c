@@ -1218,11 +1218,7 @@ unsigned long mmap_region(struct file *file, unsigned long addr,
 munmap_back:
 	vma = find_vma_prepare(mm, addr, &prev, &rb_link, &rb_parent);
 	if (vma && vma->vm_start < addr + len) {
-#ifdef CONFIG_KRG_MM
-		if (__do_munmap(mm, addr, len, handler_call))
-#else
 		if (do_munmap(mm, addr, len))
-#endif
 			return -ENOMEM;
 		goto munmap_back;
 	}
@@ -1999,17 +1995,7 @@ int split_vma(struct mm_struct * mm, struct vm_area_struct * vma,
  * work.  This now handles partial unmappings.
  * Jeremy Fitzhardinge <jeremy@goop.org>
  */
-#ifdef CONFIG_KRG_MM
 int do_munmap(struct mm_struct *mm, unsigned long start, size_t len)
-{
-	return __do_munmap(mm, start, len, 0);
-}
-
-int __do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
-		int handler_call)
-#else
-int do_munmap(struct mm_struct *mm, unsigned long start, size_t len)
-#endif
 {
 	unsigned long end;
 	struct vm_area_struct *vma, *prev, *last;
@@ -2072,10 +2058,6 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len)
 	 * Remove the vma's, and unmap the actual pages
 	 */
 	detach_vmas_to_be_unmapped(mm, vma, prev, end);
-#ifdef CONFIG_KRG_MM
-	if (!handler_call && mm->anon_vma_kddm_set)
-		krg_do_munmap(mm, start, len, vma);
-#endif
 	unmap_region(mm, vma, prev, start, end);
 
 	/* Fix up all other VM information */
@@ -2096,6 +2078,12 @@ SYSCALL_DEFINE2(munmap, unsigned long, addr, size_t, len)
 	down_write(&mm->mmap_sem);
 	ret = do_munmap(mm, addr, len);
 	up_write(&mm->mmap_sem);
+
+#ifdef CONFIG_KRG_MM
+	if (!ret && mm->anon_vma_kddm_set)
+		krg_do_munmap(mm, addr, len);
+#endif
+
 	return ret;
 }
 

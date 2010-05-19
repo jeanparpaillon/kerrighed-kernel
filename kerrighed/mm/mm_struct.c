@@ -455,13 +455,12 @@ void krg_do_mmap_region(struct vm_area_struct *vma,
 
 void krg_do_munmap(struct mm_struct *mm,
 		   unsigned long start,
-		   size_t len,
-		   struct vm_area_struct *vma)
+		   size_t len)
 {
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
 
-	if ((!anon_vma(vma)) || (!mm->mm_id))
+	if (!mm->mm_id)
 		return;
 
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))

@@ -52,7 +52,7 @@ int handle_do_munmap (struct rpc_desc* desc,
 
 	down_write(&mm->mmap_sem);
 
-	__do_munmap(mm, msg->start, msg->len, 1);
+	do_munmap(mm, msg->start, msg->len);
 
 	up_write(&mm->mmap_sem);
 
