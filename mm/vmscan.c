@@ -655,11 +655,6 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		if (!trylock_page(page))
 			goto keep;
 
-#ifdef CONFIG_KRG_MM
-		if (!PageMigratable(page))
-                        goto activate_locked;
-#endif
-
 		VM_BUG_ON(PageActive(page));
 
 		sc->nr_scanned++;
@@ -707,10 +702,17 @@ static unsigned long shrink_page_list(struct list_head *page_list,
                                 goto keep_locked;
 			case SWAP_MLOCK:
 				goto cull_mlocked;
+			case SWAP_FLUSH_FAIL:
+				BUG(); /* TODO: Try a swap on disk */
                         case SWAP_SUCCESS:
                                 ; /* try to free the page below */
                         }
 
+			/*
+			 *  TODO: check this code. We can probably
+			 *  Reuse the code below in the
+			 *  page_has_private if section.
+			 */
 			unlock_page(page);
 			if (put_page_testzero(page))
 				goto free_it;
@@ -804,6 +806,9 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		 * Otherwise, leave the page on the LRU so it is swappable.
 		 */
 		if (page_has_private(page)) {
+#ifdef CONFIG_KRG_MM
+			BUG_ON (page->obj_entry);
+#endif
 			if (!try_to_release_page(page, sc->gfp_mask))
 				goto activate_locked;
 			if (!mapping && page_count(page) == 1) {

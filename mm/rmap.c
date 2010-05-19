@@ -52,6 +52,11 @@
 #include <linux/migrate.h>
 
 #include <asm/tlbflush.h>
+#ifdef CONFIG_KRG_MM
+#include <kerrighed/page_table_tree.h>
+#include <kddm/object.h>
+#include <kddm/kddm_types.h>
+#endif
 
 #include "internal.h"
 
@@ -788,6 +793,9 @@ static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 	pte_t pteval;
 	spinlock_t *ptl;
 	int ret = SWAP_AGAIN;
+#ifdef CONFIG_KRG_MM
+	struct kddm_obj *obj_entry = NULL;
+#endif
 
 	address = vma_address(page, vma);
 	if (address == -EFAULT)
@@ -840,6 +848,17 @@ static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 			ret = SWAP_FAIL;
 			goto out_unmap;
 		}
+#ifdef CONFIG_KRG_MM
+		/* Avoid unmap of a page in use in the KDDM layer */
+		obj_entry = page->obj_entry;
+		if (obj_entry) {
+			if (object_frozen(obj_entry, NULL) ||
+			    TEST_AND_SET_OBJECT_LOCKED(obj_entry)) {
+				ret = SWAP_FAIL;
+				goto out_unmap;
+			}
+		}
+#endif
   	}
 
 	/* Nuke the page table entry. */
@@ -880,6 +899,16 @@ static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 		}
 		set_pte_at(mm, address, pte, swp_entry_to_pte(entry));
 		BUG_ON(pte_file(*pte));
+#ifdef CONFIG_KRG_MM
+		wait_lock_kddm_page(page);
+		if (obj_entry && mm->anon_vma_kddm_id) {
+			obj_entry->object = (void*) mk_swap_pte_page(pte);
+			set_swap_pte_obj_entry(pte, obj_entry);
+			if (atomic_dec_and_test(&page->_kddm_count))
+				page->obj_entry = NULL;
+		}
+		unlock_kddm_page(page);
+#endif
 	} else if (PAGE_MIGRATION && migration) {
 		/* Establish migration entry for a file page */
 		swp_entry_t entry;
@@ -888,6 +917,10 @@ static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 	} else
 		dec_mm_counter(mm, file_rss);
 
+#ifdef CONFIG_KRG_MM
+	if (obj_entry)
+		CLEAR_OBJECT_LOCKED(obj_entry);
+#endif
 
 	page_remove_rmap(page);
 	page_cache_release(page);
