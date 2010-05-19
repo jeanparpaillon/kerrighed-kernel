@@ -162,6 +162,7 @@ struct kddm_obj *alloc_kddm_obj_entry(struct kddm_set *set,
 
 	obj_entry->flags = 0;
 	obj_entry->object = NULL;
+	atomic_set(&obj_entry->count, 1);
 
 	BUG_ON(set->def_owner < 0 ||
 	       set->def_owner > KDDM_MAX_DEF_OWNER);
@@ -200,6 +201,7 @@ struct kddm_obj *dup_kddm_obj_entry(struct kddm_obj *src_obj)
 
 	*obj_entry = *src_obj;
 
+	atomic_set(&obj_entry->count, 1);
 	CLEAR_OBJECT_PINNED(obj_entry);
 	atomic_set(&obj_entry->sleeper_count, 0);
 	init_waitqueue_head(&obj_entry->waiting_tsk);
@@ -214,6 +216,7 @@ void free_kddm_obj_entry(struct kddm_set *set,
 			 objid_t objid)
 {
 	BUG_ON(atomic_read(&obj_entry->frozen_count) != 0);
+	BUG_ON(obj_entry_count(obj_entry) != 0);
 
 	/* Ask the IO linker to remove the object */
 	if (obj_entry->object != NULL)
@@ -270,7 +273,7 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 
 	put_kddm_obj_entry(set, obj_entry, objid);
 
-	free_kddm_obj_entry(set, obj_entry, objid);
+	put_obj_entry_count(set, obj_entry, objid);
 exit:
 	return 0;
 }
@@ -316,14 +319,14 @@ struct kddm_obj *__get_alloc_kddm_obj_entry (struct kddm_set *set,
 	 * object was already present in the table. Can do better with a cache
 	 * of new objects (see radix tree code for instance).
 	 */
+retry:
 	new_obj = alloc_kddm_obj_entry(set, objid);
 
-retry:
 	kddm_obj_path_lock(set, objid);
 
 	obj_entry = set->ops->get_obj_entry(set, objid, new_obj);
 	if (obj_entry != new_obj)
-		free_kddm_obj_entry(set, new_obj, objid);
+		put_obj_entry_count(set, new_obj, objid);
 
 	if (TEST_AND_SET_OBJECT_LOCKED (obj_entry)) {
 		kddm_obj_path_unlock(set, objid);

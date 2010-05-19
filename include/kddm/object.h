@@ -159,6 +159,19 @@ void free_kddm_obj_entry(struct kddm_set *set,
 			 struct kddm_obj *obj_entry,
 			 objid_t objid);
 
+static inline void put_obj_entry_count(struct kddm_set *set,
+					 struct kddm_obj *obj_entry,
+					 objid_t objid)
+{
+	if (atomic_dec_and_test(&obj_entry->count))
+		free_kddm_obj_entry(set, obj_entry, objid);
+}
+
+static inline int obj_entry_count(struct kddm_obj *obj_entry)
+{
+        return atomic_read(&obj_entry->count);
+}
+
 /** Lookup for an object entry in a kddm set.
  *  @author Renaud Lottiaux
  *

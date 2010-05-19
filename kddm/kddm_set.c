@@ -143,8 +143,8 @@ static int __free_kddm_obj_entry(unsigned long index,
 				 void *data,
 				 void *priv_data)
 {
-	free_kddm_obj_entry((struct kddm_set *)priv_data,
-			    (struct kddm_obj *)data, index);
+	put_obj_entry_count((struct kddm_set *)priv_data,
+			      (struct kddm_obj *)data, index);
 
 	return 0;
 }

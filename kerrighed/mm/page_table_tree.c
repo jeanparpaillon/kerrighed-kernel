@@ -43,7 +43,7 @@ static inline void page_put_kddm_count(struct kddm_set *set,
 	 */
 	obj_entry->object = NULL;
 	BUG_ON(TEST_OBJECT_LOCKED(obj_entry));
-	free_kddm_obj_entry(set, obj_entry, objid);
+	put_obj_entry_count(set, obj_entry, objid);
 	page->obj_entry = NULL;
 }
 
@@ -312,7 +312,7 @@ retry:
 	pte_unmap_unlock(ptep - 1, ptl);
 
 	if (new_obj)
-		free_kddm_obj_entry(set, new_obj, 0);
+		put_obj_entry_count(set, new_obj, 0);
 }
 
 static inline void __pt_for_each_pmd(struct kddm_set *set,
@@ -752,7 +752,7 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 
 	if (pte_obj_entry(ptep)) {
 		BUG_ON(TEST_OBJECT_LOCKED(obj_entry));
-		free_kddm_obj_entry(set, obj_entry, addr / PAGE_SIZE);
+		put_obj_entry_count(set, obj_entry, addr / PAGE_SIZE);
 		pte_clear(mm, addr, ptep);
 	}
 	else {
