@@ -14,6 +14,11 @@ define container_of
 	print (struct $arg1 *)(((char *)$arg0) - (char *)&((struct $arg1 *) 0)->$arg2)
 end
 
+define listhead_next
+	set $nextlisth = ((struct $arg1*)$arg0)->$arg2.next
+	container_of $nextlisth $arg1 $arg2
+end
+
 define __attach
 	target extended-remote udp:$arg0:6443
 end
