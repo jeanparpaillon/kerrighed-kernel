@@ -598,7 +598,8 @@ int init_kddm_objects (void)
 #ifdef CONFIG_DEBUG_SLAB
 	cache_flags |= SLAB_POISON;
 #endif
-	kddm_obj_cachep = KMEM_CACHE(kddm_obj, cache_flags);
+	kddm_obj_cachep = kmem_cache_create("kddm_obj", sizeof(struct kddm_obj),
+					    16, cache_flags, NULL);
 
 	for (i = 0; i < NB_OBJ_STATE; i++) {
 		atomic_set(&nr_OBJ_STATE[i], 0);
