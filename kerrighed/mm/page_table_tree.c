@@ -42,8 +42,6 @@ static inline void page_put_kddm_count(struct kddm_set *set,
 	 * Such removal would lead to a double page free...
 	 */
 	obj_entry->object = NULL;
-	BUG_ON(TEST_OBJECT_LOCKED(obj_entry));
-	put_obj_entry_count(set, obj_entry, objid);
 	page->obj_entry = NULL;
 }
 
@@ -125,8 +123,12 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 	}
 
 	atomic_inc (&page->_kddm_count);
-	if (page->obj_entry != NULL)
+	if (page->obj_entry != NULL) {
+		struct kddm_obj *obj_entry = page->obj_entry;
+		atomic_inc(&obj_entry->count);
+		BUG_ON(obj_entry_count(obj_entry) == 1);
 		goto done;
+	}
 
 	if (!obj_entry) {
 		obj_entry = alloc_kddm_obj_entry(set, objid);
@@ -179,6 +181,8 @@ static inline struct kddm_obj *get_obj_entry_from_pte(struct mm_struct *mm,
 			return new_obj;
 		}
 
+		wait_lock_kddm_page(page);
+
 		if (new_obj) {
 			if (page->obj_entry != NULL)
 				printk ("WARN: entry %p in page %p\n",
@@ -189,6 +193,7 @@ static inline struct kddm_obj *get_obj_entry_from_pte(struct mm_struct *mm,
 			}
 		}
 		obj_entry = page->obj_entry;
+		unlock_kddm_page(page);
 	}
 	else {
 		if ((pte_val(*ptep) == 0) && new_obj)
@@ -393,8 +398,12 @@ int kddm_pt_invalidate (struct kddm_set *set,
 	BUG_ON((pfn_to_page(pte_pfn(*ptep)) != NULL) &&
 	       (pfn_to_page(pte_pfn(*ptep)) != page));
 
+	wait_lock_kddm_page(page);
+
 	if (atomic_dec_and_test(&page->_kddm_count))
 		page->obj_entry = NULL;
+
+	unlock_kddm_page(page);
 
 	unmap_page(mm, addr, page, ptep);
 
@@ -476,8 +485,13 @@ static inline void __kddm_pt_insert_object(struct mm_struct *mm,
 	if (page) {
 		entry = mk_pte(page, vm_get_page_prot(VM_READ));
 		set_pte_at(mm, addr, ptep, entry);
+
+		wait_lock_kddm_page(page);
+		BUG_ON (page->obj_entry);
 		page->obj_entry = obj_entry;
 		atomic_inc(&page->_kddm_count);
+		unlock_kddm_page(page);
+
 		inc_mm_counter(mm, anon_rss);
 		__SetPageUptodate(page);
 	}
@@ -545,6 +559,7 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 		return obj_entry;
 
 	BUG_ON(page_kddm_count(old_page) == 0);
+	BUG_ON(obj_entry_count(obj_entry) == 0);
 	BUG_ON(!TEST_OBJECT_LOCKED(obj_entry));
 
 	wait_lock_kddm_page(old_page);
@@ -566,6 +581,7 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 	else {
 		/* Page shared with another KDDM. COW the obj entry */
 		BUG_ON(atomic_dec_and_test(&old_page->_kddm_count));
+		BUG_ON(atomic_dec_and_test(&obj_entry->count));
 		new_obj = dup_kddm_obj_entry(obj_entry);
 		CLEAR_OBJECT_LOCKED(obj_entry);
 		unlock_kddm_page(old_page);
@@ -627,8 +643,10 @@ static void kddm_pt_remove_obj_entry (struct kddm_set *set,
 	obj_entry = get_obj_entry_from_pte(mm, addr, ptep, NULL);
 	page = obj_entry->object;
 
+	wait_lock_kddm_page(page);
 	if (atomic_dec_and_test(&page->_kddm_count))
 		page->obj_entry = NULL;
+	unlock_kddm_page(page);
 
 	unmap_page(mm, addr, page, ptep);
 done:
@@ -742,6 +760,7 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 	struct kddm_set *set = mm->anon_vma_kddm_set;
 	struct kddm_obj *obj_entry;
 	struct page *page;
+	objid_t objid = addr / PAGE_SIZE;
 
 	BUG_ON(!set);
 
@@ -751,8 +770,7 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 		return;
 
 	if (pte_obj_entry(ptep)) {
-		BUG_ON(TEST_OBJECT_LOCKED(obj_entry));
-		put_obj_entry_count(set, obj_entry, addr / PAGE_SIZE);
+		put_obj_entry_count(set, obj_entry, objid);
 		pte_clear(mm, addr, ptep);
 	}
 	else {
@@ -760,7 +778,8 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 		BUG_ON(!page);
 
 		wait_lock_kddm_page(page);
-		page_put_kddm_count(set, page, addr / PAGE_SIZE);
+		page_put_kddm_count(set, page, objid);
+		put_obj_entry_count(set, obj_entry, objid);
 		unlock_kddm_page(page);
 	}
 }

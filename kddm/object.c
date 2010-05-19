@@ -217,6 +217,7 @@ void free_kddm_obj_entry(struct kddm_set *set,
 {
 	BUG_ON(atomic_read(&obj_entry->frozen_count) != 0);
 	BUG_ON(obj_entry_count(obj_entry) != 0);
+	BUG_ON(TEST_OBJECT_LOCKED(obj_entry));
 
 	/* Ask the IO linker to remove the object */
 	if (obj_entry->object != NULL)
