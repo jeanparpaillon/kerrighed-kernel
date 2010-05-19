@@ -83,7 +83,23 @@ int memory_export_object (struct rpc_desc *desc,
 			  int flags)
 {
 	struct page *page = (struct page *)obj_entry->object;
+	struct mm_struct *mm = set->obj_set;
 	char *data;
+	int res;
+
+	if (swap_pte_page(page)) {
+		res = kddm_pt_swap_in (mm, objid * PAGE_SIZE, NULL);
+		if (unlikely(res & VM_FAULT_ERROR)) {
+			if (res & VM_FAULT_OOM)
+				return -ENOMEM;
+			else if (res & VM_FAULT_SIGBUS)
+				return -EFAULT;
+			BUG();
+		}
+		page = obj_entry->object;
+		if (!page)
+			return -ENOMEM;
+	}
 
 	data = (char *)kmap_atomic(page, KM_USER0);
 	rpc_pack(desc, 0, data, PAGE_SIZE);
@@ -155,13 +171,15 @@ int memory_invalidate_page (struct kddm_obj * obj_entry,
 	if (obj_entry->object) {
 		struct page *page = (struct page *) obj_entry->object;
 
+		BUG_ON(swap_pte_page(page));
+
 		/* Invalidate page table entry */
 		kddm_pt_invalidate (set, objid, obj_entry, page);
 
 		ClearPageMigratable(page);
 
 		/* Free the page */
-		page_cache_release(page);
+		free_page_and_swap_cache(page);
 	}
 
 	return 0;
@@ -176,6 +194,10 @@ void memory_change_state (struct kddm_obj * obj_entry,
 
 	if (!page)
 		return ;
+
+	/* If the page is not mapped, we have nothing to do */
+	if (swap_pte_page(page))
+		return;
 
 	/* Page to be swap are no more mapped. Nothing to do here. */
 	if (PageSwapCache(page))
@@ -215,8 +237,16 @@ int memory_remove_page (void *object,
 {
 	struct page *page = (struct page *) object;
 	struct kddm_obj *obj_entry;
+	swp_entry_t entry;
 
-	if (page) {
+	if (!page)
+		return 0;
+
+	if (swap_pte_page(page)) {
+		entry = get_swap_entry_from_page(page);
+		free_swap_and_cache(entry);
+	}
+	else {
 		obj_entry = page->obj_entry;
 
 		/* Invalidate page table entry */
@@ -225,7 +255,7 @@ int memory_remove_page (void *object,
 		ClearPageMigratable(page);
 
 		/* Free the page */
-		page_cache_release(page);
+		free_page_and_swap_cache(page);
 	}
 
 	return 0;
