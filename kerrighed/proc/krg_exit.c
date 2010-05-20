@@ -256,6 +256,7 @@ int krg_delayed_notify_parent(struct task_struct *leader)
 	zap_leader = task_detached(leader);
 	if (zap_leader)
 		leader->exit_state = EXIT_DEAD;
+	leader->flags &= ~PF_DELAY_NOTIFY;
 	write_unlock_irq(&tasklist_lock);
 
 	__krg_task_unlock(leader);
@@ -309,10 +310,13 @@ static void handle_wait_task_zombie(struct rpc_desc *desc,
 	/*
 	 * Child could be reaped by a another (parent's or child's) thread,
 	 * and its pid could be even already reused.
+	 * Also do not try to reap now if group leader having not-fully-released
+	 * sub-threads.
 	 */
 	if (!p
 	    || !p->task_obj
-	    || p->task_obj->real_parent_tgid != req->real_parent_tgid) {
+	    || p->task_obj->real_parent_tgid != req->real_parent_tgid
+	    || delay_group_leader(p)) {
 		read_unlock(&tasklist_lock);
 		retval = 0;
 		goto out_send_res;

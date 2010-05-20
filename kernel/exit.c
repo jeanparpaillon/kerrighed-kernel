@@ -261,6 +261,7 @@ repeat:
 #ifdef CONFIG_KRG_EPM
 		if (leader->parent_children_obj) {
 			delay_notify_parent = 1;
+			leader->flags |= PF_DELAY_NOTIFY;
 			goto unlock;
 		}
 #endif
@@ -1431,6 +1432,11 @@ int wait_task_zombie(struct task_struct *p, int options,
 					   status, infop, ru);
 	}
 
+#ifdef CONFIG_KRG_EPM
+	/* Do not reap it yet, krg_delayed_notify_parent() has not finished. */
+	if (p->flags & PF_DELAY_NOTIFY)
+		return 0;
+#endif
 	/*
 	 * Try to move the task's state to DEAD
 	 * only one thread is allowed to do this:

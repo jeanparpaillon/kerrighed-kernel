@@ -1663,8 +1663,14 @@ extern cputime_t task_gtime(struct task_struct *p);
 /*
  * Per process flags
  */
+#ifdef CONFIG_KRG_EPM
+/* PF_ALIGNWARN is unused */
+#define PF_DELAY_NOTIFY	0x00000001	/* must do_notify_parent() before can be */
+					/* reaped */
+#else
 #define PF_ALIGNWARN	0x00000001	/* Print alignment warning msgs */
 					/* Not implemented yet, only for 486*/
+#endif
 #define PF_STARTING	0x00000002	/* being created */
 #define PF_EXITING	0x00000004	/* getting shut down */
 #define PF_EXITPIDONE	0x00000008	/* pi exit done on shut down */
