@@ -306,7 +306,17 @@ static void handle_wait_task_zombie(struct rpc_desc *desc,
 
 	read_lock(&tasklist_lock);
 	p = find_task_by_kpid(req->pid);
-	BUG_ON(!p);
+	/*
+	 * Child could be reaped by a another (parent's or child's) thread,
+	 * and its pid could be even already reused.
+	 */
+	if (!p
+	    || !p->task_obj
+	    || p->task_obj->real_parent_tgid != req->real_parent_tgid) {
+		read_unlock(&tasklist_lock);
+		retval = 0;
+		goto out_send_res;
+	}
 
 	/*
 	 * Sample resource counters now since wait_task_zombie() may release p.
@@ -336,6 +346,7 @@ static void handle_wait_task_zombie(struct rpc_desc *desc,
 	if (!retval)
 		read_unlock(&tasklist_lock);
 
+out_send_res:
 	err = rpc_pack_type(desc, retval);
 	if (err)
 		goto err_cancel;
