@@ -1,0 +1,2 @@
+quiet_cmd_nrenum = NRENUM  $@
+      cmd_nrenum = $(srctree)/scripts/nrenum $< $@
