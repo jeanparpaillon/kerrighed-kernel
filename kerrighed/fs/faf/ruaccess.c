@@ -109,9 +109,9 @@ static struct ruaccess_desc *ruaccess_desc_find(void)
 	hlist_for_each_entry_rcu(desc, node, &desc_table[hash], list)
 		if (desc->thread == tsk)
 			goto out;
-	rcu_read_unlock();
 	desc = NULL;
 out:
+	rcu_read_unlock();
 	return desc;
 }
 
