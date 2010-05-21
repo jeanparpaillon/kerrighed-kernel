@@ -2,7 +2,7 @@ menu "Cluster support"
 
 config KERRIGHED
 	bool "Add the Kerrighed support"
-	depends on PREEMPT_NONE && !KEYS
+	depends on PREEMPT_NONE && !KEYS && !COMPAT
 	default y
 	select KRG_TOOLS if !KERRIGHED_DEVEL
 	select KRG_COMMUNICATION_FRAMEWORK if !KERRIGHED_DEVEL
@@ -19,6 +19,15 @@ config KERRIGHED
 	select KRG_SCHED if !KERRIGHED_DEVEL
 	help
 	  Say Y if you want to use the Kerrighed features.	
+
+comment "Kerrighed requires kernel preemption to be fully disabled (PREEMPT_NONE)"
+	depends on !PREEMPT_NONE
+
+comment "Kerrighed does not support access key retention (KEYS)"
+	depends on KEYS
+
+comment "Kerrighed does not support 32 bits emulation (COMPAT)"
+	depends on COMPAT
 
 config KERRIGHED_DEVEL
 	bool "Allow to build a subset of Kerrighed (!! Kerrighed development only !!)"
