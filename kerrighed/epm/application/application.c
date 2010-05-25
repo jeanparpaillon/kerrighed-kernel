@@ -14,6 +14,7 @@
 #include <kerrighed/libproc.h>
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
+#include <kerrighed/ghost_helpers.h>
 #include <kerrighed/kerrighed_signal.h>
 #include <kerrighed/action.h>
 #include <net/krgrpc/rpcid.h>
@@ -357,18 +358,25 @@ task_state_t *__set_task_result(struct task_struct *task, int result)
 
 	list_for_each_entry(t, &app->tasks, next_task) {
 		if (task == t->task) {
-			t->result = result;
 			ret = t;
+
+			if (t->result == PCUS_RUNNING)
+				/* result has been forced to cancel operation */
+				goto out;
+
+			t->result = result;
 		}
 
 		if (t->result == PCUS_CHKPT_IN_PROGRESS ||
-		    t->result == PCUS_STOP_IN_PROGRESS)
+		    t->result == PCUS_STOP_STEP1 ||
+		    t->result == PCUS_STOP_STEP2)
 			done_for_all_tasks = 0;
 	}
 
 	if (done_for_all_tasks)
 		complete(&app->tasks_chkpted);
 
+out:
 	BUG_ON(!ret);
 
 	return ret;
@@ -409,16 +417,21 @@ static int get_local_tasks_stop_result(struct app_struct* app)
 
 	list_for_each_entry(t, &app->tasks, next_task) {
 		pcus_result = t->result;
+		BUG_ON(pcus_result == PCUS_STOP_STEP1);
+
 		if (pcus_result == PCUS_RUNNING) {
 			/* one process has been forgotten! try again!! */
 			r = pcus_result;
 			goto exit;
-		} else if (pcus_result == PCUS_STOP_IN_PROGRESS)
+		} else if (t->task->state == TASK_DEAD) {
 			/* Process is zombie !! */
-			if (t->task->state == TASK_DEAD) {
-				r = -E_CR_TASKDEAD;
-				goto exit;
-			}
+			r = -E_CR_TASKDEAD;
+			ckpt_err(NULL, r,
+				 "Process %d (%s) of application %ld is dead"
+				 "or zombie\n",
+				 t->task->pid, t->task->comm, app->app_id);
+			goto exit;
+		}
 		r = r | pcus_result;
 	}
 
@@ -442,12 +455,7 @@ int get_local_tasks_chkpt_result(struct app_struct* app)
 			/* one process has been forgotten! try again!! */
 			r = pcus_result;
 			goto exit;
-		} else if (pcus_result == PCUS_STOP_IN_PROGRESS)
-			/* Process is zombie !! */
-			if (t->task->state == TASK_DEAD) {
-				r = -E_CR_TASKDEAD;
-				goto exit;
-			}
+		}
 
 		if (t->checkpoint.ghost) {
 			if (pcus_result < 0)
@@ -585,27 +593,68 @@ void unimport_application(struct epm_action *action,
 
 /*--------------------------------------------------------------------------*/
 
-/* make a local process sleeping (blocking request) */
-static inline int __stop_task(struct task_struct *task)
+/* app->mutex must be held */
+static void local_cancel_stop(struct app_struct *app)
 {
+	task_state_t *tsk;
+	int r;
+
+	list_for_each_entry(tsk, &app->tasks, next_task) {
+		if (tsk->result == PCUS_RUNNING)
+			goto out;
+		r = krg_action_stop(tsk->task, EPM_CHECKPOINT);
+		BUG_ON(r);
+		if (tsk->result == PCUS_OPERATION_OK)
+			complete(&tsk->checkpoint.completion);
+		tsk->result = PCUS_RUNNING;
+	}
+
+out:
+	return;
+}
+
+/* app->mutex must be held */
+static int local_prepare_stop(struct app_struct *app)
+{
+	task_state_t *tsk;
+	int r = 0;
+
+	list_for_each_entry(tsk, &app->tasks, next_task) {
+		if (tsk->result == PCUS_RUNNING) {
+			if (!can_be_checkpointed(tsk->task)) {
+				r = -EPERM;
+				goto error;
+			}
+
+			/* Process is zombie !! */
+			if (tsk->task->state == TASK_DEAD) {
+				r = -E_CR_TASKDEAD;
+				goto error;
+			}
+
+			r = krg_action_start(tsk->task, EPM_CHECKPOINT);
+			if (r) {
+				ckpt_err(NULL, r,
+					 "krg_action_start fails for "
+					 "process %d %s",
+					 tsk->task->pid, tsk->task->comm);
+				goto error;
+			}
+
+			tsk->result = PCUS_STOP_STEP1;
+		}
+	}
+
+error:
+	return r;
+}
+
+/* app->mutex must be held */
+static void local_complete_stop(struct app_struct *app)
+{
+	task_state_t *tsk;
 	struct siginfo info;
-	int signo;
-	int retval;
-
-	BUG_ON(!task);
-	BUG_ON(task == current);
-
-	if (!can_be_checkpointed(task)) {
-		retval = -EPERM;
-		goto exit;
-	}
-
-	retval = krg_action_start(task, EPM_CHECKPOINT);
-	if (retval) {
-		printk("krg_action_start returns %d (%d %s)\n",
-		       retval, task->pid, task->comm);
-		goto exit;
-	}
+	int r, signo;
 
 	signo = KRG_SIG_CHECKPOINT;
 	info.si_errno = 0;
@@ -613,53 +662,38 @@ static inline int __stop_task(struct task_struct *task)
 	info.si_uid = 0;
 	si_option(info) = CHKPT_ONLY_STOP;
 
-	retval = send_kerrighed_signal(signo, &info, task);
-	if (retval)
-		BUG();
-
-exit:
-	return retval;
+	list_for_each_entry(tsk, &app->tasks, next_task) {
+		if (tsk->result == PCUS_STOP_STEP1) {
+			tsk->result = PCUS_STOP_STEP2;
+			r = send_kerrighed_signal(signo, &info, tsk->task);
+			BUG_ON(r);
+		}
+	}
 }
 
-static inline int __local_stop(struct app_struct *app)
+/* app->mutex must be NOT held */
+static int local_wait_stop(struct app_struct *app)
 {
-	task_state_t *tsk;
-	int r = 0;
+	int r = PCUS_STOP_STEP2;
 
-	BUG_ON(list_empty(&app->tasks));
+	while (r == PCUS_STOP_STEP2) {
+		/* waiting for timeout is needed for process becoming zombie */
+		wait_for_completion_timeout(&app->tasks_chkpted, 100);
 
-stop_all_running:
-	/* Stop all the local processes of the application */
-	init_completion(&app->tasks_chkpted);
+		r = get_local_tasks_stop_result(app);
 
-	mutex_lock(&app->mutex);
-
-	list_for_each_entry(tsk, &app->tasks, next_task) {
-		if (tsk->result == PCUS_RUNNING) {
-			tsk->result = PCUS_STOP_IN_PROGRESS;
-			r = __stop_task(tsk->task);
-			if (r != 0)
-				__set_task_result(tsk->task, r);
+		/*
+		 * A process may have been forgotten because it is a child of
+		 * a process which has forked before handling the signal but
+		 * after looping on each processes of the application
+		 */
+		if (r == PCUS_RUNNING) {
+			r = -EAGAIN;
+			goto error;
 		}
 	}
 
-	mutex_unlock(&app->mutex);
-
-	r = PCUS_STOP_IN_PROGRESS;
-
-	while (r == PCUS_STOP_IN_PROGRESS) {
-		printk("*** wait for completion\n");
-
-		wait_for_completion_timeout(&app->tasks_chkpted, 100);
-		r = get_local_tasks_stop_result(app);
-
-		/* A process may have been forgotten because it is a child of
-		   a process which has forked before handling the signal but after
-		   looping on each processes of the application */
-		if (r == PCUS_RUNNING)
-			goto stop_all_running;
-	}
-
+error:
 	return r;
 }
 
@@ -678,49 +712,100 @@ static void handle_app_stop(struct rpc_desc *desc, void *_msg, size_t size)
 	app = find_local_app(msg->app_id);
 	BUG_ON(!app);
 
-	old_cred = unpack_override_creds(desc);
-	if (IS_ERR(old_cred)) {
-		r = PTR_ERR(old_cred);
-		goto send_res;
-	}
+	mutex_lock(&app->mutex);
 
-	r = __local_stop(app);
+	r = 0;
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred))
+		r = PTR_ERR(old_cred);
+
+	r = send_result(desc, r);
+	if (r)
+		goto out_unlock;
+
+	BUG_ON(list_empty(&app->tasks));
+
+	init_completion(&app->tasks_chkpted);
+
+	r = local_prepare_stop(app);
+
+	r = send_result(desc, r);
+	if (r)
+		goto out_cancel_stop;
+
+	local_complete_stop(app);
+
+	mutex_unlock(&app->mutex);
+
+	r = local_wait_stop(app);
+
+	r = send_result(desc, r);
+	if (r)
+		goto out_wait_failed;
 
 	revert_creds(old_cred);
 
-send_res:
-	r = rpc_pack_type(desc, r);
+out:
 	if (r)
 		rpc_cancel(desc);
-}
 
+	return;
+
+out_wait_failed:
+	mutex_lock(&app->mutex);
+out_cancel_stop:
+	local_cancel_stop(app);
+out_unlock:
+	mutex_unlock(&app->mutex);
+	goto out;
+}
 
 int global_stop(struct app_kddm_object *obj)
 {
 	struct rpc_desc *desc;
 	struct app_stop_msg msg;
-	int r = 0;
+	int err_rpc, r;
 
 	/* prepare message */
 	msg.requester = kerrighed_node_id;
 	msg.app_id = obj->app_id;
 
 	desc = rpc_begin_m(APP_STOP, &obj->nodes);
-	r = rpc_pack_type(desc, msg);
-	if (r)
+	err_rpc = rpc_pack_type(desc, msg);
+	if (err_rpc)
 		goto err_rpc;
-	r = pack_creds(desc, current_cred());
-	if (r)
+
+	err_rpc = pack_creds(desc, current_cred());
+	if (err_rpc)
 		goto err_rpc;
 
 	/* waiting results from the node hosting the application */
 	r = app_wait_returns_from_nodes(desc, obj->nodes);
+	if (r)
+		goto error;
+
+	/* asking to prepare stop */
+	r = ask_nodes_to_continue(desc, obj->nodes, r);
+	if (r)
+		goto error;
+
+	/* asking to complete and wait stop */
+	r = ask_nodes_to_continue(desc, obj->nodes, r);
+	if (r)
+		goto error;
+
+	/* informing nodes that everyting is fine */
+	err_rpc = rpc_pack_type(desc, r);
+	if (err_rpc)
+		goto err_rpc;
 
 exit:
 	rpc_end(desc, 0);
-
 	return r;
+
 err_rpc:
+	r = err_rpc;
+error:
 	rpc_cancel(desc);
 	goto exit;
 }
