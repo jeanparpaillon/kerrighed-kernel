@@ -1234,30 +1234,34 @@ void handle_faf_accept (struct rpc_desc *desc,
 		        void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
-	int r;
+	int err, r;
 	struct file *file;
-	void *fdesc;
+	void *fdesc = NULL;
 	int desc_len;
 
 	r = remote_sleep_prepare(desc);
-	if (r) {
-		rpc_cancel(desc);
-		return;
-	}
+	if (r)
+		goto err_cancel;
 
 	r = sys_accept(msg->server_fd,
 		       (struct sockaddr *)&msg->sa, &msg->addrlen);
 
 	remote_sleep_finish();
 
-	rpc_pack_type(desc, r);
+	err = rpc_pack_type(desc, r);
+	if (err)
+		goto err_close_file;
+
 	if (r < 0)
 		return;
 
 	file = fcheck_files(current->files, r);
 
-	if (!file->f_objid)
-		create_kddm_file_object(file);
+	if (!file->f_objid) {
+		err = create_kddm_file_object(file);
+		if (err)
+			goto err_close_file;
+	}
 
 	file->f_flags |= O_FAF_SRV;
 	file->f_faf_srv_index = r;
@@ -1265,22 +1269,53 @@ void handle_faf_accept (struct rpc_desc *desc,
 	/* Increment the DVFS count for the client node */
 	get_dvfs_file(r, file->f_objid);
 
-	get_faf_file_krg_desc(file, &fdesc, &desc_len);
+	err = get_faf_file_krg_desc(file, &fdesc, &desc_len);
+	if (err)
+		goto err_close_faf_file;
 
-	rpc_pack_type(desc, desc_len);
-	rpc_pack(desc, 0, fdesc, desc_len);
-	kfree(fdesc);
+	err = rpc_pack_type(desc, desc_len);
+	if (err)
+		goto err_close_faf_file;
 
-	rpc_pack_type(desc, msg->addrlen);
-	rpc_pack(desc, 0, &msg->sa, msg->addrlen);
-	rpc_pack_type(desc, file->f_objid);
+	err = rpc_pack(desc, 0, fdesc, desc_len);
+	if (err)
+		goto err_close_faf_file;
 
-	if (rpc_unpack_type(desc, r)) {
-		/* The client couldn't setup a FAF client file. */
-		put_dvfs_file(file->f_faf_srv_index, file);
-		check_close_faf_srv_file(file);
-		r = -ENOMEM;
-	}
+	err = rpc_pack_type(desc, msg->addrlen);
+	if (err)
+		goto err_close_faf_file;
+
+	err = rpc_pack(desc, 0, &msg->sa, msg->addrlen);
+	if (err)
+		goto err_close_faf_file;
+
+	err = rpc_pack_type(desc, file->f_objid);
+	if (err)
+		goto err_close_faf_file;
+
+	err = rpc_unpack_type(desc, r);
+	if (err)
+		goto err_close_faf_file;
+
+out_free_fdesc:
+	if (fdesc)
+		kfree(fdesc);
+	return;
+
+err_cancel:
+	rpc_cancel(desc);
+	goto out_free_desc;
+
+err_close_faf_file:
+	/* The client couldn't setup a FAF client file. */
+	put_dvfs_file(file->f_faf_srv_index, file);
+	check_close_faf_srv_file(file);
+	goto err_cancel;
+
+err_close_file:
+	if (r >= 0)
+		sys_close(r);
+	goto err_cancel;
 }
 
 int handle_faf_getsockname (struct rpc_desc* desc,
