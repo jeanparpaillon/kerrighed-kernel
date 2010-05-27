@@ -1114,8 +1114,12 @@ long krg_faf_accept(struct file * file,
 	}
 
 	desc = rpc_begin(RPC_FAF_ACCEPT, data->server_id);
+	if (!desc)
+		goto out_put_fd;
 
-	rpc_pack_type(desc, msg);
+	r = rpc_pack_type(desc, msg);
+	if (r)
+		goto err_cancel;
 
 	r = unpack_remote_sleep_res_prepare(desc);
 	if (r)
@@ -1131,7 +1135,9 @@ long krg_faf_accept(struct file * file,
 		goto out_put_fd;
 	}
 
-	rpc_unpack_type(desc, desc_len);
+	r = rpc_unpack_type(desc, desc_len);
+	if (r)
+		goto err_cancel;
 
 	fdesc = kmalloc(desc_len, GFP_KERNEL);
 	if (!fdesc) {
@@ -1139,10 +1145,21 @@ long krg_faf_accept(struct file * file,
 		goto err_cancel;
 	}
 
-	rpc_unpack(desc, 0, fdesc, desc_len);
-	rpc_unpack_type(desc, sa_len);
-	rpc_unpack(desc, 0, &sa, sa_len);
-	rpc_unpack_type(desc, objid);
+	r = rpc_unpack(desc, 0, fdesc, desc_len);
+	if (r)
+		goto err_cancel;
+
+	r = rpc_unpack_type(desc, sa_len);
+	if (r)
+		goto err_cancel;
+
+	r = rpc_unpack(desc, 0, &sa, sa_len);
+	if (r)
+		goto err_cancel;
+
+	r = rpc_unpack_type(desc, objid);
+	if (r)
+		goto err_cancel;
 
 	newfile = create_faf_file_from_krg_desc(current, fdesc);
 	kfree(fdesc);
@@ -1155,12 +1172,15 @@ long krg_faf_accept(struct file * file,
 	 * We have enough to clean up the new file ourself if needed. Tell it
 	 * to the server.
 	 */
-	rpc_pack_type(desc, fd);
+	r = rpc_pack_type(desc, fd);
+	if (r)
+		goto err_close_faf_file;
+
 	rpc_end(desc, 0);
 
 	dvfs_file = grab_dvfs_file_struct (objid);
 
-	BUG_ON (dvfs_file->file != NULL);
+	BUG_ON(dvfs_file->file);
 	newfile->f_objid = objid;
 	dvfs_file->file = newfile;
 
