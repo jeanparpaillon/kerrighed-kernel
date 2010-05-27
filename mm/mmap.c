@@ -358,12 +358,12 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 			   current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur,
 			   current->signal->rlim[RLIMIT_DATA].rlim_cur);
 
-	up_write(&mm->mmap_sem);
-
 	if (mm->anon_vma_kddm_set)
 		krg_do_brk(mm, brk,
 			   current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur,
 			   current->signal->rlim[RLIMIT_DATA].rlim_cur);
+
+	up_write(&mm->mmap_sem);
 
 	return retval;
 }
@@ -2213,6 +2213,10 @@ unsigned long do_brk(unsigned long addr, unsigned long len)
 	vma->vm_page_prot = vm_get_page_prot(flags);
 	vma_link(mm, vma, prev, rb_link, rb_parent);
 out:
+#ifdef CONFIG_KRG_MM
+	if (mm->anon_vma_kddm_set)
+		krg_check_vma_link(vma);
+#endif
 	mm->total_vm += len >> PAGE_SHIFT;
 	if (flags & VM_LOCKED) {
 		if (!mlock_vma_pages_range(vma, addr, addr + len))
