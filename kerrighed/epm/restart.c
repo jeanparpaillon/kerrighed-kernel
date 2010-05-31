@@ -42,19 +42,10 @@ struct task_struct *restart_task_from_ghost(struct epm_action *action,
 	struct task_struct *newTsk = NULL;
 	int err;
 
-	/* Reserve pid */
-	err = reserve_pid(pid);
-
-	if (err) {
-		newTsk = ERR_PTR(-E_CR_PIDBUSY);
-		goto exit;
-	}
-
 	/* Recreate the process */
-
 	newTsk = import_process(action, ghost);
 	if (IS_ERR(newTsk))
-		goto unimport_process;
+		goto exit;
 	BUG_ON(!newTsk);
 
 	/* Link pid kddm object and task kddm obj */
@@ -66,13 +57,6 @@ struct task_struct *restart_task_from_ghost(struct epm_action *action,
 
 exit:
 	return newTsk;
-
-unimport_process:
-/*
- * WARNING: we must free the pid if it has been successfully reserved
- */
-	printk("must free the pid\n");
-	goto exit;
 }
 
 /**

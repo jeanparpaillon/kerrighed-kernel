@@ -396,9 +396,9 @@ static int create_pid_kddm_object(struct pid *pid, int early)
 	BUG_ON(early && pid->kddm_obj);
 	if (!pid->kddm_obj) {
 		obj->pid = pid;
-		obj->active = !early;
+		obj->active = 1;
 		if (early)
-			obj->node_count = 0;
+			obj->attach_pending = 1;
 		BUG_ON(obj->task_obj);
 		if (task_obj) {
 			BUG_ON(task_obj->pid_obj);
@@ -498,11 +498,15 @@ static int __reserve_pid(pid_t nr)
 	 */
 	r = create_pid_kddm_object(pid, 1);
 	if (r)
-		free_pid(pid);
+		goto error;
 
 out:
 	put_pid_ns(pid_ns);
 	return r;
+
+error:
+	free_pid(pid);
+	goto out;
 }
 
 struct pid_reservation_msg {
@@ -552,36 +556,32 @@ int reserve_pid(pid_t pid)
 out:
 	if (r)
 		ckpt_err(NULL, r, "Fail to reserve pid %d", pid);
+
 	return r;
 }
 
-static int __cancel_pid_reservation(int nr)
+static void __end_pid_reservation(int nr)
 {
-	int r = 0;
-	struct pid *pid = krg_get_pid(nr);
-	BUG_ON(!pid);
+	struct pid *pid;
 
-	if (IS_ERR(pid)) {
-		r = PTR_ERR(pid);
-		goto err_no_pid;
-	}
+	rcu_read_lock();
+	pid = find_kpid(nr);
+	BUG_ON(!pid);
 
 	krg_end_get_pid(pid);
 	krg_put_pid(pid);
-
-err_no_pid:
-	return r;
+	rcu_read_unlock();
 }
 
-static int handle_cancel_pid_reservation(struct rpc_desc *desc, void *_msg,
-					 size_t size)
+static int handle_end_pid_reservation(struct rpc_desc *desc, void *_msg,
+				      size_t size)
 {
 	struct pid_reservation_msg *msg = _msg;
-	int r = __cancel_pid_reservation(msg->pid);
-	return r;
+	__end_pid_reservation(msg->pid);
+	return 0;
 }
 
-int cancel_pid_reservation(pid_t pid)
+int end_pid_reservation(pid_t pid)
 {
 	int r;
 	kerrighed_node_t host_node;
@@ -597,7 +597,7 @@ int cancel_pid_reservation(pid_t pid)
 	host_node = pidmap_node(ORIG_NODE(pid));
 	BUG_ON(host_node == KERRIGHED_NODE_ID_NONE);
 
-	r = rpc_sync(PROC_CANCEL_PID_RESERVATION, host_node, &msg, sizeof(msg));
+	r = rpc_sync(PROC_END_PID_RESERVATION, host_node, &msg, sizeof(msg));
 
 	pidmap_map_read_unlock();
 
@@ -777,8 +777,8 @@ void epm_pid_start(void)
 
 	rpc_register_int(PROC_RESERVE_PID, handle_reserve_pid, 0);
 	rpc_register_int(PROC_PID_LINK_TASK, handle_pid_link_task, 0);
-	rpc_register_int(PROC_CANCEL_PID_RESERVATION,
-			 handle_cancel_pid_reservation, 0);
+	rpc_register_int(PROC_END_PID_RESERVATION,
+			 handle_end_pid_reservation, 0);
 }
 
 void epm_pid_exit(void)

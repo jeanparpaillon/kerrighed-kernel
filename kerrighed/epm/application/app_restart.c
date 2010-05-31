@@ -588,6 +588,52 @@ error:
 	return r;
 }
 
+static int local_reserve_pid_processes(struct app_struct *app)
+{
+	task_state_t *t, *tfail;
+	int err = 0;
+
+	list_for_each_entry(t, &app->tasks, next_task) {
+		err = reserve_pid(t->restart.pid);
+		if (err) {
+			tfail = t;
+			goto error;
+		}
+	}
+
+	return 0;
+
+error:
+	list_for_each_entry(t, &app->tasks, next_task) {
+		if (t == tfail)
+			goto err_exit;
+
+		end_pid_reservation(t->restart.pid);
+	}
+err_exit:
+	return err;
+}
+
+static int local_end_reserve_pid_processes(struct app_struct *app)
+{
+	task_state_t *t;
+	int retval = 0, err = 0;
+
+	list_for_each_entry(t, &app->tasks, next_task) {
+		err = end_pid_reservation(t->restart.pid);
+		if (err) {
+			printk("kerrighed: %s:%d - End reservation of pid %d"
+			       " fails with %d. This pid cannot be reserved"
+			       " anymore until next reboot.\n",
+			       __PRETTY_FUNCTION__, __LINE__,
+			       t->restart.pid, err);
+			retval = err;
+		}
+	}
+
+	return retval;
+}
+
 typedef struct {
 	int nb;
 	struct list_head pids;
@@ -743,14 +789,15 @@ err:
 	goto out;
 }
 
-static inline int unrebuild_orphan_pids(pids_list_t *orphan_pids)
+/* must be call for each reserved pid in error case or in normal case */
+static int end_rebuild_orphan_pids(pids_list_t *orphan_pids)
 {
 	int r = 0, ret;
 	unique_pid_t *upid;
 
 	list_for_each_entry(upid, &(orphan_pids->pids), next) {
 		if (upid->reserved) {
-			ret = cancel_pid_reservation(upid->pid);
+			ret = end_pid_reservation(upid->pid);
 			if (ret)
 				r |= ret;
 			else
@@ -995,7 +1042,7 @@ struct restart_request_msg {
 
 static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 {
-	int r;
+	int pid_err, r;
 	pid_t root_pid = 0;
 	struct restart_request_msg *msg = _msg;
 	struct app_struct *app = find_local_app(msg->app_id);
@@ -1008,9 +1055,16 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	old_cred = unpack_override_creds(desc);
 	if (IS_ERR(old_cred)) {
 		r = PTR_ERR(old_cred);
-		goto error;
+		goto err_end_pid;
 	}
 	app->cred = current_cred();
+
+	/* reserve pid of processes running locally */
+	pid_err = local_reserve_pid_processes(app);
+
+	r = send_result(desc, pid_err);
+	if (r)
+		goto error;
 
 	/* return the list of orphan sessions and pgrp */
 	r = return_orphan_sessions_and_prgps(app, desc);
@@ -1098,6 +1152,12 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	/* complete the import of shared objects */
 	local_restart_shared_complete(app, fake);
 
+	r = local_end_reserve_pid_processes(app);
+
+	r = send_result(desc, r);
+	if (r)
+		goto err_end_pid;
+
 #ifdef CONFIG_KRG_DEBUG
 	{
 		int magic;
@@ -1107,7 +1167,7 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	}
 #endif
 
-error:
+err_end_pid:
 	if (app->cred) {
 		app->cred = NULL;
 		revert_creds(old_cred);
@@ -1117,12 +1177,18 @@ error:
 		local_abort_restart(app, fake);
 		app = NULL;
 		r = rpc_pack_type(desc, r);
-		if (r)
-			rpc_cancel(desc);
+		rpc_cancel(desc);
 	}
 
 	if (fake)
 		free_shared_fake_task_struct(fake);
+
+	return;
+
+error:
+	if (!pid_err)
+		local_end_reserve_pid_processes(app);
+	goto err_end_pid;
 }
 
 static int global_do_restart(struct app_kddm_object *obj,
@@ -1133,7 +1199,7 @@ static int global_do_restart(struct app_kddm_object *obj,
 	struct restart_request_msg msg;
 	pids_list_t orphan_pids;
 	pid_t *root_pid = &req->root_pid;
-	int r = 0;
+	int r = 0, err;
 
 	/* prepare message */
 	msg.requester = kerrighed_node_id;
@@ -1148,6 +1214,15 @@ static int global_do_restart(struct app_kddm_object *obj,
 	if (r)
 		goto err_no_pids;
 	r = pack_creds(desc, current_cred());
+	if (r)
+		goto err_no_pids;
+
+	/* waiting for clients to have reserved not orphan pids */
+	r = app_wait_returns_from_nodes(desc, obj->nodes);
+	if (r)
+		goto err_no_pids;
+
+	r = rpc_pack_type(desc, r);
 	if (r)
 		goto err_no_pids;
 
@@ -1178,7 +1253,7 @@ static int global_do_restart(struct app_kddm_object *obj,
 	if (r)
 		goto error;
 
-	/* waiting for clients to have rebuild session leader(s) */
+	/* waiting for clients to have rebuilt session leader(s) */
 	r = app_wait_returns_from_nodes(desc, obj->nodes);
 	if (r)
 		goto error;
@@ -1219,6 +1294,13 @@ static int global_do_restart(struct app_kddm_object *obj,
 	if (r)
 		goto error;
 
+	/*
+	 * asking to finish the restart:
+	 * - complete the restart of shared objects
+	 * - complete the reservation of pids
+	 */
+	r = ask_nodes_to_continue(desc, obj->nodes, r);
+
 	/* inform other nodes about current restart status */
 	r = rpc_pack_type(desc, r);
 	if (r)
@@ -1233,6 +1315,10 @@ static int global_do_restart(struct app_kddm_object *obj,
 #endif
 
 exit_free_pid:
+	err = end_rebuild_orphan_pids(&orphan_pids);
+	if (err && !r)
+		r = err;
+
 	free_pids_list(&orphan_pids);
 
 exit:
@@ -1241,7 +1327,6 @@ exit:
 	return r;
 
 error:
-	unrebuild_orphan_pids(&orphan_pids);
 	rpc_cancel(desc);
 	goto exit_free_pid;
 
