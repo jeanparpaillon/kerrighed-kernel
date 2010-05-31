@@ -1236,8 +1236,6 @@ void handle_faf_accept (struct rpc_desc *desc,
 	struct faf_bind_msg *msg = msgIn;
 	int err, r;
 	struct file *file;
-	void *fdesc = NULL;
-	int desc_len;
 
 	r = remote_sleep_prepare(desc);
 	if (r)
@@ -1269,18 +1267,6 @@ void handle_faf_accept (struct rpc_desc *desc,
 	/* Increment the DVFS count for the client node */
 	get_dvfs_file(r, file->f_objid);
 
-	err = get_faf_file_krg_desc(file, &fdesc, &desc_len);
-	if (err)
-		goto err_close_faf_file;
-
-	err = rpc_pack_type(desc, desc_len);
-	if (err)
-		goto err_close_faf_file;
-
-	err = rpc_pack(desc, 0, fdesc, desc_len);
-	if (err)
-		goto err_close_faf_file;
-
 	err = rpc_pack_type(desc, msg->addrlen);
 	if (err)
 		goto err_close_faf_file;
@@ -1289,7 +1275,7 @@ void handle_faf_accept (struct rpc_desc *desc,
 	if (err)
 		goto err_close_faf_file;
 
-	err = rpc_pack_type(desc, file->f_objid);
+	err = __send_faf_file_desc(desc, file);
 	if (err)
 		goto err_close_faf_file;
 
@@ -1297,14 +1283,12 @@ void handle_faf_accept (struct rpc_desc *desc,
 	if (err)
 		goto err_close_faf_file;
 
-out_free_fdesc:
-	if (fdesc)
-		kfree(fdesc);
+out:
 	return;
 
 err_cancel:
 	rpc_cancel(desc);
-	goto out_free_desc;
+	goto out;
 
 err_close_faf_file:
 	/* The client couldn't setup a FAF client file. */

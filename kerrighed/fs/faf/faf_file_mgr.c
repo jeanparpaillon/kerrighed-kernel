@@ -208,22 +208,13 @@ struct dvfs_mobility_operations dvfs_mobility_faf_ops = {
 	.file_import = faf_file_import,
 };
 
-int send_faf_file_desc(struct rpc_desc *desc, struct file *file)
+int __send_faf_file_desc(struct rpc_desc *desc, struct file *file)
 {
 	int r, fdesc_size;
 	void *fdesc;
 
-	if (!file->f_objid) {
-		r = create_kddm_file_object(file);
-		if (r)
-			goto out;
-	}
-
-	if (!(file->f_flags & (O_FAF_SRV|O_FAF_CLT))) {
-		r = setup_faf_file(file);
-		if (r && r != -EALREADY)
-			goto out;
-	}
+	BUG_ON(!file->f_objid);
+	BUG_ON(!(file->f_flags & (O_FAF_SRV|O_FAF_CLT)));
 
 	r = get_faf_file_krg_desc(file, &fdesc, &fdesc_size);
 	if (r)
@@ -243,6 +234,28 @@ int send_faf_file_desc(struct rpc_desc *desc, struct file *file)
 
 out_free_fdesc:
 	kfree(fdesc);
+
+out:
+	return r;
+}
+
+int send_faf_file_desc(struct rpc_desc *desc, struct file *file)
+{
+	int r;
+
+	if (!file->f_objid) {
+		r = create_kddm_file_object(file);
+		if (r)
+			goto out;
+	}
+
+	if (!(file->f_flags & (O_FAF_SRV|O_FAF_CLT))) {
+		r = setup_faf_file(file);
+		if (r && r != -EALREADY)
+			goto out;
+	}
+
+	r = __send_faf_file_desc(desc, file);
 
 out:
 	return r;

@@ -1081,18 +1081,14 @@ long krg_faf_accept(struct file * file,
 		    struct sockaddr __user *upeer_sockaddr,
 		    int __user *upeer_addrlen)
 {
-	struct dvfs_file_struct *dvfs_file;
 	faf_client_data_t *data = file->private_data;
 	struct faf_bind_msg msg;
 	int r, err;
 	struct sockaddr_storage sa;
 	int sa_len;
-	void *fdesc;
-	int desc_len;
 	struct file *newfile;
 	int fd;
 	struct rpc_desc* desc;
-	unsigned long objid;
 
 	BUG_ON (data->server_id == kerrighed_node_id);
 
@@ -1135,20 +1131,6 @@ long krg_faf_accept(struct file * file,
 		goto out_put_fd;
 	}
 
-	r = rpc_unpack_type(desc, desc_len);
-	if (r)
-		goto err_cancel;
-
-	fdesc = kmalloc(desc_len, GFP_KERNEL);
-	if (!fdesc) {
-		r = -ENOMEM;
-		goto err_cancel;
-	}
-
-	r = rpc_unpack(desc, 0, fdesc, desc_len);
-	if (r)
-		goto err_cancel;
-
 	r = rpc_unpack_type(desc, sa_len);
 	if (r)
 		goto err_cancel;
@@ -1157,14 +1139,9 @@ long krg_faf_accept(struct file * file,
 	if (r)
 		goto err_cancel;
 
-	r = rpc_unpack_type(desc, objid);
-	if (r)
-		goto err_cancel;
-
-	newfile = create_faf_file_from_krg_desc(current, fdesc);
-	kfree(fdesc);
-	if (!newfile) {
-		r = -ENOMEM;
+	newfile = rcv_faf_file_desc(desc);
+	if (IS_ERR(newfile)) {
+		r = PTR_ERR(newfile);
 		goto err_cancel;
 	}
 
@@ -1177,14 +1154,6 @@ long krg_faf_accept(struct file * file,
 		goto err_close_faf_file;
 
 	rpc_end(desc, 0);
-
-	dvfs_file = grab_dvfs_file_struct (objid);
-
-	BUG_ON(dvfs_file->file);
-	newfile->f_objid = objid;
-	dvfs_file->file = newfile;
-
-	put_dvfs_file_struct (objid);
 
 	if (upeer_sockaddr) {
 		r = move_addr_to_user((struct sockaddr *)&sa, sa_len,

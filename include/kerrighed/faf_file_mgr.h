@@ -31,7 +31,11 @@ struct file *create_faf_file_from_krg_desc(struct task_struct *task,
 
 int get_faf_file_krg_desc(struct file *file, void **desc, int *desc_size);
 
+/* file will be faffed if not already */
 int send_faf_file_desc(struct rpc_desc *desc, struct file *file);
+
+/* file must be already faffed */
+int __send_faf_file_desc(struct rpc_desc *desc, struct file *file);
 
 struct file *rcv_faf_file_desc(struct rpc_desc *desc);
 
