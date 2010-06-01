@@ -265,35 +265,6 @@ static inline pte_t *kddm_pt_lookup_pte (struct mm_struct *mm,
 	return pte;
 }
 
-
-
-/** Lookup for an obj entry stored a page table tree.
- *  @param mm        The memory structure the object is stored in.
- *  @param objid     The objid of the object to lookup.
- *
- *  @return The data if found.
- *          NULL if the data is not found.
- */
-static inline void *kddm_pt_lookup (struct mm_struct *mm,
-				    unsigned long objid)
-{
-	struct kddm_obj *obj_entry;
-	spinlock_t *ptl;
-	pte_t *ptep;
-
-	ptep = kddm_pt_lookup_pte (mm, objid, &ptl);
-	if (!ptep)
-		return NULL;
-
-	obj_entry = get_obj_entry_from_pte(mm, objid * PAGE_SIZE, ptep, NULL);
-
-	pte_unmap_unlock(ptep, ptl);
-
-	return obj_entry;
-}
-
-
-
 static inline void __pt_for_each_pte(struct kddm_set *set,
 				     struct mm_struct *mm, pmd_t *pmd,
 				     unsigned long start, unsigned long end,
@@ -455,36 +426,89 @@ done:
 /*****************************************************************************/
 
 
-
-static struct kddm_obj *kddm_pt_lookup_obj_entry (struct kddm_set *set,
-						  objid_t objid)
+int kddm_pt_swap_in (struct mm_struct *mm,
+		     unsigned long addr,
+		     pte_t *orig_pte)
 {
-	struct mm_struct *mm = set->obj_set;
+	struct vm_area_struct *vma;
+        pgd_t *pgd;
+        pud_t *pud;
+        pmd_t *pmd;
+        pte_t *pte;
 
-	return kddm_pt_lookup(mm, objid);
+        pgd = pgd_offset(mm, addr);
+        pud = pud_alloc(mm, pgd, addr);
+        pmd = pmd_alloc(mm, pud, addr);
+        pte = pte_alloc_map(mm, pmd, addr);
+
+	vma = find_vma(mm, addr);
+
+	if (!orig_pte)
+		orig_pte = pte;
+
+	return do_swap_page(mm, vma, addr, pte, pmd, 0, *orig_pte);
 }
 
+static inline struct kddm_obj *generic_lookup_obj_entry(struct kddm_set *set,
+							objid_t objid,
+							struct kddm_obj *n_obj,
+							spinlock_t *ptl,
+							pte_t *ptep)
+{
+	struct mm_struct *mm = set->obj_set;
+	unsigned long addr = objid * PAGE_SIZE;
+	struct kddm_obj *obj_entry;
 
+retry:
+	obj_entry = get_obj_entry_from_pte(mm, addr, ptep, n_obj);
+
+	pte_unmap_unlock(ptep, ptl);
+
+	if (!obj_entry)
+		return NULL;
+
+	if (swap_pte_obj_entry(ptep) ||
+	    swap_pte_page((struct page *)obj_entry->object)) {
+		kddm_obj_path_unlock (set, objid);
+		kddm_pt_swap_in(mm, addr, ptep);
+		kddm_obj_path_lock (set, objid);
+
+		ptep = get_locked_pte(mm, addr, &ptl);
+		if (!ptep)
+			return ERR_PTR(-ENOMEM);
+		goto retry;
+	}
+
+	return obj_entry;
+}
+
+static struct kddm_obj *kddm_pt_lookup_obj_entry(struct kddm_set *set,
+						 objid_t objid)
+{
+	struct mm_struct *mm = set->obj_set;
+	spinlock_t *ptl;
+	pte_t *ptep;
+
+	ptep = kddm_pt_lookup_pte (mm, objid, &ptl);
+	if (!ptep)
+		return NULL;
+
+	return generic_lookup_obj_entry(set, objid, NULL, ptl, ptep);
+}
 
 static struct kddm_obj *kddm_pt_get_obj_entry (struct kddm_set *set,
 					       objid_t objid,
 					       struct kddm_obj *new_obj)
 {
 	struct mm_struct *mm = set->obj_set;
-	unsigned long addr = objid * PAGE_SIZE;
-	struct kddm_obj *obj_entry;
 	spinlock_t *ptl;
 	pte_t *ptep;
 
-	ptep = get_locked_pte(mm, addr, &ptl);
+	ptep = get_locked_pte(mm, objid * PAGE_SIZE, &ptl);
 	if (!ptep)
 		return ERR_PTR(-ENOMEM);
 
-	obj_entry = get_obj_entry_from_pte(mm, addr, ptep, new_obj);
-
-	pte_unmap_unlock(ptep, ptl);
-
-	return obj_entry;
+	return generic_lookup_obj_entry(set, objid, new_obj, ptl, ptep);
 }
 
 
@@ -557,8 +581,6 @@ static void kddm_pt_insert_object(struct kddm_set * set,
 	add_page_anon_rmap (mm, page, addr);
 }
 
-
-
 struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 				    struct kddm_obj *obj_entry, objid_t objid,
 				    int break_type)
@@ -574,6 +596,8 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 	if (!old_page)
 		return obj_entry;
 
+	BUG_ON(swap_pte_page(old_page));
+
 	wait_lock_kddm_page(old_page);
 	if (page_kddm_count(old_page) == 0) {
 		unlock_kddm_page(old_page);
@@ -582,7 +606,6 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 
 	BUG_ON(obj_entry_count(obj_entry) == 0);
 	BUG_ON(!TEST_OBJECT_LOCKED(obj_entry));
-	BUG_ON(swap_pte_page(old_page));
 
 	if (page_kddm_count(old_page) == 1) {
 		count = page_mapcount(old_page);
@@ -799,29 +822,6 @@ void kcb_fill_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 	BUG_ON ((vma == NULL) || (addr < vma->vm_start));
 
 	init_pte(mm, ptep, mm->anon_vma_kddm_set, addr / PAGE_SIZE, vma, NULL);
-}
-
-int kddm_pt_swap_in (struct mm_struct *mm,
-		     unsigned long addr,
-		     pte_t *orig_pte)
-{
-	struct vm_area_struct *vma;
-        pgd_t *pgd;
-        pud_t *pud;
-        pmd_t *pmd;
-        pte_t *pte;
-
-        pgd = pgd_offset(mm, addr);
-        pud = pud_alloc(mm, pgd, addr);
-        pmd = pmd_alloc(mm, pud, addr);
-        pte = pte_alloc_map(mm, pmd, addr);
-
-	vma = find_vma(mm, addr);
-
-	if (!orig_pte)
-		orig_pte = pte;
-
-	return do_swap_page(mm, vma, addr, pte, pmd, 0, *orig_pte);
 }
 
 /* Call-back called during page table destruction for each valid pte */
