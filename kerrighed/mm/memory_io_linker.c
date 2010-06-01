@@ -179,7 +179,7 @@ int memory_invalidate_page (struct kddm_obj * obj_entry,
 		ClearPageMigratable(page);
 
 		/* Free the page */
-		free_page_and_swap_cache(page);
+		page_cache_release(page);
 	}
 
 	return 0;
