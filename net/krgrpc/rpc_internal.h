@@ -6,12 +6,16 @@
 #include <linux/hash.h>
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
+#include <linux/workqueue.h>
 #include <linux/radix-tree.h>
 #include <linux/slab.h>
 #include <linux/kref.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
 #include <net/krgrpc/rpc.h>
+
+/* Packets are not expected to be retransmitted after 1 min */
+#define RPC_MAX_TTL 60 * HZ
 
 #define __RPC_HEADER_FLAGS_SIGNAL    (1<<0)
 #define __RPC_HEADER_FLAGS_SIGACK    (1<<1)
@@ -49,6 +53,24 @@ struct rpc_desc_recv {
 	int flags;
 };
 
+enum rpc_connection_state {
+	RPC_CONN_CLOSED,
+	RPC_CONN_SYNSENT,
+	RPC_CONN_ESTABLISHED_AUTOCLOSE,
+	RPC_CONN_ESTABLISHED,
+	RPC_CONN_AUTOCLOSING,
+	RPC_CONN_CLOSE_WAIT,
+	RPC_CONN_LAST_ACK,
+	RPC_CONN_FIN_WAIT_1,
+	RPC_CONN_FIN_WAIT_2,
+	RPC_CONN_CLOSING,
+	RPC_CONN_TIME_WAIT,
+};
+
+struct rpc_connect_msg {
+	int comm_id;
+};
+
 struct rpc_connection {
 	struct hlist_head desc_srv[RPC_DESC_TABLE_SIZE];
 	unsigned long desc_done_id;
@@ -58,6 +80,12 @@ struct rpc_connection {
 	int id;
 	int peer_id;
 	kerrighed_node_t peer;
+	enum rpc_connection_state state;
+	unsigned int connect_pending:1;
+	spinlock_t state_lock;
+	struct completion close_done;
+	struct delayed_work kill_work;
+	struct delayed_work timeout_work;
 	struct rcu_head rcu;
 };
 
@@ -231,6 +259,7 @@ void __rpc_get_raw_data(void *raw);
 struct rpc_connection *
 rpc_connection_alloc_ll(struct rpc_communicator *comm, kerrighed_node_t node);
 void rpc_connection_free_ll(struct rpc_connection *connection);
+void rpc_connection_kill_ll(struct rpc_connection *connection);
 
 int
 rpc_connection_alloc(struct rpc_communicator *comm, kerrighed_node_t node);
@@ -247,6 +276,11 @@ static inline void rpc_connection_put(struct rpc_connection *connection)
 }
 
 struct rpc_connection *rpc_find_get_connection(int id);
+struct rpc_connection *rpc_handle_new_connection(kerrighed_node_t node,
+						 int peer_id,
+						 const struct rpc_connect_msg *msg);
+int rpc_handle_complete_connection(struct rpc_connection *conn, int peer_id);
+int rpc_connection_check_state(struct rpc_connection *conn, enum rpcid rpcid);
 
 struct rpc_connection *
 rpc_communicator_get_connection(struct rpc_communicator *comm,
