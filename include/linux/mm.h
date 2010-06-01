@@ -880,7 +880,7 @@ int do_mprotect(struct mm_struct *mm, unsigned long start, size_t len,
 unsigned long __do_mremap(struct mm_struct *mm, unsigned long addr,
 			  unsigned long old_len, unsigned long new_len,
 			  unsigned long flags, unsigned long new_addr,
-			  unsigned long _lock_limit);
+			  unsigned long *_new_addr, unsigned long _lock_limit);
 #endif
 extern unsigned long do_mremap(unsigned long addr,
 			       unsigned long old_len, unsigned long new_len,
@@ -1178,6 +1178,10 @@ extern int install_special_mapping(struct mm_struct *mm,
 				   unsigned long flags, struct page **pages);
 
 extern unsigned long get_unmapped_area(struct file *, unsigned long, unsigned long, unsigned long, unsigned long);
+
+#ifdef CONFIG_KRG_MM
+extern unsigned long __get_unmapped_area(struct mm_struct *, struct file *, unsigned long , unsigned long , unsigned long , unsigned long );
+#endif
 
 extern unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
 	unsigned long len, unsigned long prot,

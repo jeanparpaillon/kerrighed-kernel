@@ -60,7 +60,7 @@ int handle_do_mremap (struct rpc_desc* desc,
 	down_write(&mm->mmap_sem);
 
 	__do_mremap(mm, msg->addr, msg->old_len, msg->new_len, msg->flags,
-		    msg->new_addr, msg->lock_limit);
+		    msg->new_addr, &msg->_new_addr, msg->lock_limit);
 
 	up_write(&mm->mmap_sem);
 

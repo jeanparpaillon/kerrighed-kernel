@@ -479,7 +479,7 @@ void krg_do_munmap(struct mm_struct *mm,
 void krg_do_mremap(struct mm_struct *mm, unsigned long addr,
 		   unsigned long old_len, unsigned long new_len,
 		   unsigned long flags, unsigned long new_addr,
-		   unsigned long lock_limit)
+		   unsigned long _new_addr, unsigned long lock_limit)
 {
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
@@ -496,6 +496,7 @@ void krg_do_mremap(struct mm_struct *mm, unsigned long addr,
 	msg.new_len = new_len;
 	msg.flags = flags;
 	msg.new_addr = new_addr;
+	msg._new_addr = _new_addr;
 	msg.lock_limit = lock_limit;
 
 	krgnodes_copy(copyset, mm->copyset);

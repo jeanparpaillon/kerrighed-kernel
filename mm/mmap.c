@@ -1542,6 +1542,24 @@ void arch_unmap_area_topdown(struct mm_struct *mm, unsigned long addr)
 		mm->free_area_cache = mm->mmap_base;
 }
 
+#ifdef CONFIG_KRG_MM
+unsigned long
+get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
+		  unsigned long pgoff, unsigned long flags)
+{
+	return __get_unmapped_area (current->mm, file, addr, len, pgoff, flags);
+}
+
+unsigned long
+	__get_unmapped_area(struct mm_struct *mm, struct file *file,
+			    unsigned long addr, unsigned long len,
+			    unsigned long pgoff, unsigned long flags)
+{
+	unsigned long (*get_area)(struct file *, unsigned long,
+				  unsigned long, unsigned long, unsigned long);
+
+	get_area = mm->get_unmapped_area;
+#else
 unsigned long
 get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
 		unsigned long pgoff, unsigned long flags)
@@ -1550,6 +1568,7 @@ get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
 				  unsigned long, unsigned long, unsigned long);
 
 	get_area = current->mm->get_unmapped_area;
+#endif
 	if (file && file->f_op && file->f_op->get_unmapped_area)
 		get_area = file->f_op->get_unmapped_area;
 	addr = get_area(file, addr, len, pgoff, flags);

@@ -40,6 +40,7 @@ typedef struct mm_mmap_msg {
 	};
 	unsigned long old_len;
 	unsigned long new_addr;
+	unsigned long _new_addr;
 } mm_mmap_msg_t;
 
 /*--------------------------------------------------------------------------*
