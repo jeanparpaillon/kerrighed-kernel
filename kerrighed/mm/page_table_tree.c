@@ -777,6 +777,7 @@ static inline void init_kddm_pt(struct kddm_set *set,
 static void *kddm_pt_alloc (struct kddm_set *set, void *_data)
 {
 	struct mm_struct *mm = _data;
+	struct vm_area_struct *vma;
 
 	if (mm == NULL) {
 		mm = alloc_fake_mm(NULL);
@@ -792,6 +793,9 @@ static void *kddm_pt_alloc (struct kddm_set *set, void *_data)
 	mm->anon_vma_kddm_id = set->id;
 
 	init_kddm_pt(set, mm);
+
+	for (vma = mm->mmap; vma != NULL; vma = vma->vm_next)
+		check_link_vma_to_anon_memory_kddm_set (vma);
 
 	mm->anon_vma_kddm_set = set;
 

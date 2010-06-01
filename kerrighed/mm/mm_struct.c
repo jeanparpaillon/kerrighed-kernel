@@ -7,6 +7,8 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/file.h>
+#include <linux/swap.h>
+#include <linux/swapops.h>
 #include <linux/proc_fs.h>
 #include <asm/mmu_context.h>
 #include <net/krgrpc/rpc.h>
@@ -15,6 +17,7 @@
 #include <asm/uaccess.h>
 #include <kerrighed/krg_services.h>
 #include <kddm/kddm.h>
+#include <kerrighed/page_table_tree.h>
 #include <kerrighed/hotplug.h>
 #include "memory_int_linker.h"
 #include "memory_io_linker.h"
@@ -310,22 +313,19 @@ done_put:
 int init_anon_vma_kddm_set(struct task_struct *tsk,
 			   struct mm_struct *mm)
 {
-	struct vm_area_struct *vma;
-	int r;
+	struct kddm_set *set;
 
 	mm->mm_id = 0;
 	krgnodes_clear (mm->copyset);
 
-	r = create_anon_vma_kddm_set(mm);
-	if (r) {
-		BUG();
-		return r;
-	}
+	set = __create_new_kddm_set(kddm_def_ns, 0, &kddm_pt_set_ops, mm,
+				    MEMORY_LINKER, kerrighed_node_id,
+				    PAGE_SIZE, NULL, 0, 0);
+
+	if (IS_ERR(set))
+		return PTR_ERR(set);
 
 	create_mm_struct_object(mm);
-
-	for (vma = mm->mmap; vma != NULL; vma = vma->vm_next)
-		check_link_vma_to_anon_memory_kddm_set (vma);
 
 	return 0;
 }

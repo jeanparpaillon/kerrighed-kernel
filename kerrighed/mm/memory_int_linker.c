@@ -18,7 +18,6 @@
 #include <linux/swap.h>
 #include <linux/swapops.h>
 #include <kerrighed/pid.h>
-#include <kerrighed/page_table_tree.h>
 #include <asm/tlb.h>
 
 #include <kddm/kddm.h>
@@ -29,35 +28,6 @@
 
 struct vm_operations_struct null_vm_ops = {};
 extern struct vm_operations_struct shm_vm_ops;
-
-
-/** Create the anonymous kddm_set for the given process.
- *  @author Renaud Lottiaux
- *
- *  @param ghost    Ghost where data should be stored.
- *  @param tsk      The task to create an anon kddm_set for.
- *
- *  @return  0 if everything ok.
- *           Negative value otherwise.
- *
- *  The kddm_set is created empty. The caller must fill it with existing
- *  pages.
- */
-int create_anon_vma_kddm_set (struct mm_struct *mm)
-{
-	struct kddm_set *set;
-
-	set = __create_new_kddm_set(kddm_def_ns, 0, &kddm_pt_set_ops, mm,
-				    MEMORY_LINKER, kerrighed_node_id,
-				    PAGE_SIZE, NULL, 0, 0);
-
-	if (IS_ERR(set))
-		return PTR_ERR(set);
-
-	set_anon_vma_kddm_set(mm, set);
-
-	return 0;
-}
 
 
 

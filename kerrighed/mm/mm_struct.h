@@ -58,13 +58,6 @@ static inline struct mm_struct *krg_grab_mm(unique_id_t mm_id)
 		return NULL;
 }
 
-static inline void set_anon_vma_kddm_set(struct mm_struct *mm,
-					 struct kddm_set *set)
-{
-	mm->anon_vma_kddm_set = set;
-	mm->anon_vma_kddm_id = set->id;
-}
-
 void kcb_mm_get(struct mm_struct *mm);
 
 static inline void krg_put_mm(unique_id_t mm_id)
