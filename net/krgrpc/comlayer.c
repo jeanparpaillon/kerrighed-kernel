@@ -270,6 +270,9 @@ static int __rpc_tx_elem_send(struct rpc_tx_elem *elem, int link_seq_index,
 	struct tipc_connection *conn = to_ll(elem->conn_set->conn[node]);
 	int err = 0;
 
+	if (conn->conn.state == RPC_CONN_TIME_WAIT)
+		goto out;
+
 	elem->h.link_seq_id = elem->link_seq_id[link_seq_index];
 	if (elem->h.link_seq_id <= conn->send_ack_id)
 		goto out;
@@ -329,7 +332,8 @@ static void __rpc_tx_elem_queue(struct rpc_tx_elem *elem)
 static void send_acks(struct tipc_connection *conn)
 {
 	spin_lock_bh(&tipc_ack_list_lock);
-	if (list_empty(&conn->ack_list)) {
+	if (list_empty(&conn->ack_list)
+	    && conn->conn.state != RPC_CONN_TIME_WAIT) {
 		rpc_connection_get(&conn->conn);
 		list_add_tail(&conn->ack_list, &tipc_ack_head);
 		queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
@@ -914,11 +918,21 @@ server_rpc_desc_setup(struct rpc_connection *conn, const struct __rpc_header *h)
 
 	rpc_communicator_get(conn->comm);
 	desc->comm = conn->comm;
-	nodes = krgnodemask_of_node(h->client);
-	desc->conn_set = rpc_connection_set_alloc(desc->comm, &nodes);
-	if (IS_ERR(desc->conn_set)) {
-		err = PTR_ERR(desc->conn_set);
-		goto err_conn_set;
+	/* Only RPC_CLOSE must be able to use an invalidated connection */
+	if (h->rpcid == RPC_CLOSE) {
+		BUG_ON(h->client != conn->peer);
+		desc->conn_set = __rpc_connection_set_alloc();
+		if (!desc->conn_set)
+			goto err_conn_set;
+		rpc_connection_get(conn);
+		desc->conn_set->conn[conn->peer] = conn;
+	} else {
+		nodes = krgnodemask_of_node(h->client);
+		desc->conn_set = rpc_connection_set_alloc(desc->comm, &nodes);
+		if (IS_ERR(desc->conn_set)) {
+			err = PTR_ERR(desc->conn_set);
+			goto err_conn_set;
+		}
 	}
 
 	desc->desc_id = h->desc_id;
@@ -1130,9 +1144,16 @@ static inline int handle_one_packet(struct tipc_connection *conn,
 				    unsigned char const *data,
 				    unsigned int size)
 {
-	int err;
+	const struct __rpc_header *h = (void *)data;
+	int err = 0;
 
-	err = tipc_handler_ordered(conn, buf, data, size);
+	/* Silently drop packets sent after connection close */
+	if (!rpc_connection_check_state(&conn->conn, h->rpcid))
+		err = tipc_handler_ordered(conn, buf, data, size);
+	else
+		printk("krgrpc: Dropping packet after close "
+		       "(rpcid=%d from=%d desc_id=%lu seq_id=%lu)!\n",
+		       h->rpcid, h->from, h->desc_id, h->seq_id);
 	if (!err) {
 		if (conn->conn.peer == kerrighed_node_id)
 			conn->send_ack_id = conn->recv_seq_id;
@@ -1182,6 +1203,9 @@ static void schedule_run_rx_queue(struct tipc_connection *conn)
 {
 	int queued;
 
+	if (conn->conn.state == RPC_CONN_TIME_WAIT)
+		return;
+
 	rpc_connection_get(&conn->conn);
 	queued = queue_delayed_work(krgcom_wq, &conn->run_rx_queue_work, HZ / 2);
 	if (!queued)
@@ -1201,6 +1225,7 @@ static void tipc_handler(void *usr_handle,
 			 struct tipc_portid const *orig,
 			 struct tipc_name_seq const *dest)
 {
+	struct rpc_connection *rpc_conn;
 	struct tipc_connection *conn;
 	struct sk_buff_head *queue;
 	struct sk_buff *__buf;
@@ -1210,12 +1235,31 @@ static void tipc_handler(void *usr_handle,
 	h = (struct __rpc_header*)data;
 	BUG_ON(size != __buf->len);
 
-	conn = to_ll(rpc_find_get_connection(h->from));
-	if (conn->peer_id == -1)
-		conn->peer_id = h->source_conn_id;
-	else
-		BUG_ON(conn->peer_id != h->source_conn_id);
+	if (h->target_conn_id == -1) {
+		BUG_ON(h->rpcid != RPC_CONNECT);
+		if (h->link_ack_id != 0) {
+			__WARN();
+			return;
+		}
+		BUG_ON(h->link_seq_id != 1);
+		BUG_ON(h->seq_id != 1);
+		rpc_conn = rpc_handle_new_connection(h->from, h->source_conn_id,
+						     (struct rpc_connect_msg *)(h + 1));
+	} else {
+		rpc_conn = rpc_find_get_connection(h->target_conn_id);
+	}
+	if (!rpc_conn) {
+		__WARN();
+		return;
+	}
+	if (rpc_conn->peer_id == -1) {
+		if (rpc_handle_complete_connection(rpc_conn, h->source_conn_id)) {
+			__WARN();
+			return;
+		}
+	}
 
+	conn = to_ll(rpc_conn);
 	queue = &conn->rx_queue;
 
 	spin_lock(&queue->lock);
@@ -1232,6 +1276,9 @@ static void tipc_handler(void *usr_handle,
 	}
 
 	if (h->rpcid == RPC_ACK)
+		goto exit;
+
+	if (rpc_conn->state == RPC_CONN_TIME_WAIT)
 		goto exit;
 
 	// Check if we are not receiving an already received packet
@@ -1280,7 +1327,7 @@ static void tipc_handler(void *usr_handle,
  exit:
 	spin_unlock(&queue->lock);
 
-	rpc_connection_put(&conn->conn);
+	rpc_connection_put(rpc_conn);
 }
 
 static
@@ -1399,6 +1446,8 @@ rpc_enable_lowmem_mode(struct rpc_communicator *comm, kerrighed_node_t nodeid)
 	struct tipc_connection *ll;
 
 	conn = rpc_communicator_get_connection(comm, nodeid);
+	if (!conn)
+		return;
 	ll = to_ll(conn);
 
 	ll->max_consecutive_recv = MAX_CONSECUTIVE_RECV__LOWMEM_MODE;
@@ -1414,6 +1463,8 @@ rpc_disable_lowmem_mode(struct rpc_communicator *comm, kerrighed_node_t nodeid)
 	struct tipc_connection *ll;
 
 	conn = rpc_communicator_get_connection(comm, nodeid);
+	if (!conn)
+		return;
 	ll = to_ll(conn);
 	ll->max_consecutive_recv = MAX_CONSECUTIVE_RECV;
 	rpc_connection_put(conn);
@@ -1458,6 +1509,23 @@ void rpc_connection_free_ll(struct rpc_connection *conn)
 	BUG_ON(!list_empty(&ll->ack_list));
 	BUG_ON(!skb_queue_empty(&ll->rx_queue));
 	kfree(ll);
+}
+
+void rpc_connection_kill_ll(struct rpc_connection *conn)
+{
+	struct tipc_connection *ll = to_ll(conn);
+
+	BUG_ON(conn->state != RPC_CONN_TIME_WAIT);
+
+	spin_lock_bh(&tipc_ack_list_lock);
+	if (!list_empty(&ll->ack_list))
+		list_del_init(&ll->ack_list);
+	spin_unlock_bh(&tipc_ack_list_lock);
+
+	cancel_delayed_work_sync(&ll->run_rx_queue_work);
+	spin_lock_bh(&ll->rx_queue.lock);
+	__skb_queue_purge(&ll->rx_queue);
+	spin_unlock_bh(&ll->rx_queue.lock);
 }
 
 int comlayer_init(void)
