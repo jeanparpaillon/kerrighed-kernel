@@ -6,6 +6,8 @@
 
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/completion.h>
+#include <linux/workqueue.h>
 #include <linux/smp.h>
 #include <linux/rcupdate.h>
 #include <linux/list.h>
@@ -197,8 +199,11 @@ void rpc_disable_all(void)
 	int i;
 
 	for(i = 0; i < RPCID_MAX; i++)
-		rpc_disable(i);
+		if (i != RPC_CONNECT && i != RPC_CLOSE)
+			rpc_disable(i);
 }
+
+static void rpc_connection_kill(struct work_struct *work);
 
 int
 rpc_connection_alloc(struct rpc_communicator *comm, kerrighed_node_t node)
@@ -221,6 +226,10 @@ rpc_connection_alloc(struct rpc_communicator *comm, kerrighed_node_t node)
 	rpc_communicator_get(comm);
 	conn->comm = comm;
 	conn->peer = node;
+	conn->state = RPC_CONN_CLOSED;
+	conn->connect_pending = 0;
+	spin_lock_init(&conn->state_lock);
+	init_completion(&conn->close_done);
 
 	conn->peer_id = -1;
 
@@ -235,9 +244,9 @@ rpc_connection_alloc(struct rpc_communicator *comm, kerrighed_node_t node)
 		if (comm->conn[node])
 			goto unlock;
 
-		spin_lock_irq(&rpc_conn_lock);
-		err = idr_get_new_above(&rpc_conn_idr, conn, node, &conn->id);
-		spin_unlock_irq(&rpc_conn_lock);
+		spin_lock(&rpc_conn_lock);
+		err = idr_get_new(&rpc_conn_idr, conn, &conn->id);
+		spin_unlock(&rpc_conn_lock);
 		if (err)
 			goto unlock;
 
@@ -262,6 +271,19 @@ err_idr:
 	return err;
 }
 
+static void rpc_connection_invalidate(struct rpc_connection *conn)
+{
+	struct rpc_communicator *comm = conn->comm;
+	kerrighed_node_t node = conn->peer;
+
+	/* Make conn an inactive connection */
+	spin_lock_bh(&rpc_comm_lock);
+	BUG_ON(comm->conn[node] != conn);
+	rcu_assign_pointer(comm->conn[node], NULL);
+	spin_unlock_bh(&rpc_comm_lock);
+	rpc_connection_put(conn);
+}
+
 static void rpc_connection_free(struct rcu_head *rcu)
 {
 	struct rpc_communicator *comm;
@@ -277,17 +299,10 @@ static void rpc_connection_free(struct rcu_head *rcu)
 void rpc_connection_release(struct kref *kref)
 {
 	struct rpc_connection *conn;
-	unsigned long flags;
-
-	BUG();
 
 	conn = container_of(kref, struct rpc_connection, kref);
 
 	BUG_ON(conn->comm->conn[conn->peer] == conn);
-
-	spin_lock_irqsave(&rpc_conn_lock, flags);
-	idr_remove(&rpc_conn_idr, conn->id);
-	spin_unlock_irqrestore(&rpc_conn_lock, flags);
 
 	call_rcu(&conn->rcu, rpc_connection_free);
 }
@@ -404,13 +419,442 @@ struct rpc_communicator *rpc_find_get_communicator(int id)
 	return &static_communicator;
 }
 
+static void rpc_connection_schedule_kill(struct rpc_connection *conn)
+{
+	INIT_DELAYED_WORK(&conn->kill_work, rpc_connection_kill);
+	schedule_delayed_work(&conn->kill_work, 2 * RPC_MAX_TTL);
+}
+
+static void rpc_connection_delayed_time_wait(struct work_struct *work)
+{
+	struct rpc_connection *conn;
+
+	conn = container_of(to_delayed_work(work), struct rpc_connection, kill_work);
+
+	spin_lock_bh(&conn->state_lock);
+	BUG_ON(conn->state != RPC_CONN_CLOSING);
+	conn->state = RPC_CONN_TIME_WAIT;
+	spin_unlock_bh(&conn->state_lock);
+
+	rpc_connection_schedule_kill(conn);
+}
+
+/* Requires conn->state_lock held */
+static void rpc_connection_check_abort(struct rpc_connection *conn, bool delay)
+{
+	if (conn->state != RPC_CONN_CLOSED || conn->connect_pending)
+		return;
+
+	rpc_connection_invalidate(conn);
+	if (delay) {
+		conn->state = RPC_CONN_CLOSING;
+		INIT_DELAYED_WORK(&conn->kill_work, rpc_connection_delayed_time_wait);
+		schedule_delayed_work(&conn->kill_work, 2 * RPC_MAX_TTL);
+	} else {
+		conn->state = RPC_CONN_TIME_WAIT;
+		rpc_connection_schedule_kill(conn);
+	}
+}
+
+/* Called in softirq context */
+struct rpc_connection *rpc_handle_new_connection(kerrighed_node_t node,
+						 int peer_id,
+						 const struct rpc_connect_msg *msg)
+{
+	struct rpc_communicator *comm;
+	struct rpc_connection *conn;
+	bool new;
+	int err;
+
+	comm = rpc_find_get_communicator(msg->comm_id);
+	BUG_ON(!comm);
+
+	conn = rpc_communicator_get_connection(comm, node);
+	if (!conn) {
+		err = rpc_connection_alloc(comm, node);
+		if (!err || err == -EBUSY)
+			conn = rpc_communicator_get_connection(comm, node);
+		else
+			conn = NULL;
+		if (!conn)
+			goto out;
+	}
+
+	spin_lock(&conn->state_lock);
+	new = conn->peer_id == -1 && conn->state != RPC_CONN_TIME_WAIT;
+	if (new) {
+		BUG_ON(conn->state != RPC_CONN_CLOSED
+		       && conn->state != RPC_CONN_SYNSENT);
+		conn->peer_id = peer_id;
+		conn->connect_pending = 1;
+	}
+	spin_unlock(&conn->state_lock);
+	if (!new && conn->peer_id != peer_id) {
+		/*
+		 * Aborted connection, very old duplicate packet,
+		 * or early reconnection
+		 */
+		rpc_connection_put(conn);
+		conn = NULL;
+	}
+
+out:
+	rpc_communicator_put(comm);
+
+	return conn;
+}
+
+/* Called in softirq context */
+int rpc_handle_complete_connection(struct rpc_connection *conn, int peer_id)
+{
+	int err = -EINVAL;
+
+	spin_lock(&conn->state_lock);
+	if (conn->peer_id == -1 && conn->state != RPC_CONN_TIME_WAIT) {
+		BUG_ON(conn->state != RPC_CONN_SYNSENT);
+		conn->peer_id = peer_id;
+		err = 0;
+	}
+	/* else if (conn->peer_id == -1 && conn->state == RPC_CONN_TIME_WAIT)
+		Aborted connection
+	   else if (conn->peer_id != peer_id)
+		Very old duplicate packet!
+	   else duplicate packet */
+	spin_unlock(&conn->state_lock);
+
+	return err;
+}
+
+static void handle_connect(struct rpc_desc *desc, void *msg, size_t size)
+{
+	struct rpc_connection *conn = desc->conn_set->conn[desc->client];
+	int err;
+
+	spin_lock_bh(&conn->state_lock);
+	conn->connect_pending = 0;
+	err = -EINVAL;
+	if (conn->state <= RPC_CONN_ESTABLISHED)
+		err = rpc_pack(desc, 0, NULL, 0);
+	if (err) {
+		rpc_cancel(desc);
+		rpc_connection_check_abort(conn, true);
+	} else if (conn->state == RPC_CONN_CLOSED) {
+		conn->state = RPC_CONN_ESTABLISHED_AUTOCLOSE;
+	} else if (conn->state == RPC_CONN_SYNSENT) {
+		conn->state = RPC_CONN_ESTABLISHED;
+	}
+	spin_unlock_bh(&conn->state_lock);
+}
+
 int rpc_connect(struct rpc_communicator *comm, kerrighed_node_t node)
 {
+	struct rpc_connect_msg msg;
+	struct rpc_connection *conn;
+	struct rpc_desc *desc;
+	bool do_close = false;
+	int err;
+
+	err = rpc_connection_alloc(comm, node);
+	if (err && err != -EBUSY)
+		return err;
+
+	desc = rpc_begin(RPC_CONNECT, comm, node);
+	if (!desc) {
+		conn = rpc_communicator_get_connection(comm, node);
+		if (conn) {
+			spin_lock_bh(&conn->state_lock);
+			rpc_connection_check_abort(conn, false);
+			spin_unlock_bh(&conn->state_lock);
+			rpc_connection_put(conn);
+		}
+		return -ENOMEM;
+	}
+	conn = desc->conn_set->conn[node];
+	rpc_connection_get(conn);
+
+	spin_lock_bh(&conn->state_lock);
+
+	switch (conn->state) {
+	case RPC_CONN_CLOSED:
+		msg.comm_id = comm->id;
+		err = rpc_pack_type(desc, msg);
+		if (!err)
+			conn->state = RPC_CONN_SYNSENT;
+		else
+			rpc_connection_check_abort(conn, false);
+		spin_unlock_bh(&conn->state_lock);
+		if (err)
+			goto out_end;
+		break;
+	case RPC_CONN_ESTABLISHED_AUTOCLOSE:
+		conn->state = RPC_CONN_ESTABLISHED;
+		/* Fallthrough */
+	case RPC_CONN_ESTABLISHED:
+		spin_unlock_bh(&conn->state_lock);
+		err = 0;
+		goto out_end;
+	case RPC_CONN_AUTOCLOSING:
+	case RPC_CONN_CLOSE_WAIT:
+	case RPC_CONN_LAST_ACK:
+	case RPC_CONN_TIME_WAIT:
+		/* Auto-closing, already existing connection */
+		err = -EAGAIN;
+		spin_unlock_bh(&conn->state_lock);
+		goto out_end;
+	default:
+		BUG();
+	}
+
+	err = rpc_unpack(desc, 0, NULL, 0);
+	if (err > 0)
+		err = -EPIPE;
+
+	spin_lock_bh(&conn->state_lock);
+
+	if (err) {
+		switch (conn->state) {
+		case RPC_CONN_SYNSENT:
+			conn->state = RPC_CONN_CLOSED;
+			rpc_connection_check_abort(conn, false);
+			break;
+		case RPC_CONN_ESTABLISHED:
+			err = 0;
+			break;
+		case RPC_CONN_CLOSE_WAIT:
+			do_close = true;
+			break;
+		default:
+			BUG();
+		}
+		goto out_unlock;
+	}
+
+	switch (conn->state) {
+	case RPC_CONN_SYNSENT:
+		conn->state = RPC_CONN_ESTABLISHED;
+		/* Fallthrough */
+	case RPC_CONN_ESTABLISHED:
+		break;
+	case RPC_CONN_CLOSE_WAIT:
+		do_close = true;
+		err = -EAGAIN;
+		break;
+	default:
+		BUG();
+	}
+
+out_unlock:
+	spin_unlock_bh(&conn->state_lock);
+
+out_end:
+	rpc_end(desc, 0);
+
+	if (do_close)
+		rpc_close(comm, conn->peer);
+	rpc_connection_put(conn);
+
+	return err;
+}
+
+static void rpc_connection_kill(struct work_struct *work)
+{
+	struct rpc_connection *conn;
+
+	conn = container_of(to_delayed_work(work), struct rpc_connection, kill_work);
+
+	spin_lock_bh(&rpc_conn_lock);
+	idr_remove(&rpc_conn_idr, conn->id);
+	spin_unlock_bh(&rpc_conn_lock);
+
+	rpc_connection_kill_ll(conn);
+	rpc_connection_put(conn);
+}
+
+/* Called in softirq context */
+int rpc_connection_check_state(struct rpc_connection *conn, enum rpcid rpcid)
+{
+	if (rpcid == RPC_CONNECT)
+		return 0;
+
+	if (rpcid == RPC_CLOSE) {
+		spin_lock(&conn->state_lock);
+		if (conn->state == RPC_CONN_ESTABLISHED_AUTOCLOSE)
+			conn->state = RPC_CONN_AUTOCLOSING;
+		spin_unlock(&conn->state_lock);
+		return 0;
+	}
+
+	if (conn->state > RPC_CONN_ESTABLISHED)
+		return -EPIPE;
+
 	return 0;
+}
+
+/* Can be called in softirq context */
+void rpc_connection_last_ack(struct rpc_connection *conn)
+{
+	spin_lock_bh(&conn->state_lock);
+	switch (conn->state) {
+	case RPC_CONN_FIN_WAIT_2:
+		conn->state = RPC_CONN_TIME_WAIT;
+		complete(&conn->close_done);
+		break;
+	case RPC_CONN_CLOSING:
+	case RPC_CONN_CLOSE_WAIT:
+	case RPC_CONN_LAST_ACK:
+	case RPC_CONN_TIME_WAIT:
+		break;
+	default:
+		BUG();
+	}
+	spin_unlock_bh(&conn->state_lock);
+}
+
+static void rpc_connection_close_timeout(struct work_struct *work)
+{
+	struct rpc_connection *conn;
+
+	conn = container_of(to_delayed_work(work), struct rpc_connection, timeout_work);
+	rpc_connection_last_ack(conn);
+	rpc_connection_put(conn);
+}
+
+static void handle_close(struct rpc_desc *desc, void *msg, size_t size)
+{
+	struct rpc_connection *conn = desc->conn_set->conn[desc->client];
+	bool do_autoclose = false;
+	int err;
+
+	spin_lock_bh(&conn->state_lock);
+	do {
+		switch (conn->state) {
+		case RPC_CONN_ESTABLISHED:
+		case RPC_CONN_AUTOCLOSING:
+		case RPC_CONN_FIN_WAIT_1:
+		case RPC_CONN_FIN_WAIT_2:
+			err = rpc_pack(desc, 0, NULL, 0);
+			if (err) {
+				spin_unlock_bh(&conn->state_lock);
+				__set_current_state(TASK_UNINTERRUPTIBLE);
+				schedule_timeout(HZ);
+				spin_lock_bh(&conn->state_lock);
+			}
+			break;
+		default:
+			BUG();
+		}
+	} while (err);
+	switch (conn->state) {
+	case RPC_CONN_AUTOCLOSING:
+		do_autoclose = true;
+	case RPC_CONN_ESTABLISHED:
+		conn->state = RPC_CONN_CLOSE_WAIT;
+		break;
+	case RPC_CONN_FIN_WAIT_1:
+		conn->state = RPC_CONN_CLOSING;
+		break;
+	case RPC_CONN_FIN_WAIT_2:
+		rpc_connection_get(conn);
+		INIT_DELAYED_WORK(&conn->timeout_work, rpc_connection_close_timeout);
+		schedule_delayed_work(&conn->timeout_work, 2 * RPC_MAX_TTL);
+		break;
+	default:
+		BUG();
+	}
+	spin_unlock_bh(&conn->state_lock);
+
+	if (do_autoclose)
+		rpc_close(conn->comm, conn->peer);
 }
 
 void rpc_close(struct rpc_communicator *comm, kerrighed_node_t node)
 {
+	struct rpc_connection *conn, *tmp_conn;
+	struct rpc_desc *desc;
+	int err;
+
+	conn = rpc_communicator_get_connection(comm, node);
+	BUG_ON(!conn);
+
+	while (!(desc = rpc_begin(RPC_CLOSE, comm, node))) {
+		/*
+		 * In case of concurrent rpc_close(),
+		 * rpc_begin() may fail because conn is no longer an active
+		 * connection (ie no longer in the communicator).
+		 * But we forbid concurrent rpc_close()!
+		 */
+		tmp_conn = rpc_communicator_get_connection(comm, node);
+		BUG_ON(tmp_conn != conn);
+		rpc_connection_put(tmp_conn);
+
+		__set_current_state(TASK_UNINTERRUPTIBLE);
+		schedule_timeout(HZ);
+	}
+	/* Concurrent rpc_close() are forbidden! */
+	BUG_ON(conn != desc->conn_set->conn[node]);
+
+	rpc_connection_invalidate(conn);
+
+	spin_lock_bh(&conn->state_lock);
+
+	do {
+		switch (conn->state) {
+		case RPC_CONN_ESTABLISHED:
+		case RPC_CONN_CLOSE_WAIT:
+			err = rpc_pack(desc, 0, NULL, 0);
+			if (err) {
+				spin_unlock_bh(&conn->state_lock);
+				__set_current_state(TASK_UNINTERRUPTIBLE);
+				schedule_timeout(HZ);
+				spin_lock_bh(&conn->state_lock);
+			}
+			break;
+		default:
+			BUG();
+		}
+	} while (err);
+
+	switch (conn->state) {
+	case RPC_CONN_ESTABLISHED:
+		conn->state = RPC_CONN_FIN_WAIT_1;
+		break;
+	case RPC_CONN_CLOSE_WAIT:
+		conn->state = RPC_CONN_LAST_ACK;
+		break;
+	default:
+		BUG();
+	}
+
+	spin_unlock_bh(&conn->state_lock);
+
+	err = rpc_unpack(desc, 0, NULL, 0);
+	rpc_end(desc, 0);
+
+	spin_lock_bh(&conn->state_lock);
+
+	if (err)
+		goto zombify;
+
+	switch (conn->state) {
+	case RPC_CONN_FIN_WAIT_1:
+		conn->state = RPC_CONN_FIN_WAIT_2;
+		spin_unlock_bh(&conn->state_lock);
+		wait_for_completion(&conn->close_done);
+		goto kill;
+	case RPC_CONN_CLOSING:
+	case RPC_CONN_LAST_ACK:
+		break;
+	default:
+		BUG();
+	}
+
+zombify:
+	conn->state = RPC_CONN_TIME_WAIT;
+	spin_unlock_bh(&conn->state_lock);
+
+kill:
+	rpc_connection_schedule_kill(conn);
+	rpc_connection_put(conn);
 }
 
 static
@@ -537,12 +981,6 @@ int init_rpc(void)
 	res = rpc_communicator_init(&static_communicator, 0);
 	if (res)
 		panic("kerrighed: Couldn't allocate static_communicator!\n");
-	for (i = 0; i < KERRIGHED_MAX_NODES; i++) {
-		if (rpc_connection_alloc(&static_communicator, i))
-			panic("kerrighed: Couldn't allocate static"
-			      "connection!\n");
-		BUG_ON(static_communicator.conn[i]->id != i);
-	}
 
 	res = thread_pool_init();
 	if(res)
@@ -555,6 +993,17 @@ int init_rpc(void)
 	res = rpclayer_init();
 	if(res)
 		return res;
+
+	res = rpc_register_void(RPC_CONNECT, handle_connect, 0);
+	if (res)
+		return res;
+
+	res = rpc_register_void(RPC_CLOSE, handle_close, 0);
+	if (res)
+		return res;
+
+	rpc_enable(RPC_CONNECT);
+	rpc_enable(RPC_CLOSE);
 
 	/* res = rpc_monitor_init(); */
 	/* if(res) */
