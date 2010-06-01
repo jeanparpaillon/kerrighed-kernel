@@ -849,11 +849,17 @@ static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 			goto out_unmap;
 		}
 #ifdef CONFIG_KRG_MM
-		/* Avoid unmap of a page in use in the KDDM layer */
+		/* Avoid unmap of a page in an address space being inserted in
+		 * a KDDM or in use in the KDDM layer */
 		obj_entry = page->obj_entry;
 		if (obj_entry) {
-			if (object_frozen(obj_entry, NULL) ||
-			    TEST_AND_SET_OBJECT_LOCKED(obj_entry)) {
+			if ((mm->anon_vma_kddm_id && !mm->anon_vma_kddm_set) ||
+			    object_frozen(obj_entry, NULL)) {
+				ret = SWAP_FAIL;
+				goto out_unmap;
+			}
+
+			if (TEST_AND_SET_OBJECT_LOCKED(obj_entry)) {
 				ret = SWAP_FAIL;
 				goto out_unmap;
 			}
