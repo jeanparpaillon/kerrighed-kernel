@@ -719,11 +719,16 @@ static void handle_app_stop(struct rpc_desc *desc, void *_msg, size_t size)
 	if (IS_ERR(old_cred))
 		r = PTR_ERR(old_cred);
 
+	/*
+	 * Check there is still some processes
+	 * A freeze may happen just before deletion of the local app_struct
+	 */
+	if (!r && list_empty(&app->tasks))
+		r = -EAGAIN;
+
 	r = send_result(desc, r);
 	if (r)
 		goto out_unlock;
-
-	BUG_ON(list_empty(&app->tasks));
 
 	init_completion(&app->tasks_chkpted);
 
@@ -743,9 +748,10 @@ static void handle_app_stop(struct rpc_desc *desc, void *_msg, size_t size)
 	if (r)
 		goto out_wait_failed;
 
-	revert_creds(old_cred);
-
 out:
+	if (!IS_ERR(old_cred))
+		revert_creds(old_cred);
+
 	if (r)
 		rpc_cancel(desc);
 
