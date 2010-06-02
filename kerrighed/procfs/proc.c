@@ -155,7 +155,7 @@ static void init_cpu_info_seq_struct(struct cpu_info_seq_struct *seq_data)
 
 	req_node = get_req_node(seq_data->req_node);
 
-	if (IS_KERRIGHED_NODE(KRGFLAGS_RUNNING)) {
+	if (krgnode_online(kerrighed_node_id)) {
 		// Init values to parse CPU.
 		if (req_node == KERRIGHED_MAX_NODES) {
 			// Cluster wide CPU info
