@@ -374,7 +374,6 @@ static inline kerrighed_node_t __nth_krgnode(kerrighed_node_t node,
 		node--;
 	}
 
-	BUG_ON(iter >= KERRIGHED_MAX_NODES);
 	return iter;
 }
 
