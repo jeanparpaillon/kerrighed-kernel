@@ -37,7 +37,7 @@ static int save_app_kddm_object(struct app_kddm_object *obj)
 	ghost_fs_t oldfs;
 	ghost_t *ghost;
 	int magic = 4342338;
-	int r = 0;
+	int r = 0, err;
 	u32 linux_version;
 
 	__set_ghost_fs(&oldfs);
@@ -96,8 +96,9 @@ static int save_app_kddm_object(struct app_kddm_object *obj)
 
 err_write:
 	/* End of the really interesting part */
-	ghost_close(ghost);
-
+	err = ghost_close(ghost);
+	if (!r)
+		r = err;
 exit:
 	unset_ghost_fs(&oldfs);
 
@@ -172,7 +173,7 @@ static inline int save_local_app(struct app_struct *app, int chkpt_sn)
 {
 	ghost_fs_t oldfs;
 	ghost_t *ghost;
-	int r = 0;
+	int r = 0, err;
 	int null = -1;
 	task_state_t *t;
 
@@ -211,16 +212,13 @@ static inline int save_local_app(struct app_struct *app, int chkpt_sn)
 	if (r)
 		goto err_write;
 	r = ghost_write(ghost, &null, sizeof(int));
-	if (r)
-		goto err_write;
+
 err_write:
 	/* End of the really interesting part */
-	ghost_close(ghost);
+	err = ghost_close(ghost);
+	if (!r)
+		r = err;
 
-/*
- * WARNING: if no tasks are finally checkpointable, we should unregister
- *          this node...
- */
 exit:
 	unset_ghost_fs(&oldfs);
 

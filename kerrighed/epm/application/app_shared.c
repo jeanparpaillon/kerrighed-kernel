@@ -574,7 +574,7 @@ error:
 
 static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 {
-	int r;
+	int r, err;
 
 	ghost_fs_t oldfs;
 	ghost_t *ghost, *user_ghost;
@@ -614,11 +614,15 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 				  FILES_STRUCT, SIGNAL_STRUCT);
 
 exit_close_user_ghost:
-	ghost_close(user_ghost);
+	err = ghost_close(user_ghost);
+	if (!r)
+		r = err;
 
 exit_close_ghost:
 	/* End of the really interesting part */
-	ghost_close(ghost);
+	err = ghost_close(ghost);
+	if (!r)
+		r = err;
 
 exit_unset_fs:
 	unset_ghost_fs(&oldfs);
@@ -1710,7 +1714,7 @@ static int local_restart_shared_objects(struct rpc_desc *desc,
 
 		r = import_shared_objects(ghost, app, fake);
 		if (r)
-			goto err;
+			goto err_close_ghost;
 
 		ghost_offsets[idx] = get_file_ghost_pos(ghost);
 
@@ -1738,6 +1742,10 @@ err_import:
 
 err:
 	return r;
+
+err_close_ghost:
+	ghost_close(ghost);
+	goto err;
 }
 
 int local_restart_shared(struct rpc_desc *desc,

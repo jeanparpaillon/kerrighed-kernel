@@ -460,10 +460,12 @@ int get_local_tasks_chkpt_result(struct app_struct* app)
 		if (t->checkpoint.ghost) {
 			if (pcus_result < 0)
 				unlink_file_ghost(t->checkpoint.ghost);
-			ghost_close(t->checkpoint.ghost);
+			r = ghost_close(t->checkpoint.ghost);
 			t->checkpoint.ghost = NULL;
 		}
-		r = r | pcus_result;
+
+		if (!r)
+			r = pcus_result;
 	}
 
 exit:
