@@ -104,21 +104,17 @@ int file_ghost_write(struct ghost *ghost, const void *buff, size_t length)
 int file_ghost_close(ghost_t *ghost)
 {
 	struct file *file;
+	int r = 0;
 
 	file = ((struct file_ghost_data *)ghost->data)->file;
 
-	if (ghost->access & GHOST_WRITE) {
-#if 0
-		do_fdatasync(file);
-#else
-		if (file->f_op->fsync) {
-			int r = file->f_op->fsync(file, file->f_dentry, 1);
-			if (r)
-				printk("<0>-- WARNING -- (%s) : "
-				       "Something wrong in the sync : %d\n",
-				       __PRETTY_FUNCTION__, r);
-		}
-#endif
+	if (ghost->access & GHOST_WRITE
+	    && file->f_op->fsync) {
+		r = file->f_op->fsync(file, file->f_dentry, 1);
+		if (r)
+			printk("<0>-- WARNING -- (%s) : "
+			       "Something wrong in the sync : %d\n",
+			       __PRETTY_FUNCTION__, r);
 	}
 
 	if (((struct file_ghost_data *)ghost->data)->from_fd)
@@ -127,7 +123,7 @@ int file_ghost_close(ghost_t *ghost)
 		filp_close(file, current->files);
 
 	free_ghost(ghost);
-	return 0;
+	return r;
 }
 
 /** File ghost operations
