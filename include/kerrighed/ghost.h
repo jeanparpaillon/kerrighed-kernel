@@ -34,11 +34,8 @@ ghost_t *create_ghost(ghost_type_t type, int access);
  *  @author Renaud Lottiaux
  *
  *  @param  ghost  The ghost to free.
- *
- *  @return        0 if everything ok
- *                 Negative value otherwise.
  */
-int free_ghost(ghost_t *ghost);
+void free_ghost(ghost_t *ghost);
 
 /** Generique function to write to a ghost.
  *  @author Renaud Lottiaux

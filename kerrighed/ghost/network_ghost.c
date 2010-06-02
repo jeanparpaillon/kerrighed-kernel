@@ -62,7 +62,8 @@ int network_ghost_write(struct ghost *ghost, const void *buff, size_t length)
 int network_ghost_close(struct ghost *ghost)
 {
 	ghost->data = NULL;
-	return free_ghost(ghost);
+	free_ghost(ghost);
+	return 0;
 }
 
 /** Netwotk ghost operations

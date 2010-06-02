@@ -126,7 +126,8 @@ int file_ghost_close(ghost_t *ghost)
 	else
 		filp_close(file, current->files);
 
-	return free_ghost(ghost);
+	free_ghost(ghost);
+	return 0;
 }
 
 /** File ghost operations

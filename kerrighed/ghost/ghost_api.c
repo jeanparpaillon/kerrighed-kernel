@@ -31,14 +31,12 @@ outofmemory:
 }
 
 /** Free ghost data structures. */
-int free_ghost(ghost_t *ghost)
+void free_ghost(ghost_t *ghost)
 {
 	if (ghost->data)
 		kfree (ghost->data);
 
 	kmem_cache_free(ghost_cachep, ghost);
-
-	return 0 ;
 }
 
 int ghost_printf(ghost_t *ghost, char *format, ...)
