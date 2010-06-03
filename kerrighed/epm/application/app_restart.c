@@ -148,9 +148,12 @@ err_open:
 	return r;
 
 err_kernel_version:
-	printk("Try to restart a checkpoint written from "
-		       "another kernel: aborting.\n");
 	r = -E_CR_BADDATA;
+	ckpt_err(NULL, r,
+		 "Restart %ld aborted: checkpoint was done on another"
+		 " kernel",
+		 app_id);
+
 	goto err_read;
 }
 
