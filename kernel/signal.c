@@ -1412,11 +1412,9 @@ static int krg_kill_pg_info(int sig, struct siginfo *info, pid_t pgid)
 		goto err_cancel;
 
 	retval = -ESRCH;
-	for_each_krgnode_mask(node, nodes) {
-		retval = rpc_wait_return_from(desc, node);
-		if (!retval)
+	for_each_krgnode_mask(node, nodes)
+		if (!rpc_unpack_type_from(desc, node, retval) && !retval)
 			break;
-	}
 
 out_end:
 	rpc_end(desc, 0);

@@ -895,34 +895,6 @@ kerrighed_node_t rpc_wait_return(struct rpc_desc* desc, int* value)
 	goto __restart;
 }
 
-int rpc_wait_return_from(struct rpc_desc* desc, kerrighed_node_t node)
-{
-
-	if(desc->type != RPC_RQ_CLT)
-		return -1;
-
- __restart:
-	
-	spin_lock_bh(&desc->desc_lock);
-	if(atomic_read(&desc->desc_recv[node]->nbunexpected)){
-		int value;
-
-		spin_unlock_bh(&desc->desc_lock);
-		rpc_unpack_type_from(desc, node, value);
-		return value;
-	}
-	
-	desc->state = RPC_STATE_WAIT1;
-	desc->wait_from = node;
-	desc->thread = current;
-	set_current_state(TASK_INTERRUPTIBLE);
-	spin_unlock_bh(&desc->desc_lock);
-
-	schedule();
-	
-	goto __restart;
-}
-
 int rpc_wait_all(struct rpc_desc *desc)
 {
 	int i;
