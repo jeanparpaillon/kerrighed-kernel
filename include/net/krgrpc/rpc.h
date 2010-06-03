@@ -151,6 +151,7 @@ int rpc_unpack_from(struct rpc_desc* desc, kerrighed_node_t node,
 		    int flags, void* data, size_t size);
 void rpc_cancel_unpack(struct rpc_desc* desc);
 
+kerrighed_node_t rpc_check_return(struct rpc_desc *desc, int *value);
 kerrighed_node_t rpc_wait_return(struct rpc_desc* desc, int* value);
 int rpc_wait_all(struct rpc_desc *desc);
 
