@@ -229,12 +229,10 @@ exit:
  * "send a request" to checkpoint a local process
  * an ack is send at the end of the checkpoint
  */
-static inline void __chkpt_task_req(struct app_struct *app, task_state_t *tsk)
+static void __chkpt_task_req(struct app_struct *app, task_state_t *tsk)
 {
 	struct task_struct *task = tsk->task;
 	ghost_t *ghost;
-	struct siginfo info;
-	int signo;
 	int r;
 
 	BUG_ON(!task);
@@ -262,16 +260,6 @@ static inline void __chkpt_task_req(struct app_struct *app, task_state_t *tsk)
 		return;
 	}
 	tsk->checkpoint.ghost = ghost;
-
-	signo = KRG_SIG_CHECKPOINT;
-	info.si_errno = 0;
-	info.si_pid = 0;
-	info.si_uid = 0;
-	si_option(info) = CHKPT_NO_OPTION;
-
-	r = send_kerrighed_signal(signo, &info, task);
-	if (r)
-		__set_task_result(task, r);
 
 	complete(&tsk->checkpoint.completion);
 }

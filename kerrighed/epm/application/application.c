@@ -381,7 +381,7 @@ out:
 	return ret;
 }
 
-void set_result_wait(int result)
+task_state_t *set_result_wait(int result)
 {
 	struct app_struct *app;
 	task_state_t *current_state;
@@ -404,6 +404,8 @@ void set_result_wait(int result)
 	 * waiting for the completion.
 	 */
 	wait_for_completion(&current_state->checkpoint.completion);
+
+	return current_state;
 }
 
 /* before running this method, be sure stops are completed */
@@ -661,7 +663,6 @@ static void local_complete_stop(struct app_struct *app)
 	info.si_errno = 0;
 	info.si_pid = 0;
 	info.si_uid = 0;
-	si_option(info) = CHKPT_ONLY_STOP;
 
 	list_for_each_entry(tsk, &app->tasks, next_task) {
 		if (tsk->checkpoint.result == PCUS_STOP_STEP1) {
@@ -825,13 +826,13 @@ static void __continue_task(task_state_t *tsk, int first_run)
 	BUG_ON(!tsk);
 
 	krg_action_stop(tsk->task, EPM_CHECKPOINT);
+	tsk->checkpoint.result = PCUS_RUNNING;
+	tsk->checkpoint.ghost = NULL;
 
 	if (!first_run)
 		complete(&tsk->checkpoint.completion);
 	else
 		wake_up_new_task(tsk->task, CLONE_VM);
-
-	tsk->checkpoint.result = PCUS_RUNNING;
 }
 
 static void __local_continue(struct app_struct *app, int first_run)

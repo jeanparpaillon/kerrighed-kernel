@@ -155,7 +155,7 @@ static inline int local_tasks_list_empty(struct app_struct *app) {
 
 /* task->application->mutex must be taken */
 task_state_t *__set_task_result(struct task_struct *task, int result);
-void set_result_wait(int result);
+task_state_t *set_result_wait(int result);
 int get_local_tasks_chkpt_result(struct app_struct* app);
 
 /*--------------------------------------------------------------------------*/

@@ -182,19 +182,24 @@ static void krg_task_checkpoint(int sig, struct siginfo *info,
 				struct pt_regs *regs)
 {
 	struct epm_action action;
+	task_state_t *current_state;
 	int r = 0;
 
-	/* do we really take a checkpoint ? */
-	if (si_option(*info) != CHKPT_ONLY_STOP) {
+	/* freeze */
+	current_state = set_result_wait(PCUS_OPERATION_OK);
+
+	/*
+	 * checkpoint may be requested several times once
+	 * application is frozen.
+	 */
+	while (current_state->checkpoint.ghost) {
 		action.type = EPM_CHECKPOINT;
 		action.checkpoint.shared = CR_SAVE_LATER;
 		r = checkpoint_task(&action, current, regs);
-	}
 
-	if (r != 0)
-		set_result_wait(r);
-	else
-		set_result_wait(PCUS_OPERATION_OK);
+		/* PCUS_OPERATION_OK == 0 */
+		current_state = set_result_wait(r);
+	}
 }
 
 void register_checkpoint_hooks(void)

@@ -13,13 +13,6 @@
 
 struct task_struct;
 
-typedef enum {
-	CHKPT_NO_OPTION,
-	CHKPT_ONLY_STOP
-} chkpt_option_t;
-
-#define si_option(info)  (*(chkpt_option_t *) &(info)._sifields._pad)
-
 /*--------------------------------------------------------------------------*
  *                                                                          *
  *                              EXTERN FUNCTIONS                            *
