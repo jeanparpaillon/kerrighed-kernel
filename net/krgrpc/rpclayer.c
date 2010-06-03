@@ -834,39 +834,76 @@ rpc_unpack_from(struct rpc_desc* desc, kerrighed_node_t node,
 	return 0;
 }
 
-kerrighed_node_t rpc_wait_return(struct rpc_desc* desc, int* value)
+/*
+ * Returns KERRIGHED_MAX_NODES if no node returned yet,
+ * or releases desc->lock and returns a valid node id
+ *                                    or an error code when retrieving a value.
+ */
+static kerrighed_node_t __rpc_check_return(struct rpc_desc *desc, int *value)
 {
 	kerrighed_node_t node;
+	int err;
 
-	if (desc->type != RPC_RQ_CLT)
-		return -1;
-
-
- __restart:
-	
-	spin_lock_bh(&desc->desc_lock);
 	for(node=0;node<KERRIGHED_MAX_NODES;node++){
 		if(desc->desc_recv[node]
 		   && atomic_read(&desc->desc_recv[node]->nbunexpected)){
 
 			spin_unlock_bh(&desc->desc_lock);
 
-			if(value)
-				rpc_unpack_from(desc, node,
-						0, value, sizeof(*value));
+			if (value) {
+				err = rpc_unpack_type_from(desc, node, *value);
+				if (err) {
+					if (err > 0)
+						err = -EPIPE;
+					return err;
+				}
+			}
 
-			return node;
+			break;
 		}
 	}
 
-	desc->state = RPC_STATE_WAIT;
-	desc->thread = current;
-	set_current_state(TASK_INTERRUPTIBLE);
-	spin_unlock_bh(&desc->desc_lock);
+	return node;
+}
 
-	schedule();
+kerrighed_node_t rpc_check_return(struct rpc_desc *desc, int *value)
+{
+	kerrighed_node_t ret;
 
-	goto __restart;
+	BUG_ON(desc->type != RPC_RQ_CLT);
+
+	spin_lock_bh(&desc->desc_lock);
+	ret = __rpc_check_return(desc, value);
+	if (ret == KERRIGHED_MAX_NODES) {
+		spin_unlock_bh(&desc->desc_lock);
+
+		ret = -EAGAIN;
+	}
+
+	return ret;
+}
+
+kerrighed_node_t rpc_wait_return(struct rpc_desc *desc, int *value)
+{
+	kerrighed_node_t ret = -EPIPE;
+
+	BUG_ON(desc->type != RPC_RQ_CLT);
+
+	for (;;) {
+		spin_lock_bh(&desc->desc_lock);
+		ret = __rpc_check_return(desc, value);
+		if (ret != KERRIGHED_MAX_NODES)
+			break;
+
+		desc->state = RPC_STATE_WAIT;
+		desc->thread = current;
+		__set_current_state(TASK_UNINTERRUPTIBLE);
+		spin_unlock_bh(&desc->desc_lock);
+
+		schedule();
+	}
+
+	return ret;
 }
 
 int rpc_wait_all(struct rpc_desc *desc)
