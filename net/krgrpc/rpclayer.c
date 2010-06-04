@@ -688,9 +688,6 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 	BUG_ON(!desc);
 	BUG_ON(rpc_desc_forwarded(desc));
 
-	if (test_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags))
-		return -ECANCELED;
-
 	if (unlikely(test_bit(__RPC_FLAGS_REPOST, &desc_recv->flags)))
 		atomic_set(&seq_id, atomic_read(&desc_recv->seq_id));
 	else
@@ -698,6 +695,11 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 
  restart:
 	spin_lock_bh(&desc->desc_lock);
+
+	if (test_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags)) {
+		spin_unlock_bh(&desc->desc_lock);
+		return -ECANCELED;
+	}
 
 	/* Return rpc_signalacks ASAP */
 	if (unlikely(!list_empty(&desc_recv->list_signal_head))) {
@@ -886,7 +888,9 @@ static kerrighed_node_t __rpc_check_return(struct rpc_desc *desc, int *value)
 
 	for(node=0;node<KERRIGHED_MAX_NODES;node++){
 		if(desc->desc_recv[node]
-		   && atomic_read(&desc->desc_recv[node]->nbunexpected)){
+		   && (atomic_read(&desc->desc_recv[node]->nbunexpected)
+		       || test_bit(__RPC_FLAGS_CLOSED,
+				   &desc->desc_recv[node]->flags))) {
 
 			spin_unlock_bh(&desc->desc_lock);
 
@@ -979,6 +983,32 @@ void rpc_desc_wake_up(struct rpc_desc *desc)
 {
 	desc->state = RPC_STATE_RUN;
 	wake_up_process(desc->thread);
+}
+
+void rpc_desc_cancel_wait(struct rpc_desc *desc, kerrighed_node_t node)
+{
+	bool do_wakeup = false;
+
+	spin_lock_bh(&desc->desc_lock);
+	switch (desc->type) {
+	case RPC_RQ_CLT:
+		do_wakeup = (desc->state == RPC_STATE_WAIT1
+			     && desc->wait_from == node)
+			    || desc->state == RPC_STATE_WAIT;
+		break;
+	case RPC_RQ_SRV:
+		do_wakeup = desc->state == RPC_STATE_WAIT1
+			    || desc->state == RPC_STATE_WAIT;
+		break;
+	default:
+		BUG();
+	}
+
+	set_bit(__RPC_FLAGS_CLOSED, &desc->desc_recv[node]->flags);
+
+	if (do_wakeup)
+		rpc_desc_wake_up(desc);
+	spin_unlock_bh(&desc->desc_lock);
 }
 
 int rpc_signal(struct rpc_desc* desc, int sigid)
