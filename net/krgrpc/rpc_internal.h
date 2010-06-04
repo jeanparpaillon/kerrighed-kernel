@@ -242,6 +242,8 @@ int __rpc_signalack(struct rpc_desc* desc);
 int rpc_handle_new(struct rpc_desc* desc);
 void rpc_wake_up_thread(struct rpc_desc *desc);
 
+void rpc_desc_wake_up(struct rpc_desc *desc);
+
 void rpc_new_desc_id_lock(struct rpc_communicator *comm, bool lock_table);
 void rpc_new_desc_id_unlock(struct rpc_communicator *comm, bool unlock_table);
 int __rpc_emergency_send_buf_alloc(struct rpc_desc *desc, size_t size);
