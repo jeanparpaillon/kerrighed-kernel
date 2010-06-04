@@ -656,6 +656,26 @@ out_end:
 	return err;
 }
 
+static void rpc_connection_cancel_descs(struct rpc_connection *conn)
+{
+	struct rpc_communicator *comm = conn->comm;
+	struct rpc_desc *desc;
+
+	spin_lock_bh(&comm->desc_clt_lock);
+	do_each_desc(desc, comm->desc_clt) {
+		if (desc->rpcid != RPC_CLOSE
+		    && desc->conn_set->conn[conn->peer_id] == conn)
+			rpc_desc_cancel_wait(desc, conn->peer_id);
+	} while_each_desc(desc, comm->desc_clt);
+	spin_unlock_bh(&comm->desc_clt_lock);
+
+	spin_lock_bh(&conn->desc_done_lock);
+	do_each_desc(desc, conn->desc_srv) {
+		rpc_desc_cancel_wait(desc, 0);
+	} while_each_desc(desc, conn->desc_srv);
+	spin_unlock_bh(&conn->desc_done_lock);
+}
+
 static void rpc_connection_kill(struct work_struct *work)
 {
 	struct rpc_connection *conn;
@@ -722,7 +742,7 @@ static void rpc_connection_close_timeout(struct work_struct *work)
 static void handle_close(struct rpc_desc *desc, void *msg, size_t size)
 {
 	struct rpc_connection *conn = desc->conn_set->conn[desc->client];
-	bool do_autoclose = false;
+	bool do_autoclose = false, do_cancel_descs = false;
 	int err;
 
 	spin_lock_bh(&conn->state_lock);
@@ -749,6 +769,8 @@ static void handle_close(struct rpc_desc *desc, void *msg, size_t size)
 		do_autoclose = true;
 	case RPC_CONN_ESTABLISHED:
 		conn->state = RPC_CONN_CLOSE_WAIT;
+		if (!do_autoclose)
+			do_cancel_descs = true;
 		break;
 	case RPC_CONN_FIN_WAIT_1:
 		conn->state = RPC_CONN_CLOSING;
@@ -763,6 +785,8 @@ static void handle_close(struct rpc_desc *desc, void *msg, size_t size)
 	}
 	spin_unlock_bh(&conn->state_lock);
 
+	if (do_cancel_descs)
+		rpc_connection_cancel_descs(conn);
 	if (do_autoclose)
 		rpc_close(conn->comm, conn->peer);
 }
@@ -853,6 +877,7 @@ zombify:
 	spin_unlock_bh(&conn->state_lock);
 
 kill:
+	rpc_connection_cancel_descs(conn);
 	rpc_connection_schedule_kill(conn);
 	rpc_connection_put(conn);
 }
