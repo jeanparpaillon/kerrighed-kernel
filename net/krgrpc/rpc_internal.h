@@ -214,6 +214,16 @@ struct rpc_desc *rpc_desc_table_find(struct hlist_head *table, unsigned long id)
 	return NULL;
 }
 
+#define do_each_desc(desc, table) do {                                   \
+        struct hlist_node *____pos;                                      \
+        int ____i;                                                       \
+        for (____i = 0; ____i < RPC_DESC_TABLE_SIZE; ____i++) {          \
+                hlist_for_each_entry(desc, ____pos, &table[____i], list)
+
+#define while_each_desc(desc, table)                                     \
+        }                                                                \
+} while (0)
+
 static inline
 void rpc_desc_table_add(struct hlist_head *table, struct rpc_desc *desc)
 {
