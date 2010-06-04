@@ -982,8 +982,12 @@ void rpc_desc_cancel_wait(struct rpc_desc *desc, kerrighed_node_t node)
 
 	set_bit(__RPC_FLAGS_CLOSED, &desc->desc_recv[node]->flags);
 
-	if (do_wakeup)
+	if (do_wakeup) {
+		printk("WARNING %d(%s)/%d waiting on data from closed connection with %d\n",
+		       desc->thread->pid, desc->thread->comm, desc->rpcid,
+		       desc->type == RPC_RQ_CLT ? node : desc->client);
 		rpc_desc_wake_up(desc);
+	}
 	spin_unlock_bh(&desc->desc_lock);
 }
 
