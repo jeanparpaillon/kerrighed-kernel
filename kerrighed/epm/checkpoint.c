@@ -185,6 +185,24 @@ static void krg_task_checkpoint(int sig, struct siginfo *info,
 	task_state_t *current_state;
 	int r = 0;
 
+	/*
+	 * process must not be frozen while its father
+	 * waiting in vfork
+	 */
+	if (current->vfork_done) {
+		mutex_lock(&current->application->mutex);
+		r = -EAGAIN;
+		ckpt_err(NULL, r,
+			 "Application %ld can not be frozen because process "
+			 "%d (%s) has been created by vfork() and has not yet "
+			 "called exec(). Thus, its parent process is blocked.",
+			 current->application->app_id,
+			 task_pid_knr(current), current->comm);
+		__set_task_result(current, r);
+		mutex_unlock(&current->application->mutex);
+		return;
+	}
+
 	/* freeze */
 	current_state = set_result_wait(PCUS_OPERATION_OK);
 
