@@ -248,6 +248,7 @@ int __rpc_end_unpack_clean(struct rpc_desc* desc)
 int rpc_end(struct rpc_desc* desc, int flags)
 {
 	struct rpc_desc_send *rpc_desc_send;
+	spinlock_t *hash_lock;
 	int err;
 
 	lockdep_off();
@@ -272,17 +273,18 @@ int rpc_end(struct rpc_desc* desc, int flags)
 		BUG();
 	}
 
-	if (desc->hash_lock) {
-		spin_lock_bh(&desc->desc_lock);
-		spin_lock(desc->hash_lock);
+	hash_lock = desc->hash_lock;
+	if (hash_lock) {
+		spin_lock_bh(hash_lock);
+		spin_lock(&desc->desc_lock);
 
 		desc->state = RPC_STATE_END;
 
 		rpc_desc_table_remove(desc);
-
-		spin_unlock(desc->hash_lock);
 		desc->hash_lock = NULL;
-		spin_unlock_bh(&desc->desc_lock);
+
+		spin_unlock(&desc->desc_lock);
+		spin_unlock_bh(hash_lock);
 	}
 
 	__rpc_emergency_send_buf_free(desc);
