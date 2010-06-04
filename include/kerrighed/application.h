@@ -51,6 +51,7 @@ typedef struct task_and_state {
 	union {
 		struct {
 			ghost_t *ghost;
+			int result;
 			struct completion completion;
 		} checkpoint;
 		struct {
@@ -64,7 +65,6 @@ typedef struct task_and_state {
 			pid_t session;
 		} restart;
 	};
-	int result;
 	struct list_head next_task;
 } task_state_t;
 

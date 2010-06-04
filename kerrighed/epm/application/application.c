@@ -214,12 +214,11 @@ exit:
 static inline task_state_t *__alloc_task_state(void)
 {
 	task_state_t *t;
-	t = kmem_cache_alloc(task_state_cachep, GFP_KERNEL);
+	t = kmem_cache_zalloc(task_state_cachep, GFP_KERNEL);
 	if (!t) {
 		t = ERR_PTR(-ENOMEM);
 		goto err_mem;
 	}
-	t->result = 0;
 err_mem:
 	return t;
 }
@@ -282,7 +281,7 @@ int register_task_to_app(struct app_struct *app,
 		r = PTR_ERR(t);
 		goto err;
 	}
-	t->result = PCUS_RUNNING;
+	t->checkpoint.result = PCUS_RUNNING;
 
 	mutex_lock(&app->mutex);
 	task->application = app;
@@ -360,16 +359,16 @@ task_state_t *__set_task_result(struct task_struct *task, int result)
 		if (task == t->task) {
 			ret = t;
 
-			if (t->result == PCUS_RUNNING)
+			if (t->checkpoint.result == PCUS_RUNNING)
 				/* result has been forced to cancel operation */
 				goto out;
 
-			t->result = result;
+			t->checkpoint.result = result;
 		}
 
-		if (t->result == PCUS_CHKPT_IN_PROGRESS ||
-		    t->result == PCUS_STOP_STEP1 ||
-		    t->result == PCUS_STOP_STEP2)
+		if (t->checkpoint.result == PCUS_CHKPT_IN_PROGRESS ||
+		    t->checkpoint.result == PCUS_STOP_STEP1 ||
+		    t->checkpoint.result == PCUS_STOP_STEP2)
 			done_for_all_tasks = 0;
 	}
 
@@ -416,7 +415,7 @@ static int get_local_tasks_stop_result(struct app_struct* app)
 	mutex_lock(&app->mutex);
 
 	list_for_each_entry(t, &app->tasks, next_task) {
-		pcus_result = t->result;
+		pcus_result = t->checkpoint.result;
 		BUG_ON(pcus_result == PCUS_STOP_STEP1);
 
 		if (pcus_result == PCUS_RUNNING) {
@@ -450,7 +449,7 @@ int get_local_tasks_chkpt_result(struct app_struct* app)
 	mutex_lock(&app->mutex);
 
 	list_for_each_entry(t, &app->tasks, next_task) {
-		pcus_result = t->result;
+		pcus_result = t->checkpoint.result;
 		if (pcus_result == PCUS_RUNNING) {
 			/* one process has been forgotten! try again!! */
 			r = pcus_result;
@@ -602,13 +601,13 @@ static void local_cancel_stop(struct app_struct *app)
 	int r;
 
 	list_for_each_entry(tsk, &app->tasks, next_task) {
-		if (tsk->result == PCUS_RUNNING)
+		if (tsk->checkpoint.result == PCUS_RUNNING)
 			goto out;
 		r = krg_action_stop(tsk->task, EPM_CHECKPOINT);
 		BUG_ON(r);
-		if (tsk->result == PCUS_OPERATION_OK)
+		if (tsk->checkpoint.result == PCUS_OPERATION_OK)
 			complete(&tsk->checkpoint.completion);
-		tsk->result = PCUS_RUNNING;
+		tsk->checkpoint.result = PCUS_RUNNING;
 	}
 
 out:
@@ -622,7 +621,7 @@ static int local_prepare_stop(struct app_struct *app)
 	int r = 0;
 
 	list_for_each_entry(tsk, &app->tasks, next_task) {
-		if (tsk->result == PCUS_RUNNING) {
+		if (tsk->checkpoint.result == PCUS_RUNNING) {
 			if (!can_be_checkpointed(tsk->task)) {
 				r = -EPERM;
 				goto error;
@@ -643,7 +642,7 @@ static int local_prepare_stop(struct app_struct *app)
 				goto error;
 			}
 
-			tsk->result = PCUS_STOP_STEP1;
+			tsk->checkpoint.result = PCUS_STOP_STEP1;
 		}
 	}
 
@@ -665,8 +664,8 @@ static void local_complete_stop(struct app_struct *app)
 	si_option(info) = CHKPT_ONLY_STOP;
 
 	list_for_each_entry(tsk, &app->tasks, next_task) {
-		if (tsk->result == PCUS_STOP_STEP1) {
-			tsk->result = PCUS_STOP_STEP2;
+		if (tsk->checkpoint.result == PCUS_STOP_STEP1) {
+			tsk->checkpoint.result = PCUS_STOP_STEP2;
 			r = send_kerrighed_signal(signo, &info, tsk->task);
 			BUG_ON(r);
 		}
@@ -832,7 +831,7 @@ static void __continue_task(task_state_t *tsk, int first_run)
 	else
 		wake_up_new_task(tsk->task, CLONE_VM);
 
-	tsk->result = PCUS_RUNNING;
+	tsk->checkpoint.result = PCUS_RUNNING;
 }
 
 static void __local_continue(struct app_struct *app, int first_run)
