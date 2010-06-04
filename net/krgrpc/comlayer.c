@@ -1086,7 +1086,7 @@ static int tipc_handler_ordered(struct tipc_connection *conn,
 	}
 	/* Is the transaction still accepting packets? */
 	if (!(desc->state & RPC_STATE_MASK_VALID) ||
-	    (desc_recv->flags & RPC_FLAGS_CLOSED)) {
+	    test_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags)) {
 		spin_unlock(hash_lock);
 		goto out_put;
 	}
@@ -1116,7 +1116,7 @@ static int tipc_handler_ordered(struct tipc_connection *conn,
 
 	/* Double-check withe desc->desc_lock held */
 	if (!(desc->state & RPC_STATE_MASK_VALID) ||
-	    (desc_recv->flags & RPC_FLAGS_CLOSED)) {
+	    test_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags)) {
 		// This side is closed. Discard the packet
 		spin_unlock(&desc->desc_lock);
 		rpc_desc_elem_free(descelem);

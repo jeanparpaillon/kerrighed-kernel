@@ -353,7 +353,7 @@ void rpc_cancel_unpack_from(struct rpc_desc *desc, kerrighed_node_t node)
 
 	BUG_ON(rpc_desc_forwarded(desc));
 
-	desc_recv->flags |= RPC_FLAGS_CLOSED;
+	set_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags);
 	/* TODO: send a notification to the sender so that it stops sending */
 }
 
@@ -497,7 +497,7 @@ int rpc_forward(struct rpc_desc *desc, kerrighed_node_t node)
 
 	list_for_each_entry_reverse(elem, &queue, list_desc_elem)
 		if (elem->flags & __RPC_HEADER_FLAGS_CANCEL_PACK) {
-			desc_recv->flags |= RPC_FLAGS_CLOSED;
+			set_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags);
 			err = -EPIPE;
 			goto out_restore_queue;
 		}
@@ -686,10 +686,10 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 	BUG_ON(!desc);
 	BUG_ON(rpc_desc_forwarded(desc));
 
-	if (desc_recv->flags & RPC_FLAGS_CLOSED)
+	if (test_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags))
 		return -ECANCELED;
 
-	if (unlikely(desc_recv->flags & RPC_FLAGS_REPOST))
+	if (unlikely(test_bit(__RPC_FLAGS_REPOST, &desc_recv->flags)))
 		atomic_set(&seq_id, atomic_read(&desc_recv->seq_id));
 	else
 		atomic_set(&seq_id, atomic_inc_return(&desc_recv->seq_id));
@@ -706,7 +706,7 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 			if (flags & RPC_FLAGS_SIGACK) {
 				spin_unlock_bh(&desc->desc_lock);
 				rpc_desc_elem_free(descelem);
-				desc_recv->flags |= RPC_FLAGS_REPOST;
+				set_bit(__RPC_FLAGS_REPOST, &desc_recv->flags);
 				return -ESIGACK;
 			}
 			/* Store discarded sigacks in a list to free them with
@@ -762,7 +762,7 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 		__rpc_end_unpack_clean_queue(&sigacks_head);
 
 	if (desc_recv->iter->flags & __RPC_HEADER_FLAGS_CANCEL_PACK) {
-		desc_recv->flags |= RPC_FLAGS_CLOSED;
+		set_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags);
 		return -ECANCELED;
 	}
 
@@ -784,7 +784,7 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 		BUG();
 	}
 
-	desc_recv->flags &= ~RPC_FLAGS_REPOST;
+	clear_bit(__RPC_FLAGS_REPOST, &desc_recv->flags);
 	return 0;
 
  __restart:
@@ -808,7 +808,7 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 			desc_recv->iter_provided = descelem;
 		
 		spin_unlock_bh(&desc->desc_lock);
-		desc_recv->flags &= ~RPC_FLAGS_REPOST;
+		clear_bit(__RPC_FLAGS_REPOST, &desc_recv->flags);
 		return 0;
 	}
 
@@ -820,7 +820,7 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 
 	schedule();
 	if (signal_pending(current) && (flags & RPC_FLAGS_INTR)) {
-		desc_recv->flags |= RPC_FLAGS_REPOST;
+		set_bit(__RPC_FLAGS_REPOST, &desc_recv->flags);
 		return -EINTR;
 	}
 
