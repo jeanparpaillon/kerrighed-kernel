@@ -767,19 +767,16 @@ int do_action(struct rpc_desc *desc, struct __rpc_header *h)
 		spin_unlock(&desc->desc_lock);
 		return rpc_handle_new(desc);
 	case RPC_STATE_WAIT1:
-		if (desc->type == RPC_RQ_CLT
-		    && desc->wait_from != h->server) {
-			spin_unlock(&desc->desc_lock);
+		if (desc->type == RPC_RQ_CLT && desc->wait_from != h->server)
 			break;
-		}
 	case RPC_STATE_WAIT:
 		rpc_desc_wake_up(desc);
-		spin_unlock(&desc->desc_lock);
 		break;
 	default:
-		spin_unlock(&desc->desc_lock);			
 		break;
 	}
+	spin_unlock(&desc->desc_lock);
+
 	return 0;
 }
 
