@@ -773,8 +773,7 @@ int do_action(struct rpc_desc *desc, struct __rpc_header *h)
 			break;
 		}
 	case RPC_STATE_WAIT:
-		desc->state = RPC_STATE_RUN;
-		wake_up_process(desc->thread);
+		rpc_desc_wake_up(desc);
 		spin_unlock(&desc->desc_lock);
 		break;
 	default:
