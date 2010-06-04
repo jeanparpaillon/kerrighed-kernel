@@ -656,6 +656,25 @@ out_end:
 	return err;
 }
 
+static void rpc_connection_cancel_descs(struct rpc_connection *conn)
+{
+	struct rpc_communicator *comm = conn->comm;
+	struct rpc_desc *desc;
+
+	spin_lock_bh(&comm->desc_clt_lock);
+	do_each_desc(desc, comm->desc_clt) {
+		if (desc->conn_set->conn[conn->peer_id] == conn)
+			rpc_desc_cancel_wait(desc, conn->peer_id);
+	} while_each_desc(desc, comm->desc_clt);
+	spin_unlock_bh(&comm->desc_clt_lock);
+
+	spin_lock_bh(&conn->desc_done_lock);
+	do_each_desc(desc, conn->desc_srv) {
+		rpc_desc_cancel_wait(desc, 0);
+	} while_each_desc(desc, conn->desc_srv);
+	spin_unlock_bh(&conn->desc_done_lock);
+}
+
 static void rpc_connection_kill(struct work_struct *work)
 {
 	struct rpc_connection *conn;
@@ -853,6 +872,7 @@ zombify:
 	spin_unlock_bh(&conn->state_lock);
 
 kill:
+	rpc_connection_cancel_descs(conn);
 	rpc_connection_schedule_kill(conn);
 	rpc_connection_put(conn);
 }
