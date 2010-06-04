@@ -949,6 +949,12 @@ int rpc_wait_all(struct rpc_desc *desc)
 	return 0;
 }
 
+void rpc_desc_wake_up(struct rpc_desc *desc)
+{
+	desc->state = RPC_STATE_RUN;
+	wake_up_process(desc->thread);
+}
+
 int rpc_signal(struct rpc_desc* desc, int sigid)
 {
 	if (desc->desc_send->flags & RPC_FLAGS_CLOSED)
