@@ -850,7 +850,7 @@ int rpc_unpack_from(struct rpc_desc* desc, kerrighed_node_t node,
 		return __rpc_unpack_from_node(desc, node, flags, data, size);
 	case RPC_RQ_SRV:
 		if(node == desc->client)
-			return __rpc_unpack_from_node(desc, node, flags, data, size);
+			return __rpc_unpack_from_node(desc, 0, flags, data, size);
 		return 0;
 	default:
 		printk("unexpected case\n");
