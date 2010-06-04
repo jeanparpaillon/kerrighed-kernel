@@ -433,7 +433,8 @@ static int get_local_tasks_stop_result(struct app_struct* app)
 				 t->task->pid, t->task->comm, app->app_id);
 			goto exit;
 		}
-		r = r | pcus_result;
+		if (!r)
+			r = pcus_result;
 	}
 
 exit:
