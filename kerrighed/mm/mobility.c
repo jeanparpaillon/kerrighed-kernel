@@ -889,18 +889,32 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 	BUG_ON (old->vm_flags != vma->vm_flags);
 	BUG_ON (old->vm_ops != vma->vm_ops);
 	BUG_ON (old->vm_file && !vma->vm_file);
-	BUG_ON (vma->vm_file && !old->vm_file);
 	BUG_ON (old->vm_file && vma->vm_file &&
 		(old->vm_file->f_dentry != vma->vm_file->f_dentry));
 	BUG_ON ((old->vm_pgoff != vma->vm_pgoff) && vma->vm_file);
 #endif
+	if (vma->vm_file && !old->vm_file) {
+		struct file *file = vma->vm_file;
+
+		get_file(file);
+		old->vm_file = file;
+		r = file->f_op->mmap(file, vma);
+                if (r)
+			goto err;
+                if (vma->vm_flags & VM_EXECUTABLE)
+                        added_exe_file_vma(mm);
+		old->initial_vm_ops = vma->initial_vm_ops;
+		anon_vma_lock(old);
+		__vma_link_file(old);
+		anon_vma_unlock(old);
+	}
 
 	remove_vma(vma);
 
 	vma = old;
 done:
 	*last_end = vma->vm_end;
-
+err:
 	return r;
 }
 
