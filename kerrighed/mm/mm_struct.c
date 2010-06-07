@@ -445,6 +445,7 @@ void krg_do_mmap_region(struct vm_area_struct *vma,
 	msg.len = vma->vm_end - vma->vm_start;
 	msg.flags = flags;
 	msg.vm_flags = vm_flags;
+	msg.pgoff = vma->vm_pgoff;
 
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);

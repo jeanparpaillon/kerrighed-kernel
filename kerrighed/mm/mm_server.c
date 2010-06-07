@@ -29,7 +29,7 @@ int handle_do_mmap_region (struct rpc_desc* desc,
 	down_write(&mm->mmap_sem);
 
 	__mmap_region(mm, NULL, msg->start, msg->len, msg->flags,
-		      msg->vm_flags, 0, 1);
+		      msg->vm_flags, msg->pgoff, 1);
 
 	vma = find_vma(mm, msg->start);
 	BUG_ON(!vma || vma->vm_start != msg->start);

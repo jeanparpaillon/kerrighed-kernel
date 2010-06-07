@@ -38,7 +38,10 @@ typedef struct mm_mmap_msg {
 		unsigned long data_limit;
 		int personality;
 	};
-	unsigned long old_len;
+	union {
+		unsigned long old_len;
+		unsigned long pgoff;
+	};
 	unsigned long new_addr;
 	unsigned long _new_addr;
 } mm_mmap_msg_t;
