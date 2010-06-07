@@ -10,6 +10,7 @@
 
 #include <linux/unique_id.h>
 #include <linux/hashtable.h>
+#include <linux/semaphore.h>
 #include <kddm/kddm_types.h>
 
 
