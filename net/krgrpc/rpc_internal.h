@@ -266,8 +266,6 @@ int thread_pool_init(void);
 int rpclayer_init(void);
 int rpc_monitor_init(void);
 
-#endif
-
 static inline bool rpc_desc_forwarded(struct rpc_desc *desc)
 {
 	return desc->forwarded;
@@ -302,3 +300,5 @@ void __rpc_synchro_put(struct __rpc_synchro *__rpc_synchro){
 				__rpc_synchro);
 	}
 }
+
+#endif /* __RPC_INTERNAL__ */
