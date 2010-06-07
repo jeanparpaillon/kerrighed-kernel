@@ -200,11 +200,13 @@ static void krg_task_checkpoint(int sig, struct siginfo *info,
 			 task_pid_knr(current), current->comm);
 		__set_task_result(current, r);
 		mutex_unlock(&current->application->mutex);
-		return;
+		goto out;
 	}
 
 	/* freeze */
 	current_state = set_result_wait(PCUS_OPERATION_OK);
+	if (IS_ERR(current_state))
+		goto out;
 
 	/*
 	 * checkpoint may be requested several times once
@@ -218,6 +220,9 @@ static void krg_task_checkpoint(int sig, struct siginfo *info,
 		/* PCUS_OPERATION_OK == 0 */
 		current_state = set_result_wait(r);
 	}
+
+out:
+	return;
 }
 
 void register_checkpoint_hooks(void)

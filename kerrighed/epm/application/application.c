@@ -359,9 +359,11 @@ task_state_t *__set_task_result(struct task_struct *task, int result)
 		if (task == t->task) {
 			ret = t;
 
-			if (t->checkpoint.result == PCUS_RUNNING)
+			if (t->checkpoint.result == PCUS_RUNNING) {
 				/* result has been forced to cancel operation */
+				ret = ERR_PTR(-ECANCELED);
 				goto out;
+			}
 
 			t->checkpoint.result = result;
 		}
@@ -391,6 +393,10 @@ task_state_t *set_result_wait(int result)
 
 	mutex_lock(&app->mutex);
 	current_state = __set_task_result(current, result);
+	if (IS_ERR(current_state)) {
+		mutex_unlock(&app->mutex);
+		goto out;
+	}
 
 	init_completion(&current_state->checkpoint.completion);
 	mutex_unlock(&app->mutex);
@@ -405,6 +411,7 @@ task_state_t *set_result_wait(int result)
 	 */
 	wait_for_completion(&current_state->checkpoint.completion);
 
+out:
 	return current_state;
 }
 
