@@ -4,6 +4,7 @@
 #define __FAF_H__
 
 #include <linux/types.h>
+#include <linux/list.h>
 #include <linux/namei.h>
 
 struct file;
@@ -18,6 +19,8 @@ struct statfs;
  *--------------------------------------------------------------------------*/
 
 typedef struct faf_client_data {
+	struct list_head list;
+	unsigned server_dead:1;
 	kerrighed_node_t server_id;
 	int server_fd;
 	unsigned long f_flags;

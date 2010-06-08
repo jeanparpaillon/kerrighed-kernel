@@ -68,12 +68,7 @@ out:
 	return res;
 }
 
-/** Close a file in the FAF deamon.
- *  @author Renaud Lottiaux
- *
- *  @param file    The file to close.
- */
-int close_faf_file(struct file * file)
+static int __close_faf_file(struct file *file)
 {
         struct files_struct *files = first_krgrpc->files;
         struct file * faf_file;
@@ -81,7 +76,6 @@ int close_faf_file(struct file * file)
         int fd = file->f_faf_srv_index;
 
 	BUG_ON (!(file->f_flags & O_FAF_SRV));
-	BUG_ON (file_count(file) != 1);
 
 	/* Remove the file from the FAF server file table */
 
@@ -107,6 +101,17 @@ int close_faf_file(struct file * file)
 	file->f_flags = file->f_flags & (~O_FAF_SRV);
 
         return filp_close(faf_file, files);
+}
+
+/** Close a file in the FAF deamon.
+ *  @author Renaud Lottiaux
+ *
+ *  @param file    The file to close.
+ */
+int close_faf_file(struct file *file)
+{
+	BUG_ON(file_count(file) != 1);
+	return __close_faf_file(file);
 }
 
 /** Check if we need to close a FAF server file.
@@ -166,12 +171,69 @@ void check_close_faf_srv_file(struct file *file)
 	__check_close_faf_srv_file(objid, file);
 }
 
+static void close_faf_srv_file(unsigned long objid, struct file *file)
+{
+	struct dvfs_file_struct *dvfs_file;
+	bool close_file = false;
+
+	dvfs_file = get_dvfs_file_struct(objid);
+	/* If dvfs file is NULL, someone else did the job before us */
+	if (dvfs_file->file) {
+		BUG_ON(dvfs_file->file != file);
+		dvfs_file->file = NULL;
+		close_file = true;
+	}
+	put_dvfs_file_struct (objid);
+
+	if (close_file)
+		__close_faf_file(file);
+}
+
+/* Called by faf_remove_local() */
+void check_close_faf_srv_files(void)
+{
+	struct files_struct *files = first_krgrpc->files;
+	struct file *file;
+	unsigned long dvfs_id = 0; /* quiet gcc */
+	int fd, max_fd;
+
+	max_fd = files_fdtable(files)->max_fds;
+	for (fd = 0; fd < max_fd; fd++) {
+		spin_lock(&files->file_lock);
+		file = fcheck_files(files, fd);
+		if (file) {
+			if (file->f_flags & O_FAF_SRV)
+				dvfs_id = file->f_objid;
+			else
+				file = NULL;
+		}
+		spin_unlock(&files->file_lock);
+		if (file && dvfs_id)
+			close_faf_srv_file(dvfs_id, file);
+	}
+}
+
 void free_faf_file_private_data(struct file *file)
 {
+	struct faf_client_data *data;
+
 	if (!(file->f_flags & O_FAF_CLT))
 		return;
 
-	kmem_cache_free (faf_client_data_cachep, file->private_data);
+	data = file->private_data;
+	/* Optimization check */
+	if (!data->server_dead) {
+		down_write(&client_list_sem[data->server_id]);
+		/* Double check */
+		if (!data->server_dead)
+			list_del(&data->list);
+		up_write(&client_list_sem[data->server_id]);
+	}
+	/* Matches smp_wmb() in hotplug.c:handle_faf_invalidate() */
+	smp_read_barrier_depends();
+	/* If we observed data->server_dead != 0, then data->list is unlinked */
+
+	kmem_cache_free (faf_client_data_cachep, data);
 	file->private_data = NULL;
 }
 
@@ -184,7 +246,7 @@ void free_faf_file_private_data(struct file *file)
 void check_last_faf_client_close(struct file *file,
 				 struct dvfs_file_struct *dvfs_file)
 {
-	faf_client_data_t *data;
+	faf_client_data_t *data = file->private_data;
 	struct faf_notify_msg msg;
 
 	if(!(file->f_flags & O_FAF_CLT))
@@ -194,13 +256,14 @@ void check_last_faf_client_close(struct file *file,
 	 * being for the FAF server node. In this case, notify the FAF server
 	 * to let it check if it should close the FAF file or not.
 	 */
-	if (dvfs_file->count == 1) {
-		data = file->private_data;
+	if ((dvfs_file->count == 1) && faf_srv_hold(data)) {
 		msg.server_fd = data->server_fd;
 		msg.objid = file->f_objid;
 
 		rpc_async(RPC_FAF_NOTIFY_CLOSE, data->server_id,
 			  &msg, sizeof(msg));
+
+		faf_srv_release(data);
 	}
 
 	free_faf_file_private_data(file);
@@ -284,6 +347,7 @@ void faf_init ()
 	ruaccess_start();
 	faf_server_init();
 	faf_hooks_init();
+	faf_hotplug_init();
 
 	printk("FAF: initialisation : done\n");
 }

@@ -58,6 +58,19 @@ struct file *create_faf_file_from_krg_desc (struct task_struct *task,
 	file->f_pos = desc->f_pos;
 	file->private_data = data;
 
+	/*
+	 * FAF server being removed may race invalidating other clients.
+	 * However, if it is online we are guaranteed that it will remain online
+	 * until the toplevel operation (migration, etc.) completes.
+	 */
+	if (!krgnode_online(data->server_id)) {
+		data->server_dead = 1;
+	} else if (!data->server_dead) {
+		down_write(&client_list_sem[data->server_id]);
+		list_add(&data->list, &client_list[data->server_id]);
+		up_write(&client_list_sem[data->server_id]);
+	}
+
 exit:
 	return file;
 }
@@ -73,6 +86,7 @@ void fill_faf_file_krg_desc(faf_client_data_t *data, struct file *file)
 	data->f_flags = flags;
 	data->f_mode = file->f_mode;
 	data->f_pos = file->f_pos;
+	data->server_dead = 0;
 	data->server_id = kerrighed_node_id;
 	data->server_fd = file->f_faf_srv_index;
 	data->i_mode = file->f_dentry->d_inode->i_mode;
