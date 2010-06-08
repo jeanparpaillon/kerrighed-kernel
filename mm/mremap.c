@@ -434,7 +434,7 @@ unsigned long do_mremap(unsigned long addr,
 				*_new_addr = new_addr;
 			}
 			else
-				new_addr = _new_addr;
+				new_addr = *_new_addr;
 #else
 			new_addr = get_unmapped_area(vma->vm_file, 0, new_len,
 						vma->vm_pgoff, map_flags);
