@@ -101,10 +101,15 @@ int close_faf_file(struct file * file)
 
 	spin_unlock(&files->file_lock);
 
-	/* Cleanup Kerrighed flags but not objid to pass through the regular
-	 * kernel close file code plus kh_put_file() only.
-	 */
+	/* Cleanup FAF flags now to avoid recursive krg_faf_srv_close() */
 	file->f_flags = file->f_flags & (~O_FAF_SRV);
+	/*
+	 * Cleanup DVFS state now to avoid deadlocking
+	 * dvfs_file_list_hotplug_rwsem because of
+	 * krg_faf_srv_close()->...->__close_faf_file()->...->krg_put_file()
+	 */
+	put_dvfs_file(-1, file, true);
+	file->f_objid = 0;
 
         return filp_close(faf_file, files);
 }

@@ -21,6 +21,7 @@
 #include "faf/faf_internal.h"
 #endif
 
+extern void fs_hotplug_init(void);
 
 /** Initialisation of the DVFS module.
  *  @author Renaud Lottiaux
@@ -45,6 +46,7 @@ int init_dvfs (void)
 	faf_init();
 #endif
 	dvfs_file_init();
+	fs_hotplug_init();
 
 	printk ("DVFS initialisation done\n");
 
