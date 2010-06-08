@@ -13,6 +13,8 @@
 #include <kerrighed/file.h>
 #include <kddm/kddm.h>
 
+#include "faf/faf_internal.h"
+
 static int dvfs_file_struct_flusher(struct kddm_set *set, objid_t objid,
 				    struct kddm_obj *obj_entry, void *data)
 {
@@ -31,6 +33,11 @@ static int dvfs_remove_local(const krgnodemask_t *nodes)
 
 static int fs_remove_local(const krgnodemask_t *nodes)
 {
+	int err;
+
+	err = faf_remove_local(nodes);
+	if (err)
+		return err;
 	return dvfs_remove_local(nodes);
 }
 

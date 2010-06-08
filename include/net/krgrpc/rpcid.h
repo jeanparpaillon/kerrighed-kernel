@@ -50,6 +50,7 @@ enum rpcid {
 	RPC_FAF_RECVMSG,
 	RPC_FAF_SENDFILE,
 	RPC_FAF_NOTIFY_CLOSE,
+	RPC_FAF_INVALIDATE,
 
 /* Ctnr Object Server Types */
 	REQ_OBJECT_COPY,

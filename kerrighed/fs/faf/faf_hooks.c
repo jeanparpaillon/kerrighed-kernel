@@ -24,6 +24,7 @@
 #include <kerrighed/faf.h>
 #include <kerrighed/physical_fs.h>
 #include <kerrighed/remote_cred.h>
+#include <kerrighed/hotplug.h>
 #include <asm/uaccess.h>
 
 #include <kddm/kddm.h>
@@ -145,6 +146,9 @@ off_t krg_faf_lseek(struct file * file, off_t offset, unsigned int origin)
 	struct rpc_desc* desc;
 	int err;
 
+	if (!faf_srv_hold(data))
+		return -EIO;
+
 	msg.server_fd = data->server_fd;
 	msg.offset = offset;
 	msg.origin = origin;
@@ -166,6 +170,7 @@ off_t krg_faf_lseek(struct file * file, off_t offset, unsigned int origin)
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(data);
 	return r;
 cancel:
 	r = err;
@@ -196,6 +201,9 @@ long krg_faf_llseek(struct file *file,
 	struct rpc_desc* desc;
 	int err;
 
+	if (!faf_srv_hold(data))
+		return -EIO;
+
 	msg.server_fd = data->server_fd;
 	msg.offset_high = offset_high;
 	msg.offset_low = offset_low;
@@ -222,6 +230,7 @@ long krg_faf_llseek(struct file *file,
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(data);
 	return r;
 
 cancel:
@@ -251,9 +260,14 @@ ssize_t krg_faf_read(struct file * file, char *buf, size_t count, loff_t *pos)
 	int err;
 	struct rpc_desc *desc;
 
+	if (!faf_srv_hold(data))
+		return -EIO;
+
 	kbuff = kmalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!kbuff)
+	if (!kbuff) {
+		faf_srv_release(data);
 		return -ENOMEM;
+	}
 
 	msg.server_fd = data->server_fd;
 	msg.count = count;
@@ -309,6 +323,7 @@ out_end:
 
 out:
 	kfree(kbuff);
+	faf_srv_release(data);
 
 	return nr;
 
@@ -341,9 +356,14 @@ ssize_t krg_faf_write(struct file * file, const char *buf,
 	int err;
 	struct rpc_desc *desc;
 
+	if (!faf_srv_hold(data))
+		return -EIO;
+
 	kbuff = kmalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!kbuff)
+	if (!kbuff) {
+		faf_srv_release(data);
 		return -ENOMEM;
+	}
 
 	msg.server_fd = data->server_fd;
 	msg.count = count;
@@ -403,6 +423,7 @@ out_end:
 
 out:
 	kfree(kbuff);
+	faf_srv_release(data);
 
 	return nr;
 
@@ -434,10 +455,14 @@ ssize_t krg_faf_readv(struct file *file, const struct iovec __user *vec,
 	iovcnt = vlen;
 	total_len = ret.ret;
 
+	ret.ret = -EIO;
+	if (!faf_srv_hold(data))
+		goto out;
+
 	ret.ret = -ENOMEM;
 	desc = rpc_begin(RPC_FAF_READV, data->server_id);
 	if (!desc)
-		goto out;
+		goto out_release;
 
 	msg.server_fd = data->server_fd;
 	msg.count = total_len;
@@ -463,6 +488,9 @@ ssize_t krg_faf_readv(struct file *file, const struct iovec __user *vec,
 
 out_end:
 	rpc_end(desc, 0);
+
+out_release:
+	faf_srv_release(data);
 
 out:
 	if (iov != iovstack)
@@ -498,10 +526,14 @@ ssize_t krg_faf_writev(struct file *file, const struct iovec __user *vec,
 	iovcnt = vlen;
 	total_len = ret.ret;
 
+	ret.ret = -EIO;
+	if (!faf_srv_hold(data))
+		goto out;
+
 	ret.ret = -ENOMEM;
 	desc = rpc_begin(RPC_FAF_WRITEV, data->server_id);
 	if (!desc)
-		goto out;
+		goto out_release;
 
 	msg.server_fd = data->server_fd;
 	msg.count = total_len;
@@ -528,6 +560,9 @@ ssize_t krg_faf_writev(struct file *file, const struct iovec __user *vec,
 out_end:
 	rpc_end(desc, 0);
 
+out_release:
+	faf_srv_release(data);
+
 out:
 	if (iov != iovstack)
 		kfree(iov);
@@ -549,6 +584,9 @@ int krg_faf_getdents(struct file *file, enum getdents_filler filler,
 	struct faf_getdents_msg msg;
 	struct rpc_desc *desc;
 	int err, err_rpc;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	err = -ENOMEM;
 	desc = rpc_begin(RPC_FAF_GETDENTS, data->server_id);
@@ -588,6 +626,7 @@ out_end:
 	rpc_end(desc, 0);
 
 out:
+	faf_srv_release(data);
 	return err;
 
 cancel:
@@ -612,6 +651,9 @@ long krg_faf_ioctl (struct file *file,
 	long r;
 	struct rpc_desc *desc;
 	int err;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 	msg.cmd = cmd;
@@ -641,6 +683,7 @@ long krg_faf_ioctl (struct file *file,
 	rpc_end(desc, 0);
 
 out:
+	faf_srv_release(data);
 	return r;
 
 out_cancel:
@@ -669,6 +712,9 @@ long krg_faf_fcntl (struct file *file,
 	struct rpc_desc *desc;
 	int err;
 	long r;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 	msg.cmd = cmd;
@@ -713,6 +759,7 @@ out_end:
 	rpc_end(desc, 0);
 
 out:
+	faf_srv_release(data);
 	return r;
 
 cancel:
@@ -737,6 +784,9 @@ long krg_faf_fcntl64 (struct file *file,
 	long r;
 	struct rpc_desc* desc;
 	int err;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 	msg.cmd = cmd;
@@ -782,6 +832,7 @@ out_end:
 	rpc_end(desc, 0);
 
 out:
+	faf_srv_release(data);
 	return r;
 
 cancel:
@@ -804,6 +855,9 @@ long krg_faf_fstat(struct file *file, struct kstat *statbuf)
 	long r;
 	struct rpc_desc* desc;
 	int err;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 
@@ -830,6 +884,7 @@ long krg_faf_fstat(struct file *file, struct kstat *statbuf)
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(data);
 	return r;
 
 cancel:
@@ -855,6 +910,9 @@ long krg_faf_fstatfs(struct file *file,
 	long r;
 	int err;
 	struct rpc_desc *desc;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 
@@ -884,6 +942,7 @@ long krg_faf_fstatfs(struct file *file,
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(data);
 	return r;
 
 cancel:
@@ -903,9 +962,14 @@ long krg_faf_fsync (struct file *file)
 	struct faf_rw_msg msg;
 	long r;
 
+	if (!faf_srv_hold(data))
+		return -EIO;
+
 	msg.server_fd = data->server_fd;
 
 	r = rpc_sync(RPC_FAF_FSYNC, data->server_id, &msg, sizeof(msg));
+
+	faf_srv_release(data);
 
 	return r;
 }
@@ -924,12 +988,17 @@ long krg_faf_flock (struct file *file,
 	long r;
 	int err;
 
+	if (!faf_srv_hold(data))
+		return -EIO;
+
 	msg.server_fd = data->server_fd;
 	msg.cmd = cmd;
 
 	desc = rpc_begin(RPC_FAF_FLOCK, data->server_id);
-	if (!desc)
-		return -ENOMEM;
+	if (!desc) {
+		r = -ENOMEM;
+		goto out_release;
+	}
 
 	err = rpc_pack_type(desc, msg);
 	if (err)
@@ -947,6 +1016,10 @@ long krg_faf_flock (struct file *file,
 
 out_end:
 	rpc_end(desc, 0);
+
+out_release:
+	faf_srv_release(data);
+
 	return r;
 
 cancel:
@@ -962,6 +1035,9 @@ long krg_faf_ftruncate(struct file *file, loff_t length, int small)
 	struct rpc_desc *desc;
 	int err;
 	long ret;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 	msg.length = length;
@@ -988,6 +1064,7 @@ long krg_faf_ftruncate(struct file *file, loff_t length, int small)
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(data);
 	return ret;
 cancel:
 	ret = err;
@@ -1003,6 +1080,9 @@ int krg_faf_fchmod(struct file *file, mode_t mode)
 	struct faf_chmod_msg msg;
 	struct rpc_desc *desc;
 	int ret, err;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 	msg.mode = mode;
@@ -1028,6 +1108,7 @@ int krg_faf_fchmod(struct file *file, mode_t mode)
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(data);
 	return ret;
 cancel:
 	ret = err;
@@ -1043,6 +1124,9 @@ int krg_faf_fchown(struct file *file, uid_t user, gid_t group)
 	struct faf_chown_msg msg;
 	struct rpc_desc *desc;
 	int ret, err;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 	msg.user = user;
@@ -1069,6 +1153,7 @@ int krg_faf_fchown(struct file *file, uid_t user, gid_t group)
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(data);
 	return ret;
 cancel:
 	ret = err;
@@ -1085,6 +1170,9 @@ long krg_faf_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 	struct rpc_desc *desc;
 	int err;
 	long ret;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 	msg.mode = mode;
@@ -1108,6 +1196,7 @@ long krg_faf_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(data);
 	return ret;
 cancel:
 	ret = err;
@@ -1396,13 +1485,18 @@ static char *__krg_faf_d_path(const struct path *root, const struct file *file,
 
 	BUG_ON(file->f_flags & O_FAF_SRV);
 
+	if (!faf_srv_hold(data))
+		return ERR_PTR(-EIO);
+
 	msg.server_fd = data->server_fd;
 	msg.deleted = !!deleted;
 	msg.count = size;
 
 	desc = rpc_begin(RPC_FAF_D_PATH, data->server_id);
-	if (!desc)
+	if (!desc) {
+		faf_srv_release(data);
 		return ERR_PTR(-ENOMEM);
+	}
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto err_cancel;
@@ -1430,6 +1524,8 @@ static char *__krg_faf_d_path(const struct path *root, const struct file *file,
 	}
 out_end:
 	rpc_end(desc, 0);
+
+	faf_srv_release(data);
 
 	return buff;
 
@@ -1523,6 +1619,9 @@ long krg_faf_bind (struct file * file,
 	struct rpc_desc *desc;
 	int err, r;
 
+	if (!faf_srv_hold(data))
+		return -EIO;
+
 	msg.server_fd = data->server_fd;
 
 	r = move_addr_to_kernel(umyaddr, addrlen, (struct sockaddr *)&msg.sa);
@@ -1550,6 +1649,7 @@ long krg_faf_bind (struct file * file,
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(data);
 	return r;
 
 cancel:
@@ -1570,6 +1670,9 @@ long krg_faf_connect (struct file * file,
 	struct faf_bind_msg msg;
 	struct rpc_desc *desc;
 	int r, err;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 
@@ -1603,6 +1706,7 @@ out_end:
 	rpc_end(desc, 0);
 
 out:
+	faf_srv_release(data);
 	return r;
 
 cancel:
@@ -1618,11 +1722,16 @@ long krg_faf_listen (struct file * file,
 	struct faf_listen_msg msg;
 	int r;
 
+	if (!faf_srv_hold(data))
+		return -EIO;
+
 	msg.server_fd = data->server_fd;
 
 	msg.backlog = backlog;
 
 	r = rpc_sync(RPC_FAF_LISTEN, data->server_id, &msg, sizeof(msg));
+
+	faf_srv_release(data);
 
 	return r;
 }
@@ -1639,6 +1748,9 @@ long krg_faf_accept(struct file * file,
 	struct file *newfile;
 	int fd;
 	struct rpc_desc* desc;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	BUG_ON (data->server_id == kerrighed_node_id);
 
@@ -1716,6 +1828,7 @@ long krg_faf_accept(struct file * file,
 	r = fd;
 
 out:
+	faf_srv_release(data);
 	return r;
 
 err_cancel:
@@ -1740,6 +1853,9 @@ long krg_faf_getsockname(struct file * file,
 	int sa_len;
 	struct rpc_desc *desc;
 	int r = -EFAULT, err;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 	if (get_user(msg.addrlen, usockaddr_len))
@@ -1780,6 +1896,7 @@ long krg_faf_getsockname(struct file * file,
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(data);
 	return r;
 
 cancel:
@@ -1802,6 +1919,9 @@ long krg_faf_getpeername(struct file *file,
 
 	if (get_user(msg.addrlen, usockaddr_len))
 		return -EFAULT;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	desc = rpc_begin(RPC_FAF_GETPEERNAME, data->server_id);
 	if (!desc) {
@@ -1838,6 +1958,7 @@ long krg_faf_getpeername(struct file *file,
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(data);
 	return r;
 
 cancel:
@@ -1852,11 +1973,15 @@ long krg_faf_shutdown(struct file *file, int how)
 	struct faf_shutdown_msg msg;
 	int r;
 
+	if (!faf_srv_hold(data))
+		return -EIO;
+
 	msg.server_fd = data->server_fd;
 	msg.how = how;
 
 	r = rpc_sync(RPC_FAF_SHUTDOWN, data->server_id, &msg, sizeof(msg));
 
+	faf_srv_release(data);
 	return r;
 }
 
@@ -1870,6 +1995,9 @@ long krg_faf_setsockopt (struct file * file,
 	struct faf_setsockopt_msg msg;
 	struct rpc_desc *desc;
 	int r, err;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 
@@ -1901,6 +2029,7 @@ out_end:
 	rpc_end(desc, 0);
 
 out:
+	faf_srv_release(data);
 	return r;
 
 err_cancel:
@@ -1921,6 +2050,9 @@ long krg_faf_getsockopt (struct file * file,
 	struct faf_getsockopt_msg msg;
 	int r, err;
 	struct rpc_desc *desc;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 
@@ -1952,6 +2084,7 @@ out_end:
 	rpc_end(desc, 0);
 
 out:
+	faf_srv_release(data);
 	return r;
 
 err_cancel:
@@ -1971,13 +2104,18 @@ ssize_t krg_faf_sendmsg(struct file *file, struct msghdr *msghdr,
 	int err;
 	struct rpc_desc* desc;
 
+	if (!faf_srv_hold(data))
+		return -EIO;
+
 	msg.server_fd = data->server_fd;
 	msg.total_len = total_len;
 	msg.flags = msghdr->msg_flags;
 
 	desc = rpc_begin(RPC_FAF_SENDMSG, data->server_id);
-	if (!desc)
-		return -ENOMEM;
+	if (!desc) {
+		r = -ENOMEM;
+		goto out_release;
+	}
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto cancel;
@@ -1998,6 +2136,9 @@ ssize_t krg_faf_sendmsg(struct file *file, struct msghdr *msghdr,
 out_end:
 	rpc_end(desc, 0);
 
+out_release:
+	faf_srv_release(data);
+
 	return r;
 
 cancel:
@@ -2015,13 +2156,18 @@ ssize_t krg_faf_recvmsg(struct file *file, struct msghdr *msghdr,
 	int err;
 	struct rpc_desc* desc;
 
+	if (!faf_srv_hold(data))
+		return -EIO;
+
 	msg.server_fd = data->server_fd;
 	msg.total_len = total_len;
 	msg.flags = flags;
 
 	desc = rpc_begin(RPC_FAF_RECVMSG, data->server_id);
-	if (!desc)
-		return -ENOMEM;
+	if (!desc) {
+		r = -ENOMEM;
+		goto out_release;
+	}
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto cancel;
@@ -2051,6 +2197,9 @@ ssize_t krg_faf_recvmsg(struct file *file, struct msghdr *msghdr,
 out_end:
 	rpc_end(desc, 0);
 
+out_release:
+	faf_srv_release(data);
+
 	return r;
 
 cancel:
@@ -2068,6 +2217,11 @@ static ssize_t fwd_sendfile(faf_client_data_t *out, faf_client_data_t *in,
 	struct faf_sendfile_msg msg;
 	ssize_t retval;
 	int err;
+
+	BUG_ON(out->server_id != in->server_id);
+
+	if (!faf_srv_hold(in))
+		return -EIO;
 
 	desc = rpc_begin(RPC_FAF_SENDFILE, in->server_id);
 	if (!desc) {
@@ -2096,6 +2250,7 @@ static ssize_t fwd_sendfile(faf_client_data_t *out, faf_client_data_t *in,
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(in);
 	return retval;
 
 cancel:
@@ -2129,6 +2284,9 @@ ssize_t krg_faf_sendfile(struct file *out, struct file *in, loff_t *ppos,
 	if (in_data && out_data
 	    && in_data->server_id == out_data->server_id)
 		return fwd_sendfile(out_data, in_data, ppos, count, max);
+
+	if (!faf_srv_hold(in_data ?: out_data))
+		return -EIO;
 
 	len = count;
 	if (count > PAGE_SIZE)
@@ -2170,6 +2328,7 @@ reset_fs:
 	set_fs(oldfs);
 	kfree(buf);
 out:
+	faf_srv_release(in_data ?: out_data);
 	return retval;
 }
 
@@ -2179,6 +2338,9 @@ int krg_faf_utimes(struct file *file, struct timespec *times, int flags)
 	struct faf_utimes_msg msg;
 	struct rpc_desc *desc;
 	int err, ret;
+
+	if (!faf_srv_hold(data))
+		return -EIO;
 
 	msg.server_fd = data->server_fd;
 	msg.flags = flags;
@@ -2210,6 +2372,7 @@ int krg_faf_utimes(struct file *file, struct timespec *times, int flags)
 out_end:
 	rpc_end(desc, 0);
 out:
+	faf_srv_release(data);
 	return ret;
 
 cancel:
@@ -2234,8 +2397,14 @@ int krg_faf_poll_wait(struct file *file, int wait)
 	struct faf_poll_wait_msg msg;
 	struct rpc_desc *desc;
 	unsigned int revents;
-	int err = -ENOMEM, res = 0;
+	int err, res = 0;
 	long old_state = current->state;
+
+	err = -EIO;
+	if (!faf_srv_hold(data)) {
+		data->poll_revents = POLLERR;
+		goto out;
+	}
 
 	data->poll_revents = 0;
 
@@ -2243,9 +2412,10 @@ int krg_faf_poll_wait(struct file *file, int wait)
 	msg.objid = file->f_objid;
 	msg.wait = wait;
 
+	err = -ENOMEM;
 	desc = rpc_begin(RPC_FAF_POLL_WAIT, data->server_id);
 	if (!desc)
-		goto out;
+		goto out_release;
 	err = rpc_pack_type(desc, msg);
 	if (err)
 		goto err_cancel;
@@ -2265,6 +2435,8 @@ int krg_faf_poll_wait(struct file *file, int wait)
 out_end:
 	rpc_end(desc, 0);
 
+out_release:
+	faf_srv_release(data);
 out:
 	/*
 	 * after sleeping rpc_unpack() returns with
@@ -2286,12 +2458,17 @@ void krg_faf_poll_dequeue(struct file *file)
 	struct faf_notify_msg msg;
 	int err;
 
+	if (!faf_srv_hold(data))
+		return;
+
 	msg.server_fd = data->server_fd;
 	msg.objid = file->f_objid;
 	err = rpc_async(RPC_FAF_POLL_DEQUEUE, data->server_id,
 			&msg, sizeof(msg));
 	if (err)
 		printk("faf_poll: memory leak on server %d!\n", data->server_id);
+
+	faf_srv_release(data);
 }
 
 /** Kerrighed kernel hook for FAF poll function.
@@ -2326,12 +2503,19 @@ static void handle_faf_poll_notify(struct rpc_desc *desc,
 	struct file *file;
 	faf_client_data_t *data;
 
+	membership_online_hold();
+	if (!krgnode_online(kerrighed_node_id))
+		goto out;
+
 	file = lock_dvfs_file(dvfs_id);
 	if (file) {
 		data = file->private_data;
 		wake_up_interruptible_all(&data->poll_wq);
 	}
 	unlock_dvfs_file(dvfs_id);
+
+out:
+	membership_online_release();
 }
 
 struct file_operations faf_file_ops = {

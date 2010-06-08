@@ -1454,6 +1454,42 @@ out_unlock:
 	return 0;
 }
 
+static void faf_polled_fd_nuke(struct faf_polled_fd *polled_fd)
+{
+	struct faf_polled_fd_node *polled_fd_node;
+	struct hlist_node *pos, *tmp;
+
+	BUG_ON(!polled_fd->count);
+
+	hlist_for_each_entry_safe(polled_fd_node, pos, tmp, &polled_fd->nodes, list) {
+		BUG_ON(!polled_fd_node->count);
+
+		polled_fd_node->count = 0;
+		faf_polled_fd_node_free(polled_fd, polled_fd_node);
+	}
+
+	faf_polled_fd_free(polled_fd);
+}
+
+void faf_polled_fd_remove_local(void)
+{
+	struct faf_polled_fd *polled_fd;
+	struct hlist_node *pos, *tmp;
+	int i;
+
+	/*
+	 * All other nodes consider us as dead, so no more polled_fd will be
+	 * added from under us.
+	 * All fds are also already removed from the interest set of
+	 * faf_poll_epfd.
+	 */
+	mutex_lock(&faf_polled_fd_mutex);
+	for (i = 0; i < FAF_POLLED_FD_HASH_SIZE; i++)
+		hlist_for_each_entry_safe(polled_fd, pos, tmp, &faf_polled_fd_hash[i], list)
+			faf_polled_fd_nuke(polled_fd);
+	mutex_unlock(&faf_polled_fd_mutex);
+}
+
 static
 void handle_faf_poll_wait(struct rpc_desc *desc, void *_msg, size_t size)
 {
@@ -1492,8 +1528,23 @@ static
 void handle_faf_poll_dequeue(struct rpc_desc *desc, void *_msg, size_t size)
 {
 	struct faf_notify_msg *msg = _msg;
+	struct faf_polled_fd *polled_fd;
 
-	faf_polled_fd_remove(desc->client, msg->server_fd, msg->objid);
+	/* Do not use the DVFS KDDM set after faf_remove_local() */
+	down_read(&faf_srv_hotplug_rwsem);
+
+	/*
+	 * faf_remove_local()->faf_polled_fd_remove_local() kills all polled_fds
+	 * without waiting for clients to dequeue.
+	 */
+	mutex_lock(&faf_polled_fd_mutex);
+	polled_fd = __faf_polled_fd_find(msg->objid);
+	mutex_unlock(&faf_polled_fd_mutex);
+
+	if (polled_fd)
+		faf_polled_fd_remove(desc->client, msg->server_fd, msg->objid);
+
+	up_read(&faf_srv_hotplug_rwsem);
 }
 
 static void faf_poll_init(void)
@@ -1995,6 +2046,9 @@ int handle_faf_notify_close(struct rpc_desc *desc, void *msgIn, size_t size)
 	struct faf_notify_msg *msg = msgIn;
 	struct file *file;
 
+	/* Do not use the DVFS KDDM set after faf_remove_local() */
+	down_read(&faf_srv_hotplug_rwsem);
+
 	spin_lock(&current->files->file_lock);
 	file = fcheck_files(current->files, msg->server_fd);
 	/* Check if the file has been closed locally before we receive the
@@ -2015,6 +2069,8 @@ int handle_faf_notify_close(struct rpc_desc *desc, void *msgIn, size_t size)
 
 	if (file)
 		__check_close_faf_srv_file(msg->objid, file);
+
+	up_read(&faf_srv_hotplug_rwsem);
 
 	return 0;
 }
