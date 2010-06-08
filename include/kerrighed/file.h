@@ -7,6 +7,7 @@
 #ifndef __DVFS_FILE__
 #define __DVFS_FILE__
 
+#include <linux/list.h>
 #include <kddm/kddm.h>
 
 struct epm_action;
@@ -21,6 +22,7 @@ struct dvfs_file_struct {
 	loff_t f_pos;
 	int count;
 	struct file *file;
+	struct list_head list;
 };
 
 extern struct kddm_set *dvfs_file_struct_ctnr;
@@ -46,7 +48,14 @@ void check_file_struct_sharing (int index, struct file *file,
 #endif
 
 void get_dvfs_file(int index, unsigned long objid);
-void put_dvfs_file(int index, struct file *file);
+void put_dvfs_file(int index, struct file *file, bool unlink);
+
+bool dvfs_hold(struct file *file);
+void dvfs_release(struct file *file);
+void dvfs_file_remove_local(void);
+
+void dvfs_file_link(struct dvfs_file_struct *dvfs_file, struct file *file);
+void dvfs_file_unlink(struct dvfs_file_struct *dvfs_file);
 
 int dvfs_file_init(void);
 void dvfs_file_finalize(void);

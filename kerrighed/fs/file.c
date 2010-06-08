@@ -7,6 +7,9 @@
 #include <linux/file.h>
 #include <linux/unique_id.h>
 #include <linux/sched.h>
+#include <linux/list.h>
+#include <linux/spinlock.h>
+#include <linux/rwsem.h>
 #include <kerrighed/dvfs.h>
 
 #ifdef CONFIG_KRG_FAF
@@ -29,6 +32,52 @@ unique_id_root_t file_struct_unique_id_root;
 /* DVFS file struct container */
 struct kddm_set *dvfs_file_struct_ctnr = NULL;
 
+static LIST_HEAD(dvfs_file_list);
+static DECLARE_RWSEM(dvfs_file_list_hotplug_rwsem);
+static DEFINE_SPINLOCK(dvfs_file_list_lock);
+
+bool dvfs_hold(struct file *file)
+{
+	down_read(&dvfs_file_list_hotplug_rwsem);
+	if (!file->f_objid) {
+		up_read(&dvfs_file_list_hotplug_rwsem);
+		return false;
+	}
+	return true;
+}
+
+void dvfs_release(struct file *file)
+{
+	up_read(&dvfs_file_list_hotplug_rwsem);
+}
+
+void dvfs_file_link(struct dvfs_file_struct *dvfs_file, struct file *file)
+{
+	BUG_ON(dvfs_file->file);
+
+	dvfs_file->file = file;
+	/* Check for a race between __fput() and {begin/end}_import_dvfs_file() */
+	if (list_empty(&dvfs_file->list)) {
+		spin_lock(&dvfs_file_list_lock);
+		list_add(&dvfs_file->list, &dvfs_file_list);
+		spin_unlock(&dvfs_file_list_lock);
+	}
+}
+
+void dvfs_file_unlink(struct dvfs_file_struct *dvfs_file)
+{
+	/* Check for a race between __fput() and {begin/end}_import_dvfs_file() */
+	if (!dvfs_file->file) {
+		/*
+		 * We can get here twice with odd timings, but list_del_init()
+		 * supports that.
+		 */
+		spin_lock(&dvfs_file_list_lock);
+		list_del_init(&dvfs_file->list);
+		spin_unlock(&dvfs_file_list_lock);
+	}
+}
+
 int create_kddm_file_object(struct file *file)
 {
 	struct dvfs_file_struct *dvfs_file;
@@ -50,7 +99,7 @@ int create_kddm_file_object(struct file *file)
 	if (cmpxchg (&file->f_objid, 0, file_id) != 0)
 		_kddm_remove_frozen_object(dvfs_file_struct_ctnr, file_id);
 	else {
-		dvfs_file->file = file;
+		dvfs_file_link(dvfs_file, file);
 		put_dvfs_file_struct (file_id);
 	}
 
@@ -115,13 +164,15 @@ void get_dvfs_file(int index, unsigned long objid)
 	put_dvfs_file_struct (objid);
 }
 
-void put_dvfs_file(int index, struct file *file)
+void put_dvfs_file(int index, struct file *file, bool unlink)
 {
 	struct dvfs_file_struct *dvfs_file;
 	unsigned long objid = file->f_objid;
 
 	dvfs_file = grab_dvfs_file_struct(objid);
 	dvfs_file->count--;
+	if (unlink)
+		dvfs_file_unlink(dvfs_file);
 
 #ifdef CONFIG_KRG_FAF
 	check_last_faf_client_close(file, dvfs_file);
@@ -133,6 +184,32 @@ void put_dvfs_file(int index, struct file *file)
 		_kddm_remove_frozen_object (dvfs_file_struct_ctnr, objid);
 	else
 		put_dvfs_file_struct (objid);
+}
+
+static void __krg_put_file(struct file *file)
+{
+	BUG_ON(!file->f_objid);
+	put_dvfs_file(-1, file, true);
+}
+
+void dvfs_file_remove_local(void)
+{
+	struct dvfs_file_struct *dvfs_file, *tmp;
+	struct file *file;
+
+	/*
+	 * No concurrent access to the list should occur, since no file can be
+	 * imported anymore, and all file closing are blocked by the rwsem.
+	 */
+	down_write(&dvfs_file_list_hotplug_rwsem);
+	list_for_each_entry_safe(dvfs_file, tmp, &dvfs_file_list, list) {
+		file = dvfs_file->file;
+		BUG_ON(!file);
+		__krg_put_file(file);
+		file->f_flags &= ~(O_FAF_CLT|O_FAF_SRV|O_KRG_SHARED);
+		file->f_objid = 0;
+	}
+	up_write(&dvfs_file_list_hotplug_rwsem);
 }
 
 /*****************************************************************************/
@@ -151,11 +228,16 @@ loff_t krg_file_pos_read(struct file *file)
 	struct dvfs_file_struct *dvfs_file;
 	loff_t pos;
 
+	if (!dvfs_hold(file))
+		return file->f_pos;
+
 	dvfs_file = get_dvfs_file_struct (file->f_objid);
 
 	pos = dvfs_file->f_pos;
 
 	put_dvfs_file_struct (file->f_objid);
+
+	dvfs_release(file);
 
 	return pos;
 }
@@ -169,11 +251,16 @@ void krg_file_pos_write(struct file *file, loff_t pos)
 {
 	struct dvfs_file_struct *dvfs_file;
 
+	if (!dvfs_hold(file))
+		return;
+
 	dvfs_file = grab_dvfs_file_struct (file->f_objid);
 
 	dvfs_file->f_pos = pos;
 
 	put_dvfs_file_struct (file->f_objid);
+
+	dvfs_release(file);
 }
 
 /** Decrease usage count on a dvfs file struct.
@@ -183,9 +270,10 @@ void krg_file_pos_write(struct file *file, loff_t pos)
  */
 void krg_put_file(struct file *file)
 {
-	BUG_ON (file->f_objid == 0);
-
-	put_dvfs_file(-1, file);
+	if (!dvfs_hold(file))
+		return;
+	__krg_put_file(file);
+	dvfs_release(file);
 }
 
 /*****************************************************************************/
