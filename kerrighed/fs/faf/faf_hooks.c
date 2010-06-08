@@ -2222,7 +2222,10 @@ cancel:
 
 void krg_faf_srv_close(struct file *file)
 {
+	if (!dvfs_hold(file))
+		return;
 	check_close_faf_srv_file(file);
+	dvfs_release(file);
 }
 
 int krg_faf_poll_wait(struct file *file, int wait)

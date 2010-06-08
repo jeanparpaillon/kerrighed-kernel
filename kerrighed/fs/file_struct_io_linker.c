@@ -4,6 +4,7 @@
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
 
+#include <linux/list.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
 #include <kerrighed/file.h>
@@ -28,6 +29,7 @@ int file_alloc_object (struct kddm_obj * obj_entry,
 		return -ENOMEM;
 
 	dvfs_file->file = NULL;
+	INIT_LIST_HEAD(&dvfs_file->list);
 	obj_entry->object = dvfs_file;
 
 	return 0;
