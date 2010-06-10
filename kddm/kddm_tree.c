@@ -219,7 +219,7 @@ static void *kddm_tree_remove(struct kddm_tree *tree,
 static void __kddm_tree_for_each_level(struct kddm_tree *tree,
 				       struct kddm_tree_lvl *cur_level,
 				       int level,
-				       int index,
+				       unsigned long index,
 				       int free,
 				       int(*f)(unsigned long, void*, void*),
 				       void *priv)
