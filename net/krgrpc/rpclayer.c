@@ -645,8 +645,6 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 	atomic_t seq_id;
 
 	BUG_ON(!desc);
-	BUG_ON(!data);
-
 	BUG_ON(rpc_desc_forwarded(desc));
 
 	if (desc_recv->flags & RPC_FLAGS_CLOSED)
