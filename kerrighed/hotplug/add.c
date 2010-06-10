@@ -66,9 +66,10 @@ static int do_nodes_add(struct hotplug_context *ctx)
 	kerrighed_node_t node;
 	int ret;
 
+	ret = -ENOMEM;
 	page = (char *)__get_free_page(GFP_KERNEL);
 	if (!page)
-		return -ENOMEM;
+		goto out;
 
 	ret = krgnodelist_scnprintf(page, PAGE_SIZE, ctx->node_set.v);
 	BUG_ON(ret >= PAGE_SIZE);
@@ -82,11 +83,8 @@ static int do_nodes_add(struct hotplug_context *ctx)
 	 * running cluster (ie: a node can't move from a subcluster to another one)
 	 */
 	ret = do_cluster_start(ctx);
-	if (ret) {
-		printk(KERN_ERR "kerrighed: [ADD] Adding nodes failed! err=%d\n",
-		       ret);
-		return ret;
-	}
+	if (ret)
+		goto out;
 
 	/* Send request to all members of the current cluster */
 	for_each_online_krgnode(node)
@@ -94,6 +92,10 @@ static int do_nodes_add(struct hotplug_context *ctx)
 
 	printk("kerrighed: [ADD] Adding nodes succeeded.\n");
 
+out:
+	if (ret)
+		printk(KERN_ERR "kerrighed: [ADD] Adding nodes failed! err=%d\n",
+		       ret);
 	return ret;
 }
 
