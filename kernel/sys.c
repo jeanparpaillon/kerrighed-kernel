@@ -41,8 +41,10 @@
 #include <linux/kprobes.h>
 #include <linux/user_namespace.h>
 #ifdef CONFIG_KRG_PROC
+#include <linux/pid_namespace.h>
 #include <net/krgrpc/rpc.h>
 #include <net/krgrpc/rpcid.h>
+#include <kerrighed/remote_cred.h>
 #include <kerrighed/remote_syscall.h>
 #endif
 #ifdef CONFIG_KRG_EPM
@@ -155,7 +157,12 @@ out:
 	return error;
 }
 
+#ifdef CONFIG_KRG_PROC
+static int do_setpriority(int which, int who, int niceval,
+			  struct pid_namespace *ns)
+#else
 SYSCALL_DEFINE3(setpriority, int, which, int, who, int, niceval)
+#endif
 {
 	struct task_struct *g, *p;
 	struct user_struct *user;
@@ -177,17 +184,26 @@ SYSCALL_DEFINE3(setpriority, int, which, int, who, int, niceval)
 	switch (which) {
 		case PRIO_PROCESS:
 			if (who)
+#ifdef CONFIG_KRG_PROC
+				p = find_task_by_pid_ns(who, ns);
+#else
 				p = find_task_by_vpid(who);
+#endif
 			else
 				p = current;
 			if (p)
 				error = set_one_prio(p, niceval, error);
 			break;
 		case PRIO_PGRP:
+#ifdef CONFIG_KRG_PROC
+			BUG_ON(!who);
+			pgrp = find_pid_ns(who, ns);
+#else
 			if (who)
 				pgrp = find_vpid(who);
 			else
 				pgrp = task_pgrp(current);
+#endif
 			do_each_pid_thread(pgrp, PIDTYPE_PGID, p) {
 				error = set_one_prio(p, niceval, error);
 			} while_each_pid_thread(pgrp, PIDTYPE_PGID, p);
@@ -214,13 +230,177 @@ out:
 	return error;
 }
 
+#ifdef CONFIG_KRG_PROC
+
+struct setpriority_msg
+{
+	int which;
+	int who;
+	int niceval;
+};
+
+static int handle_setpriority_pg_user(struct rpc_desc *desc, void *msg,
+				      size_t size)
+{
+	const struct cred *old_cred;
+	struct setpriority_msg *_msg = msg;
+	struct pid_namespace *ns;
+	int retval;
+
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		retval = PTR_ERR(old_cred);
+		goto err_cancel;
+	}
+
+	ns = find_get_krg_pid_ns();
+
+	retval = do_setpriority(_msg->which, _msg->who, _msg->niceval, ns);
+
+	put_pid_ns(ns);
+
+	revert_creds(old_cred);
+
+out:
+	return retval;
+
+err_cancel:
+	rpc_cancel(desc);
+	goto out;
+}
+
+static int krg_setpriority_pg_user(int which, int who, int niceval)
+{
+	struct rpc_desc *desc;
+	struct setpriority_msg msg;
+	krgnodemask_t nodes;
+	kerrighed_node_t node;
+	int retval = -ESRCH, noderet, err;
+
+	if (!current->nsproxy->krg_ns)
+		goto out;
+
+	if (!is_krg_pid_ns_root(task_active_pid_ns(current)))
+		goto out;
+
+	if (which == PRIO_PGRP
+	    && !(who & GLOBAL_PID_MASK))
+		goto out;
+
+	krgnodes_copy(nodes, krgnode_online_map);
+
+	desc = rpc_begin_m(PROC_SETPRIORITY_PG_USER, &nodes);
+	if (!desc) {
+		retval = -ENOMEM;
+		goto out;
+	}
+
+	msg.which = which;
+	msg.who = who;
+	msg.niceval = niceval;
+
+	retval = rpc_pack_type(desc, msg);
+	if (retval)
+		goto err_cancel;
+	retval = pack_creds(desc, current_cred());
+	if (retval)
+		goto err_cancel;
+
+	retval = -ESRCH;
+	for_each_krgnode_mask(node, nodes) {
+		err = rpc_unpack_type_from(desc, node, noderet);
+		if (err) {
+			retval = err;
+			goto err_cancel;
+		}
+		if (noderet != -ESRCH) {
+			if (noderet < 0 || (noderet == 0 && retval == -ESRCH))
+				retval = noderet;
+		}
+	}
+
+out_end:
+	rpc_end(desc, 0);
+
+out:
+	return retval;
+
+err_cancel:
+	rpc_cancel(desc);
+	goto out_end;
+}
+
+static int handle_setpriority_process(struct rpc_desc *desc, void *msg,
+				      size_t size)
+{
+	struct pid *pid;
+	const struct cred *old_cred;
+	int niceval;
+	int retval;
+
+	pid = krg_handle_remote_syscall_begin(desc, msg, size,
+					      &niceval, &old_cred);
+	if (IS_ERR(pid)) {
+		retval = PTR_ERR(pid);
+		goto out;
+	}
+
+	retval = do_setpriority(PRIO_PROCESS, pid_knr(pid), niceval,
+				ns_of_pid(pid)->krg_ns_root);
+
+	krg_handle_remote_syscall_end(pid, old_cred);
+
+out:
+	return retval;
+}
+
+static int krg_setpriority_process(pid_t pid, int niceval)
+{
+	return krg_remote_syscall_simple(PROC_SETPRIORITY_PROCESS, pid,
+					 &niceval, sizeof(niceval));
+}
+
+SYSCALL_DEFINE3(setpriority, int, which, int, _who, int, niceval)
+{
+	int retval;
+	int who = _who;
+
+	switch (which) {
+
+	case PRIO_PROCESS:
+		retval = do_setpriority(which, who, niceval,
+					task_active_pid_ns(current));
+		if (retval == -ESRCH)
+			retval = krg_setpriority_process(who, niceval);
+		break;
+	case PRIO_PGRP:
+		if (!who)
+			who = pid_nr_ns(task_pgrp(current),
+					task_active_pid_ns(current));
+		/* do not break here */
+	case PRIO_USER:
+		retval = krg_setpriority_pg_user(which, who, niceval);
+		break;
+	default:
+		retval = -EINVAL;
+		break;
+	}
+
+	return retval;
+}
+#endif
+
 /*
  * Ugh. To avoid negative return values, "getpriority()" will
  * not return the normal nice-value, but a negated value that
  * has been offset by 20 (ie it returns 40..1 instead of -20..19)
  * to stay compatible.
  */
+#ifdef CONFIG_KRG_PROC
+static int do_getpriority(int which, int who, struct pid_namespace *ns)
+#else
 SYSCALL_DEFINE2(getpriority, int, which, int, who)
+#endif
 {
 	struct task_struct *g, *p;
 	struct user_struct *user;
@@ -235,7 +415,11 @@ SYSCALL_DEFINE2(getpriority, int, which, int, who)
 	switch (which) {
 		case PRIO_PROCESS:
 			if (who)
+#ifdef CONFIG_KRG_PROC
+				p = find_task_by_pid_ns(who, ns);
+#else
 				p = find_task_by_vpid(who);
+#endif
 			else
 				p = current;
 			if (p) {
@@ -245,10 +429,15 @@ SYSCALL_DEFINE2(getpriority, int, which, int, who)
 			}
 			break;
 		case PRIO_PGRP:
+#ifdef CONFIG_KRG_PROC
+			BUG_ON(!who);
+			pgrp = find_pid_ns(who, ns);
+#else
 			if (who)
 				pgrp = find_vpid(who);
 			else
 				pgrp = task_pgrp(current);
+#endif
 			do_each_pid_thread(pgrp, PIDTYPE_PGID, p) {
 				niceval = 20 - task_nice(p);
 				if (niceval > retval)
@@ -279,6 +468,164 @@ out_unlock:
 
 	return retval;
 }
+
+#ifdef CONFIG_KRG_PROC
+struct getpriority_msg
+{
+	int which;
+	int who;
+};
+
+static int handle_getpriority_pg_user(struct rpc_desc *desc, void *msg,
+				      size_t size)
+{
+	const struct cred *old_cred;
+	struct getpriority_msg *_msg = msg;
+	struct pid_namespace *ns;
+	int retval;
+
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		retval = PTR_ERR(old_cred);
+		goto err_cancel;
+	}
+
+	ns = find_get_krg_pid_ns();
+
+	retval = do_getpriority(_msg->which, _msg->who, ns);
+
+	put_pid_ns(ns);
+
+	revert_creds(old_cred);
+
+out:
+	return retval;
+
+err_cancel:
+	rpc_cancel(desc);
+	goto out;
+}
+
+static int krg_getpriority_pg_user(int which, int who)
+{
+	struct rpc_desc *desc;
+	struct getpriority_msg msg;
+	krgnodemask_t nodes;
+	kerrighed_node_t node;
+	int retval = -ESRCH, noderet, err;
+
+	if (!current->nsproxy->krg_ns)
+		goto out;
+
+	if (!is_krg_pid_ns_root(task_active_pid_ns(current)))
+		goto out;
+
+	if (which == PRIO_PGRP
+	    && !(who & GLOBAL_PID_MASK))
+		goto out;
+
+	krgnodes_copy(nodes, krgnode_online_map);
+
+	desc = rpc_begin_m(PROC_GETPRIORITY_PG_USER, &nodes);
+	if (!desc) {
+		retval = -ENOMEM;
+		goto out;
+	}
+
+	msg.which = which;
+	msg.who = who;
+
+	retval = rpc_pack_type(desc, msg);
+	if (retval)
+		goto err_cancel;
+	retval = pack_creds(desc, current_cred());
+	if (retval)
+		goto err_cancel;
+
+	retval = -ESRCH;
+	for_each_krgnode_mask(node, nodes) {
+		err = rpc_unpack_type_from(desc, node, noderet);
+		if (err) {
+			retval = err;
+			goto err_cancel;
+		}
+
+		if (noderet < 0) {
+			if (noderet != -ESRCH)
+				retval = noderet;
+		} else if ((retval >= 0 && noderet > retval) || retval == -ESRCH)
+			retval = noderet;
+	}
+
+out_end:
+	rpc_end(desc, 0);
+
+out:
+	return retval;
+
+err_cancel:
+	rpc_cancel(desc);
+	goto out_end;
+}
+
+static int handle_getpriority_process(struct rpc_desc *desc, void *msg,
+				      size_t size)
+{
+	struct pid *pid;
+	const struct cred *old_cred;
+	int retval;
+
+	pid = krg_handle_remote_syscall_begin(desc, msg, size,
+					      NULL, &old_cred);
+	if (IS_ERR(pid)) {
+		retval = PTR_ERR(pid);
+		goto out;
+	}
+
+	retval = do_getpriority(PRIO_PROCESS, pid_knr(pid),
+				ns_of_pid(pid)->krg_ns_root);
+
+	krg_handle_remote_syscall_end(pid, old_cred);
+
+out:
+	return retval;
+}
+
+static int krg_getpriority_process(pid_t pid)
+{
+	return krg_remote_syscall_simple(PROC_GETPRIORITY_PROCESS, pid,
+					 NULL, 0);
+}
+
+SYSCALL_DEFINE2(getpriority, int, which, int, _who)
+{
+	int retval;
+	int who = _who;
+
+	switch (which) {
+
+	case PRIO_PROCESS:
+		retval = do_getpriority(which, who,
+					task_active_pid_ns(current));
+		if (retval == -ESRCH)
+			retval = krg_getpriority_process(who);
+		break;
+	case PRIO_PGRP:
+		if (!who)
+			who = pid_nr_ns(task_pgrp(current),
+					task_active_pid_ns(current));
+		/* do not break here */
+	case PRIO_USER:
+		retval = krg_getpriority_pg_user(which, who);
+		break;
+	default:
+		retval = -EINVAL;
+		break;
+	}
+
+	return retval;
+}
+#endif
 
 /**
  *	emergency_restart - reboot the system
@@ -1370,6 +1717,10 @@ void remote_sys_init(void)
 {
 	rpc_register_int(PROC_GETPGID, handle_getpgid, 0);
 	rpc_register_int(PROC_GETSID, handle_getsid, 0);
+	rpc_register_int(PROC_GETPRIORITY_PROCESS, handle_getpriority_process, 0);
+	rpc_register_int(PROC_GETPRIORITY_PG_USER, handle_getpriority_pg_user, 0);
+	rpc_register_int(PROC_SETPRIORITY_PROCESS, handle_setpriority_process, 0);
+	rpc_register_int(PROC_SETPRIORITY_PG_USER, handle_setpriority_pg_user, 0);
 #ifdef CONFIG_KRG_EPM
 	rpc_register_int(PROC_FORWARD_SETPGID, handle_forward_setpgid, 0);
 #endif
