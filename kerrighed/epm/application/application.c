@@ -453,7 +453,8 @@ exit:
 /* before running this method, be sure checkpoints are completed */
 int get_local_tasks_chkpt_result(struct app_struct* app)
 {
-	int r = 0, pcus_result = 0;
+	int retval = 0;
+	int pcus_result = 0;
 	task_state_t *t;
 
 	mutex_lock(&app->mutex);
@@ -462,25 +463,28 @@ int get_local_tasks_chkpt_result(struct app_struct* app)
 		pcus_result = t->checkpoint.result;
 		if (pcus_result == PCUS_RUNNING) {
 			/* one process has been forgotten! try again!! */
-			r = pcus_result;
+			retval = pcus_result;
 			goto exit;
 		}
 
 		if (t->checkpoint.ghost) {
+			int err;
 			if (pcus_result < 0)
 				unlink_file_ghost(t->checkpoint.ghost);
-			r = ghost_close(t->checkpoint.ghost);
+			err = ghost_close(t->checkpoint.ghost);
+			if (err && !retval)
+				retval = err;
 			t->checkpoint.ghost = NULL;
 		}
 
-		if (!r)
-			r = pcus_result;
+		if (!retval)
+			retval = pcus_result;
 	}
 
 exit:
 	mutex_unlock(&app->mutex);
 
-	return r;
+	return retval;
 }
 
 /*--------------------------------------------------------------------------*/
