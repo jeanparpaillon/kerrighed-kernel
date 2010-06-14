@@ -350,6 +350,8 @@ void tipc_send_ack_worker(struct work_struct *work)
 	struct tipc_connection *conn, *safe;
 	int err;
 
+	printk("%s\n", __func__);
+
 	spin_lock_bh(&tipc_ack_list_lock);
 	list_splice_init(&tipc_ack_head, &ack_head);
 	spin_unlock_bh(&tipc_ack_list_lock);
@@ -380,6 +382,8 @@ static void tipc_delayed_tx_worker(struct work_struct *work)
 	LIST_HEAD(not_retx_queue);
 	struct rpc_tx_elem *iter;
 	struct rpc_tx_elem *safe;
+
+	printk("%s\n", __func__);
 
 	lockdep_off();
 
@@ -455,6 +459,8 @@ static void tipc_retx_worker(struct work_struct *work)
 	LIST_HEAD(not_retx_queue);
 	struct rpc_tx_elem *iter;
 	struct rpc_tx_elem *safe;
+
+	printk("%s\n", __func__);
 
 	lockdep_off();
 
@@ -558,6 +564,8 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 	LIST_HEAD(queue);
 	int node;
 
+	printk("%s\n", __func__);
+
 	spin_lock_bh(&tipc_tx_queue_lock);
 	list_splice_init(&engine->not_retx_queue, &queue);
 	spin_unlock_bh(&tipc_tx_queue_lock);
@@ -618,6 +626,8 @@ void tipc_unreachable_node_worker(struct work_struct *work){
 static
 void tipc_reachable_node_worker(struct work_struct *work){
 	struct tx_engine *engine = container_of(work, struct tx_engine, reachable_work.work);
+
+	printk("%s\n", __func__);
 
 	spin_lock_bh(&tipc_tx_queue_lock);
 	list_splice_init(&engine->not_retx_queue, &engine->retx_queue);
@@ -1192,6 +1202,8 @@ static void run_rx_queue(struct tipc_connection *conn)
 static void run_rx_queue_worker(struct work_struct *work)
 {
 	struct tipc_connection *conn;
+
+	printk("%s\n", __func__);
 
 	conn = container_of(work, struct tipc_connection, run_rx_queue_work.work);
 	spin_lock_bh(&conn->rx_queue.lock);
