@@ -543,6 +543,13 @@ exit_empty:
 	lockdep_on();
 }
 
+static void __rpc_tx_elem_check_last_ack(struct rpc_tx_elem *elem)
+{
+	if (elem->h.rpcid == RPC_CLOSE
+	    && (elem->h.flags & __RPC_HEADER_FLAGS_SRV_REPLY))
+		rpc_connection_last_ack(elem->conn_set->conn[elem->h.client]);
+}
+
 static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 {
 	struct tx_engine *engine = container_of(work, struct tx_engine, cleanup_not_retx_work.work);
@@ -577,6 +584,7 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 	next_iter:
 		if(need_to_free){
 			list_del(&iter->tx_queue);
+			__rpc_tx_elem_check_last_ack(iter);
 			rpc_connection_set_put(iter->conn_set);
 			__rpc_tx_elem_free(iter);
 		}
@@ -1260,8 +1268,9 @@ static void tipc_handler(void *usr_handle,
 	// Update the ack value sent by the other node
 	if (h->link_ack_id > conn->send_ack_id){
 		conn->send_ack_id = h->link_ack_id;
-		if(conn->send_ack_id - conn->last_cleanup_ack
-			> ack_cleanup_window_size){
+		if ((conn->send_ack_id - conn->last_cleanup_ack
+			> ack_cleanup_window_size)
+		    || rpc_conn->state > RPC_CONN_ESTABLISHED) {
 			conn->last_cleanup_ack = h->link_ack_id;
 			cleanup_not_retx();
 		}
@@ -1281,7 +1290,8 @@ static void tipc_handler(void *usr_handle,
 	}
 
 	// Check if we are receiving lot of packets but sending none
-	if (conn->consecutive_recv >= conn->max_consecutive_recv)
+	if (conn->consecutive_recv >= conn->max_consecutive_recv
+	    || rpc_conn->state > RPC_CONN_ESTABLISHED)
 		send_acks(conn);
 	conn->consecutive_recv++;
 
