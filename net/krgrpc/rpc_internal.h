@@ -294,6 +294,7 @@ struct rpc_connection *rpc_handle_new_connection(kerrighed_node_t node,
 						 const struct rpc_connect_msg *msg);
 int rpc_handle_complete_connection(struct rpc_connection *conn, int peer_id);
 int rpc_connection_check_state(struct rpc_connection *conn, enum rpcid rpcid);
+void rpc_connection_last_ack(struct rpc_connection *conn);
 
 struct rpc_connection *
 rpc_communicator_get_connection(struct rpc_communicator *comm,
