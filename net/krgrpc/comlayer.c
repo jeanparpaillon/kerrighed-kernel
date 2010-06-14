@@ -161,6 +161,8 @@ inline int __send_iovec(kerrighed_node_t node, int nr_iov, struct iovec *iov)
 			     &name, 0,
 			     nr_iov, iov);
 	lockdep_on();
+	if (err > 0)
+		err = 0;
 	if (!err)
 		consecutive_recv[node] = 0;
 
