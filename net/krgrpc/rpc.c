@@ -280,6 +280,7 @@ static void rpc_connection_invalidate(struct rpc_connection *conn)
 	spin_lock_bh(&rpc_comm_lock);
 	BUG_ON(comm->conn[node] != conn);
 	rcu_assign_pointer(comm->conn[node], NULL);
+	printk("%s: [%d] %d/%d -> %d/%d\n", __func__, comm->id, kerrighed_node_id, conn->id, conn->peer, conn->peer_id);
 	spin_unlock_bh(&rpc_comm_lock);
 	rpc_connection_put(conn);
 }
@@ -290,6 +291,7 @@ static void rpc_connection_free(struct rcu_head *rcu)
 	struct rpc_connection *conn;
 
 	conn = container_of(rcu, struct rpc_connection, rcu);
+	printk("%s: [%d] %d/%d -> %d/%d\n", __func__, conn->comm->id, kerrighed_node_id, conn->id, conn->peer, conn->peer_id);
 
 	comm = conn->comm;
 	rpc_connection_free_ll(conn);
@@ -476,13 +478,16 @@ struct rpc_connection *rpc_handle_new_connection(kerrighed_node_t node,
 			conn = rpc_communicator_get_connection(comm, node);
 		else
 			conn = NULL;
-		if (!conn)
+		if (!conn) {
+			printk("%s: [%d] %d/%d -> %d/?? err = %d\n", __func__, msg->comm_id, node, peer_id, kerrighed_node_id, err);
 			goto out;
+		}
 	}
 
 	spin_lock(&conn->state_lock);
 	new = conn->peer_id == -1 && conn->state != RPC_CONN_TIME_WAIT;
 	if (new) {
+		printk("%s: [%d] %d/%d -> %d/%d new\n", __func__, msg->comm_id, node, peer_id, kerrighed_node_id, conn->id);
 		BUG_ON(conn->state != RPC_CONN_CLOSED
 		       && conn->state != RPC_CONN_SYNSENT);
 		conn->peer_id = peer_id;
@@ -490,13 +495,15 @@ struct rpc_connection *rpc_handle_new_connection(kerrighed_node_t node,
 	}
 	spin_unlock(&conn->state_lock);
 	if (!new && conn->peer_id != peer_id) {
+		printk("%s: [%d] %d/%d -> %d/%d rejected %d\n", __func__, msg->comm_id, node, conn->peer_id, kerrighed_node_id, conn->id, peer_id);
 		/*
 		 * Aborted connection, very old duplicate packet,
 		 * or early reconnection
 		 */
 		rpc_connection_put(conn);
 		conn = NULL;
-	}
+	} else if (!new)
+		printk("%s: [%d] %d/%d -> %d/%d\n", __func__, msg->comm_id, node, peer_id, kerrighed_node_id, conn->id);
 
 out:
 	rpc_communicator_put(comm);
@@ -511,10 +518,12 @@ int rpc_handle_complete_connection(struct rpc_connection *conn, int peer_id)
 
 	spin_lock(&conn->state_lock);
 	if (conn->peer_id == -1 && conn->state != RPC_CONN_TIME_WAIT) {
+		printk("%s: [%d] %d/%d -> %d/%d\n", __func__, conn->comm->id, kerrighed_node_id, conn->id, conn->peer, peer_id);
 		BUG_ON(conn->state != RPC_CONN_SYNSENT);
 		conn->peer_id = peer_id;
 		err = 0;
-	}
+	} else
+		printk("%s: [%d] %d/%d -> %d/%d rejected %d\n", __func__, conn->comm->id, kerrighed_node_id, conn->id, conn->peer, conn->peer_id, peer_id);
 	/* else if (conn->peer_id == -1 && conn->state == RPC_CONN_TIME_WAIT)
 		Aborted connection
 	   else if (conn->peer_id != peer_id)
@@ -544,6 +553,8 @@ static void handle_connect(struct rpc_desc *desc, void *msg, size_t size)
 		conn->state = RPC_CONN_ESTABLISHED;
 	}
 	spin_unlock_bh(&conn->state_lock);
+
+	printk("%s: [%d] %d/%d -> %d/%d err = %d\n", __func__, conn->comm->id, conn->peer, conn->peer_id, kerrighed_node_id, conn->id, err);
 }
 
 int rpc_connect(struct rpc_communicator *comm, kerrighed_node_t node)
@@ -554,9 +565,13 @@ int rpc_connect(struct rpc_communicator *comm, kerrighed_node_t node)
 	bool do_close = false;
 	int err;
 
+	printk("%s: [%d] %d -> %d\n", __func__, comm->id, kerrighed_node_id, node);
+
 	err = rpc_connection_alloc(comm, node);
-	if (err && err != -EBUSY)
-		return err;
+	if (err && err != -EBUSY) {
+		conn = NULL;
+		goto out;
+	}
 
 	desc = rpc_begin(RPC_CONNECT, comm, node);
 	if (!desc) {
@@ -567,7 +582,8 @@ int rpc_connect(struct rpc_communicator *comm, kerrighed_node_t node)
 			spin_unlock_bh(&conn->state_lock);
 			rpc_connection_put(conn);
 		}
-		return -ENOMEM;
+		err = -ENOMEM;
+		goto out;
 	}
 	conn = desc->conn_set->conn[node];
 	rpc_connection_get(conn);
@@ -653,6 +669,11 @@ out_end:
 		rpc_close(comm, conn->peer);
 	rpc_connection_put(conn);
 
+out:
+	if (!err)
+		printk("%s: [%d] %d/%d -> %d/%d\n", __func__, comm->id, kerrighed_node_id, conn->id, conn->peer, conn->peer_id);
+	else
+		printk("%s: [%d] %d -> %d err = %d\n", __func__, comm->id, kerrighed_node_id, node, err);
 	return err;
 }
 
@@ -686,6 +707,7 @@ static void rpc_connection_kill(struct work_struct *work)
 	spin_unlock_bh(&rpc_conn_lock);
 
 	rpc_connection_kill_ll(conn);
+	printk("%s: [%d] %d/%d -> %d/%d\n", __func__, conn->comm->id, kerrighed_node_id, conn->id, conn->peer, conn->peer_id);
 	rpc_connection_put(conn);
 }
 
@@ -703,8 +725,10 @@ int rpc_connection_check_state(struct rpc_connection *conn, enum rpcid rpcid)
 		return 0;
 	}
 
-	if (conn->state > RPC_CONN_ESTABLISHED)
+	if (conn->state > RPC_CONN_ESTABLISHED) {
+		printk("%s: [%d] %d/%d -> %d/%d rejected rpcid = %d\n", __func__, conn->comm->id, conn->peer, conn->peer_id, kerrighed_node_id, conn->id, rpcid);
 		return -EPIPE;
+	}
 
 	return 0;
 }
@@ -717,6 +741,7 @@ void rpc_connection_last_ack(struct rpc_connection *conn)
 	case RPC_CONN_FIN_WAIT_2:
 		conn->state = RPC_CONN_TIME_WAIT;
 		complete(&conn->close_done);
+		printk("%s: [%d] %d/%d -> %d/%d\n", __func__, conn->comm->id, conn->peer, conn->peer_id, kerrighed_node_id, conn->id);
 		break;
 	case RPC_CONN_CLOSING:
 	case RPC_CONN_CLOSE_WAIT:
@@ -743,6 +768,8 @@ static void handle_close(struct rpc_desc *desc, void *msg, size_t size)
 	struct rpc_connection *conn = desc->conn_set->conn[desc->client];
 	bool do_autoclose = false;
 	int err;
+
+	printk("%s: [%d] %d/%d -> %d/%d\n", __func__, conn->comm->id, conn->peer, conn->peer_id, kerrighed_node_id, conn->id);
 
 	spin_lock_bh(&conn->state_lock);
 	do {
@@ -773,6 +800,7 @@ static void handle_close(struct rpc_desc *desc, void *msg, size_t size)
 		conn->state = RPC_CONN_CLOSING;
 		break;
 	case RPC_CONN_FIN_WAIT_2:
+		printk("%s: [%d] %d/%d -> %d/%d timewait\n", __func__, conn->comm->id, conn->peer, conn->peer_id, kerrighed_node_id, conn->id);
 		rpc_connection_get(conn);
 		INIT_DELAYED_WORK(&conn->timeout_work, rpc_connection_close_timeout);
 		schedule_delayed_work(&conn->timeout_work, 2 * RPC_MAX_TTL);
@@ -781,6 +809,8 @@ static void handle_close(struct rpc_desc *desc, void *msg, size_t size)
 		BUG();
 	}
 	spin_unlock_bh(&conn->state_lock);
+
+	printk("%s: [%d] %d/%d -> %d/%d do_autoclose = %d\n", __func__, conn->comm->id, conn->peer, conn->peer_id, kerrighed_node_id, conn->id, do_autoclose);
 
 	if (do_autoclose)
 		rpc_close(conn->comm, conn->peer);
@@ -794,6 +824,8 @@ void rpc_close(struct rpc_communicator *comm, kerrighed_node_t node)
 
 	conn = rpc_communicator_get_connection(comm, node);
 	BUG_ON(!conn);
+
+	printk("%s: [%d] %d/%d -> %d/%d\n", __func__, conn->comm->id, kerrighed_node_id, conn->id, conn->peer, conn->peer_id);
 
 	while (!(desc = rpc_begin(RPC_CLOSE, comm, node))) {
 		/*
@@ -872,6 +904,7 @@ zombify:
 	spin_unlock_bh(&conn->state_lock);
 
 kill:
+	printk("%s: [%d] %d/%d -> %d/%d kill\n", __func__, conn->comm->id, kerrighed_node_id, conn->id, conn->peer, conn->peer_id);
 	rpc_connection_cancel_descs(conn);
 	rpc_connection_schedule_kill(conn);
 	rpc_connection_put(conn);

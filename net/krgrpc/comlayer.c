@@ -270,8 +270,10 @@ static int __rpc_tx_elem_send(struct rpc_tx_elem *elem, int link_seq_index,
 	struct tipc_connection *conn = to_ll(elem->conn_set->conn[node]);
 	int err = 0;
 
-	if (conn->conn.state == RPC_CONN_TIME_WAIT)
+	if (conn->conn.state == RPC_CONN_TIME_WAIT) {
+		printk("%s: [%d] %d/%d -> %d/%d rejected rpcid = %d\n", __func__, conn->conn->comm->id, kerrighed_node_id, conn->conn->id, conn->conn->peer, conn->conn->peer_id, elem->h.rpcid);
 		goto out;
+	}
 
 	elem->h.link_seq_id = elem->link_seq_id[link_seq_index];
 	if (elem->h.link_seq_id <= conn->send_ack_id)
@@ -1174,6 +1176,14 @@ static inline int handle_one_packet(struct tipc_connection *conn,
 			conn->send_ack_id = conn->recv_seq_id;
 		conn->recv_seq_id++;
 	}
+
+	if (h->rpcid == RPC_CLOSE) {
+		struct rpc_connection *rpc_conn = conn->conn;
+		if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
+			printk("%s: [%d] %d/%d -> %d/%d CLOSE ACK %lu err = %d\n", __func__, rpc_conn->comm->id, rpc_conn->peer, rpc_conn->peer_id, kerrighed_node_id, rpc_conn->id, h->seq_id, err);
+		else
+			printk("%s: [%d] %d/%d -> %d/%d CLOSE %lu err = %d\n", __func__, rpc_conn->comm->id, rpc_conn->peer, rpc_conn->peer_id, kerrighed_node_id, rpc_conn->id, h->seq_id, err);
+	}
 	return err;
 }
 
@@ -1220,8 +1230,11 @@ static void schedule_run_rx_queue(struct tipc_connection *conn)
 {
 	int queued;
 
-	if (conn->conn.state == RPC_CONN_TIME_WAIT)
+	if (conn->conn.state == RPC_CONN_TIME_WAIT) {
+		struct rpc_connection *rpc_conn = conn->conn;
+		printk("%s: [%d] %d/%d -> %d/%d stopped\n", __func__, rpc_conn->comm->id, rpc_conn->peer, rpc_conn->peer_id, kerrighed_node_id, rpc_conn->id);
 		return;
+	}
 
 	rpc_connection_get(&conn->conn);
 	queued = queue_delayed_work(krgcom_wq, &conn->run_rx_queue_work, HZ / 2);
@@ -1281,6 +1294,13 @@ static void tipc_handler(void *usr_handle,
 
 	spin_lock(&queue->lock);
 
+	if (h->rpcid == RPC_CLOSE) {
+		if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
+			printk("%s: [%d] %d/%d -> %d/%d CLOSE ACK %lu %lu %lu\n", __func__, rpc_conn->comm->id, rpc_conn->peer, rpc_conn->peer_id, kerrighed_node_id, rpc_conn->id, h->seq_id, h->link_seq_id, conn->recv_seq_id);
+		else
+			printk("%s: [%d] %d/%d -> %d/%d CLOSE %lu %lu %lu\n", __func__, rpc_conn->comm->id, rpc_conn->peer, rpc_conn->peer_id, kerrighed_node_id, rpc_conn->id, h->seq_id, h->link_seq_id, conn->recv_seq_id);
+	}
+
 	// Update the ack value sent by the other node
 	if (h->link_ack_id > conn->send_ack_id){
 		conn->send_ack_id = h->link_ack_id;
@@ -1296,8 +1316,10 @@ static void tipc_handler(void *usr_handle,
 	if (h->rpcid == RPC_ACK)
 		goto exit;
 
-	if (rpc_conn->state == RPC_CONN_TIME_WAIT)
+	if (rpc_conn->state == RPC_CONN_TIME_WAIT) {
+		printk("%s: [%d] %d/%d -> %d/%d rejected rpcid = %d\n", __func__, rpc_conn->comm->id, rpc_conn->peer, rpc_conn->peer_id, kerrighed_node_id, rpc_conn->id, h->rpcid);
 		goto exit;
+	}
 
 	// Check if we are not receiving an already received packet
 	if (h->link_seq_id < conn->recv_seq_id) {
