@@ -1651,6 +1651,36 @@ int global_config_post_add(struct hotplug_context *ctx)
 	return 0;
 }
 
+int global_config_remove_local(struct hotplug_context *ctx)
+{
+	struct global_config_item *item;
+	struct string_list_object *list;
+	const char *name;
+	int err;
+
+	if (num_online_krgnodes())
+		return hashed_string_list_remove_local(global_items_set);
+
+	if (first_krgnode(ctx->node_set.v) != kerrighed_node_id)
+		return 0;
+
+	err = 0;
+	list_for_each_entry(item, &items_head, list) {
+		name = item->path;
+
+		list = hashed_string_list_lock_hash(global_items_set, name);
+		BUG_ON(!list);
+		if (IS_ERR(list)) {
+			err = PTR_ERR(list);
+			break;
+		}
+		string_list_remove_element(list, name);
+		hashed_string_list_unlock_hash(global_items_set, list);
+	}
+
+	return err;
+}
+
 int global_config_remove(struct hotplug_context *ctx)
 {
 	krgnodemask_t nodes = krgnodemask_of_node(kerrighed_node_id);

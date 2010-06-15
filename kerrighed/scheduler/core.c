@@ -33,7 +33,12 @@ static int add(struct hotplug_context *ctx)
 
 static int remove_local(struct hotplug_context *ctx)
 {
-	return scheduler_remove(ctx);
+	int err;
+
+	err = scheduler_remove(ctx);
+	if (err)
+		return err;
+	return global_config_remove_local(ctx);
 }
 
 static int remove_distant(struct hotplug_context *ctx)
