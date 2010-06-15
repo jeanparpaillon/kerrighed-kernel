@@ -337,6 +337,8 @@ static void send_acks(struct tipc_connection *conn)
 		rpc_connection_get(&conn->conn);
 		list_add_tail(&conn->ack_list, &tipc_ack_head);
 		queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
+	} else {
+		printk("%s: not queueing\n", __func__);
 	}
 	spin_unlock_bh(&tipc_ack_list_lock);
 }
@@ -369,8 +371,10 @@ void tipc_send_ack_worker(struct work_struct *work)
 		spin_unlock_bh(&tipc_ack_list_lock);
 
 		err = send_iovec(conn, ARRAY_SIZE(iov), iov);
-		if (err)
+		if (err) {
+			printk("%s: send_acks() err = %d\n", __func__, err);
 			send_acks(conn);
+		}
 		rpc_connection_put(&conn->conn);
 	}
 }
@@ -1297,14 +1301,17 @@ static void tipc_handler(void *usr_handle,
 
 	// Check if we are not receiving an already received packet
 	if (h->link_seq_id < conn->recv_seq_id) {
+		printk("%s: send_acks() duplicate\n", __func__);
 		send_acks(conn);
 		goto exit;
 	}
 
 	// Check if we are receiving lot of packets but sending none
 	if (conn->consecutive_recv >= conn->max_consecutive_recv
-	    || rpc_conn->state > RPC_CONN_ESTABLISHED)
+	    || rpc_conn->state > RPC_CONN_ESTABLISHED) {
+		printk("%s: send_acks() window\n", __func__);
 		send_acks(conn);
+	}
 	conn->consecutive_recv++;
 
 	// Is-it the next ordered message ?
@@ -1466,6 +1473,7 @@ rpc_enable_lowmem_mode(struct rpc_communicator *comm, kerrighed_node_t nodeid)
 	ll = to_ll(conn);
 
 	ll->max_consecutive_recv = MAX_CONSECUTIVE_RECV__LOWMEM_MODE;
+	printk("%s: send_acks()\n", __func__);
 	send_acks(ll);
 
 	rpc_connection_put(conn);
