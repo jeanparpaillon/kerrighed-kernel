@@ -109,6 +109,16 @@ int is_anon_shared_mmap(const struct file *file)
 	return 1;
 }
 
+extern const struct file_operations mqueue_file_operations;
+
+int is_posix_mqueue(const struct file *file)
+{
+	if (file->f_op == &mqueue_file_operations)
+		return 1;
+
+	return 0;
+}
+
 extern const struct file_operations tty_fops;
 extern const struct file_operations hung_up_tty_fops;
 
@@ -197,9 +207,21 @@ int can_checkpoint_file(const struct file *file)
 	} else if (is_named_pipe(file)) {
 		printk("Checkpoint of FIFO file (nammed pipe) is not supported\n");
 		return 0;
+	} else if (is_posix_mqueue(file)) {
+		printk("Checkpoint of posix message queue is not supported\n");
+		return 0;
 	} else if (is_anon_shared_mmap(file)) {
 		printk("Checkpoint of anonymous shared mmap file is not supported\n");
+		return 0;
 	}
+
+	return 1;
+}
+
+int can_export_file(const struct file *file)
+{
+	if (is_posix_mqueue(file))
+		return 0;
 
 	return 1;
 }

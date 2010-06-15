@@ -632,6 +632,9 @@ int cr_export_user_info_file(struct epm_action *action, ghost_t *ghost,
 	else if (is_directory(file))
 		r = ghost_printf(ghost, "dir     ");
 
+	else if (is_posix_mqueue(file))
+		r = ghost_printf(ghost, "posix mq");
+
 	else
 		r = ghost_printf(ghost, "file    ");
 

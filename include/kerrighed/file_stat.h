@@ -31,6 +31,8 @@ int is_tty(const struct file *file);
 
 int is_anon_shared_mmap(const struct file *file);
 
+int is_posix_mqueue(const struct file *file);
+
 /*
  * Return the 'physical' name of a file.
  * The filesystem must be mounted else it return NULL
@@ -53,5 +55,7 @@ char *alloc_filename(struct file *file, char **buffer);
 void free_filename(char *buffer);
 
 int can_checkpoint_file(const struct file *file);
+
+int can_export_file(const struct file *file);
 
 #endif
