@@ -50,9 +50,6 @@ static inline int nr_def_groups(struct config_group *def_groups[])
 int krg_sched_info_start(void);
 void krg_sched_info_exit(void);
 
-int global_lock_start(void);
-void global_lock_exit(void);
-
 int string_list_start(void);
 void string_list_exit(void);
 

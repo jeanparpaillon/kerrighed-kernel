@@ -1,5 +1,5 @@
 /*
- *  kerrighed/scheduler/global_lock.c
+ *  lib/global_lock.c
  *
  *  Copyright (C) 2007-2008 Louis Rilling - Kerlabs
  *  Copyright (C) 2007 Marko Novak - Xlab
@@ -112,7 +112,7 @@ void global_lock_unlock(unsigned long lock_id)
 	_kddm_put_object(lock_set, lock_id);
 }
 
-int global_lock_start(void)
+int init_global_lock(void)
 {
 	register_io_linker(GLOBAL_LOCK_LINKER, &global_lock_io_linker);
 
@@ -127,6 +127,6 @@ int global_lock_start(void)
 	return 0;
 }
 
-void global_lock_exit(void)
+void cleanup_global_lock(void)
 {
 }

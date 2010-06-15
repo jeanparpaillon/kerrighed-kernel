@@ -17,6 +17,9 @@ lib-y := ctype.o string.o vsprintf.o cmdline.o \
 ifdef CONFIG_KRGRPC
 lib-y += hashtable.o unique_id.o cluster_barrier.o remote_sleep.o
 endif
+ifdef CONFIG_KRG_KDDM
+lib-y += global_lock.o
+endif
 
 lib-$(CONFIG_MMU) += ioremap.o
 lib-$(CONFIG_SMP) += cpumask.o
