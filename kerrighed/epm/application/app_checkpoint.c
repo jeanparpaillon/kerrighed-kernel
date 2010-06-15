@@ -451,7 +451,6 @@ static int global_do_chkpt(struct app_kddm_object *obj, int flags)
 	if (r)
 		goto exit;
 
-err_chkpt:
 	err_rpc = rpc_pack_type(desc, r);
 	if (err_rpc)
 		goto err_rpc;
@@ -463,6 +462,7 @@ exit:
 
 err_rpc:
 	r = err_rpc;
+err_chkpt:
 	rpc_cancel(desc);
 	goto exit_rpc;
 }
