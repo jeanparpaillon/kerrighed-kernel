@@ -34,6 +34,7 @@
 #include <linux/mutex.h>
 #include <linux/rwsem.h>
 #include <linux/spinlock.h>
+#include <linux/global_lock.h>
 #include <linux/string.h>
 #include <linux/workqueue.h>
 #include <linux/list.h>
@@ -59,7 +60,6 @@
 #include "internal.h"
 #include "hashed_string_list.h"
 #include "string_list.h"
-#include "global_lock.h"
 
 struct global_config_attr {
 	struct list_head list;
@@ -92,12 +92,12 @@ static int mount_count;
 
 int global_config_freeze(void)
 {
-	return global_lock_readlock(0);
+	return global_lock_readlock(GLOBAL_LOCK_SCHED);
 }
 
 void global_config_thaw(void)
 {
-	global_lock_unlock(0);
+	global_lock_unlock(GLOBAL_LOCK_SCHED);
 }
 
 static inline int in_krg_scheduler_subsys(struct config_item *item)
@@ -767,7 +767,7 @@ struct string_list_object *create_begin(struct config_item *parent,
 	if (!krgnode_online(kerrighed_node_id))
 		goto err_online;
 
-	err = global_lock_try_writelock(0);
+	err = global_lock_try_writelock(GLOBAL_LOCK_SCHED);
 	if (err)
 		goto err_lock;
 
@@ -791,7 +791,7 @@ err_is_element:
 err_list:
 	kfree(path);
 err_path:
-	global_lock_unlock(0);
+	global_lock_unlock(GLOBAL_LOCK_SCHED);
 err_lock:
 err_online:
 	membership_online_release();
@@ -864,7 +864,7 @@ static void __create_end(struct string_list_object *list)
 {
 	if (list) {
 		hashed_string_list_unlock_hash(global_items_set, list);
-		global_lock_unlock(0);
+		global_lock_unlock(GLOBAL_LOCK_SCHED);
 		membership_online_release();
 	}
 }
@@ -909,7 +909,7 @@ static void create_error(struct string_list_object *list,
 {
 	if (list) {
 		hashed_string_list_unlock_hash(global_items_set, list);
-		global_lock_unlock(0);
+		global_lock_unlock(GLOBAL_LOCK_SCHED);
 		membership_online_release();
 	}
 }
@@ -1131,7 +1131,7 @@ static void global_drop(struct global_config_item *item)
 	struct string_list_object *list;
 	int err;
 
-	err = global_lock_try_writelock(0);
+	err = global_lock_try_writelock(GLOBAL_LOCK_SCHED);
 	if (err) {
 		delay_drop(item);
 		return;
@@ -1153,7 +1153,7 @@ static void global_drop(struct global_config_item *item)
 	hashed_string_list_unlock_hash(global_items_set, list);
 
 out:
-	global_lock_unlock(0);
+	global_lock_unlock(GLOBAL_LOCK_SCHED);
 	return;
 
 err_list:

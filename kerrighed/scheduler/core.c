@@ -118,9 +118,6 @@ int init_scheduler(void)
 		goto err_krg_sched_info;
 
 	/* initialize global mechanisms to replicate configfs operations */
-	ret = global_lock_start();
-	if (ret)
-		goto err_global_lock;
 	ret = string_list_start();
 	if (ret)
 		goto err_string_list;
@@ -201,9 +198,6 @@ err_global_config:
 
 	string_list_exit();
 err_string_list:
-
-	global_lock_exit();
-err_global_lock:
 
 	krg_sched_info_exit();
 err_krg_sched_info:
