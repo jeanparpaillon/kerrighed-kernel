@@ -52,3 +52,16 @@ void hashed_string_list_unlock_hash(struct kddm_set *kddm_set,
 	else
 		string_list_unlock(kddm_set, string_list);
 }
+
+static int hashed_string_list_flusher(struct kddm_set *set, objid_t objid,
+				      struct kddm_obj *obj_entry, void *data)
+{
+	return nth_online_krgnode(objid % num_online_krgnodes());
+}
+
+int hashed_string_list_remove_local(struct kddm_set *set)
+{
+	if (num_online_krgnodes())
+		_kddm_flush_set(set, hashed_string_list_flusher, NULL);
+	return 0;
+}
