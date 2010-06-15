@@ -7,7 +7,12 @@
 
 #include <linux/errno.h>
 #include <linux/err.h>
+#include <linux/global_lock.h>
 #include <kddm/kddm.h>
+#ifdef CONFIG_KRG_HOTPLUG
+#include <kerrighed/hotplug.h>
+#include <kerrighed/krginit.h>
+#endif
 #include <asm/system.h>
 
 static struct kddm_set *lock_set;
@@ -112,8 +117,45 @@ void global_lock_unlock(unsigned long lock_id)
 	_kddm_put_object(lock_set, lock_id);
 }
 
+#ifdef CONFIG_KRG_HOTPLUG
+static int lock_flusher(struct kddm_set *set, objid_t objid,
+			struct kddm_obj *obj_entry, void *data)
+{
+	return nth_online_krgnode(objid % num_online_krgnodes());
+}
+
+static void remove_local(struct hotplug_context *ctx)
+{
+	int i;
+
+	if (num_online_krgnodes()) {
+		_kddm_flush_set(lock_set, lock_flusher, NULL);
+	} else if (first_krgnode(ctx->node_set.v) == kerrighed_node_id) {
+		for (i = 0; i < GLOBAL_LOCK_MAX; i++)
+			_kddm_remove_object(lock_set, i);
+	}
+}
+
+static int hotplug_notifier(struct notifier_block *nb,
+			    hotplug_event_t event,
+			    void *data)
+{
+	switch(event) {
+	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
+		remove_local(data);
+		break;
+	default:
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+#endif
+
 int init_global_lock(void)
 {
+	int err = 0;
+
 	register_io_linker(GLOBAL_LOCK_LINKER, &global_lock_io_linker);
 
 	lock_set = create_new_kddm_set(kddm_def_ns, GLOBAL_LOCK_KDDM_SET_ID,
@@ -124,7 +166,12 @@ int init_global_lock(void)
 	if (IS_ERR(lock_set))
 		return PTR_ERR(lock_set);
 
-	return 0;
+#ifdef CONFIG_KRG_HOTPLUG
+	err = register_hotplug_notifier(hotplug_notifier,
+					HOTPLUG_PRIO_GLOBAL_LOCK);
+#endif
+
+	return err;
 }
 
 void cleanup_global_lock(void)
