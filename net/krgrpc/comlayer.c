@@ -271,7 +271,7 @@ static int __rpc_tx_elem_send(struct rpc_tx_elem *elem, int link_seq_index,
 	int err = 0;
 
 	if (conn->conn.state == RPC_CONN_TIME_WAIT) {
-		printk("%s: [%d] %d/%d -> %d/%d rejected rpcid = %d\n", __func__, conn->conn->comm->id, kerrighed_node_id, conn->conn->id, conn->conn->peer, conn->conn->peer_id, elem->h.rpcid);
+		printk("%s: [%d] %d/%d -> %d/%d rejected rpcid = %d\n", __func__, conn->conn.comm->id, kerrighed_node_id, conn->conn.id, conn->conn.peer, conn->conn.peer_id, elem->h.rpcid);
 		goto out;
 	}
 
@@ -1178,7 +1178,7 @@ static inline int handle_one_packet(struct tipc_connection *conn,
 	}
 
 	if (h->rpcid == RPC_CLOSE) {
-		struct rpc_connection *rpc_conn = conn->conn;
+		struct rpc_connection *rpc_conn = &conn->conn;
 		if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
 			printk("%s: [%d] %d/%d -> %d/%d CLOSE ACK %lu err = %d\n", __func__, rpc_conn->comm->id, rpc_conn->peer, rpc_conn->peer_id, kerrighed_node_id, rpc_conn->id, h->seq_id, err);
 		else
@@ -1231,7 +1231,7 @@ static void schedule_run_rx_queue(struct tipc_connection *conn)
 	int queued;
 
 	if (conn->conn.state == RPC_CONN_TIME_WAIT) {
-		struct rpc_connection *rpc_conn = conn->conn;
+		struct rpc_connection *rpc_conn = &conn->conn;
 		printk("%s: [%d] %d/%d -> %d/%d stopped\n", __func__, rpc_conn->comm->id, rpc_conn->peer, rpc_conn->peer_id, kerrighed_node_id, rpc_conn->id);
 		return;
 	}
