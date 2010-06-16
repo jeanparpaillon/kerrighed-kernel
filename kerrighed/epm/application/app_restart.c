@@ -869,16 +869,15 @@ static int local_replace_parent(struct app_struct *app,
 		checkpointed = was_checkpointed(app, t->restart.parent);
 
 		if (!checkpointed) {
-			if (t->restart.parent != 1) {
-				/* parent was not checkpointed and was not
-				   "init" process, we will reparent to the
-				   restart cmd */
-				t->restart.parent = requester->pid;
-				t->restart.real_parent = requester->pid;
-				t->restart.real_parent_tgid = requester->tgid;
+			/*
+			 * parent was not checkpointed we will reparent to the
+			 * restart cmd
+			 */
+			t->restart.parent = requester->pid;
+			t->restart.real_parent = requester->pid;
+			t->restart.real_parent_tgid = requester->tgid;
 
-				*root_pid = t->restart.tgid;
-			}
+			*root_pid = t->restart.tgid;
 		} else if (checkpointed < 0) {
 			r = checkpointed;
 			goto err;
