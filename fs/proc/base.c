@@ -2725,6 +2725,23 @@ static const struct inode_operations proc_tgid_base_inode_operations = {
 	.setattr	= proc_setattr,
 };
 
+/*
+ * Pin all proc_mnt so that detached tasks can safely call proc_flush_task()
+ * after container init calls itself proc_flush_task().
+ */
+void proc_new_task(struct task_struct *task)
+{
+	struct pid *pid;
+	int i;
+
+	if (!task->pid)
+		return;
+
+	pid = task_pid(task);
+	for (i = 0; i <= pid->level; i++)
+		mntget(pid->numbers[i].ns->proc_mnt);
+}
+
 static void proc_flush_task_mnt(struct vfsmount *mnt, pid_t pid, pid_t tgid)
 {
 	struct dentry *dentry, *leader, *dir;
@@ -2811,6 +2828,7 @@ void proc_flush_task(struct task_struct *task)
 		upid = &pid->numbers[i];
 		proc_flush_task_mnt(upid->ns->proc_mnt, upid->nr,
 			tgid ? tgid->numbers[i].nr : 0);
+		mntput(upid->ns->proc_mnt);
 	}
 
 	upid = &pid->numbers[pid->level];
