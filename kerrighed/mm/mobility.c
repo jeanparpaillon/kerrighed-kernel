@@ -14,6 +14,7 @@
 #include <linux/mm.h>
 #include <linux/rmap.h>
 #include <linux/swap.h>
+#include <linux/swapops.h>
 #include <linux/vmalloc.h>
 #include <linux/init_task.h>
 #include <asm/elf.h>
@@ -36,6 +37,7 @@
 #include <kerrighed/action.h>
 #include <kerrighed/application.h>
 #include <kerrighed/app_shared.h>
+#include <kerrighed/page_table_tree.h>
 #include <kerrighed/pid.h>
 #include <kerrighed/sys/checkpoint.h>
 #include "vma_struct.h"
@@ -190,6 +192,31 @@ void cr_free_mm_exclusions(struct app_struct *app)
 	app->checkpoint.first_mm_region = NULL;
 }
 
+static struct page *bring_private_page(struct task_struct *task,
+				       unsigned long addr)
+{
+	struct page *page;
+	int ret;
+
+	ret = get_user_pages(task, task->mm, addr, 1, 1, 1, &page, NULL);
+	if (ret < 0)
+		page = ERR_PTR(ret);
+	return page;
+}
+
+static struct page *bring_shared_page(unsigned long idx, struct inode *ino)
+{
+	struct page *page = NULL;
+	int ret;
+
+	ret = shmem_getpage(ino, idx, &page, SGP_WRITE, NULL);
+	if (ret < 0)
+		return ERR_PTR(ret);
+	if (page)
+		unlock_page(page);
+	return page;
+}
+
 /** Export one physical page of a process.
  *  @author Renaud Lottiaux, Matthieu Fertré
  *
@@ -203,6 +230,7 @@ void cr_free_mm_exclusions(struct app_struct *app)
  *           Negative value otherwise.
  */
 static int cr_export_one_page(struct app_struct *app, ghost_t *ghost,
+			      struct task_struct *task,
 			      struct vm_area_struct *vma, unsigned long addr)
 {
 	struct kddm_set *set = NULL;
@@ -213,69 +241,110 @@ static int cr_export_one_page(struct app_struct *app, ghost_t *ghost,
 	objid_t objid = 0;
 	pgprot_t prot;
 	pte_t *pte;
-	int put_page = 0;
-	int nr_exported = 0;
+	int put_object = 0;
 	int page_excluded = 0;
-	int r;
+	int retval = 0;
 
 	pte = get_locked_pte(vma->vm_mm, addr, &ptl);
-	if (pte && pte_present(*pte)) {
+	if (!pte)
+		goto exit;
+
+	if (pte_present(*pte)) {
 		pfn = pte_pfn(*pte);
 		page = pfn_to_page(pfn);
 		prot = pte_pgprot(*pte);
 		pte_unmap_unlock(pte, ptl);
-		if (!page || !PageAnon(page))
+		BUG_ON(!page);
+		if (!PageAnon(page)
+		    && (!vma->vm_file || !is_anon_shared_mmap(vma->vm_file)))
 			goto exit;
-	} else {
-		if (pte)
-			pte_unmap_unlock(pte, ptl);
 
-		set = vma->vm_mm->anon_vma_kddm_set;
-		if (set) {
+	} else {
+		pte_unmap_unlock(pte, ptl);
+
+		if (pte_obj_entry(pte) || pte_none(*pte)) {
+			/*
+			 * If the process has migrated before the checkpoint,
+			 * a pte may be "none" with data living on a remote
+			 * node.
+			 */
+			set = vma->vm_mm->anon_vma_kddm_set;
+			if (!set) {
+				BUG_ON(pte_obj_entry(pte));
+				goto exit;
+			}
 			objid = addr / PAGE_SIZE;
 			page = kddm_get_object_no_ft(kddm_def_ns, set->id,
 						     objid);
-			prot = vma->vm_page_prot;
-			put_page = 1;
+			put_object = 1;
+
+			if (!page)
+				goto exit;
+
+		} else if (vma->vm_file && is_anon_shared_mmap(vma->vm_file)) {
+			pgoff_t pgoff = (((addr & PAGE_MASK) - vma->vm_start)
+					 >> PAGE_SHIFT) + vma->vm_pgoff;
+
+			page = bring_shared_page(
+				pgoff, vma->vm_file->f_path.dentry->d_inode);
+
+			if (IS_ERR(page))
+				goto err_page;
+
+		} else {
+			page = bring_private_page(task, addr);
+
+			if (IS_ERR(page))
+				goto err_page;
+
+			if (!PageAnon(page))
+				goto exit;
 		}
-		if (!page)
-			goto exit;
+
+		prot = vma->vm_page_prot;
 	}
 
 	page_addr = (char *)kmap(page);
 
 	/* Export the virtual address of the page */
-	r = ghost_write(ghost, &addr, sizeof (unsigned long));
-	if (r)
+	retval = ghost_write(ghost, &addr, sizeof (unsigned long));
+	if (retval)
 		goto unmap;
 
 	/* Export the page protection */
-	r = ghost_write(ghost, &prot, sizeof(pgprot_t));
-	if (r)
+	retval = ghost_write(ghost, &prot, sizeof(pgprot_t));
+	if (retval)
 		goto unmap;
 
-	/* Export the physical page content unless it has been
-	 * excluded from the chekpoint by the programmer */
+	/*
+	 * Export the physical page content unless it has been
+	 * excluded from the chekpoint by the programmer
+	 */
 	page_excluded = is_page_excluded_from_checkpoint(app, vma->vm_mm, addr);
-	r = ghost_write_type(ghost, page_excluded);
-	if (r)
+	retval = ghost_write_type(ghost, page_excluded);
+	if (retval)
 		goto unmap;
 
 	if (!page_excluded) {
-		r = ghost_write(ghost, (void*)page_addr, PAGE_SIZE);
-		if (r)
+		retval = ghost_write(ghost, (void*)page_addr, PAGE_SIZE);
+		if (retval)
 			goto unmap;
 	}
 
 unmap:
 	kunmap(page);
-	nr_exported = r ? r : 1;
+	if (!retval)
+		retval = 1;
 
 exit:
-	if (put_page)
+	if (put_object)
 		kddm_put_object(kddm_def_ns, set->id, objid);
 
-	return nr_exported;
+	return retval;
+
+err_page:
+	retval = PTR_ERR(page);
+	goto exit;
 }
 
 /** Export the physical pages hosted by a VMA.
@@ -290,17 +359,19 @@ exit:
  *           Negative value otherwise.
  */
 static int cr_export_vma_pages(struct app_struct *app, ghost_t *ghost,
+			       struct task_struct *task,
 			       struct vm_area_struct *vma)
 {
 	unsigned long addr;
 	int nr_pages_sent = 0;
 	int r;
 
-	if (!anon_vma(vma))
+	if (!anon_vma(vma)
+	    && (!vma->vm_file || !is_anon_shared_mmap(vma->vm_file)))
 		goto done;
 
 	for (addr = vma->vm_start; addr < vma->vm_end; addr += PAGE_SIZE) {
-		r = cr_export_one_page(app, ghost, vma, addr);
+		r = cr_export_one_page(app, ghost, task, vma, addr);
 		if (r < 0)
 			goto out;
 		nr_pages_sent += r;
@@ -324,28 +395,28 @@ out:
  *
  *  @param app         Application hosting task(s) related to the mm_struct.
  *  @param ghost       Ghost where pages should be stored.
- *  @param mm          mm_struct to export memory pages to.
+ *  @param task        task_struct to export memory pages from.
  *
  *  @return  0 if everything ok.
  *           Negative value otherwise.
  */
 int cr_export_process_pages(struct app_struct *app,
 			    ghost_t * ghost,
-			    struct mm_struct *mm)
+			    struct task_struct *task)
 {
 	struct vm_area_struct *vma;
 	int r = 0;
 
 	BUG_ON(!app);
-	BUG_ON(!mm);
+	BUG_ON(!task->mm);
 
 	/* Export process VMAs */
-	vma = mm->mmap;
+	vma = task->mm->mmap;
 	BUG_ON(!vma);
 
 	while (vma) {
 		if (vma->vm_ops != &special_mapping_vmops) {
-			r = cr_export_vma_pages(app, ghost, vma);
+			r = cr_export_vma_pages(app, ghost, task, vma);
 			if (r)
 				goto out;
 		}
@@ -693,16 +764,15 @@ int export_mm_struct(struct epm_action *action,
 	r = export_mm_counters(action, ghost, mm, exported_mm);
 
 up_mmap_sem:
-	up_read(&mm->mmap_sem);
-	if (r)
-		goto out;
-
 	if (action->type == EPM_CHECKPOINT) {
-		r = cr_export_process_pages(tsk->application, ghost, mm);
+		r = cr_export_process_pages(tsk->application, ghost, tsk);
 		if (r)
 			goto out;
 	}
 
+	up_read(&mm->mmap_sem);
+	if (r)
+		goto out;
 out:
 	return r;
 
@@ -720,6 +790,25 @@ exit_put_mm:
 /*                                                                           */
 /*****************************************************************************/
 
+static void __rebuild_pte(struct mm_struct *mm, unsigned long address,
+			  struct page *page, pgprot_t prot)
+{
+	pgd_t *pgd;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *pte;
+
+	pgd = pgd_offset(mm, address);
+	pud = pud_alloc(mm, pgd, address);
+	pmd = pmd_alloc(mm, pud, address);
+	BUG_ON(!pmd);
+
+	pte = pte_alloc_map(mm, pmd, address);
+	BUG_ON(!pte);
+
+	set_pte(pte, mk_pte(page, prot));
+}
+
 int cr_import_vma_pages(ghost_t *ghost,
 			struct mm_struct *mm,
 			struct vm_area_struct *vma)
@@ -729,7 +818,6 @@ int cr_import_vma_pages(ghost_t *ghost,
 	int nr_pages_received = 0;
 	int nr_pages_sent;
 	int page_excluded;
-	pgd_t *pgd;
 	pgprot_t prot;
 	int r;
 
@@ -737,9 +825,6 @@ int cr_import_vma_pages(ghost_t *ghost,
 
 	while (1) {
 		struct page *new_page = NULL;
-		pud_t *pud;
-		pmd_t *pmd;
-		pte_t *pte;
 
 		r = ghost_read(ghost, &address, sizeof(unsigned long));
 		if (r)
@@ -752,22 +837,39 @@ int cr_import_vma_pages(ghost_t *ghost,
 		if (r)
 			goto err_read;
 
-		new_page = alloc_page(GFP_HIGHUSER);
+		if (vma->vm_file && is_anon_shared_mmap(vma->vm_file)) {
 
-		BUG_ON(!new_page);
+			pgoff_t pgoff;
+			pgoff = (((address & PAGE_MASK) - vma->vm_start)
+				 >> PAGE_SHIFT) + vma->vm_pgoff;
 
-		pgd = pgd_offset(mm, address);
-		pud = pud_alloc(mm, pgd, address);
-		pmd = pmd_alloc(mm, pud, address);
-		BUG_ON(!pmd);
+			r = shmem_getpage(vma->vm_file->f_path.dentry->d_inode,
+					  pgoff, &new_page, SGP_CACHE, NULL);
+			if (r)
+				goto err_read;
 
-		pte = pte_alloc_map(mm, pmd, address);
-		BUG_ON(!pte);
-		set_pte (pte, mk_pte(new_page, prot));
+			BUG_ON(!new_page);
 
-		BUG_ON(unlikely(anon_vma_prepare(vma)));
+			__rebuild_pte(mm, address, new_page, prot);
 
-		page_add_new_anon_rmap(new_page, vma, address);
+			inc_mm_counter(mm, file_rss);
+			page_add_file_rmap(new_page);
+
+			unlock_page(new_page);
+
+		} else {
+			new_page = alloc_page(GFP_HIGHUSER);
+			if (!new_page) {
+				r = -ENOMEM;
+				goto err_read;
+			}
+
+			__rebuild_pte(mm, address, new_page, prot);
+
+			BUG_ON(anon_vma_prepare(vma));
+			inc_mm_counter(mm, anon_rss);
+			page_add_new_anon_rmap(new_page, vma, address);
+		}
 
 		page_addr = kmap(new_page);
 
@@ -776,7 +878,7 @@ int cr_import_vma_pages(ghost_t *ghost,
 			goto err_read;
 
 		if (!page_excluded) {
-			r = ghost_read (ghost, page_addr, PAGE_SIZE);
+			r = ghost_read(ghost, page_addr, PAGE_SIZE);
 			if (r)
 				goto err_read;
 		}

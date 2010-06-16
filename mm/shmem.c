@@ -103,6 +103,7 @@ static struct vfsmount *shm_mnt;
 /* Pretend that each entry is of this size in directory's i_size */
 #define BOGO_DIRENT_SIZE 20
 
+#ifndef CONFIG_KRG_EPM
 /* Flag allocation requirements to shmem_getpage and shmem_swp_alloc */
 enum sgp_type {
 	SGP_READ,	/* don't exceed i_size, don't allocate page */
@@ -110,6 +111,7 @@ enum sgp_type {
 	SGP_DIRTY,	/* like SGP_CACHE, but set new page dirty */
 	SGP_WRITE,	/* may exceed i_size, may allocate page */
 };
+#endif
 
 #ifdef CONFIG_TMPFS
 static unsigned long shmem_default_max_blocks(void)
@@ -123,7 +125,10 @@ static unsigned long shmem_default_max_inodes(void)
 }
 #endif
 
-static int shmem_getpage(struct inode *inode, unsigned long idx,
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+int shmem_getpage(struct inode *inode, unsigned long idx,
 			 struct page **pagep, enum sgp_type sgp, int *type);
 
 static inline struct page *shmem_dir_alloc(gfp_t gfp_mask)
@@ -1209,7 +1214,10 @@ static inline struct mempolicy *shmem_get_sbmpol(struct shmem_sb_info *sbinfo)
  * vm. If we swap it in we mark it dirty since we also free the swap
  * entry since a page cannot live in both the swap and page cache
  */
-static int shmem_getpage(struct inode *inode, unsigned long idx,
+#ifndef CONFIG_KRG_EPM
+static
+#endif
+int shmem_getpage(struct inode *inode, unsigned long idx,
 			struct page **pagep, enum sgp_type sgp, int *type)
 {
 	struct address_space *mapping = inode->i_mapping;

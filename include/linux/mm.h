@@ -750,6 +750,18 @@ struct file *shmem_file_setup(char *name, loff_t size, unsigned long flags);
 
 int shmem_zero_setup(struct vm_area_struct *);
 
+#ifdef CONFIG_KRG_EPM
+enum sgp_type {
+	SGP_READ,	/* don't exceed i_size, don't allocate page */
+	SGP_CACHE,	/* don't exceed i_size, may allocate page */
+	SGP_DIRTY,	/* like SGP_CACHE, but set new page dirty */
+	SGP_WRITE,	/* may exceed i_size, may allocate page */
+};
+
+int shmem_getpage(struct inode *inode, unsigned long idx,
+		  struct page **pagep, enum sgp_type sgp, int *type);
+#endif
+
 #ifndef CONFIG_MMU
 extern unsigned long shmem_get_unmapped_area(struct file *file,
 					     unsigned long addr,
