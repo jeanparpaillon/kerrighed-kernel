@@ -116,8 +116,13 @@ static int dlmfs_file_open(struct inode *inode,
 	if (S_ISDIR(inode->i_mode))
 		BUG();
 
+#ifdef CONFIG_KRG_FAF
+	mlog(0, "open called on inode %lu, flags 0x%lx\n", inode->i_ino,
+		file->f_flags);
+#else
 	mlog(0, "open called on inode %lu, flags 0x%x\n", inode->i_ino,
 		file->f_flags);
+#endif
 
 	status = dlmfs_decode_open_flags(file->f_flags, &level, &flags);
 	if (status < 0)
