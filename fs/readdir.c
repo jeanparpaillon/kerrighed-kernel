@@ -23,6 +23,10 @@ int vfs_readdir(struct file *file, filldir_t filler, void *buf)
 {
 	struct inode *inode = file->f_path.dentry->d_inode;
 	int res = -ENOTDIR;
+
+#ifdef CONFIG_KRG_FAF
+	BUG_ON(file->f_flags & O_FAF_CLT);
+#endif
 	if (!file->f_op || !file->f_op->readdir)
 		goto out;
 
