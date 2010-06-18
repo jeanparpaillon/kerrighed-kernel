@@ -1568,11 +1568,17 @@ int handle_faf_notify_close (struct rpc_desc* desc,
 			file = NULL;
 		else
 			BUG_ON(!(file->f_flags & O_FAF_SRV));
+		/*
+		 * We cannot reliably call check_close_faf_srv_file() because
+		 * file may be freed after spin_unlock().
+		 */
+		if (file_count(file) != 1)
+			file = NULL;
 	}
 	spin_unlock(&current->files->file_lock);
 
 	if (file)
-		check_close_faf_srv_file(file);
+		__check_close_faf_srv_file(msg->objid, file);
 
 	return 0;
 }

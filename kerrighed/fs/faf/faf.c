@@ -112,20 +112,17 @@ int close_faf_file(struct file * file)
 /** Check if we need to close a FAF server file.
  *  @author Renaud Lottiaux
  *
- *  @param file         The file to check.
+ *  @param objid        DVFS object id.
+ *  @param file         The file to check. Must have been a valid pointer to the
+ *                      file, but is allowed to have been freed.
  *
  *  We can close a FAF server file if local f_count == 1 and DVFS count == 1.
  *  This means the FAF server is the last process cluster wide using the file.
  */
-void check_close_faf_srv_file(struct file *file)
+void __check_close_faf_srv_file(unsigned long objid, struct file *file)
 {
 	struct dvfs_file_struct *dvfs_file;
-	unsigned long objid = file->f_objid;
 	int close_file = 0;
-
-	/* Pre-check the file count to avoid a useless call to get_dvfs */
-	if (file_count (file) != 1)
-		return;
 
 	dvfs_file = get_dvfs_file_struct(objid);
 	/* If dvfs file is NULL, someone else did the job before us */
@@ -147,6 +144,26 @@ done:
 
 	if (close_file)
 		close_faf_file(file);
+}
+
+/** Check if we need to close a FAF server file.
+ *  @author Renaud Lottiaux
+ *
+ *  @param file         The file to check. Caller must ensure that it is not
+ *                      freed.
+ *
+ *  We can close a FAF server file if local f_count == 1 and DVFS count == 1.
+ *  This means the FAF server is the last process cluster wide using the file.
+ */
+void check_close_faf_srv_file(struct file *file)
+{
+	unsigned long objid = file->f_objid;
+
+	/* Pre-check the file count to avoid a useless call to get_dvfs */
+	if (file_count (file) != 1)
+		return;
+
+	__check_close_faf_srv_file(objid, file);
 }
 
 void free_faf_file_private_data(struct file *file)
