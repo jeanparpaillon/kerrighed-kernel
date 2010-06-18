@@ -80,4 +80,26 @@ static inline void put_dvfs_file_struct(unsigned long file_id)
 	_kddm_put_object (dvfs_file_struct_ctnr, file_id);
 }
 
+static inline struct file *lock_dvfs_file(unsigned long file_id)
+{
+	struct dvfs_file_struct *dvfs_file;
+
+	dvfs_file = _kddm_get_object_no_ft(dvfs_file_struct_ctnr, file_id);
+	if (dvfs_file && dvfs_file->file) {
+		/*
+		 * Check if __fput() is in progress but krg_put_file() did not
+		 * cleanup dvfs_file yet.
+		 */
+		if (atomic_read (&dvfs_file->file->f_count) == 0)
+			dvfs_file->file = NULL;
+	}
+
+	return dvfs_file ? dvfs_file->file : NULL;
+}
+
+static inline void unlock_dvfs_file(unsigned long file_id)
+{
+	_kddm_put_object(dvfs_file_struct_ctnr, file_id);
+}
+
 #endif // __KERFS_FILE__
