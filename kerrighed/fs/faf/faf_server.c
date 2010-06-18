@@ -1558,17 +1558,21 @@ int handle_faf_notify_close (struct rpc_desc* desc,
 	struct faf_notify_msg *msg = msgIn;
 	struct file *file;
 
+	spin_lock(&current->files->file_lock);
 	file = fcheck_files(current->files, msg->server_fd);
 	/* Check if the file has been closed locally before we receive the
 	 * notification message.
 	 */
-	if (file == NULL)
-		return 0;
-	if (file->f_objid != msg->objid)
-		return 0;
-	BUG_ON (!(file->f_flags & O_FAF_SRV));
+	if (file) {
+		if (file->f_objid != msg->objid)
+			file = NULL;
+		else
+			BUG_ON(!(file->f_flags & O_FAF_SRV));
+	}
+	spin_unlock(&current->files->file_lock);
 
-	check_close_faf_srv_file(file);
+	if (file)
+		check_close_faf_srv_file(file);
 
 	return 0;
 }
