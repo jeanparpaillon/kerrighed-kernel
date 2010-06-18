@@ -794,18 +794,13 @@ static struct faf_polled_fd *__faf_polled_fd_find(unsigned long dvfs_id);
 
 static void faf_poll_notify_nodes(unsigned long dvfs_id)
 {
-	struct dvfs_file_struct *dvfs_file;
+	struct file *file;
 	struct faf_polled_fd *polled_fd;
 	struct faf_polled_fd_node *polled_fd_node;
 	struct hlist_node *pos;
 
-	dvfs_file = _kddm_get_object_no_ft(dvfs_file_struct_ctnr, dvfs_id);
-	if (dvfs_file && dvfs_file->file) {
-		/* TODO: still required? */
-		if (atomic_read (&dvfs_file->file->f_count) == 0)
-			dvfs_file->file = NULL;
-	}
-	if (!dvfs_file || !dvfs_file->file)
+	file = lock_dvfs_file(dvfs_id);
+	if (!file)
 		goto out_put_dvfs_file;
 
 	mutex_lock(&faf_polled_fd_mutex);
@@ -821,7 +816,7 @@ out_unlock:
 	mutex_unlock(&faf_polled_fd_mutex);
 
 out_put_dvfs_file:
-	_kddm_put_object(dvfs_file_struct_ctnr, dvfs_id);
+	unlock_dvfs_file(dvfs_id);
 }
 
 static int faf_poll_thread(void *arg)
@@ -1026,18 +1021,12 @@ static int faf_polled_fd_remove(kerrighed_node_t client,
 				int server_fd,
 				unsigned long dvfs_id)
 {
-	struct dvfs_file_struct *dvfs_file;
+	struct file *file;
 	struct faf_polled_fd *polled_fd;
 	struct faf_polled_fd_node *polled_fd_node;
 	int err;
 
-	dvfs_file = _kddm_get_object_no_ft(dvfs_file_struct_ctnr, dvfs_id);
-	if (dvfs_file && dvfs_file->file) {
-		/* TODO: still required? */
-		if (atomic_read (&dvfs_file->file->f_count) == 0)
-			dvfs_file->file = NULL;
-	}
-
+	file = lock_dvfs_file(dvfs_id);
 	mutex_lock(&faf_polled_fd_mutex);
 
 	polled_fd = __faf_polled_fd_find(dvfs_id);
@@ -1053,7 +1042,7 @@ static int faf_polled_fd_remove(kerrighed_node_t client,
 	if (polled_fd->count)
 		goto out_unlock;
 
-	if (!dvfs_file || !dvfs_file->file)
+	if (!file)
 		/*
 		 * The file is already closed or about to be closed. The last
 		 * __fput() automatically removes it from the interest set of
@@ -1070,8 +1059,7 @@ free_polled_fd:
 
 out_unlock:
 	mutex_unlock(&faf_polled_fd_mutex);
-
-	_kddm_put_object(dvfs_file_struct_ctnr, dvfs_id);
+	unlock_dvfs_file(dvfs_id);
 
 	return 0;
 }

@@ -1605,23 +1605,15 @@ static void handle_faf_poll_notify(struct rpc_desc *desc,
 				   size_t size)
 {
 	unsigned long dvfs_id = *(unsigned long *)_msg;
-	struct dvfs_file_struct *dvfs_file;
+	struct file *file;
 	faf_client_data_t *data;
 
-	dvfs_file = _kddm_get_object_no_ft(dvfs_file_struct_ctnr, dvfs_id);
-	if (dvfs_file && dvfs_file->file) {
-		/* TODO: still required? */
-		if (atomic_read (&dvfs_file->file->f_count) == 0)
-			dvfs_file->file = NULL;
+	file = lock_dvfs_file(dvfs_id);
+	if (file) {
+		data = file->private_data;
+		wake_up_interruptible_all(&data->poll_wq);
 	}
-	if (!dvfs_file || !dvfs_file->file)
-		goto out_put_dvfs_file;
-
-	data = dvfs_file->file->private_data;
-	wake_up_interruptible_all(&data->poll_wq);
-
-out_put_dvfs_file:
-	_kddm_put_object(dvfs_file_struct_ctnr, dvfs_id);
+	unlock_dvfs_file(dvfs_id);
 }
 
 struct file_operations faf_file_ops = {
