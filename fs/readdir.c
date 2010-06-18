@@ -19,6 +19,10 @@
 
 #include <asm/uaccess.h>
 
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
+
 int vfs_readdir(struct file *file, filldir_t filler, void *buf)
 {
 	struct inode *inode = file->f_path.dentry->d_inode;
@@ -192,22 +196,19 @@ efault:
 	return -EFAULT;
 }
 
-SYSCALL_DEFINE3(getdents, unsigned int, fd,
-		struct linux_dirent __user *, dirent, unsigned int, count)
+#ifndef CONFIG_KRG_FAF
+static inline
+#endif
+int do_getdents(struct file *file, struct linux_dirent *dirent,
+		unsigned int count)
 {
-	struct file * file;
 	struct linux_dirent __user * lastdirent;
 	struct getdents_callback buf;
 	int error;
 
-	error = -EFAULT;
-	if (!access_ok(VERIFY_WRITE, dirent, count))
-		goto out;
-
-	error = -EBADF;
-	file = fget(fd);
-	if (!file)
-		goto out;
+#ifdef CONFIG_KRG_FAF
+	BUG_ON(file->f_flags & O_FAF_CLT);
+#endif
 
 	buf.current_dir = dirent;
 	buf.previous = NULL;
@@ -224,6 +225,32 @@ SYSCALL_DEFINE3(getdents, unsigned int, fd,
 		else
 			error = count - buf.count;
 	}
+
+	return error;
+}
+
+SYSCALL_DEFINE3(getdents, unsigned int, fd,
+		struct linux_dirent __user *, dirent, unsigned int, count)
+{
+	struct file * file;
+	int error;
+
+	error = -EFAULT;
+	if (!access_ok(VERIFY_WRITE, dirent, count))
+		goto out;
+
+	error = -EBADF;
+	file = fget(fd);
+	if (!file)
+		goto out;
+
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT)
+		error = krg_faf_getdents(file, dirent, count);
+	else
+#endif
+	error = do_getdents(file, dirent, count);
+
 	fput(file);
 out:
 	return error;

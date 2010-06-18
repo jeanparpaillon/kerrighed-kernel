@@ -26,6 +26,11 @@ struct faf_rw_ret {
 	loff_t pos;
 };
 
+struct faf_getdents_msg {
+	int server_fd;
+	int count;
+};
+
 struct faf_d_path_msg {
 	int server_fd;
 	int deleted;

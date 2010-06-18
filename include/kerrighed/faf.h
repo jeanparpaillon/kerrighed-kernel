@@ -10,6 +10,7 @@ struct file;
 struct iovec;
 struct kstat;
 struct statfs;
+struct linux_dirent;
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -29,6 +30,9 @@ typedef struct faf_client_data {
 	unsigned int is_named_pipe:1;
 } faf_client_data_t;
 
+int do_getdents(struct file *file, struct linux_dirent *dirent,
+		unsigned int count);
+
 off_t krg_faf_lseek(struct file *file, off_t offset,
 		    unsigned int origin);
 long krg_faf_llseek(struct file *file, unsigned long offset_high,
@@ -41,6 +45,8 @@ ssize_t krg_faf_readv(struct file *file, const struct iovec __user *vec,
 		      unsigned long vlen, loff_t *pos);
 ssize_t krg_faf_writev(struct file *file, const struct iovec __user *vec,
 		       unsigned long vlen, loff_t *pos);
+int krg_faf_getdents(struct file *file, struct linux_dirent *dirent,
+		     unsigned int count);
 long krg_faf_fcntl(struct file *file, unsigned int cmd,
 		   unsigned long arg);
 long krg_faf_fcntl64(struct file *file, unsigned int cmd,

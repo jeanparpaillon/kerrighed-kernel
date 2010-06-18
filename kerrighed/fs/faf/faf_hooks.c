@@ -505,6 +505,51 @@ cancel:
 	goto out_end;
 }
 
+int krg_faf_getdents(struct file *file, struct linux_dirent *dirent,
+		     unsigned int count)
+{
+	faf_client_data_t *data = file->private_data;
+	struct faf_getdents_msg msg;
+	struct rpc_desc *desc;
+	int err, err_rpc;
+
+	err = -ENOMEM;
+	desc = rpc_begin(RPC_FAF_GETDENTS, data->server_id);
+	if (!desc)
+		goto out;
+
+	msg.server_fd = data->server_fd;
+	msg.count = count;
+
+	err_rpc = rpc_pack_type(desc, msg);
+	if (err_rpc)
+		goto cancel;
+
+	err_rpc = rpc_unpack_type(desc, err);
+	if (err_rpc)
+		goto cancel;
+
+	if (err <= 0)
+		goto out_end;
+
+	/* err contains the used size of the buffer */
+	err_rpc = rpc_unpack(desc, 0, dirent, err);
+
+	if (err_rpc)
+		goto cancel;
+
+out_end:
+	rpc_end(desc, 0);
+
+out:
+	return err;
+
+cancel:
+	rpc_cancel(desc);
+	err = err_rpc;
+	goto out;
+}
+
 /** Kerrighed kernel hook for FAF ioctl function.
  *  @author Renaud Lottiaux
  *

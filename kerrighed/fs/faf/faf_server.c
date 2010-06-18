@@ -437,6 +437,40 @@ cancel:
 	goto out_free;
 }
 
+static void handle_faf_getdents(struct rpc_desc *desc, void *__msg, size_t size)
+{
+	struct faf_getdents_msg *msg = __msg;
+	struct file *file;
+	struct linux_dirent *dirent;
+	int err, err_rpc;
+
+	dirent = kmalloc(msg->count, GFP_KERNEL);
+	if (!dirent) {
+		err = -ENOMEM;
+		goto send_error;
+	}
+
+	file = fget(msg->server_fd);
+	BUG_ON(!file);
+
+	err = do_getdents(file, dirent, msg->count);
+
+	fput(file);
+
+send_error:
+	err_rpc = rpc_pack_type(desc, err);
+	if (err <= 0 || err_rpc)
+		goto out;
+
+	/* err contains the used size of the buffer */
+	err_rpc = rpc_pack(desc, 0, dirent, err);
+	if (err_rpc)
+		rpc_cancel(desc);
+
+out:
+	kfree(dirent);
+}
+
 /** Handler for doing an IOCTL in a FAF open file.
  *  @author Renaud Lottiaux
  *
@@ -1537,6 +1571,7 @@ void faf_server_init (void)
 	rpc_register_void(RPC_FAF_WRITE, handle_faf_write, 0);
 	rpc_register_void(RPC_FAF_READV, handle_faf_readv, 0);
 	rpc_register_void(RPC_FAF_WRITEV, handle_faf_writev, 0);
+	rpc_register_void(RPC_FAF_GETDENTS, handle_faf_getdents, 0);
 	faf_poll_init();
 	rpc_register_void(RPC_FAF_IOCTL, handle_faf_ioctl, 0);
 	rpc_register_void(RPC_FAF_FCNTL, handle_faf_fcntl, 0);
