@@ -26,8 +26,11 @@ struct faf_rw_ret {
 	loff_t pos;
 };
 
+enum getdents_filler;
+
 struct faf_getdents_msg {
 	int server_fd;
+	enum getdents_filler filler;
 	int count;
 };
 
@@ -120,6 +123,19 @@ struct faf_poll_wait_msg {
 	unsigned long objid;
 	int wait;
 };
+
+struct old_linux_dirent;
+extern int do_oldreaddir(struct file *file, struct old_linux_dirent *dirent,
+			 unsigned int count);
+
+struct linux_dirent;
+extern int do_getdents(struct file *file, struct linux_dirent *dirent,
+		       unsigned int count);
+
+struct linux_dirent64;
+extern int do_getdents64(struct file *file, struct linux_dirent64 *dirent,
+			 unsigned int count);
+
 
 /*--------------------------------------------------------------------------*
  *                                                                          *

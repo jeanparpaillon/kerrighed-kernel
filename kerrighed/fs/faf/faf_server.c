@@ -441,7 +441,7 @@ static void handle_faf_getdents(struct rpc_desc *desc, void *__msg, size_t size)
 {
 	struct faf_getdents_msg *msg = __msg;
 	struct file *file;
-	struct linux_dirent *dirent;
+	void *dirent;
 	int err, err_rpc;
 
 	dirent = kmalloc(msg->count, GFP_KERNEL);
@@ -453,7 +453,21 @@ static void handle_faf_getdents(struct rpc_desc *desc, void *__msg, size_t size)
 	file = fget(msg->server_fd);
 	BUG_ON(!file);
 
-	err = do_getdents(file, dirent, msg->count);
+	switch (msg->filler) {
+	case OLDREADDIR:
+		err = do_oldreaddir(file, dirent, msg->count);
+		break;
+	case GETDENTS:
+		err = do_getdents(file, dirent, msg->count);
+		break;
+	case GETDENTS64:
+		err = do_getdents64(file, dirent, msg->count);
+		break;
+	default:
+		BUG();
+		err = -EINVAL;
+		break;
+	}
 
 	fput(file);
 

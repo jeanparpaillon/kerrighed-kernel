@@ -110,17 +110,14 @@ efault:
 	return -EFAULT;
 }
 
-SYSCALL_DEFINE3(old_readdir, unsigned int, fd,
-		struct old_linux_dirent __user *, dirent, unsigned int, count)
+#ifndef CONFIG_KRG_FAF
+static inline
+#endif
+int do_oldreaddir(struct file *file, struct old_linux_dirent *dirent,
+		  unsigned int count)
 {
 	int error;
-	struct file * file;
 	struct readdir_callback buf;
-
-	error = -EBADF;
-	file = fget(fd);
-	if (!file)
-		goto out;
 
 	buf.result = 0;
 	buf.dirent = dirent;
@@ -128,6 +125,27 @@ SYSCALL_DEFINE3(old_readdir, unsigned int, fd,
 	error = vfs_readdir(file, fillonedir, &buf);
 	if (buf.result)
 		error = buf.result;
+
+	return error;
+}
+
+SYSCALL_DEFINE3(old_readdir, unsigned int, fd,
+		struct old_linux_dirent __user *, dirent, unsigned int, count)
+{
+	int error;
+	struct file * file;
+
+	error = -EBADF;
+	file = fget(fd);
+	if (!file)
+		goto out;
+
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT)
+		error = krg_faf_getdents(file, OLDREADDIR, dirent, count);
+	else
+#endif
+	error = do_oldreaddir(file, dirent, count);
 
 	fput(file);
 out:
@@ -246,7 +264,7 @@ SYSCALL_DEFINE3(getdents, unsigned int, fd,
 
 #ifdef CONFIG_KRG_FAF
 	if (file->f_flags & O_FAF_CLT)
-		error = krg_faf_getdents(file, dirent, count);
+		error = krg_faf_getdents(file, GETDENTS, dirent, count);
 	else
 #endif
 	error = do_getdents(file, dirent, count);
@@ -301,22 +319,19 @@ efault:
 	return -EFAULT;
 }
 
-SYSCALL_DEFINE3(getdents64, unsigned int, fd,
-		struct linux_dirent64 __user *, dirent, unsigned int, count)
+#ifndef CONFIG_KRG_FAF
+static inline
+#endif
+int do_getdents64(struct file *file, struct linux_dirent64 *dirent,
+		  unsigned int count)
 {
-	struct file * file;
 	struct linux_dirent64 __user * lastdirent;
 	struct getdents_callback64 buf;
 	int error;
 
-	error = -EFAULT;
-	if (!access_ok(VERIFY_WRITE, dirent, count))
-		goto out;
-
-	error = -EBADF;
-	file = fget(fd);
-	if (!file)
-		goto out;
+#ifdef CONFIG_KRG_FAF
+	BUG_ON(file->f_flags & O_FAF_CLT);
+#endif
 
 	buf.current_dir = dirent;
 	buf.previous = NULL;
@@ -334,6 +349,32 @@ SYSCALL_DEFINE3(getdents64, unsigned int, fd,
 		else
 			error = count - buf.count;
 	}
+
+	return error;
+}
+
+SYSCALL_DEFINE3(getdents64, unsigned int, fd,
+		struct linux_dirent64 __user *, dirent, unsigned int, count)
+{
+	struct file * file;
+	int error;
+
+	error = -EFAULT;
+	if (!access_ok(VERIFY_WRITE, dirent, count))
+		goto out;
+
+	error = -EBADF;
+	file = fget(fd);
+	if (!file)
+		goto out;
+
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT)
+		error = krg_faf_getdents(file, GETDENTS64, dirent, count);
+	else
+#endif
+	error = do_getdents64(file, dirent, count);
+
 	fput(file);
 out:
 	return error;

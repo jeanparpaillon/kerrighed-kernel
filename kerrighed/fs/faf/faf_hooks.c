@@ -505,8 +505,8 @@ cancel:
 	goto out_end;
 }
 
-int krg_faf_getdents(struct file *file, struct linux_dirent *dirent,
-		     unsigned int count)
+int krg_faf_getdents(struct file *file, enum getdents_filler filler,
+		     void *dirent, unsigned int count)
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_getdents_msg msg;
@@ -519,6 +519,7 @@ int krg_faf_getdents(struct file *file, struct linux_dirent *dirent,
 		goto out;
 
 	msg.server_fd = data->server_fd;
+	msg.filler = filler;
 	msg.count = count;
 
 	err_rpc = rpc_pack_type(desc, msg);
