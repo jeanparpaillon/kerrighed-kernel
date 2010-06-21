@@ -1312,9 +1312,6 @@ void handle_faf_accept (struct rpc_desc *desc,
 	file->f_flags |= O_FAF_SRV;
 	file->f_faf_srv_index = r;
 
-	/* Increment the DVFS count for the client node */
-	get_dvfs_file(r, file->f_objid);
-
 	err = rpc_pack_type(desc, msg->addrlen);
 	if (err)
 		goto err_close_faf_file;
@@ -1339,8 +1336,6 @@ err_cancel:
 	goto out;
 
 err_close_faf_file:
-	/* The client couldn't setup a FAF client file. */
-	put_dvfs_file(file->f_faf_srv_index, file);
 	check_close_faf_srv_file(file);
 	goto err_cancel;
 
