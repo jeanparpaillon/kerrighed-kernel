@@ -979,7 +979,14 @@ krg_parent_children_writelock(struct task_struct *task, pid_t *parent_tgid)
 	tgid = krg_get_real_parent_tgid(task, ns);
 	obj = rcu_dereference(task->parent_children_obj);
 	rcu_read_unlock();
-	BUG_ON(!tgid);
+	/*
+	 * daemonize()->reparent_to_kthreadd() can have made task a
+	 * cross-namespace child of kthreadd.
+	 */
+	if (!tgid) {
+		obj = NULL;
+		goto out;
+	}
 	reaper_tgid = task_tgid_knr(task_active_pid_ns(task)->child_reaper);
 	if (!obj || tgid == reaper_tgid) {
 		obj = NULL;
@@ -1019,7 +1026,14 @@ krg_parent_children_readlock(struct task_struct *task, pid_t *parent_tgid)
 	tgid = krg_get_real_parent_tgid(task, ns);
 	obj = rcu_dereference(task->parent_children_obj);
 	rcu_read_unlock();
-	BUG_ON(!tgid);
+	/*
+	 * daemonize()->reparent_to_kthreadd() can have made task a
+	 * cross-namespace child of kthreadd.
+	 */
+	if (!tgid) {
+		obj = NULL;
+		goto out;
+	}
 	reaper_tgid = task_tgid_knr(task_active_pid_ns(task)->child_reaper);
 	if (!obj || tgid == reaper_tgid) {
 		obj = NULL;
