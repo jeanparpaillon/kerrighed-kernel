@@ -2459,6 +2459,50 @@ static inline void inc_syscw(struct task_struct *tsk)
 {
 	tsk->ioac.syscw++;
 }
+
+#ifdef CONFIG_KRG_FAF
+static inline u64 get_rchar(struct task_struct *tsk)
+{
+	return tsk->ioac.rchar;
+}
+
+static inline void set_rchar(struct task_struct *tsk, u64 rchar)
+{
+	tsk->ioac.rchar = rchar;
+}
+
+static inline u64 get_wchar(struct task_struct *tsk)
+{
+	return tsk->ioac.wchar;
+}
+
+static inline void set_wchar(struct task_struct *tsk, u64 wchar)
+{
+	tsk->ioac.wchar = wchar;
+}
+
+static inline u64 get_syscr(struct task_struct *tsk)
+{
+	return tsk->ioac.syscr;
+}
+
+static inline void set_syscr(struct task_struct *tsk, u64 syscr)
+{
+	tsk->ioac.syscr = syscr;
+}
+
+static inline u64 get_syscw(struct task_struct *tsk)
+{
+	return tsk->ioac.syscw;
+}
+
+static inline void set_syscw(struct task_struct *tsk, u64 syscw)
+{
+	tsk->ioac.syscw = syscw;
+}
+
+#endif
+
 #else
 static inline void add_rchar(struct task_struct *tsk, ssize_t amt)
 {
@@ -2475,6 +2519,45 @@ static inline void inc_syscr(struct task_struct *tsk)
 static inline void inc_syscw(struct task_struct *tsk)
 {
 }
+
+#ifdef CONFIG_KRG_FAF
+static inline u64 get_rchar(struct task_struct *tsk)
+{
+	return 0;
+}
+
+static inline void set_rchar(struct task_struct *tsk, u64 rchar)
+{
+}
+
+static inline u64 get_wchar(struct task_struct *tsk)
+{
+	return 0;
+}
+
+static inline void set_rchar(struct task_struct *tsk, u64 rchar)
+{
+}
+
+static inline u64 get_syscr(struct task_struct *tsk)
+{
+	return 0;
+}
+
+static inline void set_syscr(struct task_struct *tsk, u64 syscr)
+{
+}
+
+static inline u64 get_syscw(struct task_struct *tsk)
+{
+	return 0;
+}
+
+static inline void set_syscw(struct task_struct *tsk, u64 syscw)
+{
+}
+#endif
+
 #endif
 
 #ifndef TASK_SIZE_OF

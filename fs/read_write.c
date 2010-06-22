@@ -859,6 +859,9 @@ ssize_t do_sendfile(int out_fd, int in_fd, loff_t *ppos,
 	loff_t pos;
 	ssize_t retval;
 	int fput_needed_in, fput_needed_out, fl;
+#ifdef CONFIG_KRG_FAF
+	u64 rchar, wchar, syscr, syscw;
+#endif
 
 	/*
 	 * Get input file, and verify that it is ok..
@@ -926,10 +929,21 @@ faf_sendfile:
 	if (in_file->f_flags & O_FAF_CLT
 	    || out_file->f_flags & O_FAF_CLT) {
 
+		rchar = get_rchar(current);
+		wchar = get_wchar(current);
+		syscr = get_syscr(current);
+		syscw = get_syscw(current);
+
 		if (!max)
 			max = *ppos + count;
 
 		retval = krg_faf_sendfile(out_file, in_file, ppos, count, max);
+
+		set_rchar(current, rchar);
+		set_wchar(current, wchar);
+		set_syscr(current, syscr);
+		set_syscw(current, syscw);
+
 		goto update_stat;
 	}
 #endif
