@@ -1514,6 +1514,49 @@ cancel:
 	goto out_end;
 }
 
+static ssize_t fwd_sendfile(faf_client_data_t *out, faf_client_data_t *in,
+			    loff_t *ppos, size_t count, loff_t max)
+{
+	struct rpc_desc *desc;
+	struct faf_sendfile_msg msg;
+	ssize_t retval;
+	int err;
+
+	desc = rpc_begin(RPC_FAF_SENDFILE, in->server_id);
+	if (!desc) {
+		retval = -ENOMEM;
+		goto out;
+	}
+
+	msg.out_fd = out->server_fd;
+	msg.in_fd = in->server_fd;
+	msg.ppos = *ppos;
+	msg.count = count;
+	msg.max = max;
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, *ppos);
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, retval);
+	if (err)
+		goto cancel;
+
+out_end:
+	rpc_end(desc, 0);
+out:
+	return retval;
+
+cancel:
+	rpc_cancel(desc);
+	retval = err;
+	goto out_end;
+}
+
 ssize_t krg_faf_sendfile(struct file *out, struct file *in, loff_t *ppos,
 			 size_t count, loff_t max)
 {
@@ -1536,10 +1579,9 @@ ssize_t krg_faf_sendfile(struct file *out, struct file *in, loff_t *ppos,
 
 	BUG_ON(!out_data && !in_data);
 
-	/* TODO: simply forward the call */
-/* 	if (in_data && out_data */
-/* 	    && in_data->server_id && out_data->server_id) */
-/* 		return 0; */
+	if (in_data && out_data
+	    && in_data->server_id == out_data->server_id)
+		return fwd_sendfile(out_data, in_data, ppos, count, max);
 
 	len = count;
 	if (count > PAGE_SIZE)

@@ -1574,6 +1574,29 @@ cancel:
 	goto out_free;
 }
 
+static void handle_faf_sendfile(struct rpc_desc *desc, void *_msg, size_t size)
+{
+	struct faf_sendfile_msg *msg = _msg;
+	ssize_t retval;
+	int err;
+
+	retval = do_sendfile(msg->out_fd, msg->in_fd, &msg->ppos, msg->count,
+			     msg->max);
+
+	err = rpc_pack_type(desc, msg->ppos);
+	if (err)
+		goto cancel;
+
+	err = rpc_pack_type(desc, retval);
+	if (err)
+		goto cancel;
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
+}
+
 int handle_faf_notify_close (struct rpc_desc* desc,
 			     void *msgIn, size_t size)
 {
@@ -1630,6 +1653,7 @@ void faf_server_init (void)
 	rpc_register_void(RPC_FAF_GETSOCKOPT, handle_faf_getsockopt, 0);
 	rpc_register_void(RPC_FAF_SENDMSG, handle_faf_sendmsg, 0);
 	rpc_register_void(RPC_FAF_RECVMSG, handle_faf_recvmsg, 0);
+	rpc_register_void(RPC_FAF_SENDFILE, handle_faf_sendfile, 0);
 	rpc_register_int(RPC_FAF_NOTIFY_CLOSE, handle_faf_notify_close, 0);
 }
 

@@ -848,7 +848,10 @@ SYSCALL_DEFINE5(pwritev, unsigned long, fd, const struct iovec __user *, vec,
 	return ret;
 }
 
-static ssize_t do_sendfile(int out_fd, int in_fd, loff_t *ppos,
+#ifndef CONFIG_KRG_FAF
+static
+#endif
+ssize_t do_sendfile(int out_fd, int in_fd, loff_t *ppos,
 			   size_t count, loff_t max)
 {
 	struct file * in_file, * out_file;

@@ -39,6 +39,7 @@ enum rpcid {
 	RPC_FAF_GETSOCKOPT,
 	RPC_FAF_SENDMSG,
 	RPC_FAF_RECVMSG,
+	RPC_FAF_SENDFILE,
 	RPC_FAF_NOTIFY_CLOSE,
 
 /* Ctnr Object Server Types */

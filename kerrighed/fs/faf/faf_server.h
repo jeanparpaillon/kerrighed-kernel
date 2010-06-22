@@ -118,6 +118,14 @@ struct faf_sendmsg_msg {
 	size_t total_len;
 };
 
+struct faf_sendfile_msg {
+	int out_fd;
+	int in_fd;
+	loff_t ppos;
+	size_t count;
+	loff_t max;
+};
+
 struct faf_poll_wait_msg {
 	int server_fd;
 	unsigned long objid;
@@ -136,6 +144,8 @@ struct linux_dirent64;
 extern int do_getdents64(struct file *file, struct linux_dirent64 *dirent,
 			 unsigned int count);
 
+extern ssize_t do_sendfile(int out_fd, int in_fd, loff_t *ppos,
+			   size_t count, loff_t max);
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
