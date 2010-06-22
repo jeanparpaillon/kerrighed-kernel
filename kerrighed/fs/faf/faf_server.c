@@ -440,18 +440,27 @@ cancel:
 static void handle_faf_getdents(struct rpc_desc *desc, void *__msg, size_t size)
 {
 	struct faf_getdents_msg *msg = __msg;
+	const struct cred *old_cred = NULL;
 	struct file *file;
-	void *dirent;
+	void *dirent = NULL;
 	int err, err_rpc;
 
-	dirent = kmalloc(msg->count, GFP_KERNEL);
-	if (!dirent) {
-		err = -ENOMEM;
-		goto send_error;
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		old_cred = NULL;
+		goto cancel;
 	}
+
+	dirent = kmalloc(msg->count, GFP_KERNEL);
+	if (!dirent)
+		goto cancel;
 
 	file = fget(msg->server_fd);
 	BUG_ON(!file);
+
+	err = remote_sleep_prepare(desc);
+	if (err)
+		goto cancel;
 
 	switch (msg->filler) {
 	case OLDREADDIR:
@@ -469,20 +478,33 @@ static void handle_faf_getdents(struct rpc_desc *desc, void *__msg, size_t size)
 		break;
 	}
 
+	remote_sleep_finish();
 	fput(file);
 
-send_error:
 	err_rpc = rpc_pack_type(desc, err);
-	if (err <= 0 || err_rpc)
+	if (err_rpc)
+		goto cancel;
+
+	if (err <= 0)
 		goto out;
 
 	/* err contains the used size of the buffer */
 	err_rpc = rpc_pack(desc, 0, dirent, err);
 	if (err_rpc)
-		rpc_cancel(desc);
+		goto cancel;
 
 out:
-	kfree(dirent);
+	if (old_cred)
+		revert_creds(old_cred);
+
+	if (dirent)
+		kfree(dirent);
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto out;
 }
 
 /** Handler for doing an IOCTL in a FAF open file.

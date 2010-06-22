@@ -526,7 +526,15 @@ int krg_faf_getdents(struct file *file, enum getdents_filler filler,
 	if (err_rpc)
 		goto cancel;
 
-	err_rpc = rpc_unpack_type(desc, err);
+	err_rpc = pack_creds(desc, current_cred());
+	if (err_rpc)
+		goto cancel;
+
+	err_rpc = unpack_remote_sleep_res_prepare(desc);
+	if (err_rpc)
+		goto cancel;
+
+	err_rpc = unpack_remote_sleep_res_type(desc, err);
 	if (err_rpc)
 		goto cancel;
 
