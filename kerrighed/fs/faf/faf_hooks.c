@@ -28,6 +28,7 @@
 #include <kerrighed/hotplug.h>
 #include <net/krgrpc/rpc.h>
 #include <net/krgrpc/rpcid.h>
+#include <kerrighed/dvfs.h>
 #include <kerrighed/file.h>
 #include "../file_struct_io_linker.h"
 
@@ -1511,6 +1512,76 @@ cancel:
 		err = -EPIPE;
 	r = err;
 	goto out_end;
+}
+
+ssize_t krg_faf_sendfile(struct file *out, struct file *in, loff_t *ppos,
+			 size_t count, loff_t max)
+{
+	faf_client_data_t *out_data, *in_data;
+	char *buf;
+	mm_segment_t oldfs;
+	loff_t outpos;
+	size_t len;
+	ssize_t size, total_size, retval;
+
+	if (out->f_flags & O_FAF_CLT)
+		out_data = out->private_data;
+	else
+		out_data = NULL;
+
+	if (in->f_flags & O_FAF_CLT)
+		in_data = in->private_data;
+	else
+		in_data = NULL;
+
+	BUG_ON(!out_data && !in_data);
+
+	/* TODO: simply forward the call */
+/* 	if (in_data && out_data */
+/* 	    && in_data->server_id && out_data->server_id) */
+/* 		return 0; */
+
+	len = count;
+	if (count > PAGE_SIZE)
+		len = PAGE_SIZE;
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+
+	buf = kmalloc(len, GFP_KERNEL);
+	if (!buf) {
+		retval = -ENOMEM;
+		goto out;
+	}
+
+	total_size = 0;
+
+	while (count != 0) {
+		size = vfs_read(in, buf, len, ppos);
+		if (size < 0) {
+			retval = size;
+			goto reset_fs;
+		}
+
+		outpos = file_pos_read(out);
+		retval = vfs_write(out, buf, size, &outpos);
+		if (retval < 0)
+			goto reset_fs;
+
+		total_size += size;
+		count -= size;
+		len = count;
+		if (count > PAGE_SIZE)
+			len = PAGE_SIZE;
+	}
+
+	retval = total_size;
+
+reset_fs:
+	set_fs(oldfs);
+	kfree(buf);
+out:
+	return retval;
 }
 
 void krg_faf_srv_close(struct file *file)

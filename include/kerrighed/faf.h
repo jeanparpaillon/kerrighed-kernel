@@ -92,6 +92,8 @@ ssize_t krg_faf_sendmsg(struct file *file, struct msghdr *msg,
 			size_t total_len);
 ssize_t krg_faf_recvmsg(struct file *file, struct msghdr *msg,
 			size_t total_len, unsigned int flags);
+ssize_t krg_faf_sendfile(struct file *out, struct file *in, loff_t *ppos,
+			 size_t count, loff_t max);
 int krg_faf_poll_wait(struct file *file, int wait);
 void krg_faf_poll_dequeue(struct file *file);
 
