@@ -46,6 +46,7 @@
 #include <net/krgrpc/rpcid.h>
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/remote_syscall.h>
+#include <kerrighed/hotplug.h>
 #endif
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/krginit.h>
@@ -284,12 +285,14 @@ static int krg_setpriority_pg_user(int which, int who, int niceval)
 	    && !(who & GLOBAL_PID_MASK))
 		goto out;
 
+	membership_online_hold();
+
 	krgnodes_copy(nodes, krgnode_online_map);
 
 	desc = rpc_begin_m(PROC_SETPRIORITY_PG_USER, &nodes);
 	if (!desc) {
 		retval = -ENOMEM;
-		goto out;
+		goto out_release;
 	}
 
 	msg.which = which;
@@ -319,6 +322,8 @@ static int krg_setpriority_pg_user(int which, int who, int niceval)
 out_end:
 	rpc_end(desc, 0);
 
+out_release:
+	membership_online_release();
 out:
 	return retval;
 
@@ -528,12 +533,14 @@ static int krg_getpriority_pg_user(int which, int who)
 	    && !(who & GLOBAL_PID_MASK))
 		goto out;
 
+	membership_online_hold();
+
 	krgnodes_copy(nodes, krgnode_online_map);
 
 	desc = rpc_begin_m(PROC_GETPRIORITY_PG_USER, &nodes);
 	if (!desc) {
 		retval = -ENOMEM;
-		goto out;
+		goto out_release;
 	}
 
 	msg.which = which;
@@ -564,6 +571,8 @@ static int krg_getpriority_pg_user(int which, int who)
 out_end:
 	rpc_end(desc, 0);
 
+out_release:
+	membership_online_release();
 out:
 	return retval;
 
