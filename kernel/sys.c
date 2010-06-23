@@ -277,11 +277,8 @@ static int krg_setpriority_pg_user(int which, int who, int niceval)
 	kerrighed_node_t node;
 	int retval = -ESRCH, noderet, err;
 
-	if (!current->nsproxy->krg_ns)
-		goto out;
-
-	if (!is_krg_pid_ns_root(task_active_pid_ns(current)))
-		goto out;
+	BUG_ON(!current->nsproxy->krg_ns
+	       || !is_krg_pid_ns_root(task_active_pid_ns(current)));
 
 	if (which == PRIO_PGRP
 	    && !(who & GLOBAL_PID_MASK))
@@ -365,19 +362,28 @@ SYSCALL_DEFINE3(setpriority, int, which, int, _who, int, niceval)
 	int retval;
 	int who = _who;
 
+	if (which == PRIO_PGRP && !who)
+		who = pid_nr_ns(task_pgrp(current),
+				task_active_pid_ns(current));
+
+	if (!current->nsproxy->krg_ns
+	    || !is_krg_pid_ns_root(task_active_pid_ns(current))) {
+		/* not in the kerrighed container */
+		retval = do_setpriority(which, who, niceval,
+					task_active_pid_ns(current));
+		goto out;
+	}
+
 	switch (which) {
 
 	case PRIO_PROCESS:
+		/* make a first try locally */
 		retval = do_setpriority(which, who, niceval,
 					task_active_pid_ns(current));
 		if (retval == -ESRCH)
 			retval = krg_setpriority_process(who, niceval);
 		break;
 	case PRIO_PGRP:
-		if (!who)
-			who = pid_nr_ns(task_pgrp(current),
-					task_active_pid_ns(current));
-		/* do not break here */
 	case PRIO_USER:
 		retval = krg_setpriority_pg_user(which, who, niceval);
 		break;
@@ -386,6 +392,7 @@ SYSCALL_DEFINE3(setpriority, int, which, int, _who, int, niceval)
 		break;
 	}
 
+out:
 	return retval;
 }
 #endif
@@ -514,11 +521,8 @@ static int krg_getpriority_pg_user(int which, int who)
 	kerrighed_node_t node;
 	int retval = -ESRCH, noderet, err;
 
-	if (!current->nsproxy->krg_ns)
-		goto out;
-
-	if (!is_krg_pid_ns_root(task_active_pid_ns(current)))
-		goto out;
+	BUG_ON(!current->nsproxy->krg_ns
+	       || !is_krg_pid_ns_root(task_active_pid_ns(current)));
 
 	if (which == PRIO_PGRP
 	    && !(who & GLOBAL_PID_MASK))
@@ -602,19 +606,29 @@ SYSCALL_DEFINE2(getpriority, int, which, int, _who)
 	int retval;
 	int who = _who;
 
+	if (which == PRIO_PGRP && !who)
+		who = pid_nr_ns(task_pgrp(current),
+				task_active_pid_ns(current));
+
+	if (!current->nsproxy->krg_ns
+	    || !is_krg_pid_ns_root(task_active_pid_ns(current))) {
+		/* not in the kerrighed container */
+		retval = do_getpriority(which, who,
+					task_active_pid_ns(current));
+		goto out;
+	}
+
 	switch (which) {
 
 	case PRIO_PROCESS:
+		/* make a first try locally */
 		retval = do_getpriority(which, who,
 					task_active_pid_ns(current));
+
 		if (retval == -ESRCH)
 			retval = krg_getpriority_process(who);
 		break;
 	case PRIO_PGRP:
-		if (!who)
-			who = pid_nr_ns(task_pgrp(current),
-					task_active_pid_ns(current));
-		/* do not break here */
 	case PRIO_USER:
 		retval = krg_getpriority_pg_user(which, who);
 		break;
@@ -623,6 +637,7 @@ SYSCALL_DEFINE2(getpriority, int, which, int, _who)
 		break;
 	}
 
+out:
 	return retval;
 }
 #endif
