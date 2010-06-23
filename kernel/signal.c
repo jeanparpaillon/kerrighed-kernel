@@ -36,6 +36,7 @@
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/remote_syscall.h>
+#include <kerrighed/hotplug.h>
 #endif
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/krg_exit.h>
@@ -1393,10 +1394,12 @@ static int krg_kill_pg_info(int sig, struct siginfo *info, pid_t pgid)
 	if (!(pgid & GLOBAL_PID_MASK))
 		goto out;
 
+	membership_online_hold();
+
 	krgnodes_copy(nodes, krgnode_online_map);
 	krgnode_clear(kerrighed_node_id, nodes);
 	if (krgnodes_empty(nodes))
-		goto out;
+		goto out_release;
 
 	desc = rpc_begin_m(PROC_KILL_PG_INFO, &nodes);
 
@@ -1418,6 +1421,8 @@ static int krg_kill_pg_info(int sig, struct siginfo *info, pid_t pgid)
 out_end:
 	rpc_end(desc, 0);
 
+out_release:
+	membership_online_release();
 out:
 	return retval;
 
