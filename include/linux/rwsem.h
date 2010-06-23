@@ -80,11 +80,13 @@ extern void down_write_nested(struct rw_semaphore *sem, int subclass);
  *   proper abstraction for this case is completions. ]
  */
 extern void down_read_non_owner(struct rw_semaphore *sem);
+extern int down_read_trylock_non_owner(struct rw_semaphore *sem);
 extern void up_read_non_owner(struct rw_semaphore *sem);
 #else
 # define down_read_nested(sem, subclass)		down_read(sem)
 # define down_write_nested(sem, subclass)	down_write(sem)
 # define down_read_non_owner(sem)		down_read(sem)
+# define down_read_trylock_non_owner(sem)		down_read_trylock(sem)
 # define up_read_non_owner(sem)			up_read(sem)
 #endif
 

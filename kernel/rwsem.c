@@ -126,6 +126,13 @@ void down_read_non_owner(struct rw_semaphore *sem)
 
 EXPORT_SYMBOL(down_read_non_owner);
 
+int down_read_trylock_non_owner(struct rw_semaphore *sem)
+{
+	return __down_read_trylock(sem);
+}
+
+EXPORT_SYMBOL(down_read_trylock_non_owner);
+
 void down_write_nested(struct rw_semaphore *sem, int subclass)
 {
 	might_sleep();
