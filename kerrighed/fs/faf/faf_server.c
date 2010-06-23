@@ -4,6 +4,7 @@
  *  Copyright (C) 2001-2006, INRIA, Universite de Rennes 1, EDF.
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
+#include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/fs_struct.h>
 #include <linux/file.h>
@@ -1560,7 +1561,8 @@ void handle_faf_recvmsg(struct rpc_desc *desc,
 	if (r < 0)
 		goto out_free;
 
-	err = send_msghdr(desc, &msghdr, r, 0);
+	/* Careful, client may have set MSG_TRUNC */
+	err = send_msghdr(desc, &msghdr, min_t(size_t, r, msg->total_len), 0);
 	if (err)
 		goto cancel;
 

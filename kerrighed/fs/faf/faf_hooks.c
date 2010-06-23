@@ -4,6 +4,7 @@
  *  Copyright (C) 2001-2006, INRIA, Universite de Rennes 1, EDF.
  *  Copyright (C) 2006-2007, Renaud Lottiaux, Kerlabs.
  */
+#include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/fs_struct.h>
 #include <linux/mount.h>
@@ -1494,7 +1495,8 @@ ssize_t krg_faf_recvmsg(struct file *file, struct msghdr *msghdr,
 	if (r < 0)
 		goto out_end;
 
-	err = recv_msghdr(desc, msghdr, r, MSG_USER);
+	/* Careful, caller may have set MSG_TRUNC */
+	err = recv_msghdr(desc, msghdr, min_t(size_t, r, total_len), MSG_USER);
 	if (err)
 		goto cancel;
 
