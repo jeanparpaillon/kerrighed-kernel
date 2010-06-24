@@ -473,25 +473,48 @@ struct migration_request_msg {
 	kerrighed_node_t destination_node_id;
 };
 
-static int handle_migrate_remote_process(struct rpc_desc *desc,
-					 void *_msg, size_t size)
+static void handle_migrate_remote_process(struct rpc_desc *desc,
+					  void *_msg, size_t size)
 {
 	struct migration_request_msg msg;
+	struct migration_wait wait;
+	struct task_struct *task;
 	struct pid *pid;
 	const struct cred *old_cred;
-	int retval;
+	int retval, err;
 
 	pid = krg_handle_remote_syscall_begin(desc, _msg, size,
 					      &msg, &old_cred);
 	if (IS_ERR(pid)) {
 		retval = PTR_ERR(pid);
-		goto out;
+		goto cancel;
 	}
-	retval = __migrate_linux_threads(pid_task(pid, PIDTYPE_PID), msg.scope,
+	task = pid_task(pid, PIDTYPE_PID);
+
+	get_task_struct(task);
+	prepare_wait_for_migration(task, &wait);
+
+	retval = __migrate_linux_threads(task, msg.scope,
 					 msg.destination_node_id);
+	err = rpc_pack_type(desc, retval);
+
+	if (!err && !retval)
+		retval = wait_for_migration(task, &wait);
+	finish_wait_for_migration(&wait);
+	put_task_struct(task);
+
+	if (!err && !retval)
+		err = rpc_pack_type(desc, retval);
+	if (err)
+		goto cancel;
+
+end:
 	krg_handle_remote_syscall_end(pid, old_cred);
-out:
-	return retval;
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto end;
 }
 
 static int migrate_remote_process(pid_t pid,
@@ -499,13 +522,40 @@ static int migrate_remote_process(pid_t pid,
 				  kerrighed_node_t destination_node_id)
 {
 	struct migration_request_msg msg;
+	struct rpc_desc *desc;
+	int ret, err;
 
 	msg.pid = pid;
 	msg.scope = scope;
 	msg.destination_node_id = destination_node_id;
 
-	return krg_remote_syscall_simple(PROC_REQUEST_MIGRATION, pid,
-					 &msg, sizeof(msg));
+	desc = krg_remote_syscall_begin(PROC_REQUEST_MIGRATION, pid,
+					&msg, sizeof(msg));
+	if (IS_ERR(desc))
+		return PTR_ERR(desc);
+
+	err = rpc_unpack_type(desc, ret);
+	__krg_remote_syscall_unlock(pid);
+	if (err)
+		goto cancel;
+	if (ret)
+		goto out_end;
+
+	/* Migration was successfully requested. Wait for its completion. */
+	err = rpc_unpack_type(desc, ret);
+	if (err)
+		goto cancel;
+
+out_end:
+	__krg_remote_syscall_end(desc);
+
+	return ret;
+
+cancel:
+	if (err > 0)
+		err = -EPIPE;
+	ret = err;
+	goto out_end;
 }
 
 int migrate_linux_threads(pid_t pid,
@@ -513,6 +563,7 @@ int migrate_linux_threads(pid_t pid,
 			  kerrighed_node_t dest_node)
 {
 	struct task_struct *task;
+	struct migration_wait wait;
 	int r;
 
 	/* Check the destination node */
@@ -528,8 +579,15 @@ int migrate_linux_threads(pid_t pid,
 		return migrate_remote_process(pid, scope, dest_node);
 	}
 
+	get_task_struct(task);
+	prepare_wait_for_migration(task, &wait);
 	r = __migrate_linux_threads(task, scope, dest_node);
 	rcu_read_unlock();
+
+	if (!r)
+		r = wait_for_migration(task, &wait);
+	finish_wait_for_migration(&wait);
+	put_task_struct(task);
 
 	return r;
 }
@@ -578,8 +636,8 @@ int epm_migration_start(void)
 	krg_handler[KRG_SIG_MIGRATE] = krg_task_migrate;
 	if (rpc_register_void(RPC_EPM_MIGRATE, handle_migrate, 0))
 		BUG();
-	if (rpc_register_int(PROC_REQUEST_MIGRATION,
-			     handle_migrate_remote_process, 0))
+	if (rpc_register_void(PROC_REQUEST_MIGRATION,
+			      handle_migrate_remote_process, 0))
 		BUG();
 
 	return 0;
