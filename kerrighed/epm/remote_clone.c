@@ -139,8 +139,6 @@ static void handle_remote_clone(struct rpc_desc *desc, void *msg, size_t size)
 		return;
 	}
 
-	krg_action_stop(task, EPM_REMOTE_CLONE);
-
 	wake_up_new_task(task, CLONE_VM);
 }
 
