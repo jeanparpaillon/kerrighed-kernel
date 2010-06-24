@@ -238,6 +238,14 @@ static int remove_browse_objects_on_leaving_nodes(unsigned long objid,
 							param->new_nb_nodes);
 		request_force_update_def_owner_prob(set, obj_entry, objid,
 						    new_def_owner);
+
+		CLEAR_SET(COPYSET(obj_entry));
+		CLEAR_SET(RMSET(obj_entry));
+		ADD_TO_SET(RMSET(obj_entry), kerrighed_node_id);
+		kddm_change_obj_state(set, obj_entry, objid, INV_OWNER);
+
+//		destroy_kddm_obj_entry(set, obj_entry, objid, 1);
+
 		break;
 
 	case INV_OWNER:
