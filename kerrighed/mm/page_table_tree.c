@@ -291,16 +291,9 @@ static inline void __pt_for_each_pte(struct kddm_set *set,
 retry:
 			obj_entry = get_obj_entry_from_pte(mm, addr, ptep,
 							   NULL);
-			if (obj_entry &&
-			    TEST_AND_SET_OBJECT_LOCKED (obj_entry)) {
-				while (TEST_OBJECT_LOCKED (obj_entry))
-					cpu_relax();
+			if (do_func_on_obj_entry(addr / PAGE_SIZE, obj_entry,
+						 f, priv) == -EAGAIN)
 				goto retry;
-			}
-			if (obj_entry) {
-				f(addr / PAGE_SIZE, obj_entry, priv);
-				CLEAR_OBJECT_LOCKED (obj_entry);
-			}
 		}
 		else {
 			new_obj = init_pte(mm, ptep, set, addr / PAGE_SIZE,

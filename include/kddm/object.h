@@ -245,6 +245,29 @@ static inline struct kddm_obj *_get_alloc_kddm_obj_entry (struct kddm_ns *ns,
 }
 
 
+static inline int do_func_on_obj_entry (unsigned long objid,
+					struct kddm_obj *obj_entry,
+					int(*f)(unsigned long, void*, void*),
+					void *data)
+{
+	int r;
+
+	if (!obj_entry)
+		return 0;
+	if (TEST_AND_SET_OBJECT_LOCKED (obj_entry)) {
+		while (TEST_OBJECT_LOCKED (obj_entry))
+			cpu_relax();
+		return -EAGAIN;
+	}
+	r = f(objid, obj_entry, data);
+
+	/* Called functions are not allowed to return -EAGAIN */
+	BUG_ON (r == -EAGAIN);
+
+	CLEAR_OBJECT_LOCKED (obj_entry);
+
+	return r;
+}
 
 int destroy_kddm_obj_entry (struct kddm_set *kddm_set,
 			    struct kddm_obj *obj_entry,

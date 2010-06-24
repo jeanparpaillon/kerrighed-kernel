@@ -229,10 +229,14 @@ static void __kddm_tree_for_each_level(struct kddm_tree *tree,
 	unsigned long index_gap = 1UL << lvl_shift(tree, level);
 
 	for (i = 0; i < (1UL << lvl_bits(tree, level)); i++) {
+retry:
 		sub_level = cur_level->sub_lvl[i];
 		if (sub_level != NULL) {
-			if ((level + 1) == tree->nr_level)
-				f(index, sub_level, priv);
+			if ((level + 1) == tree->nr_level) {
+				if (do_func_on_obj_entry(index, sub_level,
+							 f, priv) == -EAGAIN)
+					goto retry;
+			}
 			else
 				__kddm_tree_for_each_level(tree, sub_level,
 							   level+1, index,
