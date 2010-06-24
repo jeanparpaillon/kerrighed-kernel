@@ -229,7 +229,22 @@ void free_kddm_obj_entry(struct kddm_set *set,
 	kmem_cache_free(kddm_obj_cachep, obj_entry);
 }
 
+int do_destroy_kddm_obj_entry(struct kddm_set *set,
+			      struct kddm_obj *obj_entry,
+			      objid_t objid)
+{
+	if (I_AM_OWNER(obj_entry)) {
+		atomic_dec(&nr_master_objects);
+		atomic_dec(&set->nr_masters);
+	} else {
+		atomic_dec(&nr_copy_objects);
+		atomic_dec(&set->nr_copies);
+	}
 
+	put_obj_entry_count(set, obj_entry, objid);
+
+	return 0;
+}
 
 /*** Remove an object entry from a kddm set object table. ***/
 
@@ -265,26 +280,15 @@ int __destroy_kddm_obj_entry (struct kddm_set *set,
 			if (obj_entry->object)
 				kddm_io_remove_object (obj_entry->object,
 						       set, objid);
-		goto exit;
 	}
-
-	if (I_AM_OWNER(obj_entry)) {
-		atomic_dec(&nr_master_objects);
-		atomic_dec(&set->nr_masters);
-	} else {
-		atomic_dec(&nr_copy_objects);
-		atomic_dec(&set->nr_copies);
-	}
-
-	kddm_lock_obj_table(set);
-	set->ops->remove_obj_entry(set, objid);
-	kddm_unlock_obj_table(set);
-
-	if (put_object)
+	else {
+		kddm_lock_obj_table(set);
+		set->ops->remove_obj_entry(set, objid);
+		kddm_unlock_obj_table(set);
 		put_kddm_obj_entry(set, obj_entry, objid);
+		do_destroy_kddm_obj_entry (set, obj_entry, objid);
+	}
 
-	put_obj_entry_count(set, obj_entry, objid);
-exit:
 	return 0;
 }
 

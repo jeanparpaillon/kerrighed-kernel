@@ -24,6 +24,8 @@ extern kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
 						 const krgnodemask_t *nodes,
 						 int nr_nodes);
 
+int do_destroy_kddm_obj_entry(struct kddm_set *set, struct kddm_obj *obj_entry,
+			      objid_t objid);
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -202,6 +204,7 @@ static int remove_browse_objects_on_leaving_nodes(unsigned long objid,
 	struct browse_data *param = _data;
 	struct kddm_set *set = param->set;
 	kerrighed_node_t new_def_owner;
+	int ret = 0;
 
 	switch (OBJ_STATE(obj_entry)) {
 	case READ_COPY:
@@ -239,12 +242,9 @@ static int remove_browse_objects_on_leaving_nodes(unsigned long objid,
 		request_force_update_def_owner_prob(set, obj_entry, objid,
 						    new_def_owner);
 
-		CLEAR_SET(COPYSET(obj_entry));
-		CLEAR_SET(RMSET(obj_entry));
-		ADD_TO_SET(RMSET(obj_entry), kerrighed_node_id);
-		kddm_change_obj_state(set, obj_entry, objid, INV_OWNER);
-
-//		destroy_kddm_obj_entry(set, obj_entry, objid, 1);
+		CLEAR_OBJECT_LOCKED(obj_entry);
+		do_destroy_kddm_obj_entry(set, obj_entry, objid);
+		ret = KDDM_OBJ_FREED;
 
 		break;
 
@@ -256,7 +256,7 @@ static int remove_browse_objects_on_leaving_nodes(unsigned long objid,
 		break;
 	}
 
-	return 0;
+	return ret;
 };
 
 

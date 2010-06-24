@@ -275,6 +275,7 @@ static inline void __pt_for_each_pte(struct kddm_set *set,
 	unsigned long addr;
 	spinlock_t *ptl;
 	pte_t *ptep;
+	int ret;
 
 	/* Pre-allocate obj_entry to avoid allocation when holding
 	 * mm->page_table_lock (gotten by pte_offset_map_lock).
@@ -291,9 +292,12 @@ static inline void __pt_for_each_pte(struct kddm_set *set,
 retry:
 			obj_entry = get_obj_entry_from_pte(mm, addr, ptep,
 							   NULL);
-			if (do_func_on_obj_entry(addr / PAGE_SIZE, obj_entry,
-						 f, priv) == -EAGAIN)
+			ret = do_func_on_obj_entry(addr / PAGE_SIZE, obj_entry,
+						   f, priv);
+			if (ret == -EAGAIN)
 				goto retry;
+			if (ret == KDDM_OBJ_FREED)
+				pte_clear(mm, addr, ptep);
 		}
 		else {
 			new_obj = init_pte(mm, ptep, set, addr / PAGE_SIZE,
