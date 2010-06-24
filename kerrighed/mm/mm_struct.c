@@ -14,6 +14,7 @@
 #include <net/krgrpc/rpc.h>
 #include <net/krgrpc/rpcid.h>
 #include <kerrighed/krginit.h>
+#include <kerrighed/pid.h>
 #include <asm/uaccess.h>
 #include <kerrighed/krg_services.h>
 #include <kddm/kddm.h>
@@ -314,13 +315,16 @@ int init_anon_vma_kddm_set(struct task_struct *tsk,
 			   struct mm_struct *mm)
 {
 	struct kddm_set *set;
+	pid_t pid;
 
 	mm->mm_id = 0;
 	krgnodes_clear (mm->copyset);
 
+	pid = task_pid_knr(tsk);
+
 	set = __create_new_kddm_set(kddm_def_ns, 0, &kddm_pt_set_ops, mm,
 				    MEMORY_LINKER, kerrighed_node_id,
-				    PAGE_SIZE, NULL, 0, 0);
+				    PAGE_SIZE, &pid, sizeof(pid), 0);
 
 	if (IS_ERR(set))
 		return PTR_ERR(set);
