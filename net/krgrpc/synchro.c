@@ -119,7 +119,11 @@ int rpc_synchro_lookup_order1(struct rpc_desc *desc){
 		__synchro->key = key;
 		__synchro->tree = __rpc_synchro_tree;
 
-		radix_tree_insert(&__rpc_synchro_tree->rt, key, __synchro);
+		if (radix_tree_insert(&__rpc_synchro_tree->rt, key, __synchro)) {
+			spin_unlock(&__rpc_synchro_tree->lock);
+			kmem_cache_free(__rpc_synchro_cachep, __synchro);
+			return -ENOMEM;
+		}
 	}
 	spin_unlock(&__rpc_synchro_tree->lock);
 
