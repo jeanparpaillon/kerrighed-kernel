@@ -57,6 +57,26 @@ static inline void forward_object_server_msg (struct kddm_obj * obj_entry,
 	rpc_async(msg_type, prob_owner, _msg, sizeof(msg_server_t));
 }
 
+static inline void new_forward_object_server_msg (struct rpc_desc* desc,
+						  struct kddm_obj * obj_entry,
+						  struct kddm_set *set,
+						  enum rpcid msg_type,
+						  void *_msg)
+{
+	msg_server_t *msg = (msg_server_t *)_msg;
+	kerrighed_node_t prob_owner;
+
+	if (obj_entry == NULL)
+		prob_owner = kddm_io_default_owner(set, msg->objid);
+	else
+		prob_owner = get_prob_owner(obj_entry);
+
+	BUG_ON(prob_owner == kerrighed_node_id);
+
+	msg->req_id = 0;
+	rpc_forward(desc, prob_owner);
+}
+
 
 
 
@@ -1278,7 +1298,7 @@ static int handle_force_update_def_owner_prob_req(struct rpc_desc* desc,
 		  if (msg->flags == 1)
 			  change_prob_owner(obj_entry, msg->new_owner);
 		  else
-			  forward_object_server_msg (obj_entry, set,
+			  new_forward_object_server_msg (desc, obj_entry, set,
 					    KDDM_FORCE_UPDATE_DEF_OWNER, msg);
 		  break;
 
