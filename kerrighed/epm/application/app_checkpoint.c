@@ -136,7 +136,7 @@ static inline int write_task_parent_links(task_state_t *t,
 		BUG_ON(r);
 		rcu_read_lock();
 		real_parent_tgid = krg_get_real_parent_tgid(t->task,
-							    ns->krg_ns_root);
+							    krg_pid_ns_root(ns));
 		rcu_read_unlock();
 		krg_children_unlock(obj);
 	} else {

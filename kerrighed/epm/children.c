@@ -935,7 +935,7 @@ pid_t krg_get_real_parent_tgid(struct task_struct *task,
 
 	if (real_parent != baby_sitter) {
 		real_parent_tgid = task_tgid_nr_ns(real_parent, ns);
-	} else if (!ns->krg_ns_root) {
+	} else if (!ns->krg_ns) {
 		/*
 		 * ns is an ancestor of task's root Kerrighed namespace, and
 		 * thus has no names for remote parents.
@@ -1010,7 +1010,7 @@ static bool reparented_to_kthreadd(struct task_struct *task)
 	parent = rcu_dereference(task->real_parent);
 	if (parent != baby_sitter) {
 		parent_ns = task_active_pid_ns(parent);
-		if (!parent_ns || !parent_ns->krg_ns_root)
+		if (!parent_ns || !parent_ns->krg_ns)
 			ret = true;
 	}
 	rcu_read_unlock();
@@ -1639,7 +1639,7 @@ void krg_unhash_process(struct task_struct *tsk)
 {
 	struct children_kddm_object *obj;
 
-	if (!task_active_pid_ns(tsk)->krg_ns_root)
+	if (!task_active_pid_ns(tsk)->krg_ns)
 		return;
 
 	if (tsk->exit_state == EXIT_MIGRATION)
