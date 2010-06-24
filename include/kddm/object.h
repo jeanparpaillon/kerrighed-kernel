@@ -85,6 +85,8 @@ typedef enum {
 #define I_AM_DEFAULT_OWNER(set, objid) \
         (kerrighed_node_id == kddm_io_default_owner(set, objid))
 
+#define KDDM_OBJ_FREED 1
+
 /*--------------------------------------------------------------------------*
  *                                                                          *
  *                            EXTERN VARIABLES                              *
@@ -264,7 +266,8 @@ static inline int do_func_on_obj_entry (unsigned long objid,
 	/* Called functions are not allowed to return -EAGAIN */
 	BUG_ON (r == -EAGAIN);
 
-	CLEAR_OBJECT_LOCKED (obj_entry);
+	if (r != KDDM_OBJ_FREED)
+		CLEAR_OBJECT_LOCKED (obj_entry);
 
 	return r;
 }

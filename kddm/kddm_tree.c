@@ -214,40 +214,52 @@ static void *kddm_tree_remove(struct kddm_tree *tree,
 	return data;
 }
 
-
-
-static void __kddm_tree_for_each_level(struct kddm_tree *tree,
-				       struct kddm_tree_lvl *cur_level,
-				       int level,
-				       unsigned long index,
-				       int free,
-				       int(*f)(unsigned long, void*, void*),
-				       void *priv)
+static int __kddm_tree_for_each_level(struct kddm_tree *tree,
+				      struct kddm_tree_lvl *cur_level,
+				      int level,
+				      unsigned long index,
+				      int free,
+				      int(*f)(unsigned long, void*, void*),
+				      void *priv)
 {
-	int i;
+	int i, sub_level_freed = 0;
 	struct kddm_tree_lvl *sub_level;
 	unsigned long index_gap = 1UL << lvl_shift(tree, level);
+	int res;
 
 	for (i = 0; i < (1UL << lvl_bits(tree, level)); i++) {
 retry:
 		sub_level = cur_level->sub_lvl[i];
 		if (sub_level != NULL) {
 			if ((level + 1) == tree->nr_level) {
-				if (do_func_on_obj_entry(index, sub_level,
-							 f, priv) == -EAGAIN)
+				res = do_func_on_obj_entry(index,
+						(struct kddm_obj *)sub_level,
+						f, priv);
+				if (res == -EAGAIN)
 					goto retry;
+				sub_level_freed = (res == KDDM_OBJ_FREED);
 			}
 			else
-				__kddm_tree_for_each_level(tree, sub_level,
-							   level+1, index,
-							   free, f, priv);
+				sub_level_freed =
+				    __kddm_tree_for_each_level(tree, sub_level,
+							   level+1, index, free,
+							   f, priv);
+			if (sub_level_freed) {
+				cur_level->sub_lvl[i] = NULL;
+				cur_level->nr_obj--;
+				if (cur_level->nr_obj == 0)
+					goto free_level;
+				sub_level_freed = 0;
+			}
 		}
 		index += index_gap ;
 	}
-	if (free) {
-		kfree (cur_level->sub_lvl);
-		kmem_cache_free(kddm_tree_lvl_cachep, cur_level);
-	}
+	if (!free)
+		return 0;
+free_level:
+	kfree (cur_level->sub_lvl);
+	kmem_cache_free(kddm_tree_lvl_cachep, cur_level);
+	return 1;
 }
 
 static inline void __kddm_tree_for_each(struct kddm_tree *tree,
@@ -257,7 +269,8 @@ static inline void __kddm_tree_for_each(struct kddm_tree *tree,
 {
 	if (tree->lvl1 == NULL)
 		return;
-	__kddm_tree_for_each_level(tree, tree->lvl1, 0, 0, free, f, priv);
+	if (__kddm_tree_for_each_level(tree, tree->lvl1, 0, 0, free, f, priv))
+		tree->lvl1 = NULL;
 }
 
 
