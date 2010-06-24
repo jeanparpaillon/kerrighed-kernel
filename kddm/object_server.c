@@ -16,6 +16,25 @@
 #include "protocol_action.h"
 
 
+static inline struct kddm_obj *get_alloc_kddm_obj_entry_lock_free (int ns_id,
+                                                   kddm_set_id_t set_id,
+                                                   objid_t objid,
+                                                   struct kddm_set **kddm_set)
+{
+	struct kddm_obj *obj = NULL;
+	struct kddm_ns *ns;
+
+	ns = kddm_ns_get (ns_id);
+	*kddm_set = __find_get_kddm_set(ns, set_id, KDDM_LOCK_FREE);
+	kddm_ns_put(ns);
+
+	if (*kddm_set) {
+		obj = __get_alloc_kddm_obj_entry (*kddm_set, objid);
+		put_kddm_set(*kddm_set);
+	}
+	return obj;
+}
+
 /** Forward a message to the supposed correct prob Owner.
  *  @author Renaud Lottiaux
  */
@@ -1216,17 +1235,12 @@ static int handle_change_prob_owner_req(struct rpc_desc* desc,
 	msg_server_t *msg = _msg;
 	struct kddm_obj *obj_entry;
 	struct kddm_set *set;
-	struct kddm_ns *ns;
 
 	BUG_ON (desc->client < 0 || desc->client > KERRIGHED_MAX_NODES);
 
-	ns = kddm_ns_get (msg->ns_id);
-	set = __find_get_kddm_set(ns, msg->set_id, KDDM_LOCK_FREE);
-
-	obj_entry = __get_alloc_kddm_obj_entry (set, msg->objid);
-
-	put_kddm_set(set);
-	kddm_ns_put(ns);
+	obj_entry = get_alloc_kddm_obj_entry_lock_free (msg->ns_id,
+							msg->set_id,
+							msg->objid, &set);
 
 	change_prob_owner(obj_entry, msg->new_owner);
 
