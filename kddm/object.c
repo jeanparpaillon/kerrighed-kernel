@@ -191,7 +191,7 @@ struct kddm_obj *dup_kddm_obj_entry(struct kddm_obj *src_obj)
 {
 	struct kddm_obj * obj_entry;
 
-	BUG_ON(atomic_read(&src_obj->frozen_count) != 0);
+	BUG_ON(object_frozen(src_obj));
 
 	obj_entry = kmem_cache_alloc(kddm_obj_cachep, GFP_ATOMIC);
 	if (obj_entry == NULL) {
@@ -215,7 +215,7 @@ void free_kddm_obj_entry(struct kddm_set *set,
 			 struct kddm_obj *obj_entry,
 			 objid_t objid)
 {
-	BUG_ON(atomic_read(&obj_entry->frozen_count) != 0);
+	BUG_ON(object_frozen(obj_entry));
 	BUG_ON(obj_entry_count(obj_entry) != 0);
 	BUG_ON(TEST_OBJECT_LOCKED(obj_entry));
 
@@ -238,8 +238,8 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 			    int cluster_wide_remove)
 {
 	kerrighed_node_t default_owner = kddm_io_default_owner(set, objid);
-	BUG_ON (object_frozen(obj_entry, set));
 
+	BUG_ON (object_frozen(obj_entry));
 	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	/* Check if we are in a flush case i.e. cluster_wide_remove == 0
@@ -478,7 +478,7 @@ int check_sleep_on_local_exclusive (struct kddm_set * set,
 
 	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
-	if (object_frozen(obj_entry, set) &&
+	if (object_frozen(obj_entry) &&
 	    (kddm_local_exclusive(set))) {
 		sleep_on_kddm_obj(set, obj_entry, objid, flags);
 		res = 1;
@@ -493,8 +493,7 @@ int check_sleep_on_local_exclusive (struct kddm_set * set,
  *
  *  @param obj_entry  Entry of the object to test.
  */
-int object_frozen(struct kddm_obj * obj_entry,
-		  struct kddm_set * set)
+int object_frozen(struct kddm_obj * obj_entry)
 {
 	return (atomic_read(&obj_entry->frozen_count) != 0);
 }
@@ -506,8 +505,7 @@ int object_frozen(struct kddm_obj * obj_entry,
  *
  *  @param obj_entry  Entry of the object to test.
  */
-int object_frozen_or_pinned(struct kddm_obj * obj_entry,
-			    struct kddm_set * set)
+int object_frozen_or_pinned(struct kddm_obj * obj_entry)
 {
 	return ((atomic_read(&obj_entry->frozen_count) != 0) ||
 		TEST_OBJECT_PINNED(obj_entry));
@@ -520,8 +518,7 @@ int object_frozen_or_pinned(struct kddm_obj * obj_entry,
  *
  *  @param obj_entry  Entry of the object to freeze.
  */
-void set_object_frozen(struct kddm_obj * obj_entry,
-		       struct kddm_set * set)
+void set_object_frozen(struct kddm_obj * obj_entry)
 {
 	atomic_inc(&obj_entry->frozen_count);
 }

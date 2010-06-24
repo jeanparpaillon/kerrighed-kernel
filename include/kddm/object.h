@@ -333,10 +333,9 @@ void kddm_invalidate_local_object_and_unlock (struct kddm_obj *obj_entry,
  *
  *  @param obj_entry  Entry of the object to test.
  */
-int object_frozen (struct kddm_obj * obj_entry, struct kddm_set *set);
+int object_frozen (struct kddm_obj * obj_entry);
 
-int object_frozen_or_pinned (struct kddm_obj * obj_entry,
-			     struct kddm_set * set);
+int object_frozen_or_pinned (struct kddm_obj * obj_entry);
 
 
 
@@ -345,7 +344,7 @@ int object_frozen_or_pinned (struct kddm_obj * obj_entry,
  *
  *  @param obj_entry  Entry of the object to freeze.
  */
-void set_object_frozen (struct kddm_obj * obj_entry, struct kddm_set *set);
+void set_object_frozen (struct kddm_obj * obj_entry);
 
 
 

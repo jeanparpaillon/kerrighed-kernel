@@ -36,7 +36,7 @@ retry:
 	obj_entry = __get_kddm_obj_entry(set, objid);
 
 	BUG_ON(OBJ_STATE(obj_entry) != INV_OWNER);
-	BUG_ON(!object_frozen(obj_entry, set));
+	BUG_ON(!object_frozen(obj_entry));
 
 	if (obj_entry->object != NULL) {
 		kddm_io_remove_object_and_unlock(obj_entry, set, objid);

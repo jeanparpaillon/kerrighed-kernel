@@ -346,7 +346,7 @@ void send_copy_on_write(struct kddm_set * set,
 	BUG_ON (!TEST_OBJECT_LOCKED(obj_entry));
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
-	BUG_ON(object_frozen_or_pinned(obj_entry, set));
+	BUG_ON(object_frozen_or_pinned(obj_entry));
 
 	kddm_change_obj_state(set, obj_entry, objid, READ_OWNER);
 
@@ -460,7 +460,7 @@ void transfer_write_access_and_unlock(struct kddm_set * set,
 	msg.req_id = 0;
 	msg.owner_info = *master_info;
 
-	if (object_frozen_or_pinned(obj_entry, set)) {
+	if (object_frozen_or_pinned(obj_entry)) {
 		queue_event(delayed_transfer_write_access, dest_node, set,
 			    obj_entry, objid, &msg, sizeof(msg_injection_t));
 		put_kddm_obj_entry(set, obj_entry, objid);
