@@ -60,6 +60,8 @@ struct task_struct *recv_task(struct rpc_desc *desc, struct epm_action *action)
 	if (IS_ERR(new_tsk))
 		goto err_close;
 
+	krg_action_stop(new_tsk, action->type);
+
 	pid = task_pid_knr(new_tsk);
 	err = rpc_pack_type(desc, pid);
 	if (err)

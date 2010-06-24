@@ -385,7 +385,6 @@ static void handle_migrate(struct rpc_desc *desc, void *msg, size_t size)
 	action->migrate.end_date = current_kernel_time();
 	atomic_notifier_call_chain(&kmh_migration_recv_end, 0, action);
 #endif
-	krg_action_stop(task, EPM_MIGRATE);
 
 	if (task->exit_state)
 		/* Never schedule an imported zombie */
