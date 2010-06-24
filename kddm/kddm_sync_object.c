@@ -34,7 +34,7 @@ int _kddm_sync_frozen_object(struct kddm_set *set,
 	if (obj_entry == NULL)
 		return -ENOENT;
 
-	BUG_ON(!object_frozen(obj_entry, set));
+	BUG_ON(!object_frozen(obj_entry));
 
 	switch (OBJ_STATE(obj_entry)) {
 	case WRITE_OWNER:

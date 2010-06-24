@@ -67,7 +67,7 @@ try_again:
 		break;
 
 	case READ_COPY:
-		if (object_frozen(obj_entry, set)) {
+		if (object_frozen(obj_entry)) {
 			__sleep_on_kddm_obj(set, obj_entry, objid, 0);
 			goto try_again;
 		}
@@ -103,7 +103,7 @@ try_again:
 			object_clear_frozen(obj_entry, set);
 			remove_frozen = 0;
 		}
-		if (object_frozen(obj_entry, set)) {
+		if (object_frozen(obj_entry)) {
 			__sleep_on_kddm_obj(set, obj_entry, objid, 0);
 			goto try_again;
 		}

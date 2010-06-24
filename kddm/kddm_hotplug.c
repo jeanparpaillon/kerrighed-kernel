@@ -552,7 +552,7 @@ static int browse_failure(unsigned long objid, void *_obj_entry,
 		// No, it does not. We might have to choose a new owner
 
 		// since we might be the new owner... freeze the object
-		set_object_frozen(obj_entry, set);
+		set_object_frozen(obj_entry);
 
 		// start a ring-request in order to compute the new copyset
 		krgnodes_clear(copyset);

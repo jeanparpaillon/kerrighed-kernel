@@ -71,7 +71,7 @@ static inline int __handle_invalidation_ack (kerrighed_node_t sender,
 	 * behaviors. For instance, sending a write copy since we actually
 	 * cannot do it because of the frozen state.
 	 */
-	if (object_frozen_or_pinned (obj_entry, set)) {
+	if (object_frozen_or_pinned (obj_entry)) {
 		queue_event (__handle_invalidation_ack, sender, set, obj_entry,
 			     msg->objid, msg, sizeof (msg_server_t));
 
@@ -342,7 +342,7 @@ int __handle_object_invalidation (kerrighed_node_t sender,
 	obj_entry = get_kddm_obj_entry (msg->ns_id, msg->set_id, msg->objid,
 					&set);
 
-	if (object_frozen_or_pinned (obj_entry, set)) {
+	if (object_frozen_or_pinned (obj_entry)) {
 		queue_event (__handle_object_invalidation, sender, set,
 			     obj_entry, msg->objid, msg,
 			     sizeof (msg_server_t));
@@ -423,7 +423,7 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 		goto exit_no_unlock;
 	}
 
-	if (object_frozen_or_pinned (obj_entry, set)) {
+	if (object_frozen_or_pinned (obj_entry)) {
 
 		queue_event (__handle_object_remove_req, sender, set,
 			     obj_entry, msg->objid, msg,
@@ -729,7 +729,7 @@ int __handle_no_object (kerrighed_node_t sender,
 	obj_entry = get_alloc_kddm_obj_entry (msg->ns_id, msg->set_id,
 					      msg->objid, &set);
 
-	if (object_frozen (obj_entry, set)) {
+	if (object_frozen (obj_entry)) {
 		queue_event (__handle_no_object, sender, set, obj_entry,
 			     msg->objid, msg, sizeof (msg_server_t));
 
@@ -865,7 +865,7 @@ static inline int __handle_object_copy_req (kerrighed_node_t sender,
 						      msg->objid, &set);
 	}
 
-	if (object_frozen_or_pinned (obj_entry, set)) {
+	if (object_frozen_or_pinned (obj_entry)) {
 		if (msg->flags & KDDM_TRY_GRAB)
 			send_no_object (set, obj_entry, msg->objid,
 					msg->reply_node, send_ownership);
@@ -1092,7 +1092,7 @@ int __handle_object_remove_to_mgr_req (kerrighed_node_t sender,
 	obj_entry = get_alloc_kddm_obj_entry (msg->ns_id, msg->set_id,
 					      msg->objid, &set);
 
-	if (object_frozen_or_pinned(obj_entry, set)) {
+	if (object_frozen_or_pinned(obj_entry)) {
 		queue_event (__handle_object_remove_to_mgr_req, sender, set,
 			     obj_entry, msg->objid, msg,
 			     sizeof (msg_server_t));

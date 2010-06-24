@@ -33,7 +33,7 @@ void *_kddm_find_object (struct kddm_set *set,
 	if (obj_entry == NULL)
 		return NULL;
 
-	if (object_frozen(obj_entry, set)) {
+	if (object_frozen(obj_entry)) {
 		object = obj_entry->object;
 	}
 
@@ -75,7 +75,7 @@ void *_kddm_find_object (struct kddm_set *set,
 	}
 
 	if (object)
-		set_object_frozen(obj_entry, set);
+		set_object_frozen(obj_entry);
 
 	put_kddm_obj_entry(set, obj_entry, objid);
 
