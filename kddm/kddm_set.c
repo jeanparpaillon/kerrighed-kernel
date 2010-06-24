@@ -366,7 +366,7 @@ check_no_lock:
 	}
 	/* Make sure we only use bypass_frozen when KDDM are frozen (i.e.
 	   hotplug cases) */
-	BUG_ON ((flags & KDDM_LOCK_FREE) && !kddm_frozen(kddm_set));
+//	BUG_ON ((flags & KDDM_LOCK_FREE) && !kddm_frozen(kddm_set));
 
 	switch (kddm_set->state) {
 	  case KDDM_SET_READY:
@@ -459,7 +459,7 @@ struct kddm_set *__create_new_kddm_set(struct kddm_ns *ns,
 	kddm_set = _local_get_alloc_unique_kddm_set(ns, set_id,
 						    KDDM_SET_UNINITIALIZED);
 	if (IS_ERR(kddm_set))
-		goto error;
+		goto exit;
 
 	err = init_kddm_set(kddm_set, set_id, set_ops, tree_init_data,
 			    flags, def_owner, obj_size);
