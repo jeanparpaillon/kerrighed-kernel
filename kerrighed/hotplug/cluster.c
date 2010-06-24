@@ -355,7 +355,7 @@ static bool krg_container_may_conflict(struct krg_namespace *ns)
 			continue;
 
 #ifdef CONFIG_KRG_PROC
-		if (task_active_pid_ns(t)->krg_ns_root == ns->root_nsproxy.pid_ns)
+		if (task_active_pid_ns(t)->krg_ns == ns)
 #else
 		nsp = task_nsproxy(t);
 		if (nsp && nsp->krg_ns == ns)
@@ -862,9 +862,7 @@ static int cluster_restart(void *arg)
 void zap_local_krg_ns_processes(struct krg_namespace *ns, int min_exit_state)
 {
 	struct task_struct *g, *t;
-#ifdef CONFIG_KRG_PROC
-	struct pid_namespace *root_pid_ns = ns->root_nsproxy.pid_ns;
-#else
+#ifndef CONFIG_KRG_PROC
 	struct nsproxy *nsp;
 #endif
 	bool backoff;
@@ -873,7 +871,7 @@ void zap_local_krg_ns_processes(struct krg_namespace *ns, int min_exit_state)
 	read_lock(&tasklist_lock);
 	do_each_thread(g, t) {
 #ifdef CONFIG_KRG_PROC
-		if (task_active_pid_ns(t)->krg_ns_root != root_pid_ns)
+		if (task_active_pid_ns(t)->krg_ns != ns)
 			continue;
 #else
 		nsp = rcu_dereference(t->nsproxy);
@@ -895,7 +893,7 @@ void zap_local_krg_ns_processes(struct krg_namespace *ns, int min_exit_state)
 			if (t == ns->root_task)
 				continue;
 #ifdef CONFIG_KRG_PROC
-			if (task_active_pid_ns(t)->krg_ns_root != root_pid_ns)
+			if (task_active_pid_ns(t)->krg_ns != ns)
 				continue;
 #else
 			nsp = rcu_dereference(t->nsproxy);

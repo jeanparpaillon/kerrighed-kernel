@@ -35,8 +35,8 @@
 static inline pid_t pid_knr(struct pid *pid)
 {
 	struct pid_namespace *ns = ns_of_pid(pid);
-	if (ns && ns->krg_ns_root)
-		return pid_nr_ns(pid, ns->krg_ns_root);
+	if (ns && ns->krg_ns)
+		return pid_nr_ns(pid, krg_pid_ns_root(ns));
 	return 0;
 }
 
