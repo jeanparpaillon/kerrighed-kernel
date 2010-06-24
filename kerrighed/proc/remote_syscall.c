@@ -78,10 +78,20 @@ err:
 	return ERR_PTR(err);
 }
 
-void krg_remote_syscall_end(struct rpc_desc *desc, pid_t pid)
+void __krg_remote_syscall_end(struct rpc_desc *desc)
 {
 	rpc_end(desc, 0);
+}
+
+void __krg_remote_syscall_unlock(pid_t pid)
+{
 	krg_unlock_pid_location(pid);
+}
+
+void krg_remote_syscall_end(struct rpc_desc *desc, pid_t pid)
+{
+	__krg_remote_syscall_end(desc);
+	__krg_remote_syscall_unlock(pid);
 }
 
 int krg_remote_syscall_simple(int req, pid_t pid, const void *msg, size_t size)

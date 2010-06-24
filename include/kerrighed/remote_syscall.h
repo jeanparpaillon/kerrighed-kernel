@@ -9,6 +9,8 @@ struct cred;
 
 struct rpc_desc *krg_remote_syscall_begin(int req, pid_t pid,
 					  const void *msg, size_t size);
+void __krg_remote_syscall_end(struct rpc_desc *desc);
+void __krg_remote_syscall_unlock(pid_t pid);
 void krg_remote_syscall_end(struct rpc_desc *desc, pid_t pid);
 int krg_remote_syscall_simple(int req, pid_t pid, const void *msg, size_t size);
 
