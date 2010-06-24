@@ -146,3 +146,107 @@ int kddm_flush_object(struct kddm_ns *ns, kddm_set_id_t set_id, objid_t objid,
 	return res;
 }
 EXPORT_SYMBOL(kddm_flush_object);
+
+struct flush_set_data {
+	int(*f)(struct kddm_set *, objid_t, struct kddm_obj *, void*);
+	struct kddm_set *set;
+	void *data;
+};
+
+static int kddm_flush_object(unsigned long objid,
+			     void *_obj_entry,
+			     void *_data)
+{
+	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
+	struct flush_set_data *param = _data;
+	kerrighed_node_t dest, new_owner;
+	struct kddm_set *set = param->set;
+
+	/* No pending get or grab allowed */
+	BUG_ON(object_frozen_or_pinned(obj_entry));
+
+	switch (OBJ_STATE(obj_entry)) {
+	case READ_COPY:
+		/* There exist another copy in the cluster.
+		   Just invalidate the local one */
+		__destroy_kddm_obj_entry(set, obj_entry, objid, 0, 0);
+		send_invalidation_ack(set, objid, get_prob_owner(obj_entry));
+		break;
+
+	case READ_OWNER:
+		REMOVE_FROM_SET(COPYSET(obj_entry), kerrighed_node_id);
+		if (SET_IS_EMPTY(COPYSET(obj_entry))) {
+			/* I'm owner of the only existing object in the
+			 * cluster. Let's inject it ! */
+			goto send_copy;
+		}
+		/* There exist at least another copy. Send ownership */
+		new_owner = param->f(set, objid, obj_entry, param->data);
+		if (__krgnode_isset(new_owner, COPYSET(obj_entry)))
+			dest = new_owner;
+		else
+			dest = choose_injection_node_in_copyset(obj_entry);
+		BUG_ON (dest == -1);
+		SET_OBJECT_RM_SO_ACK(obj_entry);
+		send_change_ownership_req(set, obj_entry, objid, dest,
+					  &obj_entry->master_obj);
+		break;
+
+	case WRITE_GHOST:
+	case WRITE_OWNER:
+		/* Local copy is the only one. Let's inject it ! */
+send_copy:
+		dest = param->f(set, objid, obj_entry, param->data);
+		send_copy_on_write(set, obj_entry, objid, dest, 0);
+		__destroy_kddm_obj_entry(set, obj_entry, objid, 0, 0);
+		break;
+
+	case WAIT_ACK_INV:
+	case WAIT_OBJ_RM_DONE:
+	case WAIT_OBJ_RM_ACK:
+	case WAIT_OBJ_RM_ACK2:
+		break;
+
+	case INV_OWNER:
+	case INV_COPY:
+	case WAIT_ACK_WRITE:
+	case WAIT_CHG_OWN_ACK:
+	case WAIT_OBJ_READ:
+	case WAIT_OBJ_WRITE:
+	case INV_FILLING:
+		break;
+	}
+
+	return 0;
+}
+
+void _kddm_flush_set(struct kddm_set *set,
+		    int(*f)(struct kddm_set *, objid_t, struct kddm_obj *,
+			    void*),
+		    void *data)
+{
+	struct flush_set_data param;
+
+	param.f = f;
+	param.set = set;
+	param.data = data;
+	__for_each_kddm_object(set, kddm_flush_object, &param);
+}
+
+EXPORT_SYMBOL(_kddm_flush_set);
+
+
+void kddm_flush_set(struct kddm_ns *ns,
+		    kddm_set_id_t set_id,
+		    int(*f)(struct kddm_set *, objid_t, struct kddm_obj *,
+			    void*),
+		    void *data)
+{
+	struct kddm_set *set;
+
+	set = _find_get_kddm_set (ns, set_id);
+	_kddm_flush_set(set, f, data);
+	put_kddm_set(set);
+}
+EXPORT_SYMBOL(kddm_flush_set);
+
