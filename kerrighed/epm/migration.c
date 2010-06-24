@@ -17,12 +17,15 @@
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
+#include <linux/wait.h>
 #include <linux/kernel.h>
 #include <linux/fdtable.h>
 #include <linux/fs_struct.h>
 #include <linux/pid_namespace.h>
 #include <linux/rcupdate.h>
 #include <linux/uaccess.h>
+#include <linux/list.h>
+#include <linux/hash.h>
 #include <linux/notifier.h>
 #include <kerrighed/kerrighed_signal.h>
 #include <kerrighed/sys/types.h>
@@ -48,6 +51,16 @@
 #include "network_ghost.h"
 #include "epm_internal.h"
 
+enum {
+	MIGRATION_WAIT_HASH_BITS = 9,
+	MIGRATION_WAIT_HASH_SIZE = (1 << MIGRATION_WAIT_HASH_BITS),
+
+	MIGRATION_WAIT_NORET = 1,
+};
+
+static struct hlist_head migration_waiters[MIGRATION_WAIT_HASH_SIZE];
+static DEFINE_SPINLOCK(migration_waiters_lock);
+
 #ifdef CONFIG_KRG_SCHED
 ATOMIC_NOTIFIER_HEAD(kmh_migration_send_start);
 ATOMIC_NOTIFIER_HEAD(kmh_migration_send_end);
@@ -62,6 +75,64 @@ EXPORT_SYMBOL(kmh_migration_aborted);
 #endif
 
 #define si_node(info)	(*(kerrighed_node_t *)&(info)._sifields._pad)
+
+static inline int migration_waiter_hashfn(struct task_struct *task)
+{
+	return hash_ptr(task, MIGRATION_WAIT_HASH_BITS);
+}
+
+static void migration_waiter_add(struct migration_wait *wait)
+{
+	struct hlist_head *head;
+
+	head = &migration_waiters[migration_waiter_hashfn(wait->task)];
+	spin_lock(&migration_waiters_lock);
+	hlist_add_head(&wait->node, head);
+	spin_unlock(&migration_waiters_lock);
+}
+
+static void migration_waiter_del(struct migration_wait *wait)
+{
+	spin_lock(&migration_waiters_lock);
+	hlist_del(&wait->node);
+	spin_unlock(&migration_waiters_lock);
+}
+
+void prepare_wait_for_migration(struct task_struct *task, struct migration_wait *wait)
+{
+	wait->task = task;
+	init_waitqueue_head(&wait->wqh);
+	wait->ret = MIGRATION_WAIT_NORET;
+	migration_waiter_add(wait);
+}
+
+void finish_wait_for_migration(struct migration_wait *wait)
+{
+	migration_waiter_del(wait);
+}
+
+int wait_for_migration(struct task_struct *task, struct migration_wait *wait)
+{
+	wait_event(wait->wqh, !krg_action_pending(task, EPM_MIGRATE));
+	return wait->ret == MIGRATION_WAIT_NORET ? 0 : wait->ret;
+}
+
+static void migration_wait_wake(struct task_struct *task, int ret)
+{
+	struct migration_wait *wait;
+	struct hlist_head *head;
+	struct hlist_node *pos;
+
+	head = &migration_waiters[migration_waiter_hashfn(task)];
+	spin_lock(&migration_waiters_lock);
+	hlist_for_each_entry(wait, pos, head, node)
+		if (wait->task == task) {
+			if (wait->ret == MIGRATION_WAIT_NORET)
+				wait->ret = ret;
+			wake_up(&wait->wqh);
+		}
+	spin_unlock(&migration_waiters_lock);
+}
 
 static int migration_implemented(struct task_struct *task)
 {
@@ -138,12 +209,13 @@ int may_migrate(struct task_struct *task)
 }
 EXPORT_SYMBOL(may_migrate);
 
-void migration_aborted(struct task_struct *tsk)
+void migration_aborted(struct task_struct *tsk, int ret)
 {
 #ifdef CONFIG_KRG_SCHED
 	atomic_notifier_call_chain(&kmh_migration_aborted, 0, tsk);
 #endif
 	krg_action_stop(tsk, EPM_MIGRATE);
+	migration_wait_wake(tsk, ret);
 }
 
 static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
@@ -253,11 +325,13 @@ static void krg_task_migrate(int sig, struct siginfo *info,
 #ifdef CONFIG_KRG_SCHED
 		atomic_notifier_call_chain(&kmh_migration_send_end, 0, NULL);
 #endif
+		krg_action_stop(tsk, EPM_MIGRATE);
+		migration_wait_wake(tsk, 0);
 		do_exit_wo_notify(0); /* Won't return */
 	}
 
 	/* Migration failed */
-	migration_aborted(tsk);
+	migration_aborted(tsk, r);
 }
 
 /**
@@ -321,7 +395,7 @@ static int do_migrate_process(struct task_struct *task,
 
 	retval = send_kerrighed_signal(KRG_SIG_MIGRATE, &info, task);
 	if (retval)
-		migration_aborted(task);
+		migration_aborted(task, retval);
 
 	if (task_pid_knr(current)) {
 		printk("kerrighed: migration of %d (%s) to node %d requested"

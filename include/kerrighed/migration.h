@@ -10,6 +10,8 @@
 #ifndef __KRG_MIGRATION_H__
 #define __KRG_MIGRATION_H__
 
+#include <linux/wait.h>
+#include <linux/list.h>
 #include <linux/types.h>
 #include <kerrighed/sys/types.h>
 
@@ -40,6 +42,17 @@ struct task_struct;
 int __may_migrate(struct task_struct *task);
 int may_migrate(struct task_struct *task);
 
+struct migration_wait {
+	struct hlist_node node;
+	struct task_struct *task;
+	wait_queue_head_t wqh;
+	int ret;
+};
+
+void prepare_wait_for_migration(struct task_struct *task, struct migration_wait *wait);
+void finish_wait_for_migration(struct migration_wait *wait);
+int wait_for_migration(struct task_struct *task, struct migration_wait *wait);
+
 enum migration_scope {
 	MIGR_THREAD,		/* A single task */
 	MIGR_LOCAL_PROCESS,	/* All local threads of a thread group */
@@ -55,7 +68,7 @@ int migrate_linux_threads(pid_t pid,
 			  kerrighed_node_t dest_node);
 
 /* Used by krg_release_task() */
-void migration_aborted(struct task_struct *tsk);
+void migration_aborted(struct task_struct *tsk, int ret);
 
 #endif /* CONFIG_KRG_EPM */
 
