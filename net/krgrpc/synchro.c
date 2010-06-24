@@ -104,7 +104,7 @@ int rpc_synchro_lookup_order1(struct rpc_desc *desc){
 		/* __synchro is beeing freed. Just remove it from the tree and
 		 * replace it with a clean new one. */
 		radix_tree_delete(&__rpc_synchro_tree->rt, __synchro->key);
-		__synchro->flags &= __RPC_SYNCHRO_DEAD;
+		__synchro->flags |= __RPC_SYNCHRO_DEAD;
 		__synchro = NULL;
 	}
 	if (!__synchro){
