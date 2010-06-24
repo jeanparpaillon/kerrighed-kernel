@@ -602,24 +602,21 @@ done:
  *  @param sender    Identifier of the remote requesting machine.
  *  @param msg       Identifier of the kddm set to destroy.
  */
-static inline
-int __handle_req_kddm_set_destroy(kerrighed_node_t sender,
-				void *msg)
+static int do_kddm_set_destroy(kddm_id_msg_t *kddm_id)
 {
-	kddm_id_msg_t kddm_id = *((kddm_id_msg_t *) msg);
 	struct kddm_ns *ns;
 	struct kddm_set *kddm_set;
 
-	BUG_ON(!krgnode_online(sender));
+	BUG_ON(!krgnode_isset(kerrighed_node_id, krgnode_kddm_map));
 
 	/* Remove the kddm set from the name space */
 
-	ns = kddm_ns_get (kddm_id.ns_id);
+	ns = kddm_ns_get (kddm_id->ns_id);
 	if (ns == NULL)
 		return -EINVAL;
 
 	down (&ns->table_sem);
-	kddm_set = __hashtable_remove(ns->kddm_set_table, kddm_id.set_id);
+	kddm_set = __hashtable_remove(ns->kddm_set_table, kddm_id->set_id);
 	up (&ns->table_sem);
 
 	kddm_ns_put (ns);
@@ -635,8 +632,11 @@ int __handle_req_kddm_set_destroy(kerrighed_node_t sender,
 }
 
 int handle_req_kddm_set_destroy(struct rpc_desc* desc,
-				void *msg, size_t size){
-	return __handle_req_kddm_set_destroy(rpc_desc_get_client(desc), msg);
+				void *msg, size_t size)
+{
+	kddm_id_msg_t *kddm_id = (kddm_id_msg_t *) msg;
+
+	return do_kddm_set_destroy(kddm_id);
 }
 
 /*****************************************************************************/
@@ -655,8 +655,11 @@ int _destroy_kddm_set(struct kddm_set * kddm_set)
 	kddm_id.set_id = kddm_set->id;
 	kddm_id.ns_id = kddm_set->ns->id;
 
-	rpc_async_m(REQ_KDDM_SET_DESTROY, &krgnode_online_map,
-		    &kddm_id, sizeof(kddm_id_msg_t));
+	if (kddm_nb_nodes == 1)
+		return do_kddm_set_destroy(&kddm_id);
+
+	rpc_async_m(REQ_KDDM_SET_DESTROY, &krgnode_kddm_map, &kddm_id,
+		    sizeof(kddm_id_msg_t));
 	return 0;
 }
 EXPORT_SYMBOL(_destroy_kddm_set);

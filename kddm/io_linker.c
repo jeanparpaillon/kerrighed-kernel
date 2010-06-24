@@ -477,8 +477,9 @@ void io_linker_init (void)
 {
 	int i;
 
-	kddm_nb_nodes = kerrighed_nb_nodes;
-	krgnodes_copy(krgnode_kddm_map, krgnode_online_map);
+	kddm_nb_nodes = 1;
+	krgnodes_clear(krgnode_kddm_map);
+	krgnode_set(kerrighed_node_id, krgnode_kddm_map);
 
 	for (i = 0; i < MAX_IO_LINKER; i++)
 		iolinker_list[i] = NULL;

@@ -72,6 +72,8 @@ enum
 
 #define KDDM_IO_KEEP_OBJECT 1
 
+extern krgnodemask_t krgnode_kddm_map;
+extern kerrighed_node_t kddm_nb_nodes;
 
 
 /*--------------------------------------------------------------------------*
