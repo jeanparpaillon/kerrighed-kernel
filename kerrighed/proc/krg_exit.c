@@ -595,7 +595,7 @@ void krg_release_task(struct task_struct *p)
 #ifdef CONFIG_KRG_EPM
 		if (krg_action_pending(p, EPM_MIGRATE))
 			/* Migration aborted because p died before */
-			migration_aborted(p);
+			migration_aborted(p, -ESRCH);
 	}
 #endif /* CONFIG_KRG_EPM */
 }
