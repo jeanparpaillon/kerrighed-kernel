@@ -301,6 +301,9 @@ int export_sysv_sem(struct epm_action *action,
 	int r;
 	unique_id_t undo_list_id = UNIQUE_ID_NONE;
 
+	if (task->exit_state)
+		return 0;
+
 	BUG_ON(task->sysvsem.undo_list);
 	BUG_ON(action->type == EPM_RESTART);
 
@@ -468,6 +471,9 @@ int import_sysv_sem(struct epm_action *action,
 	unique_id_t undo_list_id;
 
 	BUG_ON(action->type == EPM_CHECKPOINT);
+
+	if (task->exit_state)
+		return 0;
 
 	if (action->type == EPM_RESTART) {
 		BUG_ON(action->restart.shared != CR_LINK_ONLY);

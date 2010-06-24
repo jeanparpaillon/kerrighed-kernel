@@ -51,6 +51,9 @@ void free_ghost_files (struct task_struct *ghost)
 {
 	struct fdtable *fdt;
 
+	if (ghost->exit_state)
+		return;
+
 	BUG_ON (ghost->files == NULL);
 
 	fdt = files_fdtable(ghost->files);
@@ -630,6 +633,9 @@ int export_files_struct (struct epm_action *action,
 	struct fdtable *fdt;
 	struct files_struct *exported_files;
 
+	if (tsk->exit_state)
+		return 0;
+
 	BUG_ON (!tsk);
 
 	{
@@ -758,6 +764,9 @@ int export_fs_struct (struct epm_action *action,
 {
 	char *tmp, *file_name;
 	int r, len;
+
+	if (tsk->exit_state)
+		return 0;
 
 	if (action->type == EPM_CHECKPOINT &&
 	    action->checkpoint.shared == CR_SAVE_LATER) {
@@ -1060,6 +1069,9 @@ int import_files_struct (struct epm_action *action,
 	int r = -ENOMEM;
 	struct files_struct *files;
 	struct fdtable *fdt;
+
+	if (tsk->exit_state)
+		return 0;
 
 	{
 		int magic = 0;
@@ -1397,6 +1409,9 @@ int import_fs_struct (struct epm_action *action,
 	struct fs_struct *fs;
 	char *buffer;
 	int r;
+
+	if (tsk->exit_state)
+		return 0;
 
 	if (action->type == EPM_RESTART
 	    && action->restart.shared == CR_LINK_ONLY) {
