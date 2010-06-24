@@ -658,14 +658,17 @@ void handle_object_receive (struct rpc_desc* desc,
 
 	  default:
 		  STATE_MACHINE_ERROR (msg->set_id, msg->objid, obj_entry);
-		  kddm_obj_path_unlock(set, msg->objid);
 		  BUG();
 	}
 
 	if (!(msg->flags & KDDM_NO_DATA)) {
 		kddm_change_obj_state (set, obj_entry, msg->objid,
 				       INV_FILLING);
-		put_kddm_obj_entry(set, obj_entry, msg->objid);
+
+		/* Mark the object frozen to avoid nastly things while
+		 * we release the lock */
+		set_object_frozen(obj_entry);
+		CLEAR_OBJECT_LOCKED(obj_entry);
 
 		res = kddm_io_alloc_object (obj_entry, set, msg->objid);
 		BUG_ON(res != 0);
@@ -673,7 +676,9 @@ void handle_object_receive (struct rpc_desc* desc,
 		kddm_io_import_object (desc, set, obj_entry, msg->objid,
 				       msg->flags);
 
-		kddm_obj_path_lock(set, msg->objid);
+		while (TEST_AND_SET_OBJECT_LOCKED (obj_entry))
+			cpu_relax();
+		object_clear_frozen(obj_entry, set);
 
 		if (obj_state == WAIT_ACK_INV) {
 			if (OBJ_EXCLUSIVE (obj_entry))

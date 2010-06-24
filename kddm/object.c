@@ -192,6 +192,7 @@ struct kddm_obj *dup_kddm_obj_entry(struct kddm_obj *src_obj)
 	struct kddm_obj * obj_entry;
 
 	BUG_ON(object_frozen(src_obj));
+	BUG_ON(!TEST_OBJECT_LOCKED(src_obj));
 
 	obj_entry = kmem_cache_alloc(kddm_obj_cachep, GFP_ATOMIC);
 	if (obj_entry == NULL) {
@@ -240,8 +241,6 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 	kerrighed_node_t default_owner = kddm_io_default_owner(set, objid);
 
 	BUG_ON (object_frozen(obj_entry));
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
-
 	/* Check if we are in a flush case i.e. cluster_wide_remove == 0
 	 * or if we have a pending request on the object. In both cases, can
 	 * cannot remove the object entry.
@@ -270,7 +269,9 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 		atomic_dec(&set->nr_copies);
 	}
 
+	kddm_lock_obj_table(set);
 	set->ops->remove_obj_entry(set, objid);
+	kddm_unlock_obj_table(set);
 
 	put_kddm_obj_entry(set, obj_entry, objid);
 
@@ -289,19 +290,19 @@ struct kddm_obj *__get_kddm_obj_entry (struct kddm_set *set,
 	struct kddm_obj *obj_entry;
 
 retry:
-	kddm_obj_path_lock(set, objid);
+	kddm_lock_obj_table(set);
 
 	obj_entry = set->ops->lookup_obj_entry(set, objid);
 	if (obj_entry) {
 		if (TEST_AND_SET_OBJECT_LOCKED (obj_entry)) {
-			kddm_obj_path_unlock (set, objid);
+			kddm_unlock_obj_table(set);
 			while (TEST_OBJECT_LOCKED (obj_entry))
 				cpu_relax();
 			goto retry;
 		}
 	}
-	else
-		kddm_obj_path_unlock(set, objid);
+
+	kddm_unlock_obj_table(set);
 
 	return obj_entry;
 }
@@ -323,18 +324,20 @@ struct kddm_obj *__get_alloc_kddm_obj_entry (struct kddm_set *set,
 retry:
 	new_obj = alloc_kddm_obj_entry(set, objid);
 
-	kddm_obj_path_lock(set, objid);
+	kddm_lock_obj_table(set);
 
 	obj_entry = set->ops->get_obj_entry(set, objid, new_obj);
 	if (obj_entry != new_obj)
 		put_obj_entry_count(set, new_obj, objid);
 
 	if (TEST_AND_SET_OBJECT_LOCKED (obj_entry)) {
-		kddm_obj_path_unlock(set, objid);
+		kddm_unlock_obj_table(set);
 		while (TEST_OBJECT_LOCKED (obj_entry))
 			cpu_relax();
 		goto retry;
 	}
+
+	kddm_unlock_obj_table(set);
 
 	return obj_entry;
 }
@@ -348,16 +351,22 @@ void kddm_insert_object(struct kddm_set * set,
 			struct kddm_obj * obj_entry,
 			kddm_obj_state_t objectState)
 {
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
+	BUG_ON(!TEST_OBJECT_LOCKED(obj_entry));
 
-	put_kddm_obj_entry(set, obj_entry, objid);
-
-	if (set->ops->insert_object)
+	if (set->ops->insert_object) {
+		kddm_lock_obj_table(set);
 		set->ops->insert_object (set, objid, obj_entry);
+		kddm_unlock_obj_table(set);
+	}
+
+	set_object_frozen(obj_entry);
+	CLEAR_OBJECT_LOCKED(obj_entry);
 
 	kddm_io_insert_object(obj_entry, set, objid);
 
-	kddm_obj_path_lock(set, objid);
+	while (TEST_AND_SET_OBJECT_LOCKED (obj_entry))
+		cpu_relax();
+	object_clear_frozen(obj_entry, set);
 
 	kddm_change_obj_state(set, obj_entry, objid, objectState);
 
@@ -380,10 +389,11 @@ void kddm_invalidate_local_object_and_unlock(struct kddm_obj * obj_entry,
 					     kddm_obj_state_t state)
 {
 	BUG_ON(obj_entry->object == NULL);
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
+	kddm_lock_obj_table(set);
 	obj_entry = kddm_break_cow_object (set, obj_entry,objid,
 					   KDDM_BREAK_COW_INV);
+	kddm_unlock_obj_table(set);
 
 	if (!obj_entry)
 		goto done;
@@ -413,7 +423,7 @@ void __sleep_on_kddm_obj(struct kddm_set * set,
 	struct kddm_info_struct *kddm_info = current->kddm_info;
 	wait_queue_t wait;
 
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
+	BUG_ON(!TEST_OBJECT_LOCKED (obj_entry));
 
 	/* Increase sleeper count and enqueue the task in the obj wait queue */
 	atomic_inc(&obj_entry->sleeper_count);
@@ -436,14 +446,8 @@ void __sleep_on_kddm_obj(struct kddm_set * set,
 
 	schedule();
 
-retry:
-	kddm_obj_path_lock(set, objid);
-	if (TEST_AND_SET_OBJECT_LOCKED (obj_entry)) {
-		kddm_obj_path_unlock (set, objid);
-		while (TEST_OBJECT_LOCKED (obj_entry))
-			cpu_relax();
-		goto retry;
-	}
+	while (TEST_AND_SET_OBJECT_LOCKED (obj_entry))
+		cpu_relax();
 
 	if( (TEST_FAILURE_FLAG(obj_entry)) &&
 	    !(flags & KDDM_DONT_KILL) ){
@@ -475,8 +479,6 @@ int check_sleep_on_local_exclusive (struct kddm_set * set,
 				    int flags)
 {
 	int res = 0;
-
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	if (object_frozen(obj_entry) &&
 	    (kddm_local_exclusive(set))) {
@@ -546,15 +548,9 @@ void __for_each_kddm_object(struct kddm_set *set,
 			    int(*f)(unsigned long, void *, void*),
 			    void *data)
 {
-	int i;
-
-	for (i = 0; i < NR_OBJ_ENTRY_LOCKS; i++)
-		mutex_lock(&(set->obj_lock[i]));
-
+	kddm_lock_obj_table(set);
 	set->ops->for_each_obj_entry(set, f, data);
-
-	for (i = 0; i < NR_OBJ_ENTRY_LOCKS; i++)
-		mutex_unlock(&(set->obj_lock[i]));
+	kddm_unlock_obj_table(set);
 }
 
 

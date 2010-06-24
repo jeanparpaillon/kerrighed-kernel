@@ -469,9 +469,7 @@ retry:
 
 	if (swap_pte_obj_entry(ptep) ||
 	    swap_pte_page((struct page *)obj_entry->object)) {
-		kddm_obj_path_unlock (set, objid);
 		kddm_pt_swap_in(mm, addr, ptep);
-		kddm_obj_path_lock (set, objid);
 
 		ptep = get_locked_pte(mm, addr, &ptl);
 		if (!ptep)
@@ -597,6 +595,7 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 		return obj_entry;
 
 	BUG_ON(swap_pte_page(old_page));
+	BUG_ON(!TEST_OBJECT_LOCKED(obj_entry));
 
 	wait_lock_kddm_page(old_page);
 	if (page_kddm_count(old_page) == 0) {
@@ -656,8 +655,6 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 	}
 
 	new_obj->object = new_page;
-
-	SET_OBJECT_LOCKED(new_obj);
 
 	ptep = get_locked_pte(mm, addr, &ptl);
 	BUG_ON (!ptep);
@@ -727,9 +724,9 @@ static void kddm_pt_for_each_obj_entry(struct kddm_set *set,
 
 	BUG_ON(!f);
 
-	spin_lock(&mm->page_table_lock);
+	down_write(&mm->mmap_sem);
 	kddm_pt_for_each(set, mm, 0, PAGE_OFFSET, f, data);
-	spin_unlock(&mm->page_table_lock);
+	up_write(&mm->mmap_sem);
 }
 
 
@@ -759,19 +756,14 @@ static void *kddm_pt_import (struct rpc_desc* desc, int *free_data)
 	return mm;
 }
 
-static inline void init_kddm_pt(struct kddm_set *set,
-				struct mm_struct *mm)
+static void kddm_pt_lock_obj_table (struct kddm_set *set)
 {
-	struct vm_area_struct *vma;
+	/* We don't need any global table lock for most operations */
+}
 
-	if (mm == NULL)
-		return;
-
-	for (vma = mm->mmap; vma != NULL; vma = vma->vm_next) {
-		if (anon_vma(vma))
-			kddm_pt_for_each(set, mm, vma->vm_start, vma->vm_end,
-					 NULL, vma);
-	}
+static void kddm_pt_unlock_obj_table (struct kddm_set *set)
+{
+	/* We don't need any global table lock for most operations */
 }
 
 static void *kddm_pt_alloc (struct kddm_set *set, void *_data)
@@ -792,10 +784,12 @@ static void *kddm_pt_alloc (struct kddm_set *set, void *_data)
 
 	mm->anon_vma_kddm_id = set->id;
 
-	init_kddm_pt(set, mm);
-
-	for (vma = mm->mmap; vma != NULL; vma = vma->vm_next)
+	for (vma = mm->mmap; vma != NULL; vma = vma->vm_next) {
+		if (anon_vma(vma))
+			kddm_pt_for_each(set, mm, vma->vm_start, vma->vm_end,
+					 NULL, vma);
 		check_link_vma_to_anon_memory_kddm_set (vma);
+	}
 
 	mm->anon_vma_kddm_set = set;
 
@@ -885,4 +879,6 @@ struct kddm_set_ops kddm_pt_set_ops = {
 	for_each_obj_entry:  kddm_pt_for_each_obj_entry,
 	export:              kddm_pt_export,
 	import:              kddm_pt_import,
+	lock_obj_table:      kddm_pt_lock_obj_table,
+	unlock_obj_table:    kddm_pt_unlock_obj_table,
 };
