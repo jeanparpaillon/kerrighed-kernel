@@ -1169,6 +1169,8 @@ static void handle_do_restart(struct rpc_desc *desc, void *_msg, size_t size)
 	}
 #endif
 
+	memset(&app->restart, 0, sizeof(app->restart));
+
 err_end_pid:
 	if (app->cred) {
 		app->cred = NULL;
