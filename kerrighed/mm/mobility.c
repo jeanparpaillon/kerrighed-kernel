@@ -64,6 +64,9 @@ extern struct vm_operations_struct special_mapping_vmops;
 
 void free_ghost_mm (struct task_struct *tsk)
 {
+	if (tsk->exit_state)
+		return;
+
 	/* if not NULL, mm_release will try to write in userspace... which
 	 * does not exist anyway since we are in kernel thread context
 	 */
@@ -703,6 +706,9 @@ int export_mm_struct(struct epm_action *action,
 	struct mm_struct *mm, *exported_mm;
 	struct anon_vma_kddm_set_private *private;
 	int r = 0;
+
+	if (tsk->exit_state)
+		return 0;
 
 	mm = tsk->mm;
 	exported_mm = mm;
@@ -1374,6 +1380,9 @@ int import_mm_struct (struct epm_action *action,
 	struct kddm_set *set;
 	int r;
 
+	if (tsk->exit_state)
+		return 0;
+
 	if (action->type == EPM_RESTART
 	    && action->restart.shared == CR_LINK_ONLY) {
 		r = cr_link_to_mm_struct(action, ghost, tsk);
@@ -1444,7 +1453,8 @@ err:
 
 void unimport_mm_struct(struct task_struct *task)
 {
-	free_ghost_mm(task);
+	if (!task->exit_state)
+		free_ghost_mm(task);
 }
 
 

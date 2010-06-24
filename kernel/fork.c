@@ -793,6 +793,12 @@ fail_nomem:
 static int copy_fs(unsigned long clone_flags, struct task_struct *tsk)
 {
 	struct fs_struct *fs = current->fs;
+#ifdef CONFIG_KRG_EPM
+	if (!fs) {
+		BUG_ON(!krg_current);
+		return 0;
+	}
+#endif
 	if (clone_flags & CLONE_FS) {
 		/* tsk->fs is already what we want */
 		write_lock(&fs->lock);

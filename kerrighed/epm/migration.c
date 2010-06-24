@@ -218,9 +218,13 @@ void migration_aborted(struct task_struct *tsk, int ret)
 	migration_wait_wake(tsk, ret);
 }
 
-static void prepare_migrate(struct task_struct *task)
+static int prepare_migrate(struct task_struct *task)
 {
-	hide_process(task);
+	int err;
+
+	err = hide_process(task);
+	if (err)
+		return err;
 
 	/*
 	 * Prevent the migrated task from removing the sighand_struct and
@@ -229,6 +233,8 @@ static void prepare_migrate(struct task_struct *task)
 	krg_sighand_pin(task->sighand);
 	krg_signal_pin(task->signal);
 	mm_struct_pin(task->mm);
+
+	return err;
 }
 
 static void undo_migrate(struct task_struct *task)
@@ -273,18 +279,20 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	if (!krgnode_online(target))
 		goto out;
 
+	retval = prepare_migrate(tsk);
+	if (retval)
+		goto out;
+
 	retval = -ENOMEM;
 	desc = rpc_begin(RPC_EPM_MIGRATE, target);
 	if (!desc)
-		goto out;
+		goto err_undo;
 
 	migration.type = EPM_MIGRATE;
 	migration.migrate.pid = task_pid_knr(tsk);
 	migration.migrate.target = target;
 	migration.migrate.source = kerrighed_node_id;
 	migration.migrate.start_date = current_kernel_time();
-
-	prepare_migrate(tsk);
 
 	retval = send_task(desc, tsk, regs, &migration);
 	if (retval < 0) {
@@ -357,7 +365,11 @@ static void handle_migrate(struct rpc_desc *desc, void *msg, size_t size)
 #endif
 	krg_action_stop(task, EPM_MIGRATE);
 
-	wake_up_new_task(task, CLONE_VM);
+	if (task->exit_state)
+		/* Never schedule an imported zombie */
+		put_task_struct(task);
+	else
+		wake_up_new_task(task, CLONE_VM);
 }
 
 /* Expects tasklist_lock locked */

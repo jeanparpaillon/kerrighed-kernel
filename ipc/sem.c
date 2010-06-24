@@ -1546,6 +1546,12 @@ int copy_semundo(unsigned long clone_flags, struct task_struct *tsk)
 {
 	struct ipc_namespace *ns;
 
+#ifdef CONFIG_KRG_EPM
+	if (!task_nsproxy(tsk)) {
+		BUG_ON(!krg_current);
+		return 0;
+	}
+#endif
 	ns = task_nsproxy(tsk)->ipc_ns;
 
 	if (is_krg_ipc(&sem_ids(ns)))

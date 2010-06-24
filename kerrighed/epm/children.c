@@ -1381,7 +1381,6 @@ int krg_children_prepare_fork(struct task_struct *task,
 	if (krg_current) {
 		rcu_assign_pointer(task->children_obj,
 				   krg_current->children_obj);
-		BUG_ON(!task->children_obj);
 		rcu_assign_pointer(task->parent_children_obj,
 				   krg_current->parent_children_obj);
 		goto out;

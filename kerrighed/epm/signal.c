@@ -422,14 +422,14 @@ void krg_signal_alloc(struct task_struct *task, struct pid *pid,
 {
 	struct task_struct *krg_cur;
 
-	if (!task->nsproxy->krg_ns)
-		return;
-
 	if (krg_current && !in_krg_do_fork())
 		/*
 		 * This is a process migration or restart: signal_struct is
 		 * already setup.
 		 */
+		return;
+
+	if (!task->nsproxy->krg_ns)
 		return;
 
 	if (!krg_current && (clone_flags & CLONE_THREAD))
@@ -616,6 +616,9 @@ static int export_sigpending(ghost_t *ghost,
 	unsigned long flags;
 	int err;
 
+	if (task->exit_state)
+		return 0;
+
 	INIT_LIST_HEAD(&tmp_queue.list);
 	nr_sig = 0;
 	if (!lock_task_sighand(task, &flags))
@@ -666,6 +669,11 @@ static int import_sigpending(ghost_t *ghost,
 	struct sigqueue *q;
 	int i;
 	int err;
+
+	if (task->exit_state) {
+		init_sigpending(pending);
+		return 0;
+	}
 
 	err = ghost_read(ghost, &pending->signal, sizeof(pending->signal));
 	if (err)

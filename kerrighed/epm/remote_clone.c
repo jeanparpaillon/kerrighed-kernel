@@ -165,6 +165,9 @@ int export_vfork_done(struct epm_action *action,
 	struct vfork_done_proxy proxy;
 	int retval = 0;
 
+	if (task->exit_state)
+		return 0;
+
 	switch (action->type) {
 	case EPM_MIGRATE:
 		if (!task->vfork_done)
@@ -215,6 +218,9 @@ int import_vfork_done(struct epm_action *action,
 	struct vfork_done_proxy tmp_proxy;
 	int retval = 0;
 
+	if (task->exit_state)
+		return 0;
+
 	switch (action->type) {
 	case EPM_MIGRATE:
 		if (!task->vfork_done)
@@ -252,6 +258,10 @@ out:
 void unimport_vfork_done(struct task_struct *task)
 {
 	struct completion *vfork_done = task->vfork_done;
+
+	if (task->exit_state)
+		return;
+
 	if (vfork_done && task->remote_vfork_done)
 		vfork_done_proxy_free((struct vfork_done_proxy *)vfork_done);
 }

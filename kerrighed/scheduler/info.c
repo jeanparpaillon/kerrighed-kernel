@@ -320,13 +320,13 @@ int krg_sched_info_copy(struct task_struct *task)
 
 	rcu_assign_pointer(task->krg_sched, NULL);
 
-	if (!task->nsproxy->krg_ns)
-		return 0;
-
 	if (krg_current) {
 		rcu_assign_pointer(task->krg_sched, krg_current->krg_sched);
 		return 0;
 	}
+
+	if (!task->nsproxy->krg_ns)
+		return 0;
 
 	/* Kernel threads do not need krg_sched_info */
 	/*

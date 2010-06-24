@@ -851,8 +851,13 @@ static void __continue_task(task_state_t *tsk, int first_run)
 
 	if (!first_run)
 		complete(&tsk->checkpoint.completion);
-	else
-		wake_up_new_task(tsk->task, CLONE_VM);
+	else {
+		/* Never schedule an imported zombie */
+		if (tsk->task->exit_state)
+			put_task_struct(tsk->task);
+		else
+			wake_up_new_task(tsk->task, CLONE_VM);
+	}
 }
 
 static void __local_continue(struct app_struct *app, int first_run)

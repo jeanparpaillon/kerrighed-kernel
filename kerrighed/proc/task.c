@@ -263,12 +263,12 @@ int krg_task_alloc(struct task_struct *task, struct pid *pid)
 	int nr = pid_knr(pid);
 
 	task->task_obj = NULL;
-	if (!task->nsproxy->krg_ns)
-		return 0;
 #ifdef CONFIG_KRG_EPM
 	if (krg_current)
 		return 0;
 #endif
+	if (!task->nsproxy->krg_ns)
+		return 0;
 	/* Exclude kernel threads and local pids from using task kddm objects. */
 	/*
 	 * At this stage, current->mm points the mm of the task being duplicated
