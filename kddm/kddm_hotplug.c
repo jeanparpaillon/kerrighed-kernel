@@ -33,7 +33,7 @@ extern kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-struct browse_add_param {
+struct browse_data {
 	struct kddm_set *set;
 	krgnodemask_t new_nodes_map;
 	kerrighed_node_t new_nb_nodes;
@@ -45,7 +45,7 @@ static int add_browse_objects(unsigned long objid,
 {
 	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
 	kerrighed_node_t old_def_owner, new_def_owner;
-	struct browse_add_param *param = _data;
+	struct browse_data *param = _data;
 	struct kddm_set *set = param->set;
 
 	old_def_owner = kddm_io_default_owner (set, objid);
@@ -101,7 +101,7 @@ done:
 
 static void add_browse_sets(void *_set, void *_data)
 {
-	struct browse_add_param *param = _data;
+	struct browse_data *param = _data;
 	struct kddm_set *set = _set;
 
 	BUG_ON(set->def_owner < 0);
@@ -128,7 +128,7 @@ static void add_browse_sets(void *_set, void *_data)
 
 static void set_add(krgnodemask_t * vector)
 {
-	struct browse_add_param param;
+	struct browse_data param;
         kerrighed_node_t node;
 
 	if(__krgnode_isset(kerrighed_node_id, vector))
@@ -256,9 +256,13 @@ static void kddm_set_remove_cb(void *_kddm_set, void *_data)
 
 static void set_remove(krgnodemask_t * vector)
 {
+	struct browse_data param;
 
 	printk("set_remove...\n");
 	return;
+
+	krgnodes_copy(param.new_nodes_map, krgnode_online_map);
+	param.new_nb_nodes = kerrighed_nb_nodes;
 
 	down (&kddm_def_ns->table_sem);
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
