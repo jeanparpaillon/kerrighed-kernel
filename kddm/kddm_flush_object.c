@@ -169,7 +169,7 @@ static int __kddm_flush_object(unsigned long objid,
 	case READ_COPY:
 		/* There exist another copy in the cluster.
 		   Just invalidate the local one */
-		__destroy_kddm_obj_entry(set, obj_entry, objid, 0, 0);
+		__destroy_kddm_obj_entry(set, obj_entry, objid, 0, 1);
 		send_invalidation_ack(set, objid, get_prob_owner(obj_entry));
 		break;
 
@@ -198,7 +198,7 @@ static int __kddm_flush_object(unsigned long objid,
 send_copy:
 		dest = param->f(set, objid, obj_entry, param->data);
 		send_copy_on_write(set, obj_entry, objid, dest, 0);
-		__destroy_kddm_obj_entry(set, obj_entry, objid, 0, 0);
+		__destroy_kddm_obj_entry(set, obj_entry, objid, 0, 1);
 		break;
 
 	case WAIT_ACK_INV:
