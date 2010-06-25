@@ -331,6 +331,21 @@ static void handle_wait_task_zombie(struct rpc_desc *desc,
 		res.ioac = p->ioac;
 		task_io_accounting_add(&res.ioac, &sig->ioac);
 	}
+
+	/*
+	 * Tell client to unlock pid location.
+	 * wait_task_zombie()->release_task() frees the task KDDM
+	 * object and would deadlock.
+	 * We hold tasklist_lock, so migration is blocked and will fail if we
+	 * succeed reaping the child.
+	 */
+	retval = req->pid;
+	err = rpc_pack_type(desc, retval);
+	if (err) {
+		read_unlock(&tasklist_lock);
+		goto err_cancel;
+	}
+
 	retval = wait_task_zombie(p, req->options,
 				  &res.info,
 				  &res.status, &res.ru);
@@ -354,35 +369,46 @@ err_cancel:
 	rpc_cancel(desc);
 }
 
-int krg_wait_task_zombie(pid_t pid, kerrighed_node_t zombie_location,
+int krg_wait_task_zombie(pid_t pid,
 			 int options,
 			 struct siginfo __user *infop,
 			 int __user *stat_addr, struct rusage __user *ru)
 {
 	struct wait_task_request req;
+	kerrighed_node_t zombie_location;
 	int retval;
 	struct wait_task_result res;
 	struct rpc_desc *desc;
 	bool noreap = options & WNOWAIT;
 	int err;
 
-	/*
-	 * Zombie's location does not need to remain locked since it won't
-	 * change afterwards, but this will be needed to support hot removal of
-	 * nodes with zombie migration.
-	 */
+	zombie_location = krg_lock_pid_location(pid);
+	if (zombie_location == KERRIGHED_NODE_ID_NONE)
+		/* Reaped by another sub-thread */
+		return 0;
 
 	desc = rpc_begin(PROC_WAIT_TASK_ZOMBIE, zombie_location);
-	if (!desc)
+	if (!desc) {
+		krg_unlock_pid_location(pid);
 		return -ENOMEM;
+	}
 
 	req.pid = pid;
 	/* True as long as no remote ptrace is allowed */
 	req.real_parent_tgid = task_tgid_knr(current);
 	req.options = options;
 	err = rpc_pack_type(desc, req);
+	if (err) {
+		krg_unlock_pid_location(pid);
+		goto err_cancel;
+	}
+
+	err = rpc_unpack_type(desc, retval);
+	krg_unlock_pid_location(pid);
 	if (err)
 		goto err_cancel;
+	if (!retval)
+		goto out;
 
 	err = rpc_unpack_type(desc, retval);
 	if (err)

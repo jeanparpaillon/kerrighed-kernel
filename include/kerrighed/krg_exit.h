@@ -20,7 +20,7 @@ int krg_do_wait(struct children_kddm_object *obj, int *notask_error,
 		struct rusage __user *ru);
 
 /* Used by krg_do_wait() */
-int krg_wait_task_zombie(pid_t pid, kerrighed_node_t zombie_location,
+int krg_wait_task_zombie(pid_t pid,
 			 int options,
 			 struct siginfo __user *infop,
 			 int __user *stat_addr, struct rusage __user *ru);
