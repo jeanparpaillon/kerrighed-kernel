@@ -3,6 +3,7 @@
  */
 
 #include <linux/workqueue.h>
+#include <linux/completion.h>
 #include <linux/slab.h>
 
 #include <kerrighed/hotplug.h>
@@ -13,6 +14,7 @@
 #include "hotplug_internal.h"
 
 struct workqueue_struct *krg_ha_wq;
+struct workqueue_struct *krg_hotplug_wq;
 
 struct hotplug_context *hotplug_ctx_alloc(struct krg_namespace *ns)
 {
@@ -25,6 +27,7 @@ struct hotplug_context *hotplug_ctx_alloc(struct krg_namespace *ns)
 
 	get_krg_ns(ns);
 	ctx->ns = ns;
+	init_completion(&ctx->done);
 	kref_init(&ctx->kref);
 
 	return ctx;
@@ -43,6 +46,10 @@ int init_hotplug(void)
 {
 	krg_ha_wq = create_workqueue("krgHA");
 	BUG_ON(krg_ha_wq == NULL);
+
+	krg_hotplug_wq = create_singlethread_workqueue("krg_hotplug");
+	if (!krg_hotplug_wq)
+		panic("kerrighed: Couldn't create hotplug workqueue!\n");
 
 	hotplug_hooks_init();
 
