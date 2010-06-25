@@ -115,10 +115,10 @@ static void *s_start(struct seq_file *m, loff_t *pos)
 
 	/* Assumption: KDDM set id 0 is never used. */
 
-	down (&kddm_def_ns->table_sem);
+	down_read (&kddm_def_ns->table_sem);
 	set = __hashtable_find_next (kddm_def_ns->kddm_set_table, *pos,
 				     &found);
-	up (&kddm_def_ns->table_sem);
+	up_read (&kddm_def_ns->table_sem);
 	*pos = found;
 	return set;
 }
