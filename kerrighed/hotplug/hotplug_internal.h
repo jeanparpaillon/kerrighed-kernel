@@ -22,7 +22,7 @@ struct hotplug_context;
 int do_cluster_start(struct hotplug_context *ctx);
 int __nodes_add(struct hotplug_context *ctx);
 void local_add_done(struct rpc_desc *desc);
-int self_remove(struct krg_namespace *ns);
+void self_remove(struct krg_namespace *ns);
 
 int repair_monitor(void);
 void update_heartbeat(void);
