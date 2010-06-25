@@ -179,21 +179,14 @@ err:
 static int get_file_size(struct file *file, loff_t *size)
 {
 	int r = 0;
+	struct kstat stat;
 
-#ifdef CONFIG_KRG_FAF
-	if (file->f_flags & O_FAF_CLT) {
-		struct kstat stat;
-		r = krg_faf_fstat(file, &stat);
-		if (r)
-			goto exit;
+	r = do_fstat(file, &stat);
+	if (r)
+		goto exit;
 
-		*size = stat.size;
-	} else
-#endif
-		*size = i_size_read(file->f_dentry->d_inode);
-#ifdef CONFIG_KRG_FAF
+	*size = stat.size;
 exit:
-#endif
 	return r;
 }
 

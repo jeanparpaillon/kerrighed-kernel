@@ -58,20 +58,33 @@ int vfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat)
 
 EXPORT_SYMBOL(vfs_getattr);
 
+#ifdef CONFIG_KRG_DVFS
+int do_fstat(struct file *f, struct kstat *stat)
+{
+	int error;
+
+#ifdef CONFIG_KRG_FAF
+	if (f->f_flags & O_FAF_CLT)
+		error = krg_faf_fstat(f, stat);
+	else
+#endif
+		error = vfs_getattr(f->f_path.mnt, f->f_path.dentry, stat);
+
+	return error;
+}
+#endif
+
 int vfs_fstat(unsigned int fd, struct kstat *stat)
 {
 	struct file *f = fget(fd);
 	int error = -EBADF;
 
 	if (f) {
-#ifdef CONFIG_KRG_FAF
-		if (f->f_flags & O_FAF_CLT) {
-			error = krg_faf_fstat(f, stat);
-			fput(f);
-			return error;
-		}
-#endif
+#ifdef CONFIG_KRG_DVFS
+		error = do_fstat(f, stat);
+#else
 		error = vfs_getattr(f->f_path.mnt, f->f_path.dentry, stat);
+#endif
 		fput(f);
 	}
 	return error;

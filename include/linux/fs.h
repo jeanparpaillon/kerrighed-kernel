@@ -2318,6 +2318,9 @@ void inode_set_bytes(struct inode *inode, loff_t bytes);
 
 extern int vfs_readdir(struct file *, filldir_t, void *);
 
+#ifdef CONFIG_KRG_DVFS
+extern int do_fstat(struct file *file, struct kstat *stat);
+#endif
 extern int vfs_stat(char __user *, struct kstat *);
 extern int vfs_lstat(char __user *, struct kstat *);
 extern int vfs_fstat(unsigned int, struct kstat *);
