@@ -180,14 +180,15 @@ static void set_add(krgnodemask_t * vector)
 	rpc_enable(KDDM_FORCE_UPDATE_DEF_OWNER);
 }
 
-/**
- *
- * Remove related part
- *
- **/
+/*--------------------------------------------------------------------------*
+ *                                                                          *
+ *                                 NODE REMOVAL                             *
+ *                                                                          *
+ *--------------------------------------------------------------------------*/
 
-static int browse_remove(unsigned long objid, void *_obj_entry,
-			 void *_data)
+static int remove_browse_objects(unsigned long objid,
+				 void *_obj_entry,
+				 void *_data)
 {
 	struct kddm_obj *obj_entry = _obj_entry;
 	struct kddm_set *kddm_set = (struct kddm_set *)_data;
@@ -246,28 +247,52 @@ static int browse_remove(unsigned long objid, void *_obj_entry,
 	return 0;
 };
 
-static void kddm_set_remove_cb(void *_kddm_set, void *_data)
+static void remove_browse_sets(void *_set, void *_data)
 {
-	struct kddm_set *kddm_set = _kddm_set;
+	struct browse_data *param = _data;
+	struct kddm_set *set = _set;
 
-	__for_each_kddm_object(kddm_set, browse_remove, kddm_set);
+	BUG_ON(set->state == KDDM_SET_LOCKED);
+	if (set->state != KDDM_SET_READY)
+		return;
 
+	BUG_ON(set->def_owner < 0);
+	BUG_ON(set->def_owner > KDDM_MAX_DEF_OWNER);
+
+	switch (set->def_owner) {
+	case KDDM_RR_DEF_OWNER:
+	case KDDM_CUSTOM_DEF_OWNER:
+		param->set = set;
+		__for_each_kddm_object(set, remove_browse_objects, _data);
+		break;
+
+	case KDDM_UNIQUE_ID_DEF_OWNER:
+		/* The unique_id default owners are hard-coded depending on
+		 * object ids. Adding a node doesn't change anything. */
+	default:
+		/* The default owner is hard coded to a given node.
+		 * Adding a node doesn't change anything for these cases.
+		 */
+		break;
+	};
 };
 
 static void set_remove(krgnodemask_t * vector)
 {
 	struct browse_data param;
 
-	printk("set_remove...\n");
-	return;
-
 	krgnodes_copy(param.new_nodes_map, krgnode_online_map);
 	param.new_nb_nodes = kerrighed_nb_nodes;
 
-	down (&kddm_def_ns->table_sem);
+	freeze_kddm(&param.new_nodes_map);
+
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
-				 kddm_set_remove_cb, vector);
-	up (&kddm_def_ns->table_sem);
+				 add_browse_sets, &param);
+
+	kddm_nb_nodes = param.new_nb_nodes;
+	krgnodes_copy(krgnode_kddm_map, param.new_nodes_map);
+
+	unfreeze_kddm(&krgnode_kddm_map);
 };
 
 /**
