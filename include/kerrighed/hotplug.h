@@ -1,6 +1,8 @@
 #ifndef __HOTPLUG__
 #define __HOTPLUG__
 
+#include <linux/workqueue.h>
+#include <linux/completion.h>
 #include <linux/kref.h>
 #include <kerrighed/krgnodemask.h>
 
@@ -43,6 +45,9 @@ struct hotplug_node_set {
 struct hotplug_context {
 	struct krg_namespace *ns;
 	struct hotplug_node_set node_set;
+	struct work_struct work;
+	struct completion done;
+	int ret;
 	struct kref kref;
 };
 
