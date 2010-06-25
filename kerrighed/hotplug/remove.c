@@ -115,6 +115,19 @@ static int handle_node_remove_confirm(struct rpc_desc *desc, void *data, size_t 
 	return 0;
 }
 
+static int check_remove_req(struct hotplug_context *ctx)
+{
+	if (ctx->node_set.subclusterid != kerrighed_subsession_id)
+		return -EPERM;
+	if (!krgnode_online(kerrighed_node_id))
+		return -EPERM;
+	if (!krgnodes_subset(ctx->node_set.v, krgnode_present_map))
+		return -ENONET;
+	if (!krgnodes_subset(ctx->node_set.v, krgnode_online_map))
+		return -EPERM;
+	return 0;
+}
+
 static int do_nodes_remove(struct hotplug_context *ctx)
 {
 	char *page;
@@ -186,21 +199,11 @@ static int nodes_remove(void __user *arg)
 	if (err)
 		goto out;
 
-	err = -EPERM;
-	if (ctx->node_set.subclusterid != kerrighed_subsession_id)
-		goto out;
-
-	if (!krgnode_online(kerrighed_node_id))
-		goto out;
-
-	err = -ENONET;
-	if (!krgnodes_subset(ctx->node_set.v, krgnode_present_map))
+	err = check_remove_req(ctx);
+	if (err)
 		goto out;
 
 	err = -EPERM;
-	if (!krgnodes_subset(ctx->node_set.v, krgnode_online_map))
-		goto out;
-
 	/* TODO: Really required? */
 	if (krgnode_isset(kerrighed_node_id, ctx->node_set.v))
 		goto out;
