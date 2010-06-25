@@ -323,10 +323,7 @@ void krg_ns_root_exit(struct krg_namespace *ns)
 	/* TODO: Make it race-free */
 	if (!IS_KERRIGHED_NODE(KRGFLAGS_STOPPING)
 	    && IS_KERRIGHED_NODE(KRGFLAGS_RUNNING))
-		if (self_remove(ns))
-			printk("kerrighed: "
-			       "Failed to automatically remove the node! "
-			       "Please retry manually.\n");
+		self_remove(ns);
 #else
 	printk(KERN_WARNING "kerrighed: Root task exiting! Leaking zombies.\n");
 	set_current_state(TASK_UNINTERRUPTIBLE);

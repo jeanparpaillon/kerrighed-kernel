@@ -141,14 +141,23 @@ static int do_nodes_remove(struct hotplug_context *ctx)
 	return ret;
 }
 
-int self_remove(struct krg_namespace *ns)
+static void self_remove_failed(struct krg_namespace *ns, int err)
+{
+	printk("kerrighed: "
+	       "Failed to automatically remove the node! err = %d"
+	       "Please retry manually.\n", err);
+}
+
+void self_remove(struct krg_namespace *ns)
 {
 	struct hotplug_context *ctx;
 	int err;
 
 	ctx = hotplug_ctx_alloc(ns);
-	if (!ctx)
-		return -ENOMEM;
+	if (!ctx) {
+		self_remove_failed(ns, -ENOMEM);
+		return;
+	}
 	ctx->node_set.subclusterid = kerrighed_subsession_id;
 	ctx->node_set.v = krgnodemask_of_node(kerrighed_node_id);
 
