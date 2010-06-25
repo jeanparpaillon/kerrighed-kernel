@@ -190,8 +190,10 @@ static int sighand_struct_remove_object(void *object,
 	struct sighand_struct_kddm_object *obj = object;
 
 	/* Ensure that no thread uses this sighand_struct copy */
+	lockdep_off();
 	down_write(&obj->remove_sem);
 	up_write(&obj->remove_sem);
+	lockdep_on();
 
 	if (!obj->keep_on_remove) {
 		BUG_ON(waitqueue_active(&obj->sighand->signalfd_wqh));
