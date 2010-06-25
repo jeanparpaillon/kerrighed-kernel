@@ -67,7 +67,7 @@ static int add_browse_objects(unsigned long objid,
 		if (new_def_owner == kerrighed_node_id)
 			break;
 		/* Inform the new owner a copy already exist */
-		request_change_prob_owner(set, objid, new_def_owner,
+		request_change_prob_owner(set, obj_entry, objid, new_def_owner,
 					  kerrighed_node_id);
 		break;
 
@@ -177,6 +177,7 @@ static void set_add(krgnodemask_t * vector)
 	rpc_enable(OBJECT_SEND);
 	rpc_enable(SEND_WRITE_ACCESS);
 	rpc_enable(NO_OBJECT_SEND);
+	rpc_enable(KDDM_FORCE_UPDATE_DEF_OWNER);
 }
 
 /**
