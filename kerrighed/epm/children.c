@@ -814,12 +814,18 @@ bool krg_wait_consider_task(struct children_kddm_object *obj,
 	 */
 	if (child->exit_state == EXIT_ZOMBIE
 	    && !krg_delay_group_leader(child)) {
+		kerrighed_node_t node;
+		pid_t pid;
+
 		/* Avoid doing an RPC when we already know the result */
 		if (!likely(options & WEXITED))
 			return false;
 
+		pid = child->pid;
+		node = child->node;
 		krg_children_unlock(current->children_obj);
-		*tsk_result = krg_wait_task_zombie(child->pid, child->node,
+		/* A race condition could free child right now */
+		*tsk_result = krg_wait_task_zombie(pid, node,
 						   options,
 						   infop, stat_addr, ru);
 		return true;
