@@ -133,6 +133,10 @@ static int do_nodes_remove(struct hotplug_context *ctx)
 	char *page;
 	int ret;
 
+	ret = check_remove_req(ctx);
+	if (ret)
+		return ret;
+
 	page = (char *)__get_free_page(GFP_KERNEL);
 	if (!page)
 		return -ENOMEM;
@@ -161,10 +165,23 @@ static void self_remove_failed(struct krg_namespace *ns, int err)
 	       "Please retry manually.\n", err);
 }
 
-void self_remove(struct krg_namespace *ns)
+static void self_remove_work(struct work_struct *work)
 {
 	struct hotplug_context *ctx;
 	int err;
+
+	ctx = container_of(work, struct hotplug_context, work);
+
+	err = do_nodes_remove(ctx);
+	if (err)
+		self_remove_failed(ctx->ns, err);
+
+	hotplug_ctx_put(ctx);
+}
+
+void self_remove(struct krg_namespace *ns)
+{
+	struct hotplug_context *ctx;
 
 	ctx = hotplug_ctx_alloc(ns);
 	if (!ctx) {
@@ -174,11 +191,8 @@ void self_remove(struct krg_namespace *ns)
 	ctx->node_set.subclusterid = kerrighed_subsession_id;
 	ctx->node_set.v = krgnodemask_of_node(kerrighed_node_id);
 
-	err = do_nodes_remove(ctx);
-
-	hotplug_ctx_put(ctx);
-
-	return err;
+	INIT_WORK(&ctx->work, self_remove_work);
+	queue_work(krg_hotplug_wq, &ctx->work);
 }
 
 static int nodes_remove(void __user *arg)
