@@ -316,8 +316,10 @@ static int signal_struct_remove_object(void *object,
 	struct signal_struct_kddm_object *obj = object;
 
 	/* Ensure that no thread uses this signal_struct copy */
+	lockdep_off();
 	down_write(&obj->remove_sem);
 	up_write(&obj->remove_sem);
+	lockdep_on();
 
 	if (!obj->keep_on_remove) {
 		struct signal_struct *sig = obj->signal;
