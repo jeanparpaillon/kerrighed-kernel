@@ -29,8 +29,6 @@ void krg_set_child_exit_signal(struct children_kddm_object *obj,
 			       struct task_struct *child);
 void krg_set_child_exit_state(struct children_kddm_object *obj,
 			      struct task_struct *child);
-void krg_set_child_location(struct children_kddm_object *obj,
-			    struct task_struct *child);
 void krg_remove_child(struct children_kddm_object *obj,
 		      struct task_struct *child);
 void krg_forget_original_remote_parent(struct task_struct *parent,
