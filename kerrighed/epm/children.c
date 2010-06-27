@@ -459,8 +459,7 @@ static void free_children(struct task_struct *task)
 
 	list_for_each_entry_safe(child, tmp, &reparented_zombies, sibling) {
 		list_del(&child->sibling);
-		if (child->node != kerrighed_node_id)
-			notify_remote_child_reaper(child->pid, child->node);
+		notify_remote_child_reaper(child->pid);
 		kmem_cache_free(remote_child_cachep, child);
 	}
 }
