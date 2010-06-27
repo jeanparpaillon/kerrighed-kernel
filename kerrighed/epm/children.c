@@ -51,6 +51,8 @@ struct children_kddm_object {
 	unsigned write_locked:1;
 	unsigned removing:1;
 
+	struct list_head reparented_zombies;
+
 	int alive;
 	struct kref kref;
 
@@ -150,6 +152,7 @@ static int children_alloc_object(struct kddm_obj *obj_entry,
 	obj->self_exec_id = 0;
 	init_rwsem(&obj->sem);
 	obj->removing = 0;
+	INIT_LIST_HEAD(&obj->reparented_zombies);
 	obj->alive = 1;
 	kref_init(&obj->kref);
 	obj_entry->object = obj;
@@ -441,16 +444,26 @@ struct children_kddm_object *krg_children_alloc(struct task_struct *task)
 static void free_children(struct task_struct *task)
 {
 	struct children_kddm_object *obj = task->children_obj;
+	LIST_HEAD(reparented_zombies);
+	struct remote_child *child, *tmp;
 
 	BUG_ON(!obj);
 	BUG_ON(!list_empty(&obj->children));
 	BUG_ON(obj->nr_threads);
+	list_splice_init(&obj->reparented_zombies, &reparented_zombies);
 
 	rcu_assign_pointer(task->children_obj, NULL);
 
 	obj->removing = 1;
 	up_write(&obj->sem);
 	_kddm_remove_frozen_object(children_kddm_set, obj->tgid);
+
+	list_for_each_entry_safe(child, tmp, &reparented_zombies, sibling) {
+		list_del(&child->sibling);
+		if (child->node != kerrighed_node_id)
+			notify_remote_child_reaper(child->pid, child->node);
+		kmem_cache_free(remote_child_cachep, child);
+	}
 }
 
 void __krg_children_share(struct task_struct *task)
@@ -624,12 +637,18 @@ void krg_set_child_location(struct children_kddm_object *obj,
 }
 
 /* Expects obj write locked */
+static void __remove_child(struct children_kddm_object *obj,
+			   struct remote_child *child)
+{
+	remove_child_links(obj, child);
+	obj->nr_children--;
+}
+
 static void remove_child(struct children_kddm_object *obj,
 			 struct remote_child *child)
 {
-	remove_child_links(obj, child);
+	__remove_child(obj, child);
 	kmem_cache_free(remote_child_cachep, child);
-	obj->nr_children--;
 }
 
 static void reparent_child(struct children_kddm_object *obj,
@@ -649,7 +668,16 @@ static void reparent_child(struct children_kddm_object *obj,
 		 * kddm object
 		 */
 		/* TODO: Is it true with PID namespaces? */
-		remove_child(obj, child);
+		if (child->exit_state == EXIT_ZOMBIE) {
+			/*
+			 * Remote child reapers will be notified when unlocking
+			 * the children object.
+			 */
+			__remove_child(obj, child);
+			list_add_tail(&child->sibling, &obj->reparented_zombies);
+		} else {
+			remove_child(obj, child);
+		}
 	else {
 		BUG_ON(!(reaper_pid & GLOBAL_PID_MASK));
 		/*
@@ -674,17 +702,9 @@ void krg_forget_original_remote_parent(struct task_struct *parent,
 	pid_t ppid = task_pid_knr(parent);
 
 	list_for_each_entry_safe(child, tmp_child, &obj->children, sibling)
-		if (child->real_parent == ppid) {
-			if (!threaded_reparent
-			    && child->exit_state == EXIT_ZOMBIE
-			    && child->node != kerrighed_node_id)
-				/* Have it reaped by its local child reaper */
-				/* Asynchronous */
-				notify_remote_child_reaper(child->pid,
-							   child->node);
+		if (child->real_parent == ppid)
 			reparent_child(obj, child,
 				       task_pid_knr(reaper), threaded_reparent);
-		}
 }
 
 /* Expects obj write locked */
