@@ -599,7 +599,6 @@ void krg_finish_exit_notify(struct task_struct *task, int signal, void *cookie)
 		} else {
 			krg_set_child_exit_signal(parent_children_obj, task);
 			krg_set_child_exit_state(parent_children_obj, task);
-			krg_set_child_location(parent_children_obj, task);
 		}
 		krg_children_unlock(parent_children_obj);
 	}
