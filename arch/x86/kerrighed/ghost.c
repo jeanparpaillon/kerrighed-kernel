@@ -139,6 +139,15 @@ int import_thread_struct(struct epm_action *action,
 	if (r)
 		goto out;
 
+	/*
+	 * Make get_wchan return do_exit for zombies
+	 * We only set a marker to let copy_thread() do the right thing.
+	 */
+	if (tsk->exit_state)
+		tsk->thread.sp = ~0UL;
+	else
+		tsk->thread.sp = 0;
+
 	if (tsk->thread.xstate) {
 		r = -ENOMEM;
 		tsk->thread.xstate = kmem_cache_alloc(task_xstate_cachep,

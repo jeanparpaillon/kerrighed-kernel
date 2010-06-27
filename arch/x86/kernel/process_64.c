@@ -300,6 +300,15 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
 		childregs->sp = (unsigned long)childregs;
 
 	p->thread.sp = (unsigned long) childregs;
+#ifdef CONFIG_KRG_EPM
+	if (krg_current && krg_current->thread.sp) {
+		/* Zombie migration/restart: let get_wchan find do_exit() */
+		p->thread.sp -= 24;
+		*(u64 *)p->thread.sp = p->thread.sp + 8;
+		*(u64 *)(p->thread.sp + 8) = 0;
+		*(u64 *)(p->thread.sp + 16) = (u64)do_exit;
+	}
+#endif
 	p->thread.sp0 = (unsigned long) (childregs+1);
 	p->thread.usersp = me->thread.usersp;
 
