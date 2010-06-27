@@ -676,9 +676,9 @@ struct notify_remote_child_reaper_msg {
 	pid_t zombie_pid;
 };
 
-static void handle_notify_remote_child_reaper(struct rpc_desc *desc,
-					      void *_msg,
-					      size_t size)
+static int handle_notify_remote_child_reaper(struct rpc_desc *desc,
+					     void *_msg,
+					     size_t size)
 {
 	struct notify_remote_child_reaper_msg *msg = _msg;
 	struct task_struct *zombie;
@@ -708,6 +708,8 @@ static void handle_notify_remote_child_reaper(struct rpc_desc *desc,
 
 	if (release)
 		release_task(zombie);
+
+	return 0;
 }
 
 void notify_remote_child_reaper(pid_t zombie_pid,
@@ -720,8 +722,8 @@ void notify_remote_child_reaper(pid_t zombie_pid,
 	BUG_ON(zombie_location == KERRIGHED_NODE_ID_NONE);
 	BUG_ON(zombie_location == kerrighed_node_id);
 
-	rpc_async(PROC_NOTIFY_REMOTE_CHILD_REAPER, zombie_location,
-		  &msg, sizeof(msg));
+	rpc_sync(PROC_NOTIFY_REMOTE_CHILD_REAPER, zombie_location,
+		 &msg, sizeof(msg));
 }
 
 #endif /* CONFIG_KRG_EPM */
@@ -733,8 +735,8 @@ void proc_krg_exit_start(void)
 {
 #ifdef CONFIG_KRG_EPM
 	rpc_register_void(PROC_DO_NOTIFY_PARENT, handle_do_notify_parent, 0);
-	rpc_register_void(PROC_NOTIFY_REMOTE_CHILD_REAPER,
-			  handle_notify_remote_child_reaper, 0);
+	rpc_register_int(PROC_NOTIFY_REMOTE_CHILD_REAPER,
+			 handle_notify_remote_child_reaper, 0);
 	rpc_register_void(PROC_WAIT_TASK_ZOMBIE, handle_wait_task_zombie, 0);
 #endif
 }
