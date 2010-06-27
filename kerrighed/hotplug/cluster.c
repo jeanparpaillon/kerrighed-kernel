@@ -597,6 +597,8 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 		init_completion(&krg_container_done);
 		complete(&krg_container_continue);
 		wait_for_completion(&krg_container_done);
+
+		local_add_done(desc);
 	}
 
 out:

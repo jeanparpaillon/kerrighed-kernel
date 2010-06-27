@@ -6,9 +6,11 @@
 
 #include <linux/spinlock.h>
 #include <linux/sched.h>
+#include <linux/wait.h>
 #include <linux/nsproxy.h>
 #include <linux/hashtable.h>
 #include <linux/uaccess.h>
+#include <asm/atomic.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/hotplug.h>
@@ -22,10 +24,18 @@
 
 #include "hotplug_internal.h"
 
+static atomic_t nr_to_wait;
+static DECLARE_WAIT_QUEUE_HEAD(all_added_wqh);
+
 int __nodes_add(struct hotplug_context *ctx)
 {
 	hotplug_add_notify(ctx, HOTPLUG_NOTIFY_ADD);
 	return 0;
+}
+
+void local_add_done(struct rpc_desc *desc)
+{
+	rpc_async(NODE_ADD_ACK, rpc_desc_get_client(desc), NULL, 0);
 }
 
 static void handle_node_add(struct rpc_desc *rpc_desc, void *data, size_t size)
@@ -58,6 +68,14 @@ static void handle_node_add(struct rpc_desc *rpc_desc, void *data, size_t size)
 	} else {
 		printk("Kerrighed is running on %d nodes\n", num_online_krgnodes());
 	}
+
+	local_add_done(rpc_desc);
+}
+
+static void handle_node_add_ack(struct rpc_desc *desc, void *_msg, size_t size)
+{
+	if (atomic_dec_and_test(&nr_to_wait))
+		wake_up(&all_added_wqh);
 }
 
 static int do_nodes_add(struct hotplug_context *ctx)
@@ -77,6 +95,9 @@ static int do_nodes_add(struct hotplug_context *ctx)
 
 	free_page((unsigned long)page);
 
+	atomic_set(&nr_to_wait,
+		   num_online_krgnodes() + krgnodes_weight(ctx->node_set.v));
+
 	/*
 	 * Send request to all new members
 	 * Current limitation: only not-started nodes can be added to a
@@ -90,6 +111,7 @@ static int do_nodes_add(struct hotplug_context *ctx)
 	for_each_online_krgnode(node)
 		rpc_async(NODE_ADD, node, &ctx->node_set, sizeof(ctx->node_set));
 
+	wait_event(all_added_wqh, atomic_read(&nr_to_wait) == 0);
 	printk("kerrighed: [ADD] Adding nodes succeeded.\n");
 
 out:
@@ -143,6 +165,7 @@ out:
 int hotplug_add_init(void)
 {
 	rpc_register_void(NODE_ADD, handle_node_add, 0);
+	rpc_register_void(NODE_ADD_ACK, handle_node_add_ack, 0);
 
 	register_proc_service(KSYS_HOTPLUG_ADD, nodes_add);
 	return 0;
