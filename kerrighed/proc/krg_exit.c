@@ -680,10 +680,22 @@ static int handle_notify_remote_child_reaper(struct rpc_desc *desc,
 					     size_t size)
 {
 	struct notify_remote_child_reaper_msg *msg = _msg;
+	struct task_kddm_object *obj;
 	struct task_struct *zombie;
 	bool release = false;
 
-	krg_task_writelock(msg->zombie_pid);
+	obj = krg_task_writelock(msg->zombie_pid);
+	if (!obj)
+		/* Already reaped */
+		return 0;
+	if (obj->node != kerrighed_node_id) {
+		/*
+		 * Has migrated after being reparented
+		 * Notification is done by unhide_process()
+		 */
+		krg_task_unlock(msg->zombie_pid);
+		return 0;
+	}
 	write_lock_irq(&tasklist_lock);
 
 	zombie = find_task_by_kpid(msg->zombie_pid);
@@ -711,18 +723,41 @@ static int handle_notify_remote_child_reaper(struct rpc_desc *desc,
 	return 0;
 }
 
-void notify_remote_child_reaper(pid_t zombie_pid,
-				kerrighed_node_t zombie_location)
+void notify_remote_child_reaper(pid_t zombie_pid)
 {
+	kerrighed_node_t zombie_location;
+
 	struct notify_remote_child_reaper_msg msg = {
 		.zombie_pid = zombie_pid
 	};
 
-	BUG_ON(zombie_location == KERRIGHED_NODE_ID_NONE);
-	BUG_ON(zombie_location == kerrighed_node_id);
+	zombie_location = krg_lock_pid_location(zombie_pid);
+	if (zombie_location == KERRIGHED_NODE_ID_NONE)
+		/* Already reaped */
+		return;
+	krg_unlock_pid_location(zombie_pid);
+	if (zombie_location == kerrighed_node_id)
+		/*
+		 * Child either was local and local notification was done,
+		 * or has become local and unhide_process() did the
+		 * notification.
+		 */
+		return;
 
 	rpc_sync(PROC_NOTIFY_REMOTE_CHILD_REAPER, zombie_location,
 		 &msg, sizeof(msg));
+}
+
+void krg_zombie_check_notify_child_reaper(struct task_struct *task,
+					  struct children_kddm_object *parent_children_obj)
+{
+	if (parent_children_obj)
+		return;
+
+	krg_update_parents(task, parent_children_obj, 0, 0, kerrighed_node_id);
+	do_notify_parent(task, task->exit_signal);
+	if (task_detached(task))
+		task->exit_state = EXIT_DEAD;
 }
 
 #endif /* CONFIG_KRG_EPM */

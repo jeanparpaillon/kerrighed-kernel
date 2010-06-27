@@ -29,6 +29,7 @@
 #include <kerrighed/krgsyms.h>
 #include <kerrighed/children.h>
 #include <kerrighed/task.h>
+#include <kerrighed/krg_exit.h>
 #include <kerrighed/signal.h>
 #include <kerrighed/pid.h>
 #include <kerrighed/application.h>
@@ -2033,8 +2034,13 @@ dead:
 void unhide_process(struct task_struct *task)
 {
 	struct task_kddm_object *task_obj;
-	struct children_kddm_object *children_obj;
+	struct children_kddm_object *children_obj, *parent_children_obj;
+	bool zombie = task->exit_state == EXIT_ZOMBIE, dead = false;
 
+	if (zombie)
+		parent_children_obj = krg_parent_children_readlock(task);
+	else
+		parent_children_obj = NULL;
 	children_obj = __krg_children_readlock(task);
 	task_obj = __krg_task_writelock(task);
 	BUG_ON(!task_obj);
@@ -2052,10 +2058,21 @@ void unhide_process(struct task_struct *task)
 	/* Now the process can be made world-wide visible. */
 	__krg_set_pid_location(task);
 
+	if (zombie) {
+		BUG_ON(task->exit_state != EXIT_ZOMBIE);
+		krg_zombie_check_notify_child_reaper(task, parent_children_obj);
+		dead = task->exit_state == EXIT_DEAD;
+	}
+
 	write_unlock_irq(&tasklist_lock);
 	__krg_task_unlock(task);
 	if (children_obj)
 		krg_children_unlock(children_obj);
+	if (parent_children_obj)
+		krg_children_unlock(parent_children_obj);
+
+	if (dead)
+		release_task(task);
 }
 
 struct task_struct *import_process(struct epm_action *action,
