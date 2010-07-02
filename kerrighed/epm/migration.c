@@ -251,7 +251,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 {
 	struct epm_action migration;
 	struct rpc_desc *desc;
-	pid_t remote_pid;
+	int retval;
 
 	BUG_ON(tsk == NULL);
 	BUG_ON(regs == NULL);
@@ -269,16 +269,14 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 		return -ENOSYS;
 
 	membership_online_hold();
-	if (!krgnode_online(target)) {
-		membership_online_release();
-		return -ENONET;
-	}
+	retval = -ENONET;
+	if (!krgnode_online(target))
+		goto out;
 
+	retval = -ENOMEM;
 	desc = rpc_begin(RPC_EPM_MIGRATE, target);
-	if (!desc) {
-		membership_online_release();
-		return -ENOMEM;
-	}
+	if (!desc)
+		goto out;
 
 	migration.type = EPM_MIGRATE;
 	migration.migrate.pid = task_pid_knr(tsk);
@@ -288,23 +286,30 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 
 	prepare_migrate(tsk);
 
-	remote_pid = send_task(desc, tsk, regs, &migration);
-
-	if (remote_pid < 0)
+	retval = send_task(desc, tsk, regs, &migration);
+	if (retval < 0) {
 		rpc_cancel_sync(desc);
-	rpc_end(desc, 0);
-
-	if (remote_pid < 0) {
-		undo_migrate(tsk);
 	} else {
-		BUG_ON(remote_pid != task_pid_knr(tsk));
-		/* Do not notify a task having done vfork() */
-		cleanup_vfork_done(tsk);
+		BUG_ON(retval != task_pid_knr(tsk));
+		retval = 0;
 	}
 
+	rpc_end(desc, 0);
+
+	if (retval)
+		goto err_undo;
+
+	/* Do not notify a task having done vfork() */
+	cleanup_vfork_done(tsk);
+
+out:
 	membership_online_release();
 
-	return remote_pid > 0 ? 0 : remote_pid;
+	return retval;
+
+err_undo:
+	undo_migrate(tsk);
+	goto out;
 }
 
 static void krg_task_migrate(int sig, struct siginfo *info,
