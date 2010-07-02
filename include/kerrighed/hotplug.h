@@ -1,6 +1,7 @@
 #ifndef __HOTPLUG__
 #define __HOTPLUG__
 
+#include <linux/list.h>
 #include <linux/workqueue.h>
 #include <linux/completion.h>
 #include <linux/kref.h>
@@ -9,6 +10,7 @@
 enum {
 	HOTPLUG_PRIO_SCHED_POST,
 	HOTPLUG_PRIO_MEMBERSHIP_ONLINE, // should be done after distributed services management
+	HOTPLUG_PRIO_HOTPLUG_COORDINATOR,
 	HOTPLUG_PRIO_SCHED,
 	HOTPLUG_PRIO_EPM,
 	HOTPLUG_PRIO_PROCFS,
@@ -44,8 +46,11 @@ struct hotplug_node_set {
 struct hotplug_context {
 	struct krg_namespace *ns;
 	struct hotplug_node_set node_set;
+	struct list_head list;
 	struct work_struct work;
+	struct completion ready;
 	struct completion done;
+	int id;
 	int ret;
 	struct kref kref;
 };
