@@ -20,7 +20,9 @@ struct task_struct;
 void __krg_children_share(struct task_struct *task);
 void hide_process(struct task_struct *task);
 void unhide_process(struct task_struct *task);
+void __leave_all_relatives(struct task_struct *tsk);
 void leave_all_relatives(struct task_struct *tsk);
+void __join_local_relatives(struct task_struct *tsk);
 void join_local_relatives(struct task_struct *tsk);
 
 /* Copy-paste from kernel/fork.c + unstatify task_struct_cachep */

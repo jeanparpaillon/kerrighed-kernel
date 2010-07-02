@@ -1262,11 +1262,8 @@ static void update_relatives(struct task_struct *task)
 }
 
 /* Used by import_process() */
-void join_local_relatives(struct task_struct *orphan)
+void __join_local_relatives(struct task_struct *orphan)
 {
-	__krg_children_readlock(orphan);
-	write_lock_irq(&tasklist_lock);
-
 	/*
 	 * Need to do it early to avoid a group leader task to consider itself
 	 * as remote when updating the group leader pointer
@@ -1275,7 +1272,13 @@ void join_local_relatives(struct task_struct *orphan)
 
 	update_relatives(orphan);
 	update_links(orphan);
+}
 
+void join_local_relatives(struct task_struct *orphan)
+{
+	__krg_children_readlock(orphan);
+	write_lock_irq(&tasklist_lock);
+	__join_local_relatives(orphan);
 	write_unlock_irq(&tasklist_lock);
 	krg_children_unlock(orphan->children_obj);
 }
@@ -1316,11 +1319,9 @@ static void leave_baby_sitter(struct task_struct *tsk, pid_t old_parent)
  * Used by migration
  * Expects write lock on tsk->task_obj object held
  */
-void leave_all_relatives(struct task_struct *tsk)
+void __leave_all_relatives(struct task_struct *tsk)
 {
 	struct task_struct *child, *tmp;
-
-	write_lock_irq(&tasklist_lock);
 
 	tsk->flags |= PF_AWAY;
 
@@ -1350,7 +1351,12 @@ void leave_all_relatives(struct task_struct *tsk)
 	} else {
 		__reparent_to_baby_sitter(tsk, task_pid_knr(tsk->real_parent));
 	}
+}
 
+void leave_all_relatives(struct task_struct *tsk)
+{
+	write_lock_irq(&tasklist_lock);
+	__leave_all_relatives(tsk);
 	write_unlock_irq(&tasklist_lock);
 }
 
