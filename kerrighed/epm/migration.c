@@ -218,6 +218,34 @@ void migration_aborted(struct task_struct *tsk, int ret)
 	migration_wait_wake(tsk, ret);
 }
 
+static void prepare_migrate(struct task_struct *task)
+{
+	hide_process(task);
+
+	/*
+	 * Prevent the migrated task from removing the sighand_struct and
+	 * signal_struct copies before migration cleanup ends
+	 */
+	krg_sighand_pin(task->sighand);
+	krg_signal_pin(task->signal);
+	mm_struct_pin(task->mm);
+}
+
+static void undo_migrate(struct task_struct *task)
+{
+	mm_struct_unpin(task->mm);
+
+	krg_signal_writelock(task->signal);
+	krg_signal_unlock(task->signal);
+	krg_signal_unpin(task->signal);
+
+	krg_sighand_writelock(task->sighand->krg_objid);
+	krg_sighand_unlock(task->sighand->krg_objid);
+	krg_sighand_unpin(task->sighand);
+
+	unhide_process(task);
+}
+
 static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 			   kerrighed_node_t target)
 {
@@ -258,15 +286,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	migration.migrate.source = kerrighed_node_id;
 	migration.migrate.start_date = current_kernel_time();
 
-	hide_process(tsk);
-
-	/*
-	 * Prevent the migrated task from removing the sighand_struct and
-	 * signal_struct copies before migration cleanup ends
-	 */
-	krg_sighand_pin(tsk->sighand);
-	krg_signal_pin(tsk->signal);
-	mm_struct_pin(tsk->mm);
+	prepare_migrate(tsk);
 
 	remote_pid = send_task(desc, tsk, regs, &migration);
 
@@ -275,17 +295,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	rpc_end(desc, 0);
 
 	if (remote_pid < 0) {
-		mm_struct_unpin(tsk->mm);
-
-		krg_signal_writelock(tsk->signal);
-		krg_signal_unlock(tsk->signal);
-		krg_signal_unpin(tsk->signal);
-
-		krg_sighand_writelock(tsk->sighand->krg_objid);
-		krg_sighand_unlock(tsk->sighand->krg_objid);
-		krg_sighand_unpin(tsk->sighand);
-
-		unhide_process(tsk);
+		undo_migrate(tsk);
 	} else {
 		BUG_ON(remote_pid != task_pid_knr(tsk));
 		/* Do not notify a task having done vfork() */
