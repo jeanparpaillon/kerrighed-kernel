@@ -11,7 +11,6 @@ extern char clusters_status[KERRIGHED_MAX_CLUSTERS];
 extern struct kobject *krghotplugsys;
 
 extern struct workqueue_struct *krg_ha_wq;
-extern struct workqueue_struct *krg_hotplug_wq;
 
 extern struct work_struct fail_work;
 
