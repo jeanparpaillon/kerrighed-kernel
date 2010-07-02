@@ -320,13 +320,13 @@ err_undo:
 	goto out;
 }
 
-static void krg_task_migrate(int sig, struct siginfo *info,
-			     struct pt_regs *regs)
+static int __krg_task_migrate(struct task_struct *tsk,
+			      struct pt_regs *regs,
+			      kerrighed_node_t target)
 {
-	struct task_struct *tsk = current;
 	int r = 0;
 
-	r = do_task_migrate(tsk, regs, si_node(*info));
+	r = do_task_migrate(tsk, regs, target);
 
 	if (!r) {
 #ifdef CONFIG_KRG_SCHED
@@ -334,13 +334,20 @@ static void krg_task_migrate(int sig, struct siginfo *info,
 #endif
 		krg_action_stop(tsk, EPM_MIGRATE);
 		migration_wait_wake(tsk, 0);
-		do_exit_wo_notify(0); /* Won't return */
+		return r;
 	}
 
 	/* Migration failed */
 	migration_aborted(tsk, r);
+	return r;
 }
 
+static void krg_task_migrate(int sig, struct siginfo *info,
+			     struct pt_regs *regs)
+{
+	if (!__krg_task_migrate(current, regs, si_node(*info)))
+		do_exit_wo_notify(0); /* Won't return */
+}
 /**
  *  Process migration handler.
  *  @author Renaud Lottiaux, Geoffroy Vallée
