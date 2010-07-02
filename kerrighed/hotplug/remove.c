@@ -56,10 +56,10 @@ static void do_local_node_remove(struct rpc_desc *desc,
 	printk("...wait ack\n");
 	wait_event(all_removed_wqh, atomic_read(&nr_to_wait) == 0);
 
+	rpc_disable_all();
+
 	ret = 0;
 	rpc_pack_type(desc, ret);
-
-	rpc_disable_all();
 
 	CLEAR_KERRIGHED_NODE_FLAGS(KRGFLAGS_RUNNING);
 	CLEAR_KERRIGHED_CLUSTER_FLAGS(KRGFLAGS_RUNNING);
