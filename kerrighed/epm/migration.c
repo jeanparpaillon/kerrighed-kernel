@@ -379,11 +379,22 @@ static void handle_migrate(struct rpc_desc *desc, void *msg, size_t size)
 		wake_up_new_task(task, CLONE_VM);
 }
 
+static int do_migrate_live(struct task_struct *task, kerrighed_node_t target)
+{
+	struct siginfo info;
+
+	info.si_errno = 0;
+	info.si_pid = 0;
+	info.si_uid = 0;
+	si_node(info) = target;
+
+	return send_kerrighed_signal(KRG_SIG_MIGRATE, &info, task);
+}
+
 /* Expects tasklist_lock locked */
 static int do_migrate_process(struct task_struct *task,
 			      kerrighed_node_t destination_node_id)
 {
-	struct siginfo info;
 	int retval;
 
 	if (!krgnode_online(destination_node_id))
@@ -406,12 +417,7 @@ static int do_migrate_process(struct task_struct *task,
 	atomic_notifier_call_chain(&kmh_migration_send_start, 0, task);
 #endif
 
-	info.si_errno = 0;
-	info.si_pid = 0;
-	info.si_uid = 0;
-	si_node(info) = destination_node_id;
-
-	retval = send_kerrighed_signal(KRG_SIG_MIGRATE, &info, task);
+	retval = do_migrate_live(task, destination_node_id);
 	if (retval)
 		migration_aborted(task, retval);
 
