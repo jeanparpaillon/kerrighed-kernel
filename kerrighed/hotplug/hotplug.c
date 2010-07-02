@@ -24,7 +24,7 @@ struct hotplug_request {
 };
 
 struct workqueue_struct *krg_ha_wq;
-struct workqueue_struct *krg_hotplug_wq;
+static struct workqueue_struct *krg_hotplug_wq;
 
 static DEFINE_IDR(local_hotplug_req_idr);
 
