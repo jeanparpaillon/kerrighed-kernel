@@ -1467,6 +1467,7 @@ struct task_struct {
 #endif
 #ifdef CONFIG_KRG_EPM
 	int krg_action_flags;
+	kerrighed_node_t master_node;
 	struct task_struct *effective_current;
 	struct children_kddm_object *parent_children_obj;
 	struct children_kddm_object *children_obj;

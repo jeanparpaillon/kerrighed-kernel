@@ -1294,10 +1294,9 @@ SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
 
 #ifdef CONFIG_KRG_FAF
 	if (current->nsproxy->krg_ns && krgnode_online(kerrighed_node_id)) {
-		int master_node_id = first_krgnode(krgnode_online_map);
+		int master_node_id = current->master_node;
 		if (kerrighed_node_id != master_node_id
-		    && master_node_id != KERRIGHED_MAX_NODES
-		    && strcmp(current->comm, "sshd") != 0) {
+		    && krgnode_online(master_node_id)) {
 			retval = krg_faf_socket(master_node_id, family, type, protocol);
 			return retval;
 		}

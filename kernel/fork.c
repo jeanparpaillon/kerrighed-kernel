@@ -1620,6 +1620,12 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	}
 #endif /* CONFIG_KRG_SCHED */
 
+#ifdef CONFIG_KRG_EPM
+	if (!krg_current)
+		p->master_node = kerrighed_node_id;
+	else
+		p->master_node = current->master_node;
+#endif
 	return p;
 
 #ifdef CONFIG_KRG_SCHED
