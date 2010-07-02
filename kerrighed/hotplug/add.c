@@ -97,10 +97,18 @@ static int do_nodes_add(struct hotplug_context *ctx)
 	kerrighed_node_t node;
 	int ret;
 
+	ret = hotplug_start_request(ctx);
+	if (ret)
+		goto out;
+
+	ret = check_add_req(ctx);
+	if (ret)
+		goto out_finish;
+
 	ret = -ENOMEM;
 	page = (char *)__get_free_page(GFP_KERNEL);
 	if (!page)
-		goto out;
+		goto out_finish;
 
 	ret = krgnodelist_scnprintf(page, PAGE_SIZE, ctx->node_set.v);
 	BUG_ON(ret >= PAGE_SIZE);
@@ -118,7 +126,7 @@ static int do_nodes_add(struct hotplug_context *ctx)
 	 */
 	ret = do_cluster_start(ctx);
 	if (ret)
-		goto out;
+		goto out_finish;
 
 	/* Send request to all members of the current cluster */
 	for_each_online_krgnode(node)
@@ -127,11 +135,25 @@ static int do_nodes_add(struct hotplug_context *ctx)
 	wait_event(all_added_wqh, atomic_read(&nr_to_wait) == 0);
 	printk("kerrighed: [ADD] Adding nodes succeeded.\n");
 
+out_finish:
+	hotplug_finish_request(ctx);
 out:
 	if (ret)
 		printk(KERN_ERR "kerrighed: [ADD] Adding nodes failed! err=%d\n",
 		       ret);
 	return ret;
+}
+
+static void nodes_add_work(struct work_struct *work)
+{
+	struct hotplug_context *ctx;
+
+	ctx = container_of(work, struct hotplug_context, work);
+
+	ctx->ret = do_nodes_add(ctx);
+	complete(&ctx->done);
+
+	hotplug_ctx_put(ctx);
 }
 
 static int nodes_add(void __user *arg)
@@ -156,7 +178,16 @@ static int nodes_add(void __user *arg)
 	if (err)
 		goto out;
 
-	err = do_nodes_add(ctx);
+	hotplug_ctx_get(ctx);
+	INIT_WORK(&ctx->work, nodes_add_work);
+	err = hotplug_queue_request(ctx);
+	if (err) {
+		hotplug_ctx_put(ctx);
+		goto out;
+	}
+
+	wait_for_completion(&ctx->done);
+	err = ctx->ret;
 
 out:
 	hotplug_ctx_put(ctx);
