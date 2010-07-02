@@ -1844,10 +1844,6 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 
 	BUG_ON(newTsk->task_obj);
 	BUG_ON(obj->task);
-	write_lock_irq(&tasklist_lock);
-	newTsk->task_obj = obj;
-	obj->task = newTsk;
-	write_unlock_irq(&tasklist_lock);
 	BUG_ON(newTsk->parent_children_obj != tskRecv->parent_children_obj);
 	BUG_ON(!newTsk->children_obj);
 
@@ -1860,7 +1856,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 
 	/* TODO: distributed threads */
 	BUG_ON(newTsk->group_leader->pid != newTsk->tgid);
-	BUG_ON(newTsk->task_obj->group_leader != task_tgid_knr(newTsk));
+	BUG_ON(obj->group_leader != task_tgid_knr(newTsk));
 
 	if (action->type == EPM_REMOTE_CLONE) {
 		retval = krg_new_child(parent_children_obj,
@@ -1931,20 +1927,11 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	}
 	newTsk->flags &= ~PF_STARTING;
 
-	/*
-	 * Atomically restore links with local relatives and allow relatives
-	 * to consider newTsk as local.
-	 * Until now, newTsk is linked to baby sitter and not linked to any
-	 * child.
-	 */
-	join_local_relatives(newTsk);
-
 #ifdef CONFIG_KRG_SCHED
 	post_import_krg_sched_info(newTsk);
 #endif
 
-	/* Now the process can be made world-wide visible. */
-	krg_set_pid_location(newTsk);
+	unhide_process(newTsk);
 
 	return newTsk;
 }
