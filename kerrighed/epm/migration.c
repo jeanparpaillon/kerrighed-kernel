@@ -258,11 +258,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	migration.migrate.source = kerrighed_node_id;
 	migration.migrate.start_date = current_kernel_time();
 
-	krg_unset_pid_location(tsk);
-
-	__krg_task_writelock(tsk);
-	leave_all_relatives(tsk);
-	__krg_task_unlock(tsk);
+	hide_process(tsk);
 
 	/*
 	 * Prevent the migrated task from removing the sighand_struct and
@@ -279,8 +275,6 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	rpc_end(desc, 0);
 
 	if (remote_pid < 0) {
-		struct task_kddm_object *obj;
-
 		mm_struct_unpin(tsk->mm);
 
 		krg_signal_writelock(tsk->signal);
@@ -291,17 +285,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 		krg_sighand_unlock(tsk->sighand->krg_objid);
 		krg_sighand_unpin(tsk->sighand);
 
-		obj = __krg_task_writelock(tsk);
-		BUG_ON(!obj);
-		write_lock_irq(&tasklist_lock);
-		obj->task = tsk;
-		tsk->task_obj = obj;
-		write_unlock_irq(&tasklist_lock);
-		__krg_task_unlock(tsk);
-
-		join_local_relatives(tsk);
-
-		krg_set_pid_location(tsk);
+		unhide_process(tsk);
 	} else {
 		BUG_ON(remote_pid != task_pid_knr(tsk));
 		/* Do not notify a task having done vfork() */

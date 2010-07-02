@@ -1949,6 +1949,38 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	return newTsk;
 }
 
+void hide_process(struct task_struct *task)
+{
+	krg_unset_pid_location(task);
+
+	__krg_task_writelock(task);
+	leave_all_relatives(task);
+	__krg_task_unlock(task);
+}
+
+void unhide_process(struct task_struct *task)
+{
+	struct task_kddm_object *task_obj;
+
+	task_obj = __krg_task_writelock(task);
+	BUG_ON(!task_obj);
+	write_lock_irq(&tasklist_lock);
+	task_obj->task = task;
+	task->task_obj = task_obj;
+	write_unlock_irq(&tasklist_lock);
+	__krg_task_unlock(task);
+
+	/*
+	 * Atomically restore links with local relatives and allow relatives
+	 * to consider task as local.
+	 * Until now, task is linked to baby sitter and not linked to any child.
+	 */
+	join_local_relatives(task);
+
+	/* Now the process can be made world-wide visible. */
+	krg_set_pid_location(task);
+}
+
 struct task_struct *import_process(struct epm_action *action,
 				   ghost_t *ghost)
 {

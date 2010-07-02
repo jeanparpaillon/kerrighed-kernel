@@ -18,6 +18,8 @@ struct task_struct;
 
 /* Used by migration and restart */
 void __krg_children_share(struct task_struct *task);
+void hide_process(struct task_struct *task);
+void unhide_process(struct task_struct *task);
 void leave_all_relatives(struct task_struct *tsk);
 void join_local_relatives(struct task_struct *tsk);
 
