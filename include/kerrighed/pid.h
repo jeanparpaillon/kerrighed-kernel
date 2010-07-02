@@ -75,7 +75,9 @@ static inline struct task_struct *find_task_by_kpid(pid_t pid)
 
 /* PID location */
 #ifdef CONFIG_KRG_EPM
+void __krg_set_pid_location(struct task_struct *task);
 int krg_set_pid_location(struct task_struct *task);
+void __krg_unset_pid_location(struct task_struct *task);
 int krg_unset_pid_location(struct task_struct *task);
 #endif
 kerrighed_node_t krg_lock_pid_location(pid_t pid);
