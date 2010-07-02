@@ -78,6 +78,19 @@ static void handle_node_add_ack(struct rpc_desc *desc, void *_msg, size_t size)
 		wake_up(&all_added_wqh);
 }
 
+static int check_add_req(struct hotplug_context *ctx)
+{
+	if (ctx->node_set.subclusterid != kerrighed_subsession_id)
+		return -EPERM;
+	if (!krgnode_online(kerrighed_node_id))
+		return -EPERM;
+	if (!krgnodes_subset(ctx->node_set.v, krgnode_present_map))
+		return -ENONET;
+	if (krgnodes_intersects(ctx->node_set.v, krgnode_online_map))
+		return -EPERM;
+	return 0;
+}
+
 static int do_nodes_add(struct hotplug_context *ctx)
 {
 	char *page;
@@ -139,19 +152,8 @@ static int nodes_add(void __user *arg)
 	if (err)
 		goto out;
 
-	err = -EPERM;
-	if (ctx->node_set.subclusterid != kerrighed_subsession_id)
-		goto out;
-
-	if (!krgnode_online(kerrighed_node_id))
-		goto out;
-
-	err = -ENONET;
-	if (!krgnodes_subset(ctx->node_set.v, krgnode_present_map))
-		goto out;
-
-	err = -EPERM;
-	if (krgnodes_intersects(ctx->node_set.v, krgnode_online_map))
+	err = check_add_req(ctx);
+	if (err)
 		goto out;
 
 	err = do_nodes_add(ctx);
