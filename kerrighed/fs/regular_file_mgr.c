@@ -316,6 +316,7 @@ int end_import_dvfs_file(unsigned long dvfs_objid,
 		BUG_ON(dvfs_file->file);
 		file->f_objid = dvfs_objid;
 		dvfs_file_link(dvfs_file, file);
+		printk("link %lu %p (%p)\n", dvfs_objid, dvfs_file, file);
 
 		dvfs_file->count++;
 	}

@@ -66,9 +66,12 @@ static inline struct dvfs_file_struct *grab_dvfs_file_struct(unsigned long file_
 
 	dvfs_file = _kddm_grab_object(dvfs_file_struct_ctnr, file_id);
 	if (dvfs_file && dvfs_file->file) {
-		if (file_count(dvfs_file->file) == 0)
+		if (file_count(dvfs_file->file) == 0) {
+			printk("grab during __fput() %lu %p (%p)\n", file_id, dvfs_file, dvfs_file->file);
 			dvfs_file->file = NULL;
+		}
 	}
+	printk("grab %lu %p (%p)\n", file_id, dvfs_file, dvfs_file ? dvfs_file->file : NULL);
 	return dvfs_file;
 }
 
@@ -78,14 +81,18 @@ static inline struct dvfs_file_struct *get_dvfs_file_struct(unsigned long file_i
 
 	dvfs_file = _kddm_get_object(dvfs_file_struct_ctnr, file_id);
 	if (dvfs_file && dvfs_file->file) {
-		if (file_count(dvfs_file->file) == 0)
+		if (file_count(dvfs_file->file) == 0) {
+			printk("get during __fput() %lu %p (%p)\n", file_id, dvfs_file, dvfs_file->file);
 			dvfs_file->file = NULL;
+		}
 	}
+	printk("get %lu %p (%p)\n", file_id, dvfs_file, dvfs_file ? dvfs_file->file : NULL);
 	return dvfs_file;
 }
 
 static inline void put_dvfs_file_struct(unsigned long file_id)
 {
+	printk("put %lu\n", file_id);
 	_kddm_put_object (dvfs_file_struct_ctnr, file_id);
 }
 
@@ -99,8 +106,10 @@ static inline struct file *lock_dvfs_file(unsigned long file_id)
 		 * Check if __fput() is in progress but krg_put_file() did not
 		 * cleanup dvfs_file yet.
 		 */
-		if (file_count(dvfs_file->file) == 0)
+		if (file_count(dvfs_file->file) == 0) {
+			printk("lock during __fput() %lu %p (%p)\n", file_id, dvfs_file, dvfs_file->file);
 			dvfs_file->file = NULL;
+		}
 	}
 
 	return dvfs_file ? dvfs_file->file : NULL;

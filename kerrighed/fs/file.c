@@ -100,6 +100,7 @@ int create_kddm_file_object(struct file *file)
 		_kddm_remove_frozen_object(dvfs_file_struct_ctnr, file_id);
 	else {
 		dvfs_file_link(dvfs_file, file);
+		printk("link %lu %p (%p)\n", file_id, dvfs_file, file);
 		put_dvfs_file_struct (file_id);
 	}
 
@@ -171,8 +172,10 @@ void put_dvfs_file(int index, struct file *file, bool unlink)
 
 	dvfs_file = grab_dvfs_file_struct(objid);
 	dvfs_file->count--;
-	if (unlink)
+	if (unlink) {
+		printk("unlink %lu %p (%p/%p)\n", objid, dvfs_file, file, dvfs_file->file);
 		dvfs_file_unlink(dvfs_file);
+	}
 
 #ifdef CONFIG_KRG_FAF
 	check_last_faf_client_close(file, dvfs_file);
