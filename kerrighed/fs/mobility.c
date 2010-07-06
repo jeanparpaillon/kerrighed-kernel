@@ -917,7 +917,7 @@ int import_one_open_file (struct epm_action *action,
 		first_import = 1;
 	}
 
-	r = end_import_dvfs_file(objid, dvfs_file, imported_file, first_import);
+	r = end_import_dvfs_file(objid, dvfs_file, *returned_file, first_import);
 	if (!r)
 		goto exit;
 
