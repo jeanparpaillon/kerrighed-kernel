@@ -914,7 +914,7 @@ int import_one_open_file (struct epm_action *action,
 	if (!r)
 		goto exit;
 
-	if (!first_import) {
+	if (first_import) {
 #ifdef CONFIG_KRG_FAF
 		free_faf_file_private_data(imported_file);
 #endif
