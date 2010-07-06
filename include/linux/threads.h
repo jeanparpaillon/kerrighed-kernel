@@ -44,7 +44,8 @@
 
 /*
  * Maximise number of PID bits:
- * - 29 bits are the limitation in futex.h,
+ * - 30 bits are the limitation of FUTEX_TID_MASK in futex.h,
+ * - 1 bit for GLOBAL_PID_MASK
  * - node bits are defined in include/kerrighed/sys/types.h
  */
 #define NR_BITS_PID_MAX_LIMIT (CONFIG_BASE_SMALL ? PAGE_SHIFT + 3 : \
