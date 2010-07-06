@@ -289,8 +289,11 @@ struct file *begin_import_dvfs_file(unsigned long dvfs_objid,
 	/* Check if the file struct is already present */
 	*dvfs_file = grab_dvfs_file_struct(dvfs_objid);
 	file = (*dvfs_file)->file;
-	if (file)
-		get_file(file);
+	/* Check for a race with last fput()->__fput() */
+	if (file && !atomic_long_inc_not_zero(&file->f_count)) {
+		(*dvfs_file)->file = NULL;
+		file = NULL;
+	}
 
 	return file;
 }
@@ -310,6 +313,7 @@ int end_import_dvfs_file(unsigned long dvfs_objid,
 		/* This is the first time the file is imported on this node
 		* Setup the DVFS file field and inc the DVFS counter.
 		*/
+		BUG_ON(dvfs_file->file);
 		file->f_objid = dvfs_objid;
 		dvfs_file->file = file;
 
