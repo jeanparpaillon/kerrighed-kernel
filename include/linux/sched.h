@@ -2535,7 +2535,7 @@ static inline u64 get_wchar(struct task_struct *tsk)
 	return 0;
 }
 
-static inline void set_rchar(struct task_struct *tsk, u64 rchar)
+static inline void set_wchar(struct task_struct *tsk, u64 rchar)
 {
 }
 
