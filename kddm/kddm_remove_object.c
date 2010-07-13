@@ -74,6 +74,14 @@ try_again:
 		/* Fall through */
 
 	case INV_COPY:
+		/* Remove frozen is not allowed on READ_COPY or INV_COPY object.
+		 * READ_COPY is definitly a bug in the calling function.
+		 * INV_COPY can result from a call to grab_object_no_ft. A call
+		 * to grab_object_manual_ft is equivalent and ensure this buggy
+		 * case will not arise.
+		 */
+		BUG_ON(remove_frozen);
+
 		kddm_change_obj_state(set, obj_entry, objid, WAIT_OBJ_RM_DONE);
 
 		request_objects_remove_to_mgr(set, obj_entry, objid);

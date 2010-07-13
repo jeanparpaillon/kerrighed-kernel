@@ -176,7 +176,8 @@ void krg_ipc_shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
 	mm_set = shp->shm_file->f_dentry->d_inode->i_mapping->kddm_set;
 
 	if (key != IPC_PRIVATE) {
-		_kddm_grab_object_no_ft(shm_ids(ns).krgops->key_kddm_set, key);
+		_kddm_grab_object_manual_ft(shm_ids(ns).krgops->key_kddm_set,
+					    key);
 		_kddm_remove_frozen_object(shm_ids(ns).krgops->key_kddm_set, key);
 	}
 
