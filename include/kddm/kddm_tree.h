@@ -7,6 +7,7 @@
 #ifndef __KDDM_TREE__
 #define __KDDM_TREE__
 
+#include <linux/mutex.h>
 
 
 /*--------------------------------------------------------------------------*
@@ -56,6 +57,7 @@ struct kddm_tree_lvl {
 struct kddm_tree {
 	struct kddm_tree_lvl *lvl1;
 	unsigned long max_data;
+	struct mutex table_lock;       /**< Object table lock */
 	int tree_type;
 	int nr_level;
 	int bit_width; /*!< width of index 20, 32, 64 */

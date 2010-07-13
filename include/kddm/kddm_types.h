@@ -71,6 +71,7 @@
         test_bit (OBJECT_PINNED, &(obj_entry)->flags)
 
 #define SET_OBJECT_LOCKED(obj_entry) \
+	BUG_ON(test_bit(OBJECT_LOCKED, &(obj_entry)->flags));\
         set_bit(OBJECT_LOCKED, &(obj_entry)->flags)
 #define TEST_AND_SET_OBJECT_LOCKED(obj_entry) \
         test_and_set_bit(OBJECT_LOCKED, &(obj_entry)->flags)
@@ -200,6 +201,8 @@ typedef struct kddm_set_ops {
 				   void *data);
 	void (*export) (struct rpc_desc* desc, struct kddm_set *set);
 	void *(*import) (struct rpc_desc* desc, int *free_data);
+	void (*lock_obj_table)(struct kddm_set *set);
+	void (*unlock_obj_table)(struct kddm_set *set);
 } kddm_set_ops_t;
 
 
@@ -212,7 +215,6 @@ typedef int iolinker_id_t;           /**< IO Linker identifier */
 
 typedef struct kddm_set {
 	void *obj_set;               /**< Structure hosting the set objects */
-	spinlock_t table_lock;       /**< Object table lock */
 	struct kddm_ns *ns;          /**< kddm set name space */
 	struct kddm_set_ops *ops;    /**< kddm set operations */
 	kddm_set_id_t id;            /**< kddm set identifier */
@@ -233,7 +235,6 @@ typedef struct kddm_set {
 	void *private_data;                  /**< Data used to instantiate */
 	int private_data_size;               /**< Size of private data... */
 
-	struct mutex obj_lock[NR_OBJ_ENTRY_LOCKS];  /**< Objects lock */
 	struct list_head event_list;
 	spinlock_t event_lock;
 	atomic_t nr_masters;

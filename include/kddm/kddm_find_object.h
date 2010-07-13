@@ -31,11 +31,11 @@ static inline void *_kddm_find_object_raw (struct kddm_set *set, objid_t objid)
 	struct kddm_obj *obj_entry;
 	void *obj = NULL;
 
-	obj_entry = __get_kddm_obj_entry(set, objid);
-	if (obj_entry) {
+	kddm_lock_obj_table(set);
+	obj_entry = set->ops->lookup_obj_entry(set, objid);
+	kddm_unlock_obj_table(set);
+	if (obj_entry)
 		obj = obj_entry->object;
-		put_kddm_obj_entry(set, obj_entry, objid);
-	}
 
 	return obj;
 }

@@ -32,9 +32,6 @@ struct kmem_cache *kddm_set_cachep;
 extern struct kmem_cache *kddm_tree_cachep;
 extern struct kmem_cache *kddm_tree_lvl_cachep;
 
-static struct lock_class_key obj_lock_key[NR_OBJ_ENTRY_LOCKS];
-
-
 /** Alloc a new KDDM set id.
  *  @author Renaud Lottiaux
  *
@@ -99,16 +96,9 @@ int init_kddm_set (struct kddm_set *set,
 		   kerrighed_node_t def_owner,
 		   int obj_size)
 {
-	int i, err = -ENOMEM;
+	int err = -ENOMEM;
 
 	set->ops = set_ops;
-
-	spin_lock_init(&set->table_lock);
-
-	for (i = 0; i < NR_OBJ_ENTRY_LOCKS; i++) {
-		mutex_init(&set->obj_lock[i]);
-		lockdep_set_class(&set->obj_lock[i], &obj_lock_key[i]);
-	}
 
 	set->id = set_id;
 	set->obj_size = obj_size;
