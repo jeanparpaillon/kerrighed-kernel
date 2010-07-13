@@ -9,6 +9,10 @@
 
 #include <kddm/kddm.h>
 #include <kddm/object_server.h>
+#include <kerrighed/debug.h>
+
+#include "debug_kddm.h"
+
 #include "protocol_action.h"
 
 
@@ -33,6 +37,8 @@ int _kddm_sync_frozen_object(struct kddm_set *set,
 	obj_entry = __get_kddm_obj_entry(set, objid);
 	if (obj_entry == NULL)
 		return -ENOENT;
+	DEBUG("sync", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
 
 	BUG_ON(!object_frozen(obj_entry));
 
@@ -58,6 +64,9 @@ int _kddm_sync_frozen_object(struct kddm_set *set,
 	else
 		request_sync_object_and_unlock(set, obj_entry, objid,
 					       new_state);
+
+	DEBUG("sync", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_EXIT,
+	      obj_entry, 0, 0);
 
 	return res;
 }

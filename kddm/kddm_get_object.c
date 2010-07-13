@@ -10,6 +10,10 @@
 
 #include <kddm/kddm.h>
 #include <kddm/object_server.h>
+#include <kerrighed/debug.h>
+
+#include "debug_kddm.h"
+
 #include "protocol_action.h"
 
 
@@ -47,8 +51,10 @@ void *generic_kddm_get_object(struct kddm_set *set,
 		return NULL;
 
 	obj_entry = __get_alloc_kddm_obj_entry(set, objid);
-
 try_again:
+	DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
+
 	switch (OBJ_STATE(obj_entry)) {
 	case INV_COPY:
 		request_object_on_read(set, obj_entry, objid, flags);
@@ -72,6 +78,8 @@ try_again:
 		if (!(OBJ_STATE(obj_entry) & KDDM_READ_OBJ)) {
 			/* Argh, object has been invalidated before we
 			   woke up. */
+			DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid,
+			      KDDM_LOG_TRY_AGAIN, obj_entry, 0, 0);
 			goto try_again;
 		}
 		break;
@@ -118,6 +126,9 @@ exit:
 		set_object_frozen(obj_entry);
 
 exit_no_freeze:
+	DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_EXIT,
+	      obj_entry, 0, 0);
+
 	object = obj_entry->object;
 	put_kddm_obj_entry(set, obj_entry, objid);
 

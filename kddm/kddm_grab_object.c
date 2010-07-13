@@ -10,6 +10,10 @@
 
 #include <kddm/kddm.h>
 #include <kddm/object_server.h>
+#include <kerrighed/debug.h>
+
+#include "debug_kddm.h"
+
 #include "protocol_action.h"
 
 static inline struct kddm_obj *check_cow (struct kddm_set *set,
@@ -18,6 +22,9 @@ static inline struct kddm_obj *check_cow (struct kddm_set *set,
 					  int flags,
 					  int *retry)
 {
+	DEBUG("object", 3, 0, set->ns->id, set->id, objid,
+	      KDDM_LOG_ENTER_COUNT, obj_entry, 0, 0);
+
 	*retry = 0;
 	if (flags & KDDM_COW_OBJECT) {
 		if (object_frozen(obj_entry)) {
@@ -66,8 +73,10 @@ void *generic_kddm_grab_object(struct kddm_set *set,
 		return NULL;
 
 	obj_entry = __get_alloc_kddm_obj_entry(set, objid);
-
 try_again:
+	DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
+
 	switch (OBJ_STATE(obj_entry)) {
 	case READ_COPY:
 		if (object_frozen(obj_entry)) {
@@ -119,6 +128,8 @@ sleep_on_wait_page:
 			goto exit_try_failed;
 
 		/* Argh, object has been invalidated before we woke up. */
+		DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid,
+		      KDDM_LOG_TRY_AGAIN, obj_entry, 0, 0);
 		goto try_again;
 
 	case INV_OWNER:
@@ -149,6 +160,9 @@ sleep_on_wait_page:
 			if (OBJ_STATE(obj_entry) != WRITE_OWNER) {
 				/* Argh, object has been invalidated before
 				   we woke up. */
+				DEBUG("getgrab", 1, 0, set->ns->id, set->id,
+				      objid, KDDM_LOG_TRY_AGAIN, obj_entry,
+				      0, 0);
 				goto try_again;
 			}
 		} else
@@ -184,6 +198,8 @@ sleep:
 			goto exit_no_freeze;
 
 		sleep_on_kddm_obj(set, obj_entry, objid, flags);
+		DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid,
+		      KDDM_LOG_TRY_AGAIN, obj_entry, 0, 0);
 		goto try_again;
 
 	default:
@@ -199,19 +215,26 @@ sleep:
 	    (kddm_local_exclusive (set)))
 		goto exit_try_failed;
 
-	if (check_sleep_on_local_exclusive(set, obj_entry, objid, flags))
+	if (check_sleep_on_local_exclusive(set, obj_entry, objid, flags)) {
+		DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid,
+		      KDDM_LOG_TRY_AGAIN, obj_entry, 0, 0);
 		goto try_again;
+	}
 
 	if (!(flags & KDDM_NO_FREEZE))
 		set_object_frozen(obj_entry);
 
 exit_no_freeze:
+	DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_EXIT,
+	      obj_entry, 0, 0);
 	object = obj_entry->object;
 	put_kddm_obj_entry(set, obj_entry, objid);
 
 	return object;
 
 exit_try_failed:
+	DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_EXIT,
+	      obj_entry, 0, 0);
 	put_kddm_obj_entry(set, obj_entry, objid);
 	return ERR_PTR(-EBUSY);
 }

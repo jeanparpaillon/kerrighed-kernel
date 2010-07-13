@@ -28,6 +28,9 @@
 #include "protocol_action.h"
 #include "procfs.h"
 
+#include <kerrighed/debug.h>
+#include "debug_kddm.h"
+
 struct kmem_cache *kddm_set_cachep;
 extern struct kmem_cache *kddm_tree_cachep;
 extern struct kmem_cache *kddm_tree_lvl_cachep;
@@ -98,6 +101,8 @@ int init_kddm_set (struct kddm_set *set,
 {
 	int err = -ENOMEM;
 
+	SDEBUG("creation", 3, set->ns->id, set_id, -1L, KDDM_LOG_ENTER);
+
 	set->ops = set_ops;
 
 	set->id = set_id;
@@ -125,6 +130,8 @@ int init_kddm_set (struct kddm_set *set,
 
 	err = 0;
 exit:
+	SDEBUG("creation", 3, set->ns->id, set_id, -1L, KDDM_LOG_EXIT);
+
 	return err;
 }
 
@@ -271,6 +278,9 @@ int find_kddm_set_remotely(struct kddm_set *kddm_set)
 
 	kddm_set_mgr_node_id = KDDM_SET_MGR(kddm_set);
 
+	DEBUG("kddm_lookup", 3, 0, kddm_set->ns->id, kddm_set->id, -1L,
+	      KDDM_LOG_FIND_SET, 0, kddm_set_mgr_node_id, 0);
+
 	kddm_id.set_id = kddm_set->id;
 	kddm_id.ns_id = kddm_set->ns->id;
 
@@ -283,6 +293,9 @@ int find_kddm_set_remotely(struct kddm_set *kddm_set)
 	if (msg == NULL)
 		OOM;
 
+	SDEBUG("kddm_lookup", 3, kddm_set->ns->id, kddm_set->id, -1L,
+	       KDDM_LOG_WAIT_SET_MD);
+
 	rpc_unpack(desc, 0, msg, msg_size);
 
 	if (msg->kddm_set_id != KDDM_SET_UNUSED) {
@@ -291,6 +304,9 @@ int find_kddm_set_remotely(struct kddm_set *kddm_set)
 	}
 
 	rpc_end(desc, 0);
+
+	SDEBUG("kddm_lookup", 3, kddm_set->ns->id, kddm_set->id, -1L,
+	      KDDM_LOG_RECV_SET_MD);
 
 	if (msg->kddm_set_id == KDDM_SET_UNUSED) {
 		err = -ENOENT;
@@ -325,6 +341,9 @@ check_err:
 
 	spin_unlock(&kddm_set->lock);
 
+	SDEBUG("kddm_lookup", 3, kddm_set->ns->id, kddm_set->id, -1L,
+	       KDDM_LOG_EXIT);
+
 	return err;
 }
 
@@ -337,6 +356,8 @@ struct kddm_set *__find_get_kddm_set(struct kddm_ns *ns,
 				     int flags)
 {
 	struct kddm_set *kddm_set;
+
+	SDEBUG("kddm_lookup", 2, ns->id, set_id, -1L, KDDM_LOG_ENTER);
 
 	flags |= KDDM_ALLOC_STRUCT;
 	kddm_set = _generic_local_get_kddm_set(ns, set_id,
@@ -397,6 +418,8 @@ check_no_lock:
 		  BUG();
 	}
 
+	SDEBUG("kddm_lookup", 2, ns->id, set_id, -1L, KDDM_LOG_EXIT);
+
 	return kddm_set;
 }
 EXPORT_SYMBOL(_find_get_kddm_set);
@@ -450,6 +473,8 @@ struct kddm_set *__create_new_kddm_set(struct kddm_ns *ns,
 	struct kddm_set *kddm_set;
 	int err = -EINVAL;
 
+	SDEBUG("creation", 2, ns->id, set_id, -1L, KDDM_LOG_ENTER);
+
 	if (data_size > MAX_PRIVATE_DATA_SIZE)
 		goto error;
 
@@ -485,6 +510,8 @@ struct kddm_set *__create_new_kddm_set(struct kddm_ns *ns,
 error:
 	kddm_set = ERR_PTR(err);
 exit:
+	DEBUG("creation", 2, 0, ns->id, set_id, -1L, KDDM_LOG_EXIT, 0, 0, err);
+
 	return kddm_set;
 }
 EXPORT_SYMBOL(__create_new_kddm_set);
@@ -556,10 +583,16 @@ int handle_req_kddm_set_lookup(struct rpc_desc* desc,
 
 	BUG_ON(!krgnode_online(rpc_desc_get_client(desc)));
 
+	DEBUG("kddm_lookup", 2, 0, kddm_id.ns_id, kddm_id.set_id, -1L,
+	      KDDM_LOG_LOOK_UP, 0, desc->client, 0);
+
 	kddm_set = local_get_kddm_set(kddm_id.ns_id, kddm_id.set_id);
 
 	if (kddm_set)
 		msg_size += kddm_set->private_data_size;
+
+	DEBUG("kddm_lookup", 4, 0, kddm_id.ns_id, kddm_id.set_id, -1L,
+	      KDDM_LOG_FOUND_SET, kddm_set, 0, 0);
 
 	/* Prepare the kddm set creation message */
 
@@ -588,6 +621,9 @@ done:
 
 	kfree(msg);
 
+	SDEBUG("kddm_lookup", 2, kddm_id.ns_id, kddm_id.set_id, -1L,
+	      KDDM_LOG_EXIT);
+
 	if (kddm_set)
 		put_kddm_set(kddm_set);
 
@@ -612,6 +648,9 @@ int __handle_req_kddm_set_destroy(kerrighed_node_t sender,
 
 	BUG_ON(!krgnode_online(sender));
 
+	SDEBUG("creation", 2, kddm_id.ns_id, kddm_id.set_id, -1L,
+	      KDDM_LOG_ENTER);
+
 	/* Remove the kddm set from the name space */
 
 	ns = kddm_ns_get (kddm_id.ns_id);
@@ -630,6 +669,9 @@ int __handle_req_kddm_set_destroy(kerrighed_node_t sender,
 	/* Free the kddm set structure */
 
 	put_kddm_set(kddm_set);
+
+	SDEBUG("creation", 2, kddm_id.ns_id, kddm_id.set_id, -1L,
+	      KDDM_LOG_EXIT);
 
 	return 0;
 }

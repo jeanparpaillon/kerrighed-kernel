@@ -23,6 +23,8 @@
 #include <kddm/kddm_set.h>
 #include "kddm_bench.h"
 
+#include "debug_kddm.h"
+
 #ifndef CONFIG_KRG_MONOLITHIC
 MODULE_AUTHOR ("Renaud Lottiaux");
 MODULE_DESCRIPTION ("Kerrighed Distributed Data Manager");
@@ -83,6 +85,10 @@ int init_kddm (void)
 	printk ("KDDM initialisation : start\n");
 
         kddm_info_cachep = KMEM_CACHE(kddm_info_struct, SLAB_PANIC);
+
+#ifdef CONFIG_KRG_DEBUG
+	init_kddm_debug();
+#endif
 
 	kddm_ns_init();
 

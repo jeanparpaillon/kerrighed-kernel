@@ -9,6 +9,9 @@
 
 #include <kddm/kddm.h>
 #include <kddm/object_server.h>
+
+#include "debug_kddm.h"
+
 #include "protocol_action.h"
 
 
@@ -34,6 +37,8 @@ int _kddm_set_object_state(struct kddm_set *set,
 
 retry:
 	obj_entry = __get_kddm_obj_entry(set, objid);
+	DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
 
 	BUG_ON(OBJ_STATE(obj_entry) != INV_OWNER);
 	BUG_ON(!object_frozen(obj_entry));
@@ -48,7 +53,11 @@ retry:
 	atomic_inc(&set->nr_objects);
 	ADD_TO_SET (COPYSET(obj_entry), kerrighed_node_id);
 	kddm_insert_object (set, objid, obj_entry, state);
-	put_kddm_obj_entry(set, obj_entry, objid);
+
+	put_kddm_obj_entry (set, obj_entry, objid);
+
+	DEBUG("getgrab", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_EXIT,
+	      obj_entry, 0, 0);
 
 	return 0;
 }

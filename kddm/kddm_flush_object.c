@@ -10,6 +10,10 @@
 
 #include <kddm/kddm.h>
 #include <kddm/object_server.h>
+#include <kerrighed/debug.h>
+
+#include "debug_kddm.h"
+
 #include "protocol_action.h"
 
 
@@ -40,6 +44,8 @@ int _kddm_flush_object(struct kddm_set *set,
 	obj_entry = __get_kddm_obj_entry(set, objid);
 	if (obj_entry == NULL)
 		return res;
+	DEBUG("flush", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
 
 try_again:
 	switch (OBJ_STATE(obj_entry)) {
@@ -66,6 +72,8 @@ try_again:
 		if (SET_IS_EMPTY(COPYSET(obj_entry))) {
 			/* I'm owner of the only existing object in the
 			 * cluster. Let's inject it ! */
+			SDEBUG("flush", 1, set->ns->id, set->id, objid,
+			      KDDM_LOG_LAST_COPY);
 			goto send_copy;
 		}
 		/* There exist at least another copy. Send ownership */
@@ -123,9 +131,12 @@ send_copy:
 		STATE_MACHINE_ERROR(set->id, objid, obj_entry);
 		break;
 	}
+
 	put_kddm_obj_entry(set, obj_entry, objid);
 
 exit_no_unlock:
+	DEBUG("flush", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_EXIT,
+	      obj_entry, 0, 0);
 
 	return res;
 }

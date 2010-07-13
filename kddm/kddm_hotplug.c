@@ -17,6 +17,9 @@
 #include <kddm/kddm.h>
 #include "protocol_action.h"
 
+#include <kerrighed/debug.h>
+#include "debug_kddm.h"
+
 struct cluster_barrier *kddm_barrier;
 
 extern krgnodemask_t krgnode_kddm_map;
@@ -253,7 +256,7 @@ static void kddm_set_remove_cb(void *_kddm_set, void *_data)
 
 };
 
-static void set_remove(krgnodemask_t * vector)
+static noinline void set_remove(krgnodemask_t * vector)
 {
 
 	printk("set_remove...\n");
