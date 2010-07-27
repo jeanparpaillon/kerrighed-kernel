@@ -25,7 +25,7 @@ typedef struct migration_infos_struct migration_infos_t;
 
 #ifdef CONFIG_KRG_EPM
 
-#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+#ifdef CONFIG_KRG_SCHED
 #include <linux/notifier.h>
 
 extern struct atomic_notifier_head kmh_migration_start;

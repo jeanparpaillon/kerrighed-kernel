@@ -2335,7 +2335,7 @@ static int sched_balance_self(int cpu, int flag)
 
 #endif /* CONFIG_SMP */
 
-#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+#ifdef CONFIG_KRG_SCHED
 ATOMIC_NOTIFIER_HEAD(kmh_process_on);
 EXPORT_SYMBOL(kmh_process_on);
 ATOMIC_NOTIFIER_HEAD(kmh_process_off);
@@ -2444,7 +2444,7 @@ out_activate:
 		schedstat_inc(p, se.nr_wakeups_remote);
 	activate_task(rq, p, 1);
 	success = 1;
-#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+#ifdef CONFIG_KRG_SCHED
 	atomic_notifier_call_chain(&kmh_process_on, 0, p);
 #endif
 
@@ -2609,7 +2609,7 @@ void wake_up_new_task(struct task_struct *p, unsigned long clone_flags)
 		p->sched_class->task_new(rq, p);
 		inc_nr_running(rq);
 	}
-#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+#ifdef CONFIG_KRG_SCHED
 	atomic_notifier_call_chain(&kmh_process_on, 0, p);
 #endif
 	trace_sched_wakeup_new(rq, p, 1);
@@ -5078,12 +5078,12 @@ need_resched_nonpreemptible:
 		if (unlikely(signal_pending_state(prev->state, prev)))
 			prev->state = TASK_RUNNING;
 		else
-#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+#ifdef CONFIG_KRG_SCHED
 		{
 			atomic_notifier_call_chain(&kmh_process_off, 0, prev);
 #endif
 			deactivate_task(rq, prev, 1);
-#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+#ifdef CONFIG_KRG_SCHED
 		}
 #endif
 		switch_count = &prev->nvcsw;
@@ -7216,7 +7216,7 @@ void sched_idle_next(void)
 
 	update_rq_clock(rq);
 	activate_task(rq, p, 0);
-#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+#ifdef CONFIG_KRG_SCHED
 	atomic_notifier_call_chain(&kmh_process_on, 0, p);
 #endif
 

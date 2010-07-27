@@ -278,7 +278,6 @@ config KRG_SCHED_MIGRATION_PROBE
 	tristate "Migration probe"
 	depends on KRG_EPM && m
 	default n
-	select MODULE_HOOK
 	help
 	  Probe counting the number of ongoing task migrations out of a node
 	  and registering the last migration event.
@@ -289,7 +288,6 @@ config KRG_SCHED_MOSIX_PROBE
 	tristate "MOSIX-like CPU probe"
 	depends on m
 	default n
-	select MODULE_HOOK
 	help
 	  MOSIX-like CPU probe exposing the CPU load of a node as well as the
 	  CPU load induced by individual tasks

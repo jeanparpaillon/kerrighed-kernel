@@ -48,7 +48,7 @@
 #include "network_ghost.h"
 #include "epm_internal.h"
 
-#if defined(CONFIG_KRG_SCHED) && defined(CONFIG_MODULE_HOOK)
+#ifdef CONFIG_KRG_SCHED
 ATOMIC_NOTIFIER_HEAD(kmh_migration_start);
 ATOMIC_NOTIFIER_HEAD(kmh_migration_end);
 ATOMIC_NOTIFIER_HEAD(kmh_migration_aborted);
