@@ -49,11 +49,15 @@
 #include "epm_internal.h"
 
 #ifdef CONFIG_KRG_SCHED
-ATOMIC_NOTIFIER_HEAD(kmh_migration_start);
-ATOMIC_NOTIFIER_HEAD(kmh_migration_end);
+ATOMIC_NOTIFIER_HEAD(kmh_migration_send_start);
+ATOMIC_NOTIFIER_HEAD(kmh_migration_send_end);
+ATOMIC_NOTIFIER_HEAD(kmh_migration_recv_start);
+ATOMIC_NOTIFIER_HEAD(kmh_migration_recv_end);
 ATOMIC_NOTIFIER_HEAD(kmh_migration_aborted);
-EXPORT_SYMBOL(kmh_migration_start);
-EXPORT_SYMBOL(kmh_migration_end);
+EXPORT_SYMBOL(kmh_migration_send_start);
+EXPORT_SYMBOL(kmh_migration_send_end);
+EXPORT_SYMBOL(kmh_migration_recv_start);
+EXPORT_SYMBOL(kmh_migration_recv_end);
 EXPORT_SYMBOL(kmh_migration_aborted);
 #endif
 
@@ -171,6 +175,8 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	migration.type = EPM_MIGRATE;
 	migration.migrate.pid = task_pid_knr(tsk);
 	migration.migrate.target = target;
+	migration.migrate.source = kerrighed_node_id;
+	migration.migrate.start_date = current_kernel_time();
 
 	krg_unset_pid_location(tsk);
 
@@ -235,7 +241,7 @@ static void krg_task_migrate(int sig, struct siginfo *info,
 
 	if (!r) {
 #ifdef CONFIG_KRG_SCHED
-		atomic_notifier_call_chain(&kmh_migration_end, 0, NULL);
+		atomic_notifier_call_chain(&kmh_migration_send_end, 0, NULL);
 #endif
 		do_exit_wo_notify(0); /* Won't return */
 	}
@@ -253,6 +259,9 @@ static void handle_migrate(struct rpc_desc *desc, void *msg, size_t size)
 	struct epm_action *action = msg;
 	struct task_struct *task;
 
+#ifdef CONFIG_KRG_SCHED
+	atomic_notifier_call_chain(&kmh_migration_recv_start, 0, action);
+#endif
 	task = recv_task(desc, action);
 	if (!task) {
 		rpc_cancel(desc);
@@ -260,7 +269,8 @@ static void handle_migrate(struct rpc_desc *desc, void *msg, size_t size)
 	}
 
 #ifdef CONFIG_KRG_SCHED
-	atomic_notifier_call_chain(&kmh_migration_end, 0, action);
+	action->migrate.end_date = current_kernel_time();
+	atomic_notifier_call_chain(&kmh_migration_recv_end, 0, action);
 #endif
 	krg_action_stop(task, EPM_MIGRATE);
 
@@ -291,7 +301,7 @@ static int do_migrate_process(struct task_struct *task,
 		return retval;
 
 #ifdef CONFIG_KRG_SCHED
-	atomic_notifier_call_chain(&kmh_migration_start, 0, task);
+	atomic_notifier_call_chain(&kmh_migration_send_start, 0, task);
 #endif
 
 	info.si_errno = 0;

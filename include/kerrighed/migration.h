@@ -28,9 +28,11 @@ typedef struct migration_infos_struct migration_infos_t;
 #ifdef CONFIG_KRG_SCHED
 #include <linux/notifier.h>
 
-extern struct atomic_notifier_head kmh_migration_start;
+extern struct atomic_notifier_head kmh_migration_send_start;
+extern struct atomic_notifier_head kmh_migration_send_end;
+extern struct atomic_notifier_head kmh_migration_recv_start;
+extern struct atomic_notifier_head kmh_migration_recv_end;
 extern struct atomic_notifier_head kmh_migration_aborted;
-extern struct atomic_notifier_head kmh_migration_end;
 #endif
 
 struct task_struct;

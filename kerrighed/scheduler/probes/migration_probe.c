@@ -153,10 +153,10 @@ int migration_probe_start(void)
 	 * We cannot call unregister in init, so the system may have to live
 	 * with partial hook init until module is unloaded.
 	 */
-	err = atomic_notifier_chain_register(&kmh_migration_start, &migration_start_nb);
+	err = atomic_notifier_chain_register(&kmh_migration_send_start, &migration_start_nb);
 	if (err)
 		goto err_hooks;
-	err = atomic_notifier_chain_register(&kmh_migration_end, &migration_end_nb);
+	err = atomic_notifier_chain_register(&kmh_migration_send_end, &migration_end_nb);
 	if (err)
 		goto err_other_hooks;
 	err = atomic_notifier_chain_register(&kmh_migration_aborted, &migration_abort_nb);
@@ -203,8 +203,8 @@ void migration_probe_exit(void)
 		scheduler_probe_unregister(migration_probe);
 
 	atomic_notifier_chain_unregister(&kmh_migration_aborted, &migration_abort_nb);
-	atomic_notifier_chain_unregister(&kmh_migration_end, &migration_end_nb);
-	atomic_notifier_chain_unregister(&kmh_migration_start, &migration_start_nb);
+	atomic_notifier_chain_unregister(&kmh_migration_send_end, &migration_end_nb);
+	atomic_notifier_chain_unregister(&kmh_migration_send_start, &migration_start_nb);
 
 	scheduler_probe_free(migration_probe);
 	for (i = 0; migration_probe_sources[i] != NULL; i++)

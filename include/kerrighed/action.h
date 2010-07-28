@@ -9,6 +9,7 @@
 #ifdef CONFIG_KRG_EPM
 
 #include <linux/sched.h>
+#include <linux/time.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/sys/checkpoint.h>
 
@@ -41,7 +42,10 @@ struct epm_action {
 	union {
 		struct {
 			pid_t pid;
+			kerrighed_node_t source;
 			kerrighed_node_t target;
+			struct timespec start_date;
+			struct timespec end_date;
 		} migrate;
 		struct {
 			pid_t from_pid;
