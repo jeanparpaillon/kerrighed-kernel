@@ -467,6 +467,9 @@ ssize_t scheduler_probe_source_attribute_show_remote(struct config_item *item,
 	ssize_t r;
 	int err;
 
+	if (!current->nsproxy->krg_ns)
+		return -EPERM;
+
 	pipe = to_node_pipe(item);
 	node = pipe->node;
 
