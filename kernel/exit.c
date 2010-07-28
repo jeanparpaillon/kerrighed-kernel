@@ -67,6 +67,9 @@
 #ifdef CONFIG_KRG_SCHED
 #include <kerrighed/scheduler/info.h>
 #endif
+#if defined(CONFIG_KRG_SCHED)
+#include <kerrighed/pid.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -77,6 +80,11 @@
 DEFINE_TRACE(sched_process_free);
 DEFINE_TRACE(sched_process_exit);
 DEFINE_TRACE(sched_process_wait);
+
+#if defined(CONFIG_KRG_SCHED)
+ATOMIC_NOTIFIER_HEAD(kmh_process_death);
+EXPORT_SYMBOL(kmh_process_death);
+#endif
 
 #ifndef CONFIG_KRG_MM
 static
@@ -1091,6 +1099,20 @@ NORET_TYPE void do_exit(long code)
 #ifdef CONFIG_KRG_MM
 	struct mm_struct *mm = NULL;
 #endif
+#if defined(CONFIG_KRG_SCHED)
+	struct nsproxy *nsp;
+
+	/* Only notify about Kerrighed process, and if it's not a migration */
+	nsp = task_nsproxy(tsk);
+	if (nsp && nsp->krg_ns && notify) {
+		/*
+		 * Do not check capabilities, we're at exit(). If there are
+		 * consistencies issues, they will be addressed later by the user.
+		 */
+		atomic_notifier_call_chain(&kmh_process_death, task_pid_knr(tsk), NULL);
+	}
+#endif
+
 	profile_task_exit(tsk);
 
 	WARN_ON(atomic_read(&tsk->fs_excl));
