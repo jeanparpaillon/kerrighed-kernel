@@ -10,5 +10,6 @@ obj-$(CONFIG_KRG_SCHED_PROCESSSIZE_PROBE) += processsize_probe.o
 obj-$(CONFIG_KRG_SCHED_LOCAL_USER_NOTIFIER) += local_user_notifier.o
 obj-$(CONFIG_KRG_SCHED_LOCAL_USER_PRESENCE) += local_user_presence.o
 obj-$(CONFIG_KRG_SCHED_USER_PROBE) += user_probe.o
+obj-$(CONFIG_KRG_SCHED_MATTLOAD_PROBE) += mattload_probe.o
 
 EXTRA_CFLAGS += -Werror -Wall

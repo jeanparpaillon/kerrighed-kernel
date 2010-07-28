@@ -375,6 +375,19 @@ config KRG_SCHED_USER_PROBE
 
 	  If unsure, say N.
 
+config KRG_SCHED_MATTLOAD_PROBE
+	tristate "Mattload load probe"
+	depends on m
+	default n
+	help
+	  Mattload probe implements the 'Mattload' load measure defined in
+	  [Perotin, 2008 http://portail.scd.univ-tours.fr/search*frf/X?PEROTIN,%20MATTHIEU&m=t&m=u].
+	  This load allows one to run Kerrighed as virtual node on physical machines
+	  used by regular users, and adapt load according to the presence or
+	  absence of physical user.
+
+	  If unsure, say N.
+
 config KRG_SCHED_THRESHOLD_FILTER
 	tristate "Threshold filter"
 	depends on m
