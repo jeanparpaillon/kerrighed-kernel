@@ -310,6 +310,16 @@ config KRG_SCHED_MOSIX_PROBE
 
 	  If unsure, say N.
 
+config KRG_SCHED_CPUSPEED_PROBE
+	tristate "CPUSPEED probe"
+	depends on m
+	default n
+	help
+	  CPU Speed probe exposes local CPU speed number, and all local
+	  cpu speed (in kHz).
+
+	  If unsure, say N.
+
 config KRG_SCHED_THRESHOLD_FILTER
 	tristate "Threshold filter"
 	depends on m
