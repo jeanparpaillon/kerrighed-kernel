@@ -341,6 +341,40 @@ config KRG_SCHED_PROCESSSIZE_PROBE
 
 	  If unsure, say N.
 
+config KRG_SCHED_LOCAL_USER_PRESENCE
+	tristate "Internal kernel local user counter"
+	depends on m
+	default n
+	help
+	  Local user presence implements a in-kernel counter with full API exported
+	  to manipulate it. It is used by the user probe.
+
+	  If unsure, say N.
+
+config KRG_SCHED_LOCAL_USER_NOTIFIER
+	tristate "Local User userspace notification interface"
+	depends on m && KRG_SCHED_LOCAL_USER_PRESENCE
+	default n
+	help
+	  Local user notifier is a /proc -based userspace notification interface
+	  plugged to the in-kernel user counter implemented by local_user_presence
+	  module. This allows one to be able to retrieve, in-kernel, the presence
+	  of a local user. Useful if Kerrighed node runs on virtual machine,
+	  to notify of host usage.
+
+	  If unsure, say N.
+
+config KRG_SCHED_USER_PROBE
+	tristate "Local user probe"
+	depends on m
+	select KRG_SCHED_LOCAL_USER_PRESENCE
+	default n
+	help
+	  The user probe exports the information of the presence of a local
+	  user on the machine. This is needed by the Mattload load.
+
+	  If unsure, say N.
+
 config KRG_SCHED_THRESHOLD_FILTER
 	tristate "Threshold filter"
 	depends on m
