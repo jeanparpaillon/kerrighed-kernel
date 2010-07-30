@@ -271,6 +271,30 @@ config KRG_SCHED_COMPAT_FORCE
 	select KRG_SCHED_MOSIX_LOAD_BALANCER
 	select KRG_SCHED_ROUND_ROBIN_BALANCER
 
+config KRG_SCHED_RBT
+	bool "Compile components needed to implement RBT algorithm."
+	depends on m
+	default y
+	select KRG_SCHED_CPUSPEED_PROBE
+	select KRG_SCHED_LOAD_PROBE
+	select KRG_SCHED_USER_PROBE
+	select KRG_SCHED_PROCESSSIZE_PROBE
+	select KRG_SCHED_MATTLOAD_PROBE
+	select KRG_SCHED_RBT_CACHE_FILTER
+	select KRG_SCHED_RBT_POLICY
+	help
+	  Enabling the RBT load balancer.
+
+	  This option selects the components needed to have the RBT scheduling
+	  algorithm, with a load taking care of modulate ressources usages
+	  regarding the presence of users on the physical machine hosting the
+	  virtual Kerrighed node.
+
+	  The RBT scheduling policy is described in [Perotin, 2008] :
+	  http://portail.scd.univ-tours.fr/search*frf/X?PEROTIN,%20MATTHIEU&m=t&m=u
+
+	  If unsure, say Y.
+
 config KRG_SCHED_CPU_PROBE
 	tristate "Sample CPU probe"
 	depends on m
@@ -419,6 +443,15 @@ config KRG_SCHED_REMOTE_CACHE_FILTER
 
 	  If unsure, say N.
 
+config KRG_SCHED_RBT_CACHE_FILTER
+	tristate "RBT remote cache filter"
+	depends on m
+	default n
+	help
+	  Filter caching values from the other nodes, for RBT algorithm.
+
+	  If unsure, say N.
+
 config KRG_SCHED_ECHO_POLICY
 	tristate "Sample echo policy"
 	depends on m
@@ -445,6 +478,15 @@ config KRG_SCHED_ROUND_ROBIN_BALANCER
 	default n
 	help
 	  Policy that selects target nodes in a round robin manner when called
+
+	  If unsure, say N.
+
+config KRG_SCHED_RBT_POLICY
+	tristate "RBT load balancing policy"
+	depends on m
+	default n
+	help
+	  RBT Load balancing algorithm
 
 	  If unsure, say N.
 
