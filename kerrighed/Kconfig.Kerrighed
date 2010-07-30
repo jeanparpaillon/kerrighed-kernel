@@ -320,6 +320,17 @@ config KRG_SCHED_CPUSPEED_PROBE
 
 	  If unsure, say N.
 
+config KRG_SCHED_LOAD_PROBE
+	tristate "LOAD probe"
+	depends on m
+	default n
+	help
+	  Load probe exports the number of active tasks in the runqueue of Linux
+	  kernel, and allows to measures the number of jiffies consumed by
+	  each running process.
+
+	  If unsure, say N.
+
 config KRG_SCHED_THRESHOLD_FILTER
 	tristate "Threshold filter"
 	depends on m

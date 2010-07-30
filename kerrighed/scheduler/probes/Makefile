@@ -5,5 +5,6 @@ obj-$(CONFIG_KRG_SCHED_MIGRATION_PROBE) += migration_probe.o
 obj-$(CONFIG_KRG_SCHED_MOSIX_PROBE) += mosix_probe.o
 
 obj-$(CONFIG_KRG_SCHED_CPUSPEED_PROBE) += cpuspeed_probe.o
+obj-$(CONFIG_KRG_SCHED_LOAD_PROBE) += load_probe.o
 
 EXTRA_CFLAGS += -Werror -Wall
