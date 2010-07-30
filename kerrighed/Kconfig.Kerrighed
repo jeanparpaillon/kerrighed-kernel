@@ -331,6 +331,16 @@ config KRG_SCHED_LOAD_PROBE
 
 	  If unsure, say N.
 
+config KRG_SCHED_PROCESSSIZE_PROBE
+	tristate "Process size (numer of pages) probe"
+	depends on m
+	default n
+	help
+	  The process size probe exports process size in term of memory pages.
+	  It is simply the value of total_vm in the task_struct.
+
+	  If unsure, say N.
+
 config KRG_SCHED_THRESHOLD_FILTER
 	tristate "Threshold filter"
 	depends on m
