@@ -150,22 +150,36 @@ handle_futex_death(u32 __user *uaddr, struct task_struct *curr, int pi);
 union futex_key {
 	struct {
 		unsigned long pgoff;
+#ifdef CONFIG_KRG_EPM
+		unsigned long mapping_id;
+#endif
 		struct inode *inode;
 		int offset;
 	} shared;
 	struct {
 		unsigned long address;
+#ifdef CONFIG_KRG_EPM
+		unsigned long mm_id;
+#endif
 		struct mm_struct *mm;
 		int offset;
 	} private;
 	struct {
 		unsigned long word;
+#ifdef CONFIG_KRG_EPM
+		unsigned long krg_id;
+#endif
 		void *ptr;
 		int offset;
 	} both;
 };
 
+#ifdef CONFIG_KRG_EPM
+#define FUTEX_KEY_INIT (union futex_key) { .both = { .ptr = NULL,	\
+						     .krg_id = 0 } }
+#else
 #define FUTEX_KEY_INIT (union futex_key) { .both = { .ptr = NULL } }
+#endif
 
 #ifdef CONFIG_FUTEX
 extern void exit_robust_list(struct task_struct *curr);
@@ -179,6 +193,11 @@ static inline void exit_pi_state_list(struct task_struct *curr)
 {
 }
 #endif
+
+#ifdef CONFIG_KRG_EPM
+int krg_futex_init(void);
+#endif
+
 #endif /* __KERNEL__ */
 
 #define FUTEX_OP_SET		0	/* *(int *)UADDR2 = OPARG; */
