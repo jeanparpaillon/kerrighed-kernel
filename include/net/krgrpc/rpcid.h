@@ -178,6 +178,9 @@ enum rpcid {
 /** System V IPC semaphores */
 	IPC_SEM_WAKEUP,
 
+/** Futex */
+	RPC_FUTEX_WAKE,
+
 /** group management */
 	REQ_CREATE_ARAGORN_GROUP,
 	REQ_ADD_PROCESS_IN_ARAGORN_GROUP,

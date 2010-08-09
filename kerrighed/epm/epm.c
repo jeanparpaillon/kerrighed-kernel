@@ -7,6 +7,7 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/hashtable.h>
+#include <linux/futex.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/hotplug.h>
@@ -218,6 +219,8 @@ int init_epm(void)
 	epm_procfs_start();
 
 	application_cr_server_init();
+
+	krg_futex_init();
 
 	epm_hotplug_init();
 
