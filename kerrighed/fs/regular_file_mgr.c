@@ -830,9 +830,16 @@ static int prepare_restart_data_supported_file(
 		r = prepare_restart_data_shared_file(f, fdesc, fdesc_size,
 						     returned_data, data_size,
 						     false);
-	} else
+	} else {
+		/*
+		 * file may have been shared before checkpoint, but was not at
+		 * checkpoint-time, so no KDDM object will be attached at
+		 * restart.
+		 */
+		f->f_flags &= ~O_KRG_SHARED;
 		r = prepare_restart_data_local_file(f, returned_data,
 						    data_size);
+	}
 
 error:
 	return r;
