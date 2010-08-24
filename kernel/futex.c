@@ -1150,6 +1150,7 @@ static int futex_wait(u32 __user *uaddr, int fshared,
 	DECLARE_WAITQUEUE(wait, curr);
 	struct futex_hash_bucket *hb;
 	struct futex_q q;
+	union futex_key key;
 	u32 uval;
 	int ret;
 	struct hrtimer_sleeper t;
@@ -1165,6 +1166,11 @@ retry:
 	ret = get_futex_key(uaddr, fshared, &q.key, VERIFY_READ);
 	if (unlikely(ret != 0))
 		goto out;
+
+	/*
+	 * The key must be saved in case it is overwritten by a requeue
+	 */
+	key = q.key;
 
 retry_private:
 	hb = queue_lock(&q);
@@ -1201,7 +1207,7 @@ retry_private:
 		if (!fshared)
 			goto retry_private;
 
-		put_futex_key(fshared, &q.key);
+		put_futex_key(fshared, &key);
 		goto retry;
 	}
 	ret = -EWOULDBLOCK;
@@ -1300,7 +1306,7 @@ retry_private:
 	ret = -ERESTART_RESTARTBLOCK;
 
 out_put_key:
-	put_futex_key(fshared, &q.key);
+	put_futex_key(fshared, &key);
 out:
 	return ret;
 }
