@@ -61,8 +61,9 @@ int copy_krg_ns(struct task_struct *task, struct nsproxy *new)
 				init_completion(&ns->root_task_continue_exit);
 
 #ifdef CONFIG_KRG_PROC
-				BUG_ON(ns->root_nsproxy.pid_ns->krg_ns);
-				ns->root_nsproxy.pid_ns->krg_ns = ns;
+				BUG_ON(ns->root_nsproxy.pid_ns->krg_ns_root);
+				ns->root_nsproxy.pid_ns->krg_ns_root =
+					ns->root_nsproxy.pid_ns;
 #endif
 
 				ns->rpc_comm = NULL;
