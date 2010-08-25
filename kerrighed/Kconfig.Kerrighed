@@ -13,8 +13,8 @@ config KERRIGHED
 	select KRG_MM if !KERRIGHED_DEVEL
 	select KRG_DVFS if !KERRIGHED_DEVEL
 	select KRG_FAF if !KERRIGHED_DEVEL
-	select KRG_IPC if !KERRIGHED_DEVEL
-	select KRG_PROC if !KERRIGHED_DEVEL
+	select KRG_IPC if !KERRIGHED_DEVEL && KRG_IPC_OTHER_DEPS
+	select KRG_PROC if !KERRIGHED_DEVEL && KRG_PROC_OTHER_DEPS
 	select KRG_EPM if !KERRIGHED_DEVEL
 	select KRG_SCHED if !KERRIGHED_DEVEL
 	help
@@ -28,6 +28,18 @@ comment "Kerrighed does not support access key retention (KEYS)"
 
 comment "Kerrighed does not support 32 bits emulation (COMPAT)"
 	depends on COMPAT
+
+config KRG_IPC_OTHER_DEPS
+	def_bool IPC_NS
+
+comment "WARNING: Kerrighed IPC requires IPC namespaces (IPC_NS)"
+	depends on KERRIGHED && !IPC_NS
+
+config KRG_PROC_OTHER_DEPS
+	def_bool PID_NS
+
+comment "WARNING: Kerrighed Process management requires PID namespaces (PID_NS)"
+	depends on KERRIGHED && !PID_NS
 
 config KERRIGHED_DEVEL
 	bool "Allow to build a subset of Kerrighed (!! Kerrighed development only !!)"
@@ -189,13 +201,13 @@ config KRG_FAF
 
 config KRG_IPC
 	bool "KerIPC"
-	depends on KERRIGHED && KRG_KDDM && KRG_MM && IPC_NS
+	depends on KERRIGHED && KRG_KDDM && KRG_MM && KRG_IPC_OTHER_DEPS
 	help
 	  Kerrighed's global IPC management
 
 config KRG_PROC
 	bool "KerProc"
-	depends on KERRIGHED && KRG_KDDM
+	depends on KERRIGHED && KRG_KDDM && KRG_PROC_OTHER_DEPS
 	help
 	  Low-level global process management: global PIDs, syscalls affecting
 	  remote tasks (including signals), global proc PID entries.
