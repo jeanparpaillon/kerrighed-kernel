@@ -70,6 +70,10 @@
 #include <asm/tlb.h>
 #include "internal.h"
 
+#ifdef CONFIG_KRG_MM
+extern unique_id_root_t mm_struct_unique_id_root;
+#endif
+
 int core_uses_pid;
 char core_pattern[CORENAME_MAX_SIZE] = "core";
 int suid_dumpable = 0;
@@ -715,6 +719,9 @@ static int exec_mmap(struct mm_struct *mm)
 	struct mm_struct * old_mm, *active_mm;
 #ifdef CONFIG_KRG_MM
 	unique_id_t mm_id = 0;
+
+	if (kh_mm_release)
+		mm->mm_id = get_unique_id(&mm_struct_unique_id_root);
 #endif
 
 	/* Notify parent that we're no longer interested in the old VM */
@@ -730,7 +737,8 @@ static int exec_mmap(struct mm_struct *mm)
 		 * checking core_state and changing tsk->mm.
 		 */
 #ifdef CONFIG_KRG_MM
-		mm_id = old_mm->mm_id;
+		if (!krgnodes_empty(old_mm->copyset))
+			mm_id = old_mm->mm_id;
 #endif
 		down_read(&old_mm->mmap_sem);
 		if (unlikely(old_mm->core_state)) {

@@ -18,6 +18,7 @@
 #include <asm/uaccess.h>
 #include <kerrighed/krg_services.h>
 #include <kddm/kddm.h>
+#include <kerrighed/krgnodemask.h>
 #include <kerrighed/page_table_tree.h>
 #include <kerrighed/hotplug.h>
 #include "memory_int_linker.h"
@@ -51,6 +52,7 @@ int reinit_mm(struct mm_struct *mm)
 	unique_id_t mm_id;
 
 	/* Backup mm_id which is set to 0 in mm_init... */
+	BUG_ON(!mm->mm_id);
 	mm_id = mm->mm_id;
 	if (!mm_init(mm, NULL))
 		return -ENOMEM;
@@ -129,9 +131,7 @@ struct kddm_set *mm_struct_kddm_set = NULL;
 void kcb_fill_pte(struct mm_struct *mm, unsigned long addr, pte_t pte);
 void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t pte);
 
-
-
-void break_distributed_cow(struct kddm_set *set, struct mm_struct *mm)
+static void break_distributed_cow(struct kddm_set *set, struct mm_struct *mm)
 {
 	struct vm_area_struct *vma;
 	unsigned long addr;
@@ -147,9 +147,7 @@ void break_distributed_cow(struct kddm_set *set, struct mm_struct *mm)
 	}
 }
 
-
-
-void break_distributed_cow_put(struct kddm_set *set, struct mm_struct *mm)
+static void break_distributed_cow_put(struct kddm_set *set, struct mm_struct *mm)
 {
 	struct vm_area_struct *vma;
 	unsigned long addr;
@@ -175,6 +173,8 @@ struct mm_struct *krg_dup_mm(struct task_struct *tsk, struct mm_struct *src_mm)
 {
 	struct mm_struct *mm;
 	int err = -ENOMEM;
+
+	BUG_ON(!src_mm->mm_id);
 
 	if (src_mm->anon_vma_kddm_set)
 		break_distributed_cow(src_mm->anon_vma_kddm_set, src_mm);
@@ -202,6 +202,8 @@ struct mm_struct *krg_dup_mm(struct task_struct *tsk, struct mm_struct *src_mm)
 
         mm->hiwater_rss = get_mm_rss(mm);
         mm->hiwater_vm = mm->total_vm;
+
+	mm->mm_id = get_unique_id(&mm_struct_unique_id_root);
 
 	err = init_anon_vma_kddm_set(tsk, mm);
 	if (err)
@@ -239,19 +241,17 @@ fail_nocontext:
         return ERR_PTR(err);
 }
 
-
-
-void create_mm_struct_object(struct mm_struct *mm)
+static void create_mm_struct_object(struct mm_struct *mm)
 {
 	struct mm_struct *_mm;
 
 	BUG_ON(atomic_read(&mm->mm_ltasks) > 1);
+	BUG_ON(!krgnodes_empty(mm->copyset));
+	BUG_ON(!mm->mm_id);
 
 	atomic_inc(&mm->mm_users); // Get a reference count for the KDDM.
 
 	krgnode_set(kerrighed_node_id, mm->copyset);
-
-	mm->mm_id = get_unique_id(&mm_struct_unique_id_root);
 
 	_mm = _kddm_grab_object_manual_ft(mm_struct_kddm_set, mm->mm_id);
 	BUG_ON(_mm);
@@ -259,8 +259,6 @@ void create_mm_struct_object(struct mm_struct *mm)
 
 	krg_put_mm(mm->mm_id);
 }
-
-
 
 /*****************************************************************************/
 /*                                                                           */
@@ -285,10 +283,10 @@ static struct mm_struct *kcb_copy_mm(struct task_struct * tsk,
 	if (!mm)
 		goto done_put;
 
-	mm->mm_id = 0;
+	mm->mm_id = get_unique_id(&mm_struct_unique_id_root);
 	mm->anon_vma_kddm_set = NULL;
 	mm->anon_vma_kddm_id = 0;
-	krgnodes_clear (mm->copyset);
+	krgnodes_clear(mm->copyset);
 
 	if (clone_flags & CLONE_VFORK)
 		goto done_put;
@@ -317,8 +315,8 @@ int init_anon_vma_kddm_set(struct task_struct *tsk,
 	struct kddm_set *set;
 	pid_t pid;
 
-	mm->mm_id = 0;
-	krgnodes_clear (mm->copyset);
+	BUG_ON(!mm->mm_id);
+	krgnodes_clear(mm->copyset);
 
 	pid = task_pid_knr(tsk);
 
@@ -349,7 +347,7 @@ void kcb_mm_get(struct mm_struct *mm)
 	if (!mm)
 		return;
 
-	if (!mm->mm_id) {
+	if (krgnodes_empty(mm->copyset)) {
 		atomic_inc (&mm->mm_tasks);
 		return;
 	}
@@ -396,7 +394,7 @@ static void kcb_mm_release(struct mm_struct *mm, int notify)
 	if (!mm)
 		return;
 
-	BUG_ON(!mm->mm_id);
+	BUG_ON(krgnodes_empty(mm->copyset));
 
 	if (!notify) {
 		/* Not a real exit: clean up VMAs */
@@ -414,6 +412,7 @@ static void kcb_mm_release(struct mm_struct *mm, int notify)
 		unique_id_t mm_id = mm->mm_id;
 
 		mm->mm_id = 0;
+		krgnodes_clear(mm->copyset);
 
 		_kddm_remove_frozen_object(mm_struct_kddm_set, mm_id);
 		_destroy_kddm_set(set);
@@ -434,7 +433,7 @@ void krg_do_mmap_region(struct vm_area_struct *vma,
 	if (!mm->anon_vma_kddm_set)
 		return;
 
-	BUG_ON (!mm->mm_id);
+	BUG_ON(krgnodes_empty(mm->copyset));
 
 	check_link_vma_to_anon_memory_kddm_set (vma);
 
@@ -465,7 +464,7 @@ void krg_do_munmap(struct mm_struct *mm,
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
 
-	if (!mm->mm_id)
+	if (krgnodes_empty(mm->copyset))
 		return;
 
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
@@ -489,7 +488,7 @@ void krg_do_mremap(struct mm_struct *mm, unsigned long addr,
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
 
-	if (!mm->mm_id)
+	if (krgnodes_empty(mm->copyset))
 		return;
 
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
@@ -518,7 +517,7 @@ void krg_do_brk(struct mm_struct *mm,
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
 
-	BUG_ON (!mm->mm_id);
+	BUG_ON(krgnodes_empty(mm->copyset));
 
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
 		return;
@@ -542,7 +541,7 @@ int krg_expand_stack(struct vm_area_struct *vma,
 	krgnodemask_t copyset;
 	int r;
 
-	BUG_ON (!mm->mm_id);
+	BUG_ON(krgnodes_empty(mm->copyset));
 
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
 		return 0;
@@ -568,7 +567,7 @@ void krg_do_mprotect(struct mm_struct *mm,
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
 
-	if (!mm->mm_id)
+	if (krgnodes_empty(mm->copyset))
 		return;
 
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
