@@ -63,6 +63,7 @@ int mm_remove_object (void *object,
 	up_write(&mm->mmap_sem);
 
 	mm->mm_id = 0;
+	krgnodes_clear(mm->copyset);
 
 	mmdrop(mm);
 

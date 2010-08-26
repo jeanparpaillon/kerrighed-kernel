@@ -675,13 +675,22 @@ static inline int do_export_mm_struct(struct epm_action *action,
 	int r;
 
 	switch (action->type) {
-	  case EPM_CHECKPOINT:
-		  krg_get_mm(mm->mm_id);
-		  r = ghost_write(ghost, mm, sizeof(struct mm_struct));
-		  krg_put_mm(mm->mm_id);
-		  break;
+	case EPM_CHECKPOINT:  {
+		  unique_id_t mm_id = 0;
+		  if (!krgnodes_empty(mm->copyset))
+			  mm_id = mm->mm_id;
 
-	  default:
+		  if (mm_id)
+			  krg_get_mm(mm_id);
+
+		  r = ghost_write(ghost, mm, sizeof(struct mm_struct));
+
+		  if (mm_id)
+			  krg_put_mm(mm_id);
+	}
+		break;
+
+	default:
 		  r = ghost_write(ghost, &mm->mm_id, sizeof(unique_id_t));
 	}
 
@@ -1333,7 +1342,8 @@ static inline int do_import_mm_struct(struct epm_action *action,
 			  goto exit_free_mm;
 
 		  atomic_set(&mm->mm_ltasks, 0);
-		  mm->mm_id = 0;
+		  mm->mm_id = get_unique_id(&mm_struct_unique_id_root);
+		  krgnodes_clear(mm->copyset);
 		  mm->anon_vma_kddm_set = NULL;
 		  mm->anon_vma_kddm_id = KDDM_SET_UNUSED;
 		  break;

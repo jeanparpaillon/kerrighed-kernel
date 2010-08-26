@@ -27,7 +27,7 @@ struct anon_vma_kddm_set_private {
 
 extern struct kddm_set *mm_struct_kddm_set;
 
-
+extern unique_id_root_t mm_struct_unique_id_root;
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -68,8 +68,6 @@ static inline void krg_put_mm(unique_id_t mm_id)
 	if (mm_id)
 		_kddm_put_object (mm_struct_kddm_set, mm_id);
 }
-
-void create_mm_struct_object(struct mm_struct *mm);
 
 void mm_struct_finalize (void);
 void mm_struct_init (void);
