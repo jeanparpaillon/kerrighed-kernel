@@ -1189,8 +1189,10 @@ NORET_TYPE void do_exit(long code)
 	tsk->exit_code = code;
 	taskstats_exit(tsk, group_dead);
 #ifdef CONFIG_KRG_MM
-	if (tsk->mm && !krgnodes_empty(tsk->mm->copyset))
+	if (tsk->mm && !krgnodes_empty(tsk->mm->copyset)) {
+		printk("mm_release %p\n", tsk->mm);
 		mm = tsk->mm;
+	}
 #endif
 	exit_mm(tsk);
 #ifdef CONFIG_KRG_MM

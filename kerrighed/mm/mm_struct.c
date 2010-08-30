@@ -86,6 +86,11 @@ struct mm_struct *alloc_fake_mm(struct mm_struct *src_mm)
 	struct mm_struct *mm;
 	int r;
 
+	if (src_mm)
+		printk("allocate_fake_mm %lu\n", src_mm->mm_id);
+	else
+		printk("allocate_fake_mm NONE\n");
+
 	mm = allocate_mm();
 	if (!mm)
 		return NULL;
@@ -254,7 +259,10 @@ static void create_mm_struct_object(struct mm_struct *mm)
 	krgnode_set(kerrighed_node_id, mm->copyset);
 
 	_mm = _kddm_grab_object_manual_ft(mm_struct_kddm_set, mm->mm_id);
-	BUG_ON(_mm);
+	if (_mm) {
+		printk("mm: %p\n", _mm);
+		BUG_ON(_mm);
+	}
 	_kddm_set_object(mm_struct_kddm_set, mm->mm_id, mm);
 
 	krg_put_mm(mm->mm_id);
@@ -284,6 +292,7 @@ static struct mm_struct *kcb_copy_mm(struct task_struct * tsk,
 		goto done_put;
 
 	mm->mm_id = get_unique_id(&mm_struct_unique_id_root);
+	/* printk("kcb_copy_mm: task %d %s\n", tsk->pid, tsk->comm); */
 	mm->anon_vma_kddm_set = NULL;
 	mm->anon_vma_kddm_id = 0;
 	krgnodes_clear(mm->copyset);

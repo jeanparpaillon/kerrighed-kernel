@@ -501,6 +501,10 @@ struct mm_struct * mm_init(struct mm_struct * mm, struct task_struct *p)
 	mm->core_state = NULL;
 	mm->nr_ptes = 0;
 #ifdef CONFIG_KRG_MM
+	if (p)
+		printk("mm_init %d %s (old mm_id: %lu)\n", p->pid, p->comm, mm->mm_id);
+	else
+		printk("mm_init - old mm_id: %lu\n", mm->mm_id);
 	mm->mm_id = 0;
 #endif
 	set_mm_counter(mm, file_rss, 0);
@@ -764,6 +768,7 @@ static int copy_mm(unsigned long clone_flags, struct task_struct * tsk)
 			KRGFCT(kh_mm_get)(oldmm);
 #endif
 		mm = oldmm;
+		printk("kcb_mm_get: task %d %s\n", tsk->pid, tsk->comm);
 		goto good_mm;
 	}
 
@@ -1364,6 +1369,14 @@ struct task_struct *copy_process(unsigned long clone_flags,
 	ftrace_graph_init_task(p);
 
 	p->pid = pid_nr(pid);
+
+	if (kh_copy_mm && p->mm && p->parent && p->parent->mm) {
+		printk("forking %d %s (mm_id: %lu) -> %d (mm_id: %lu)\n",
+		       p->parent->pid, p->parent->comm, p->parent->mm->mm_id,
+		       p->pid, p->mm->mm_id);
+	}
+
+
 	p->tgid = p->pid;
 	if (clone_flags & CLONE_THREAD)
 		p->tgid = current->tgid;
