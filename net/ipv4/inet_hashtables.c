@@ -447,6 +447,8 @@ krgip_cluster_ip_tcp_auto_bind(struct inet_timewait_death_row *death_row,
 
 	spin_unlock_bh(&head->lock);
 
+	printk("%d(%s) %s: sk=0x%p trying %hd\n", current->pid, current->comm, __PRETTY_FUNCTION__,
+		sk, port);
 	*error = krgip_cluster_ip_tcp_get_port_prepare(sk, port,
 						       &ip_obj, &port_obj,
 						       &krg_addr, &krg_port);

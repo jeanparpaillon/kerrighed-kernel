@@ -493,6 +493,9 @@ krgip_cluster_ip_tcp_get_port_prepare(struct sock *sk,
 	__be32 bindaddr;
 	int err;
 
+	printk("%d(%s) %s: enter sk=0x%p\n", current->pid, current->comm, __PRETTY_FUNCTION__,
+		sk);
+
 	if (!port_set
 	    || sk->sk_family != AF_INET || sk->sk_protocol != IPPROTO_TCP)
 		return 0;
@@ -506,6 +509,8 @@ krgip_cluster_ip_tcp_get_port_prepare(struct sock *sk,
 			return PTR_ERR(ip_obj);
 		BUG_ON(!ip_obj);
 	}
+	printk("%d(%s) %s: bindaddr=%x\n", current->pid, current->comm, __PRETTY_FUNCTION__,
+		ntohl(bindaddr));
 
 	snum = htons(snum);
 	port_obj = _kddm_grab_object(port_set, snum);
@@ -514,6 +519,8 @@ krgip_cluster_ip_tcp_get_port_prepare(struct sock *sk,
 		goto err_put_addr;
 	}
 	BUG_ON(!port_obj);
+	printk("%d(%s) %s: snum=%hd\n", current->pid, current->comm, __PRETTY_FUNCTION__,
+		ntohs(snum));
 
 	err = -EADDRINUSE;
 	if (port_obj->node != KERRIGHED_NODE_ID_NONE
@@ -521,6 +528,7 @@ krgip_cluster_ip_tcp_get_port_prepare(struct sock *sk,
 	    || (ip_obj && ip_obj->nr_nodes
 		&& krgip_addr_find(&port_obj->ips, bindaddr)))
 			goto err_put_port;
+	printk("%d(%s) %s: available\n", current->pid, current->comm, __PRETTY_FUNCTION__);
 
 	err = -ENOMEM;
 	*port = krgip_local_port_alloc(snum);
@@ -534,6 +542,7 @@ krgip_cluster_ip_tcp_get_port_prepare(struct sock *sk,
 			goto err_put_port;
 		}
 	}
+	printk("%d(%s) %s: done\n", current->pid, current->comm, __PRETTY_FUNCTION__);
 
 	*ip_obj_p = ip_obj;
 	*port_obj_p = port_obj;
@@ -564,7 +573,10 @@ krgip_cluster_ip_tcp_get_port_finish(struct sock *sk,
 	if (!port_obj)
 		return;
 
+	printk("%d(%s) %s: enter sk=0x%p\n", current->pid, current->comm, __PRETTY_FUNCTION__,
+		sk);
 	if (error) {
+		printk("%d(%s) %s: error\n", current->pid, current->comm, __PRETTY_FUNCTION__);
 		krgip_cluster_port_put_or_remove(port_set, port_obj);
 		if (ip_obj)
 			krgip_cluster_ip_put_or_remove(ip_set, ip_obj);
@@ -587,6 +599,7 @@ krgip_cluster_ip_tcp_get_port_finish(struct sock *sk,
 	_kddm_put_object(port_set, port_obj->num);
 	if (ip_obj)
 		_kddm_put_object(ip_set, ip_obj->addr);
+	printk("%d(%s) %s: done\n", current->pid, current->comm, __PRETTY_FUNCTION__);
 }
 
 void
@@ -603,6 +616,8 @@ krgip_cluster_ip_tcp_unhash_prepare(struct sock *sk,
 	__be32 bindaddr;
 	__be16 sport;
 
+	printk("%d(%s) %s: enter sk=0x%p num=%d\n", current->pid, current->comm, __PRETTY_FUNCTION__,
+		sk, inet->num);
 	if (!port_set
 	    || !inet->is_krgip
 	    || !inet->sport
@@ -638,6 +653,8 @@ krgip_cluster_ip_tcp_unhash_prepare(struct sock *sk,
 
 	*ip_obj_p = ip_obj;
 	*port_obj_p = port_obj;
+	printk("%d(%s) %s: done bindaddr=%x sport=%hd\n", current->pid, current->comm, __PRETTY_FUNCTION__,
+		ntohl(bindaddr), ntohs(sport));
 }
 
 void

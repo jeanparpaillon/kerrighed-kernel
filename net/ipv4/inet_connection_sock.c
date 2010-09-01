@@ -98,6 +98,8 @@ bool __krgip_cluster_ip_tcp_auto_get_port(struct sock *sk, unsigned short snum,
 
 	local_bh_enable();
 
+	printk("%d(%s) %s: sk=0x%p trying %hd\n", current->pid, current->comm, __PRETTY_FUNCTION__,
+		sk, snum);
 	*error = inet_csk_get_port(sk, snum);
 
 	return true;
@@ -115,6 +117,8 @@ krgip_cluster_ip_tcp_auto_get_port(struct sock *sk, unsigned short snum,
 
 	spin_unlock_bh(&head->lock);
 
+	printk("%d(%s) %s: sk=0x%p trying %hd\n", current->pid, current->comm, __PRETTY_FUNCTION__,
+		sk, snum);
 	*error = inet_csk_get_port(sk, snum);
 
 	return true;
