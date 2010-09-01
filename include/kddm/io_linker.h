@@ -66,6 +66,8 @@ enum
     MM_STRUCT_LINKER,
     PIDMAP_MAP_LINKER,
     UNIQUE_ID_LINKER,
+    CLUSTER_IP_LINKER,
+    CLUSTER_PORT_LINKER,
     MAX_IO_LINKER, /* MUST always be the last one */
   } ;
 
