@@ -23,6 +23,9 @@
 #include <net/route.h>
 #include <net/tcp_states.h>
 #include <net/xfrm.h>
+#ifdef CONFIG_KRG_CLUSTERIP
+#include <kerrighed/krg_clusterip.h>
+#endif
 
 #ifdef INET_CSK_DEBUG
 const char inet_csk_timer_bug_msg[] = "inet_csk BUG: unknown timer value\n";
@@ -84,6 +87,40 @@ int inet_csk_bind_conflict(const struct sock *sk,
 
 EXPORT_SYMBOL_GPL(inet_csk_bind_conflict);
 
+#ifdef CONFIG_KRG_CLUSTERIP
+static
+bool __krgip_cluster_ip_tcp_auto_get_port(struct sock *sk, unsigned short snum,
+					  int *error)
+{
+	if (!sock_net(sk)->krgip.cluster_ports_tcp
+	    || sk->sk_family != AF_INET || sk->sk_protocol != IPPROTO_TCP)
+		return false;
+
+	local_bh_enable();
+
+	*error = inet_csk_get_port(sk, snum);
+
+	return true;
+}
+
+static
+bool
+krgip_cluster_ip_tcp_auto_get_port(struct sock *sk, unsigned short snum,
+				   struct inet_bind_hashbucket *head,
+			           int *error)
+{
+	if (!sock_net(sk)->krgip.cluster_ports_tcp
+	    || sk->sk_family != AF_INET || sk->sk_protocol != IPPROTO_TCP)
+		return false;
+
+	spin_unlock_bh(&head->lock);
+
+	*error = inet_csk_get_port(sk, snum);
+
+	return true;
+}
+#endif
+
 /* Obtain a reference to a local port for the given sock,
  * if snum is zero it means select any available local port.
  */
@@ -96,7 +133,21 @@ int inet_csk_get_port(struct sock *sk, unsigned short snum)
 	int ret, attempts = 5;
 	struct net *net = sock_net(sk);
 	int smallest_size = -1, smallest_rover;
+#ifdef CONFIG_KRG_CLUSTERIP
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+	struct krgip_cluster_port_kddm_object *port_obj = NULL;
+	struct krgip_addr *krg_addr = NULL;
+	struct krgip_local_port *krg_port = NULL;
+	bool auto_get_port = !snum;
+#endif
 
+#ifdef CONFIG_KRG_CLUSTERIP
+	if (snum && !inet_sk(sk)->num
+	    && krgip_cluster_ip_tcp_get_port_prepare(sk, snum,
+						     &ip_obj, &port_obj,
+						     &krg_addr, &krg_port))
+		return 1;
+#endif
 	local_bh_disable();
 	if (!snum) {
 		int remaining, rover, low, high;
@@ -152,8 +203,26 @@ again:
 		 * non-NULL and we hold it's mutex.
 		 */
 		snum = rover;
+#ifdef CONFIG_KRG_CLUSTERIP
+		if (krgip_cluster_ip_tcp_auto_get_port(sk, snum, head, &ret)) {
+			/* Unlocked head->lock and re-enabled bh */
+			if (!ret || --attempts < 0)
+				return ret;
+			local_bh_disable();
+			goto again;
+		}
+#endif
 	} else {
 have_snum:
+#ifdef CONFIG_KRG_CLUSTERIP
+		if (auto_get_port && __krgip_cluster_ip_tcp_auto_get_port(sk, snum, &ret)) {
+			/* Re-enabled bh */
+			if (!ret || --attempts < 0)
+				return ret;
+			local_bh_disable();
+			goto again;
+		}
+#endif
 		head = &hashinfo->bhash[inet_bhashfn(net, snum,
 				hashinfo->bhash_size)];
 		spin_lock(&head->lock);
@@ -204,6 +273,9 @@ fail_unlock:
 	spin_unlock(&head->lock);
 fail:
 	local_bh_enable();
+#ifdef CONFIG_KRG_CLUSTERIP
+	krgip_cluster_ip_tcp_get_port_finish(sk, ip_obj, port_obj, krg_addr, krg_port, ret);
+#endif
 	return ret;
 }
 
@@ -549,6 +621,9 @@ struct sock *inet_csk_clone(struct sock *sk, const struct request_sock *req,
 		inet_sk(newsk)->dport = inet_rsk(req)->rmt_port;
 		inet_sk(newsk)->num = ntohs(inet_rsk(req)->loc_port);
 		inet_sk(newsk)->sport = inet_rsk(req)->loc_port;
+#ifdef CONFIG_KRG_CLUSTERIP
+		inet_sk(newsk)->is_krgip = 0;
+#endif
 		newsk->sk_write_space = sk_stream_write_space;
 
 		newicsk->icsk_retransmits = 0;

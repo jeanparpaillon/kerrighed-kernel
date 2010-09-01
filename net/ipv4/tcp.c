@@ -271,6 +271,9 @@
 #include <net/ip.h>
 #include <net/netdma.h>
 #include <net/sock.h>
+#ifdef CONFIG_KRG_CLUSTERIP
+#include <kerrighed/krg_clusterip.h>
+#endif
 
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
@@ -1800,9 +1803,16 @@ void tcp_close(struct sock *sk, long timeout)
 	struct sk_buff *skb;
 	int data_was_unread = 0;
 	int state;
+#ifdef CONFIG_KRG_CLUSTERIP
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+	struct krgip_cluster_port_kddm_object *port_obj = NULL;
+#endif
 
 	lock_sock(sk);
 	sk->sk_shutdown = SHUTDOWN_MASK;
+#ifdef CONFIG_KRG_CLUSTERIP
+	krgip_cluster_ip_tcp_unhash_prepare(sk, &ip_obj, &port_obj);
+#endif
 
 	if (sk->sk_state == TCP_LISTEN) {
 		tcp_set_state(sk, TCP_CLOSE);
@@ -1951,6 +1961,9 @@ adjudge_to_death:
 out:
 	bh_unlock_sock(sk);
 	local_bh_enable();
+#ifdef CONFIG_KRG_CLUSTERIP
+	krgip_cluster_ip_tcp_unhash_finish(sk, ip_obj, port_obj);
+#endif
 	sock_put(sk);
 }
 
