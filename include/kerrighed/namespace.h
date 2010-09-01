@@ -15,6 +15,7 @@ struct krg_namespace {
 	struct nsproxy root_nsproxy;
 	struct user_namespace *root_user_ns;
 	struct task_struct *root_task;
+	struct task_struct *parent_task;
 	struct rpc_communicator *rpc_comm;
 	struct completion root_task_in_exit;
 	struct completion root_task_continue_exit;

@@ -65,6 +65,7 @@ int copy_krg_ns(struct task_struct *task, struct nsproxy *new)
 				ns->root_nsproxy.pid_ns->krg_ns = ns;
 #endif
 
+				ns->parent_task = current;
 				ns->rpc_comm = NULL;
 
 				rcu_assign_pointer(krg_ns, ns);
