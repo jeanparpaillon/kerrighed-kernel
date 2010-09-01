@@ -104,6 +104,9 @@ deffct(proc);
 deffct(ghost);
 deffct(epm);
 #endif
+#ifdef CONFIG_KRG_NET
+deffct(krg_net);
+#endif
 #ifdef CONFIG_KRG_SCHED
 deffct(scheduler);
 #endif
@@ -427,6 +430,11 @@ int init_kerrighed_upper_layers(void)
 		goto err_epm;
 #endif
 
+#ifdef CONFIG_KRG_NET
+	if (init_krg_net())
+		goto err_net;
+#endif
+
 	printk("Init Kerrighed distributed services: done\n");
 
 #ifdef CONFIG_KRG_SCHED
@@ -439,6 +447,10 @@ int init_kerrighed_upper_layers(void)
 #ifdef CONFIG_KRG_SCHED
 	cleanup_scheduler();
       err_sched:
+#endif
+#ifdef CONFIG_KRG_NET
+	cleanup_krg_net();
+      err_net:
 #endif
 #ifdef CONFIG_KRG_EPM
 	cleanup_epm();
