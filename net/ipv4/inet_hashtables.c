@@ -22,6 +22,9 @@
 #include <net/inet_connection_sock.h>
 #include <net/inet_hashtables.h>
 #include <net/ip.h>
+#ifdef CONFIG_KRG_CLUSTERIP
+#include <kerrighed/krg_clusterip.h>
+#endif
 
 /*
  * Allocate and initialize a new local port bind bucket.
@@ -417,6 +420,85 @@ void inet_unhash(struct sock *sk)
 }
 EXPORT_SYMBOL_GPL(inet_unhash);
 
+#ifdef CONFIG_KRG_CLUSTERIP
+static
+bool
+krgip_cluster_ip_tcp_auto_bind(struct inet_timewait_death_row *death_row,
+		struct sock *sk, int port,
+		int (*check_established)(struct inet_timewait_death_row *,
+			struct sock *, __u16, struct inet_timewait_sock **),
+		void (*hash)(struct sock *sk),
+		struct inet_bind_hashbucket *head,
+		int *error)
+{
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+	struct krgip_cluster_port_kddm_object *port_obj = NULL;
+	struct krgip_addr *krg_addr = NULL;
+	struct krgip_local_port *krg_port = NULL;
+	struct inet_hashinfo *hinfo = death_row->hashinfo;
+	struct net *net = sock_net(sk);
+	struct inet_bind_bucket *tb;
+	struct hlist_node *node;
+	struct inet_timewait_sock *tw = NULL;
+
+	if (!sock_net(sk)->krgip.cluster_ports_tcp
+	    || sk->sk_family != AF_INET || sk->sk_protocol != IPPROTO_TCP)
+		return false;
+
+	spin_unlock_bh(&head->lock);
+
+	*error = krgip_cluster_ip_tcp_get_port_prepare(sk, port,
+						       &ip_obj, &port_obj,
+						       &krg_addr, &krg_port);
+	if (*error)
+		return true;
+
+	*error = -EADDRNOTAVAIL;
+	spin_lock_bh(&head->lock);
+
+	inet_bind_bucket_for_each(tb, node, &head->chain) {
+		if (ib_net(tb) == net && tb->port == port) {
+			if (tb->fastreuse >= 0)
+				goto fail_unlock;
+			WARN_ON(hlist_empty(&tb->owners));
+			if (!check_established(death_row, sk,
+						port, &tw))
+				goto ok;
+			goto fail_unlock;
+		}
+	}
+
+	tb = inet_bind_bucket_create(hinfo->bind_bucket_cachep, net, head, port);
+	if (!tb)
+		goto fail_unlock;
+	tb->fastreuse = -1;
+
+ok:
+	inet_bind_hash(sk, tb, port);
+	if (sk_unhashed(sk)) {
+		inet_sk(sk)->sport = htons(port);
+		hash(sk);
+	}
+	spin_unlock(&head->lock);
+
+	if (tw) {
+		inet_twsk_deschedule(tw, death_row);
+		inet_twsk_put(tw);
+	}
+	*error = 0;
+
+out:
+	local_bh_enable();
+	krgip_cluster_ip_tcp_get_port_finish(sk, ip_obj, port_obj, krg_addr, krg_port, *error);
+
+	return true;
+
+fail_unlock:
+	spin_unlock(&head->lock);
+	goto out;
+}
+#endif
+
 int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 		struct sock *sk, u32 port_offset,
 		int (*check_established)(struct inet_timewait_death_row *,
@@ -430,6 +512,9 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 	int ret;
 	struct net *net = sock_net(sk);
 
+#ifdef CONFIG_KRG_CLUSTERIP
+retry:
+#endif
 	if (!snum) {
 		int i, remaining, low, high, port;
 		static u32 hint;
@@ -481,6 +566,14 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 
 ok:
 		hint += i;
+#ifdef CONFIG_KRG_CLUSTERIP
+		if (krgip_cluster_ip_tcp_auto_bind(death_row, sk, port, check_established, hash, head, &ret)) {
+			/* Unlocked head->lock and re-enabled bh */
+			if (!ret)
+				return ret;
+			goto retry;
+		}
+#endif
 
 		/* Head lock still held and bh's disabled */
 		inet_bind_hash(sk, tb, port);

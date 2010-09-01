@@ -104,6 +104,10 @@
 #include <net/route.h>
 #include <net/checksum.h>
 #include <net/xfrm.h>
+#ifdef CONFIG_KRG_CLUSTERIP
+#include <kddm/kddm.h>
+#include <kerrighed/krg_clusterip.h>
+#endif
 #include "udp_impl.h"
 
 struct udp_table udp_table;
@@ -121,6 +125,206 @@ atomic_t udp_memory_allocated;
 EXPORT_SYMBOL(udp_memory_allocated);
 
 #define PORTS_PER_CHAIN (65536 / UDP_HTABLE_SIZE)
+
+#ifdef CONFIG_KRG_CLUSTERIP
+static
+int
+krgip_cluster_ip_udp_get_port_prepare(struct sock *sk,
+				      unsigned short snum,
+				      struct krgip_cluster_ip_kddm_object **ip_obj_p,
+				      struct krgip_cluster_port_kddm_object **port_obj_p,
+				      struct krgip_addr **addr,
+				      struct krgip_local_port **port)
+{
+	struct inet_sock *inet = inet_sk(sk);
+	struct netns_krgip *krgip = &sock_net(sk)->krgip;
+	struct kddm_set *ip_set = krgip->cluster_ips;
+	struct kddm_set *port_set = krgip->cluster_ports_udp;
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+	struct krgip_cluster_port_kddm_object *port_obj;
+	__be32 bindaddr;
+	int err;
+
+	if (!port_set
+	    || sk->sk_family != AF_INET || sk->sk_protocol != IPPROTO_UDP)
+		return 0;
+
+	bindaddr = 0;
+	if (sk->sk_userlocks & SOCK_BINDADDR_LOCK) {
+		bindaddr = inet->rcv_saddr;
+
+		ip_obj = _kddm_get_object(ip_set, bindaddr);
+		if (IS_ERR(ip_obj))
+			return PTR_ERR(ip_obj);
+		BUG_ON(!ip_obj);
+	}
+
+	snum = htons(snum);
+	port_obj = _kddm_grab_object(port_set, snum);
+	if (IS_ERR(port_obj)) {
+		err = PTR_ERR(port_obj);
+		goto err_put_addr;
+	}
+	BUG_ON(!port_obj);
+
+	err = -EADDRINUSE;
+	if (port_obj->node != KERRIGHED_NODE_ID_NONE
+	    || (!ip_obj && !list_empty(&port_obj->ips))
+	    || (ip_obj && ip_obj->nr_nodes
+		&& krgip_addr_find(&port_obj->ips, bindaddr)))
+			goto err_put_port;
+
+	err = -ENOMEM;
+	*port = krgip_local_port_alloc(snum);
+	if (!*port)
+		goto err_put_port;
+	if (ip_obj) {
+		*addr = krgip_addr_alloc(bindaddr);
+		if (!*addr) {
+			krgip_local_port_free(*port);
+			*port = NULL;
+			goto err_put_port;
+		}
+	}
+
+	*ip_obj_p = ip_obj;
+	*port_obj_p = port_obj;
+
+	return 0;
+
+err_put_port:
+	krgip_cluster_port_put_or_remove(port_set, port_obj);
+err_put_addr:
+	if (bindaddr)
+		krgip_cluster_ip_put_or_remove(ip_set, ip_obj);
+
+	return err;
+}
+
+static
+void
+krgip_cluster_ip_udp_get_port_finish(struct sock *sk,
+				     struct krgip_cluster_ip_kddm_object *ip_obj,
+				     struct krgip_cluster_port_kddm_object *port_obj,
+				     struct krgip_addr *addr,
+				     struct krgip_local_port *port,
+				     int error)
+{
+	struct netns_krgip *krgip = &sock_net(sk)->krgip;
+	struct kddm_set *ip_set = krgip->cluster_ips;
+	struct kddm_set *port_set = krgip->cluster_ports_udp;
+
+	if (!port_obj)
+		return;
+
+	if (error) {
+		krgip_cluster_port_put_or_remove(port_set, port_obj);
+		if (ip_obj)
+			krgip_cluster_ip_put_or_remove(ip_set, ip_obj);
+		krgip_local_port_free(port);
+		if (addr)
+			krgip_addr_free(addr);
+		return;
+	}
+
+	if (!ip_obj) {
+		port_obj->node = kerrighed_node_id;
+		krgip_local_ports_udp_add(&krgip->local_ports_any, port);
+	} else {
+		list_add(&addr->list, &port_obj->ips);
+		krgip_local_ports_udp_add(ip_obj->local_ports, port);
+	}
+
+	_kddm_put_object(port_set, port_obj->num);
+	if (ip_obj)
+		_kddm_put_object(ip_set, ip_obj->addr);
+}
+
+static
+bool
+krgip_cluster_ip_udp_auto_get_port(struct sock *sk, unsigned short snum,
+			           int (*saddr_comp)(const struct sock *sk1,
+						     const struct sock *sk2),
+				   struct udp_hslot *hslot,
+			           int *error)
+{
+	if (!sock_net(sk)->krgip.cluster_ports_udp
+	    || sk->sk_family != AF_INET || sk->sk_protocol != IPPROTO_UDP)
+		return false;
+
+	spin_unlock_bh(&hslot->lock);
+
+	if (!udp_lib_get_port(sk, snum, saddr_comp))
+		*error = 0;
+
+	return true;
+}
+
+static
+void
+krgip_cluster_ip_udp_unhash_prepare(struct sock *sk,
+				    struct krgip_cluster_ip_kddm_object **ip_obj_p,
+				    struct krgip_cluster_port_kddm_object **port_obj_p)
+{
+	struct inet_sock *inet = inet_sk(sk);
+	struct netns_krgip *krgip = &sock_net(sk)->krgip;
+	struct kddm_set *ip_set = krgip->cluster_ips;
+	struct kddm_set *port_set = krgip->cluster_ports_udp;
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+	struct krgip_cluster_port_kddm_object *port_obj;
+	__be32 bindaddr;
+
+	if (!port_set
+	    || !inet->sport
+	    || sk->sk_family != AF_INET || sk->sk_protocol != IPPROTO_UDP)
+		return;
+
+	bindaddr = 0;
+	if (sk->sk_userlocks & SOCK_BINDADDR_LOCK) {
+		bindaddr = inet->rcv_saddr;
+
+		ip_obj = _kddm_get_object(ip_set, bindaddr);
+		BUG_ON(IS_ERR(ip_obj) || !ip_obj);
+	}
+
+	port_obj = _kddm_grab_object(port_set, inet->sport);
+	BUG_ON(IS_ERR(port_obj) || !port_obj);
+
+	if (!ip_obj) {
+		port_obj->node = KERRIGHED_NODE_ID_NONE;
+		krgip_local_ports_udp_del(&krgip->local_ports_any, inet->sport);
+	} else {
+		struct krgip_addr *addr;
+
+		list_for_each_entry(addr, &port_obj->ips, list)
+			if (addr->addr == bindaddr) {
+				list_del(&addr->list);
+				krgip_addr_free(addr);
+				break;
+			}
+		krgip_local_ports_udp_del(ip_obj->local_ports, inet->sport);
+	}
+
+	*ip_obj_p = ip_obj;
+	*port_obj_p = port_obj;
+}
+
+static
+void
+krgip_cluster_ip_udp_unhash_finish(struct sock *sk,
+				   struct krgip_cluster_ip_kddm_object *ip_obj,
+				   struct krgip_cluster_port_kddm_object *port_obj)
+{
+	struct netns_krgip *krgip = &sock_net(sk)->krgip;
+
+	if (!port_obj)
+		return;
+
+	krgip_cluster_port_put_or_remove(krgip->cluster_ports_udp, port_obj);
+	if (ip_obj)
+		krgip_cluster_ip_put_or_remove(krgip->cluster_ips, ip_obj);
+}
+#endif /* CONFIG_KRG_CLUSTERIP */
 
 static int udp_lib_lport_inuse(struct net *net, __u16 num,
 			       const struct udp_hslot *hslot,
@@ -164,11 +368,20 @@ int udp_lib_get_port(struct sock *sk, unsigned short snum,
 	struct udp_table *udptable = sk->sk_prot->h.udp_table;
 	int    error = 1;
 	struct net *net = sock_net(sk);
+#ifdef CONFIG_KRG_CLUSTERIP
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+	struct krgip_cluster_port_kddm_object *port_obj = NULL;
+	struct krgip_addr *krg_addr = NULL;
+	struct krgip_local_port *krg_port = NULL;
+#endif
 
 	if (!snum) {
 		int low, high, remaining;
 		unsigned rand;
 		unsigned short first, last;
+#ifdef CONFIG_KRG_CLUSTERIP
+		unsigned short delta;
+#endif
 		DECLARE_BITMAP(bitmap, PORTS_PER_CHAIN);
 
 		inet_get_local_port_range(&low, &high);
@@ -182,12 +395,19 @@ int udp_lib_get_port(struct sock *sk, unsigned short snum,
 		rand = (rand | 1) * UDP_HTABLE_SIZE;
 		for (last = first + UDP_HTABLE_SIZE; first != last; first++) {
 			hslot = &udptable->hash[udp_hashfn(net, first)];
+#ifdef CONFIG_KRG_CLUSTERIP
+			delta = 0;
+retry:
+#endif
 			bitmap_zero(bitmap, PORTS_PER_CHAIN);
 			spin_lock_bh(&hslot->lock);
 			udp_lib_lport_inuse(net, snum, hslot, bitmap, sk,
 					    saddr_comp);
 
 			snum = first;
+#ifdef CONFIG_KRG_CLUSTERIP
+			snum += delta;
+#endif
 			/*
 			 * Iterate on all possible values of snum for this hash.
 			 * Using steps of an odd multiple of UDP_HTABLE_SIZE
@@ -196,13 +416,37 @@ int udp_lib_get_port(struct sock *sk, unsigned short snum,
 			do {
 				if (low <= snum && snum <= high &&
 				    !test_bit(snum / UDP_HTABLE_SIZE, bitmap))
+#ifdef CONFIG_KRG_CLUSTERIP
+				{
+					delta = snum + rand - first;
+					if (krgip_cluster_ip_udp_auto_get_port(sk,
+									       snum,
+									       saddr_comp,
+									       hslot,
+									       &error)) {
+						/* Released hslot->lock */
+						if (error)
+							goto retry;
+						return error;
+					}
+
 					goto found;
+				}
+#else
+					goto found;
+#endif
 				snum += rand;
 			} while (snum != first);
 			spin_unlock_bh(&hslot->lock);
 		}
 		goto fail;
 	} else {
+#ifdef CONFIG_KRG_CLUSTERIP
+		if (krgip_cluster_ip_udp_get_port_prepare(sk, snum,
+							  &ip_obj, &port_obj,
+							  &krg_addr, &krg_port))
+			goto fail;
+#endif
 		hslot = &udptable->hash[udp_hashfn(net, snum)];
 		spin_lock_bh(&hslot->lock);
 		if (udp_lib_lport_inuse(net, snum, hslot, NULL, sk, saddr_comp))
@@ -218,6 +462,9 @@ found:
 	error = 0;
 fail_unlock:
 	spin_unlock_bh(&hslot->lock);
+#ifdef CONFIG_KRG_CLUSTERIP
+	krgip_cluster_ip_udp_get_port_finish(sk, ip_obj, port_obj, krg_addr, krg_port, error);
+#endif
 fail:
 	return error;
 }
@@ -997,6 +1244,12 @@ int udp_disconnect(struct sock *sk, int flags)
 
 void udp_lib_unhash(struct sock *sk)
 {
+#ifdef CONFIG_KRG_CLUSTERIP
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+	struct krgip_cluster_port_kddm_object *port_obj = NULL;
+
+	krgip_cluster_ip_udp_unhash_prepare(sk, &ip_obj, &port_obj);
+#endif
 	if (sk_hashed(sk)) {
 		struct udp_table *udptable = sk->sk_prot->h.udp_table;
 		unsigned int hash = udp_hashfn(sock_net(sk), sk->sk_hash);
@@ -1009,6 +1262,9 @@ void udp_lib_unhash(struct sock *sk)
 		}
 		spin_unlock_bh(&hslot->lock);
 	}
+#ifdef CONFIG_KRG_CLUSTERIP
+	krgip_cluster_ip_udp_unhash_finish(sk, ip_obj, port_obj);
+#endif
 }
 EXPORT_SYMBOL(udp_lib_unhash);
 

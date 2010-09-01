@@ -130,6 +130,9 @@ struct inet_sock {
 				freebind:1,
 				hdrincl:1,
 				mc_loop:1,
+#ifdef CONFIG_KRG_CLUSTERIP
+				is_krgip:1,
+#endif
 				transparent:1;
 	int			mc_index;
 	__be32			mc_addr;
