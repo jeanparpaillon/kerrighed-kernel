@@ -230,6 +230,9 @@ config KRG_EPM
 config KRG_IPC_EPM
        def_bool KRG_IPC && KRG_EPM
 
+config KRG_NET
+	def_bool n
+
 menuconfig KRG_SCHED
 	bool "Kerrighed support for global scheduling"
 	depends on KERRIGHED

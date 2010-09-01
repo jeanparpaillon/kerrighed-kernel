@@ -86,8 +86,15 @@ static struct task_struct *cluster_boot_helper_task;
 #else
 #define CLUSTER_INIT_OPT_CLONE_FLAGS_PID 0
 #endif
+#ifdef CONFIG_KRG_NET
+#define CLUSTER_INIT_OPT_CLONE_FLAGS_NET CLONE_NEWNET
+#else
+#define CLUSTER_INIT_OPT_CLONE_FLAGS_NET 0
+#endif
 static unsigned long cluster_init_opt_clone_flags =
-	CLUSTER_INIT_OPT_CLONE_FLAGS_IPC|CLUSTER_INIT_OPT_CLONE_FLAGS_PID;
+	CLUSTER_INIT_OPT_CLONE_FLAGS_IPC
+	|CLUSTER_INIT_OPT_CLONE_FLAGS_PID
+	|CLUSTER_INIT_OPT_CLONE_FLAGS_NET;
 static DEFINE_SPINLOCK(cluster_init_opt_clone_flags_lock);
 
 static char cluster_init_helper_path[PATH_MAX];
@@ -233,6 +240,10 @@ static ssize_t isolate_net_show(struct kobject *obj,
 	return sprintf(page, "%d\n", isolate);
 }
 
+#ifdef CONFIG_KRG_NET
+static struct kobj_attribute isolate_net_attr =
+	__ATTR(isolate_net, 0444, isolate_net_show, NULL);
+#else
 static ssize_t isolate_net_store(struct kobject *obj,
 				 struct kobj_attribute *attr,
 				 const char *page, size_t count)
@@ -251,6 +262,7 @@ static ssize_t isolate_net_store(struct kobject *obj,
 
 static struct kobj_attribute isolate_net_attr =
 	__ATTR(isolate_net, 0644, isolate_net_show, isolate_net_store);
+#endif /* !CONFIG_KRG_NET */
 
 static ssize_t isolate_user_show(struct kobject *obj,
 				 struct kobj_attribute *attr,
