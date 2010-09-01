@@ -13,6 +13,7 @@ struct krg_namespace {
 	struct nsproxy root_nsproxy;
 	struct user_namespace *root_user_ns;
 	struct task_struct *root_task;
+	struct task_struct *parent_task;
 	struct rcu_head rcu;
 	struct work_struct free_work;
 };

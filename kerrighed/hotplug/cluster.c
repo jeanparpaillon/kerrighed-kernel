@@ -62,6 +62,18 @@ static DEFINE_SPINLOCK(cluster_start_lock);
 static DEFINE_MUTEX(cluster_start_mutex);
 static DECLARE_COMPLETION(cluster_started);
 
+static char cluster_boot_helper_path[PATH_MAX];
+static char *cluster_boot_helper_argv[] = {
+	cluster_boot_helper_path,
+	NULL
+};
+static char *cluster_boot_helper_envp[] = {
+	"HOME=/",
+	"PATH=/sbin:/bin:/usr/sbin:/usr/bin",
+	NULL
+};
+static struct task_struct *cluster_boot_helper_task;
+
 #ifdef CONFIG_KRG_IPC
 #define CLUSTER_INIT_OPT_CLONE_FLAGS_IPC CLONE_NEWIPC
 #else
@@ -292,6 +304,33 @@ static struct kobj_attribute cluster_init_helper_attr =
 	__ATTR(cluster_init_helper, 0644,
 	       cluster_init_helper_show, cluster_init_helper_store);
 
+static ssize_t cluster_boot_helper_show(struct kobject *obj,
+					struct kobj_attribute *attr,
+					char *page)
+{
+	return sprintf(page, "%s\n", cluster_boot_helper_path);
+}
+
+static ssize_t cluster_boot_helper_store(struct kobject *obj,
+					 struct kobj_attribute *attr,
+					 const char *page, size_t count)
+{
+	if (count > sizeof(cluster_boot_helper_path)
+	    || (count == sizeof(cluster_boot_helper_path)
+		&& page[count - 1] != '\0'))
+		return -ENAMETOOLONG;
+
+	mutex_lock(&cluster_start_mutex);
+	strcpy(cluster_boot_helper_path, page);
+	mutex_unlock(&cluster_start_mutex);
+
+	return count;
+}
+
+static struct kobj_attribute cluster_boot_helper_attr =
+	__ATTR(cluster_boot_helper, 0644,
+	       cluster_boot_helper_show, cluster_boot_helper_store);
+
 static struct attribute *attrs[] = {
 	&isolate_uts_attr.attr,
 	&isolate_ipc_attr.attr,
@@ -300,6 +339,7 @@ static struct attribute *attrs[] = {
 	&isolate_net_attr.attr,
 	&isolate_user_attr.attr,
 	&cluster_init_helper_attr.attr,
+	&cluster_boot_helper_attr.attr,
 	NULL,
 };
 
@@ -307,17 +347,24 @@ static struct attribute_group attr_group = {
 	.attrs = attrs,
 };
 
-static void krg_container_abort(int err)
+static void krg_container_abort(struct krg_namespace *ns, int err)
 {
-	put_krg_ns(cluster_init_helper_ns);
+	BUG_ON(!ns->parent_task);
+	ns->parent_task = NULL;
+	cluster_boot_helper_task = NULL;
+
+	if (cluster_init_helper_ns)
+		put_krg_ns(cluster_init_helper_ns);
 	cluster_init_helper_ns = ERR_PTR(err);
 	complete(&cluster_init_helper_ready);
 }
 
 void krg_ns_root_exit(struct krg_namespace *ns)
 {
-	if (ns == cluster_init_helper_ns)
-		krg_container_abort(-EAGAIN);
+	if (ns == cluster_init_helper_ns
+	    || (cluster_boot_helper_task
+		&& ns->parent_task == cluster_boot_helper_task))
+		krg_container_abort(ns, -EAGAIN);
 
 #ifdef CONFIG_KRG_HOTPLUG_DEL
 	/* TODO: Make it race-free */
@@ -396,12 +443,62 @@ static int krg_container_cleanup(struct krg_namespace *ns)
 	return 0;
 }
 
-static void krg_container_run(void)
+static void krg_container_run(struct krg_namespace *ns)
 {
+	BUG_ON(!ns->parent_task);
+	ns->parent_task = NULL;
+	cluster_boot_helper_task = NULL;
+
+	if (!cluster_init_helper_ns) {
+		get_krg_ns(ns);
+		cluster_init_helper_ns = ns;
+	}
 	complete(&cluster_init_helper_ready);
 
 	wait_for_completion(&krg_container_continue);
 	complete(&krg_container_done);
+}
+
+static int krg_container_boot(void *arg)
+{
+	int err;
+
+	/* Unblock all signals */
+	spin_lock_irq(&current->sighand->siglock);
+	flush_signal_handlers(current, 1);
+	sigemptyset(&current->blocked);
+	recalc_sigpending();
+	spin_unlock_irq(&current->sighand->siglock);
+
+	/* Install the credentials */
+	commit_creds(cluster_init_helper_cred);
+	cluster_init_helper_cred = NULL;
+
+	/* We can run anywhere, unlike our parent (a krgrpc) */
+	set_cpus_allowed_ptr(current, cpu_all_mask);
+
+	/*
+	 * Our parent is a krgrpc, which runs with elevated scheduling priority.
+	 * Avoid propagating that into the userspace child.
+	 */
+	set_user_nice(current, 0);
+
+	BUG_ON(cluster_boot_helper_task);
+	cluster_boot_helper_task = current;
+	BUG_ON(cluster_init_helper_ns);
+
+	err = kernel_execve(cluster_boot_helper_path,
+			    cluster_boot_helper_argv,
+			    cluster_boot_helper_envp);
+	BUG_ON(!err);
+	printk(KERN_ERR
+	       "kerrighed: Could not execute container boot helper '%s': err=%d\n",
+	       cluster_boot_helper_path, err);
+
+	cluster_boot_helper_task = NULL;
+	cluster_init_helper_ns = ERR_PTR(err);
+	complete(&cluster_init_helper_ready);
+	return err;
 }
 
 static int krg_container_init(void *arg)
@@ -447,7 +544,7 @@ static int krg_container_init(void *arg)
 	       "kerrighed: Could not execute container init '%s': err=%d\n",
 	       cluster_init_helper_path, err);
 
-	krg_container_abort(err);
+	krg_container_abort(ns, err);
 
 	return 0;
 }
@@ -479,6 +576,7 @@ err:
 static
 struct krg_namespace *create_krg_container(struct krg_namespace *ns)
 {
+	bool use_boot_helper = cluster_boot_helper_path[0];
 	struct task_struct *t;
 
 	if (ns) {
@@ -487,6 +585,7 @@ struct krg_namespace *create_krg_container(struct krg_namespace *ns)
 	}
 
 	BUG_ON(cluster_init_helper_ns);
+	BUG_ON(cluster_boot_helper_task);
 	init_completion(&cluster_init_helper_ready);
 
 	BUG_ON(cluster_init_helper_cred);
@@ -494,7 +593,10 @@ struct krg_namespace *create_krg_container(struct krg_namespace *ns)
 	if (!cluster_init_helper_cred)
 		return NULL;
 
-	t = kthread_run(__create_krg_container, NULL, "krg_init_helper");
+	if (use_boot_helper)
+		t = kthread_run(krg_container_boot, NULL, "krg_boot_helper");
+	else
+		t = kthread_run(__create_krg_container, NULL, "krg_init_helper");
 	if (IS_ERR(t)) {
 		put_cred(cluster_init_helper_cred);
 		cluster_init_helper_cred = NULL;
@@ -720,22 +822,25 @@ static int boot_node_ready(struct krg_namespace *ns)
 	r = do_cluster_start(ctx);
 	hotplug_ctx_put(ctx);
 
-	if (!r)
+	if (!r) {
+		ns->parent_task = NULL;
 		do_cluster_wait_for_start();
+	}
 
 	return r;
 }
 
 static int other_node_ready(struct krg_namespace *ns)
 {
-	BUG_ON(ns != cluster_init_helper_ns);
+	BUG_ON(ns != cluster_init_helper_ns
+	       && ns->parent_task != cluster_boot_helper_task);
 
 	if (krg_container_may_conflict(ns))
 		return -EBUSY;
 	if (krg_container_cleanup(ns))
 		return -EBUSY;
 
-	krg_container_run();
+	krg_container_run(ns);
 	return 0;
 }
 
@@ -746,7 +851,9 @@ static int node_ready(void __user *arg)
 	if (!ns)
 		return -EPERM;
 
-	if (!cluster_init_helper_ns)
+	if (!cluster_init_helper_ns
+	    && (!cluster_boot_helper_task
+		|| cluster_boot_helper_task != ns->parent_task))
 		return boot_node_ready(ns);
 	else
 		return other_node_ready(ns);
