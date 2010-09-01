@@ -18,6 +18,7 @@ struct krg_namespace {
 	struct rpc_communicator *rpc_comm;
 	struct completion root_task_in_exit;
 	struct completion root_task_continue_exit;
+	struct task_struct *parent_task;
 	struct rcu_head rcu;
 	struct work_struct free_work;
 };
