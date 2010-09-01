@@ -151,6 +151,9 @@ bool can_create_krg_ns(unsigned long flags)
 #ifdef CONFIG_KRG_PROC
 		&& (flags & CLONE_NEWPID)
 #endif
+#ifdef CONFIG_KRG_NET
+		&& (flags & CLONE_NEWNET)
+#endif
 		;
 }
 
