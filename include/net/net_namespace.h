@@ -20,6 +20,9 @@
 #include <net/netns/conntrack.h>
 #endif
 #include <net/netns/xfrm.h>
+#ifdef CONFIG_KRG_CLUSTERIP
+#include <kerrighed/krg_clusterip.h>
+#endif
 
 struct proc_dir_entry;
 struct net_device;
@@ -77,6 +80,9 @@ struct net {
 #endif
 #ifdef CONFIG_XFRM
 	struct netns_xfrm	xfrm;
+#endif
+#ifdef CONFIG_KRG_CLUSTERIP
+	struct netns_krgip	krgip;
 #endif
 	struct net_generic	*gen;
 };

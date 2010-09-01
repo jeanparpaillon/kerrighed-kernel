@@ -115,6 +115,9 @@
 #ifdef CONFIG_IP_MROUTE
 #include <linux/mroute.h>
 #endif
+#ifdef CONFIG_KRG_CLUSTERIP
+#include <kerrighed/krg_clusterip.h>
+#endif
 
 extern void ip_mc_drop_socket(struct sock *sk);
 
@@ -352,6 +355,9 @@ lookup_protocol:
 
 	inet = inet_sk(sk);
 	inet->is_icsk = (INET_PROTOSW_ICSK & answer_flags) != 0;
+#ifdef CONFIG_KRG_CLUSTERIP
+	inet->is_krgip = 0;
+#endif
 
 	if (SOCK_RAW == sock->type) {
 		inet->num = protocol;
@@ -566,11 +572,22 @@ int inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	struct sock *sk = sock->sk;
 	int err;
 	long timeo;
+#ifdef CONFIG_KRG_CLUSTERIP
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+	struct krgip_cluster_port_kddm_object *port_obj = NULL;
+#endif
 
 	lock_sock(sk);
 
 	if (uaddr->sa_family == AF_UNSPEC) {
+#ifdef CONFIG_KRG_CLUSTERIP
+		if (!(sk->sk_userlocks & SOCK_BINDPORT_LOCK))
+			krgip_cluster_ip_tcp_unhash_prepare(sk, &ip_obj, &port_obj);
+#endif
 		err = sk->sk_prot->disconnect(sk, flags);
+#ifdef CONFIG_KRG_CLUSTERIP
+		krgip_cluster_ip_tcp_unhash_finish(sk, ip_obj, port_obj);
+#endif
 		sock->state = err ? SS_DISCONNECTING : SS_UNCONNECTED;
 		goto out;
 	}
@@ -637,8 +654,15 @@ out:
 sock_error:
 	err = sock_error(sk) ? : -ECONNABORTED;
 	sock->state = SS_UNCONNECTED;
+#ifdef CONFIG_KRG_CLUSTERIP
+	if (!(sk->sk_userlocks & SOCK_BINDPORT_LOCK))
+		krgip_cluster_ip_tcp_unhash_prepare(sk, &ip_obj, &port_obj);
+#endif
 	if (sk->sk_prot->disconnect(sk, flags))
 		sock->state = SS_DISCONNECTING;
+#ifdef CONFIG_KRG_CLUSTERIP
+	krgip_cluster_ip_tcp_unhash_finish(sk, ip_obj, port_obj);
+#endif
 	goto out;
 }
 
@@ -731,6 +755,10 @@ int inet_shutdown(struct socket *sock, int how)
 {
 	struct sock *sk = sock->sk;
 	int err = 0;
+#ifdef CONFIG_KRG_CLUSTERIP
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+	struct krgip_cluster_port_kddm_object *port_obj = NULL;
+#endif
 
 	/* This should really check to make sure
 	 * the socket is a TCP socket. (WHY AC...)
@@ -770,7 +798,14 @@ int inet_shutdown(struct socket *sock, int how)
 			break;
 		/* Fall through */
 	case TCP_SYN_SENT:
+#ifdef CONFIG_KRG_CLUSTERIP
+		if (!(sk->sk_userlocks & SOCK_BINDPORT_LOCK))
+			krgip_cluster_ip_tcp_unhash_prepare(sk, &ip_obj, &port_obj);
+#endif
 		err = sk->sk_prot->disconnect(sk, O_NONBLOCK);
+#ifdef CONFIG_KRG_CLUSTERIP
+		krgip_cluster_ip_tcp_unhash_finish(sk, ip_obj, port_obj);
+#endif
 		sock->state = err ? SS_DISCONNECTING : SS_UNCONNECTED;
 		break;
 	}

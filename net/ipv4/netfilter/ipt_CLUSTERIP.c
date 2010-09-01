@@ -27,6 +27,11 @@
 #include <net/netfilter/nf_conntrack.h>
 #include <net/net_namespace.h>
 #include <net/checksum.h>
+#ifdef CONFIG_KRG_CLUSTERIP
+#include <linux/nsproxy.h>
+#include <kerrighed/krg_clusterip.h>
+#include <kddm/kddm.h>
+#endif
 
 #define CLUSTERIP_VERSION "0.8"
 
@@ -46,6 +51,11 @@ struct clusterip_config {
 	u_int16_t num_total_nodes;		/* total number of nodes */
 	unsigned long local_nodes;		/* node number array */
 
+#ifdef CONFIG_KRG_CLUSTERIP
+	struct net *ns;
+	struct krgip_cluster_ip_kddm_object *kddm_obj;
+#endif
+
 #ifdef CONFIG_PROC_FS
 	struct proc_dir_entry *pde;		/* proc dir entry */
 #endif
@@ -62,6 +72,119 @@ static DEFINE_RWLOCK(clusterip_lock);
 static const struct file_operations clusterip_proc_fops;
 static struct proc_dir_entry *clusterip_procdir;
 #endif
+
+#ifdef CONFIG_KRG_CLUSTERIP
+static
+struct krgip_cluster_ip_kddm_object *
+krgip_cluster_ip_prepare(struct clusterip_config *c)
+{
+	struct net *ns = current->nsproxy->net_ns;
+	struct kddm_set *set;
+	struct krgip_cluster_ip_kddm_object *obj;
+
+	set = ns->krgip.cluster_ips;
+	if (!set)
+		return NULL;
+
+	c->ns = ns;
+
+	obj = _kddm_grab_object(set, c->clusterip);
+	if (IS_ERR(obj))
+		return obj;
+	BUG_ON(!obj);
+
+	if (!obj->nr_nodes) {
+		/* Check that no socket is already bound to this IP */
+		int err = krgip_cluster_ip_unused(c->clusterip);
+		if (err) {
+			_kddm_put_object(set, c->clusterip);
+			return ERR_PTR(err);
+		}
+	}
+
+	c->kddm_obj = obj;
+	return obj;
+}
+
+static void krgip_cluster_ip_commit(struct clusterip_config *c)
+{
+	struct krgip_cluster_ip_kddm_object *obj = c->kddm_obj;
+
+	if (!obj)
+		return;
+
+	obj->nr_nodes++;
+	_kddm_put_object(c->ns->krgip.cluster_ips, c->clusterip);
+}
+
+static void krgip_cluster_ip_abort(struct clusterip_config *c)
+{
+	struct krgip_cluster_ip_kddm_object *obj = c->kddm_obj;
+
+	if (!obj)
+		return;
+
+	krgip_cluster_ip_put_or_remove(c->ns->krgip.cluster_ips, obj);
+}
+
+static void krgip_cluster_ip_finish(struct clusterip_config *c)
+{
+	struct kddm_set *set;
+	struct krgip_cluster_ip_kddm_object *obj = c->kddm_obj;
+	struct krgip_cluster_ip_kddm_object *ret_obj;
+
+	if (!obj)
+		return;
+
+	set = c->ns->krgip.cluster_ips;
+
+	ret_obj = _kddm_grab_object(set, c->clusterip);
+	BUG_ON(ret_obj != obj);
+	obj->nr_nodes--;
+	krgip_cluster_ip_put_or_remove(set, obj);
+}
+
+static
+u_int32_t
+krgip_cluster_ip_hashfn(const struct clusterip_config *c, int proto, int dport)
+{
+	struct list_head *ip_head, *any_head;
+	bool responsible;
+
+	switch (proto) {
+	case IPPROTO_UDP:
+		ip_head = &c->kddm_obj->local_ports->udp;
+		any_head = &c->ns->krgip.local_ports_any.udp;
+		break;
+	case IPPROTO_TCP:
+		ip_head = &c->kddm_obj->local_ports->tcp;
+		any_head = &c->ns->krgip.local_ports_any.tcp;
+		break;
+	default:
+		return 1;
+	}
+
+	rcu_read_lock();
+	responsible = krgip_local_port_find(ip_head, dport)
+		      || krgip_local_port_find(any_head, dport);
+	rcu_read_unlock();
+
+	if (responsible) {
+		return ffs(c->local_nodes);
+	} else {
+		int bit;
+
+		/*
+		 * Tell that another node is responsible, unless we host all
+		 * nodes.
+		 */
+		bit = ffs(~c->local_nodes);
+		if (!bit || bit > c->num_total_nodes)
+			return 1;
+		return bit;
+	}
+}
+#endif /* CONFIG_KRG_CLUSTERIP */
 
 static inline void
 clusterip_config_get(struct clusterip_config *c)
@@ -86,6 +209,10 @@ clusterip_config_entry_put(struct clusterip_config *c)
 	if (atomic_dec_and_test(&c->entries)) {
 		list_del(&c->list);
 		write_unlock_bh(&clusterip_lock);
+
+#ifdef CONFIG_KRG_CLUSTERIP
+		krgip_cluster_ip_finish(c);
+#endif
 
 		dev_mc_delete(c->dev, c->clustermac, ETH_ALEN, 0);
 		dev_put(c->dev);
@@ -148,6 +275,9 @@ clusterip_config_init(const struct ipt_clusterip_tgt_info *i, __be32 ip,
 			struct net_device *dev)
 {
 	struct clusterip_config *c;
+#ifdef CONFIG_KRG_CLUSTERIP
+	struct krgip_cluster_ip_kddm_object *obj;
+#endif
 
 	c = kzalloc(sizeof(*c), GFP_ATOMIC);
 	if (!c)
@@ -163,6 +293,13 @@ clusterip_config_init(const struct ipt_clusterip_tgt_info *i, __be32 ip,
 	atomic_set(&c->refcount, 1);
 	atomic_set(&c->entries, 1);
 
+#ifdef CONFIG_KRG_CLUSTERIP
+	obj = krgip_cluster_ip_prepare(c);
+	if (IS_ERR(obj)) {
+		kfree(c);
+		return NULL;
+	}
+#endif
 #ifdef CONFIG_PROC_FS
 	{
 		char buffer[16];
@@ -173,6 +310,9 @@ clusterip_config_init(const struct ipt_clusterip_tgt_info *i, __be32 ip,
 					  clusterip_procdir,
 					  &clusterip_proc_fops, c);
 		if (!c->pde) {
+#ifdef CONFIG_KRG_CLUSTERIP
+			krgip_cluster_ip_abort(c);
+#endif
 			kfree(c);
 			return NULL;
 		}
@@ -182,6 +322,9 @@ clusterip_config_init(const struct ipt_clusterip_tgt_info *i, __be32 ip,
 	write_lock_bh(&clusterip_lock);
 	list_add(&c->list, &clusterip_configs);
 	write_unlock_bh(&clusterip_lock);
+#ifdef CONFIG_KRG_CLUSTERIP
+	krgip_cluster_ip_commit(c);
+#endif
 
 	return c;
 }
@@ -242,6 +385,11 @@ clusterip_hashfn(const struct sk_buff *skb,
 				iph->protocol);
 		sport = dport = 0;
 	}
+
+#ifdef CONFIG_KRG_CLUSTERIP
+	if (config->kddm_obj)
+		return krgip_cluster_ip_hashfn(config, iph->protocol, dport);
+#endif
 
 	switch (config->hash_mode) {
 	case CLUSTERIP_HASHMODE_SIP:
@@ -376,6 +524,9 @@ static bool clusterip_tg_check(const struct xt_tgchk_param *par)
 			printk(KERN_WARNING "CLUSTERIP: no config found for %pI4, need 'new'\n", &e->ip.dst.s_addr);
 			return false;
 		} else {
+#ifdef CONFIG_KRG_CLUSTERIP
+			struct net *ns;
+#endif
 			struct net_device *dev;
 
 			if (e->ip.iniface[0] == '\0') {
@@ -383,7 +534,14 @@ static bool clusterip_tg_check(const struct xt_tgchk_param *par)
 				return false;
 			}
 
+#ifdef CONFIG_KRG_CLUSTERIP
+			ns = current->nsproxy->net_ns;
+			if (!ns->krgip.cluster_ips)
+				ns = &init_net;
+			dev = dev_get_by_name(ns, e->ip.iniface);
+#else
 			dev = dev_get_by_name(&init_net, e->ip.iniface);
+#endif
 			if (!dev) {
 				printk(KERN_WARNING "CLUSTERIP: no such interface %s\n", e->ip.iniface);
 				return false;

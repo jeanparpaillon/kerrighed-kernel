@@ -81,6 +81,10 @@
 #include <linux/crypto.h>
 #include <linux/scatterlist.h>
 
+#ifdef CONFIG_KRG_CLUSTERIP
+#include <kerrighed/krg_clusterip.h>
+#endif
+
 int sysctl_tcp_tw_reuse __read_mostly;
 int sysctl_tcp_low_latency __read_mostly;
 
@@ -151,6 +155,10 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	__be32 daddr, nexthop;
 	int tmp;
 	int err;
+#ifdef CONFIG_KRG_CLUSTERIP
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+	struct krgip_cluster_port_kddm_object *port_obj = NULL;
+#endif
 
 	if (addr_len < sizeof(struct sockaddr_in))
 		return -EINVAL;
@@ -232,7 +240,11 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	err = ip_route_newports(&rt, IPPROTO_TCP,
 				inet->sport, inet->dport, sk);
 	if (err)
+#ifdef CONFIG_KRG_CLUSTERIP
+		goto failure_check_rlse;
+#else
 		goto failure;
+#endif
 
 	/* OK, now commit destination to socket.  */
 	sk->sk_gso_type = SKB_GSO_TCPV4;
@@ -249,16 +261,28 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	err = tcp_connect(sk);
 	rt = NULL;
 	if (err)
+#ifdef CONFIG_KRG_CLUSTERIP
+		goto failure_check_rlse;
+#else
 		goto failure;
+#endif
 
 	return 0;
 
+#ifdef CONFIG_KRG_CLUSTERIP
+failure_check_rlse:
+	if (!(sk->sk_userlocks & SOCK_BINDPORT_LOCK))
+		krgip_cluster_ip_tcp_unhash_prepare(sk, &ip_obj, &port_obj);
+#endif
 failure:
 	/*
 	 * This unhashes the socket and releases the local port,
 	 * if necessary.
 	 */
 	tcp_set_state(sk, TCP_CLOSE);
+#ifdef CONFIG_KRG_CLUSTERIP
+	krgip_cluster_ip_tcp_unhash_finish(sk, ip_obj, port_obj);
+#endif
 	ip_rt_put(rt);
 	sk->sk_route_caps = 0;
 	inet->dport = 0;

@@ -231,6 +231,8 @@ enum rpcid {
 	RPC_ENTER_BARRIER,
 	RPC_EXIT_BARRIER,
 
+	CLUSTER_IP_UNUSED,
+
 	KDDM_BENCH,
 
 	RPCID_MAX // Must be the last one
