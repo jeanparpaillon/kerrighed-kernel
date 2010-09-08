@@ -963,14 +963,30 @@ unlock:
 	return ret;
 }
 
-static void krg_futex_wake_up(struct futex_q *q)
+static void krg_futex_wake_up(struct futex_q *q, spinlock_t *hb1_lock, spinlock_t *hb2_lock)
 {
 	int ret;
 	struct futex_wake_up_msg msg;
 	msg.key = q->key;
 	msg.waiter_pid = q->waiter_pid;
 
+	BUG_ON(!hb1_lock);
+	BUG_ON(q->lock_ptr != hb1_lock && q->lock_ptr != hb2_lock);
+	/*
+	 * Unlock hb lock to please lockdep. Since we are still
+	 * grabbing the kddm object, there is no consequence.
+	 */
+	if (hb2_lock)
+		spin_unlock(hb2_lock);
+	spin_unlock(hb1_lock);
+
 	ret = rpc_sync(RPC_FUTEX_WAKE, q->hosting_node, &msg, sizeof(msg));
+
+	spin_lock(hb1_lock);
+	if (hb2_lock)
+		spin_lock(hb2_lock);
+
+	kfree(q);
 }
 #endif
 
@@ -978,7 +994,14 @@ static void krg_futex_wake_up(struct futex_q *q)
  * The hash bucket lock must be held when this is called.
  * Afterwards, the futex_q must not be accessed.
  */
+
+
+#ifdef CONFIG_KRG_EPM
+static void __wake_futex(struct futex_q *q,
+			 spinlock_t *hb1_lock, spinlock_t *hb2_lock)
+#else
 static void wake_futex(struct futex_q *q)
+#endif
 {
 #ifdef CONFIG_KRG_EPM
 	if (!plist_node_empty(&q->list))
@@ -992,8 +1015,10 @@ static void wake_futex(struct futex_q *q)
 		       && q->hosting_node != kerrighed_node_id);
 
 	if (q->hosting_node != KERRIGHED_NODE_ID_NONE
-	    && q->hosting_node != kerrighed_node_id)
-		goto remote_futex_q;
+	    && q->hosting_node != kerrighed_node_id) {
+		krg_futex_wake_up(q, hb1_lock, hb2_lock);
+		return;
+	}
 #endif
 
 	/*
@@ -1012,20 +1037,15 @@ static void wake_futex(struct futex_q *q)
 	smp_wmb();
 	q->lock_ptr = NULL;
 
-#ifdef CONFIG_KRG_EPM
 	return;
-
-remote_futex_q:
-	/*
-	 * Unlock hb lock to please lockdep. Since we are still
-	 * grabbing the kddm object, there is no consequence.
-	 */
-	spin_unlock(q->lock_ptr);
-	krg_futex_wake_up(q);
-	spin_lock(q->lock_ptr);
-	kfree(q);
-#endif
 }
+
+#ifdef CONFIG_KRG_EPM
+static void wake_futex(struct futex_q *q)
+{
+	__wake_futex(q, q->lock_ptr, NULL);
+}
+#endif
 
 static int wake_futex_pi(u32 __user *uaddr, u32 uval, struct futex_q *this)
 {
@@ -1364,7 +1384,11 @@ retry_private:
 
 	plist_for_each_entry_safe(this, next, head, list) {
 		if (match_futex (&this->key, &key1)) {
+#ifdef CONFIG_KRG_EPM
+			__wake_futex(this, &hb1->lock, &hb2->lock);
+#else
 			wake_futex(this);
+#endif
 			if (++ret >= nr_wake)
 				break;
 		}
@@ -1376,7 +1400,11 @@ retry_private:
 		op_ret = 0;
 		plist_for_each_entry_safe(this, next, head, list) {
 			if (match_futex (&this->key, &key2)) {
+#ifdef CONFIG_KRG_EPM
+				__wake_futex(this, &hb1->lock, &hb2->lock);
+#else
 				wake_futex(this);
+#endif
 				if (++op_ret >= nr_wake2)
 					break;
 			}
@@ -1456,7 +1484,11 @@ retry_private:
 		if (!match_futex (&this->key, &key1))
 			continue;
 		if (++ret <= nr_wake) {
+#ifdef CONFIG_KRG_EPM
+			__wake_futex(this, &hb1->lock, &hb2->lock);
+#else
 			wake_futex(this);
+#endif
 		} else {
 			/*
 			 * If key1 and key2 hash to the same bucket, no need to
