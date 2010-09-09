@@ -38,14 +38,6 @@ void *generic_kddm_get_object(struct kddm_set *set,
 
 	inc_get_object_counter (set);
 
-	obj_entry = __get_kddm_obj_entry(set, objid);
-	if (likely(obj_entry != NULL))
-		goto try_again;
-
-	if (I_AM_DEFAULT_OWNER(set, objid) && (flags & KDDM_NO_FT_REQ) &&
-	    !(flags & KDDM_SEND_OWNERSHIP))
-		return NULL;
-
 	obj_entry = __get_alloc_kddm_obj_entry(set, objid);
 
 try_again:
