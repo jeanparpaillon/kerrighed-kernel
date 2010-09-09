@@ -803,11 +803,11 @@ static void *kddm_pt_alloc (struct kddm_set *set, void *_data)
 
 
 
-static void kddm_pt_free (void *tree,
+static void kddm_pt_free (struct kddm_set *set,
 			  int (*f)(unsigned long, void *data, void *priv),
 			  void *priv)
 {
-	struct mm_struct *mm = tree;
+	struct mm_struct *mm = set->obj_set;
 
 	mmput(mm);
 }

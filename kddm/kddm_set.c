@@ -162,8 +162,7 @@ void free_kddm_set_struct(struct kddm_set * kddm_set)
 
 	/*** Free object struct and objects content ***/
 
-	kddm_set->ops->obj_set_free(kddm_set->obj_set, __free_kddm_obj_entry,
-				    kddm_set);
+	kddm_set->ops->obj_set_free(kddm_set, __free_kddm_obj_entry, kddm_set);
 
 	/*** Get rid of the IO linker ***/
 

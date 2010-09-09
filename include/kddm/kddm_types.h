@@ -182,7 +182,7 @@ struct rpc_desc;
 
 typedef struct kddm_set_ops {
 	void *(*obj_set_alloc) (struct kddm_set *set, void *data);
-	void (*obj_set_free) (void *tree,
+	void (*obj_set_free) (struct kddm_set *set,
 			      int (*f)(unsigned long, void *data,void *priv),
 			      void *priv);
 	struct kddm_obj *(*lookup_obj_entry)(struct kddm_set *set,

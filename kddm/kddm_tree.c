@@ -216,7 +216,7 @@ static void *kddm_tree_remove(struct kddm_tree *tree,
 
 
 
-static void __kddm_tree_for_each_level(struct kddm_tree *tree,
+static void __kddm_tree_for_each_level(struct kddm_set *set,
 				       struct kddm_tree_lvl *cur_level,
 				       int level,
 				       unsigned long index,
@@ -226,6 +226,7 @@ static void __kddm_tree_for_each_level(struct kddm_tree *tree,
 {
 	int i;
 	struct kddm_tree_lvl *sub_level;
+	struct kddm_tree *tree = set->obj_set;
 	unsigned long index_gap = 1UL << lvl_shift(tree, level);
 
 	for (i = 0; i < (1UL << lvl_bits(tree, level)); i++) {
@@ -234,7 +235,7 @@ static void __kddm_tree_for_each_level(struct kddm_tree *tree,
 			if ((level + 1) == tree->nr_level)
 				f(index, sub_level, priv);
 			else
-				__kddm_tree_for_each_level(tree, sub_level,
+				__kddm_tree_for_each_level(set, sub_level,
 							   level+1, index,
 							   free, f, priv);
 		}
@@ -246,14 +247,16 @@ static void __kddm_tree_for_each_level(struct kddm_tree *tree,
 	}
 }
 
-static inline void __kddm_tree_for_each(struct kddm_tree *tree,
+static inline void __kddm_tree_for_each(struct kddm_set *set,
 					int free,
 					int(*f)(unsigned long, void*, void*),
 					void *priv)
 {
+	struct kddm_tree *tree = set->obj_set;
+
 	if (tree->lvl1 == NULL)
 		return;
-	__kddm_tree_for_each_level(tree, tree->lvl1, 0, 0, free, f, priv);
+	__kddm_tree_for_each_level(set, tree->lvl1, 0, 0, free, f, priv);
 }
 
 
@@ -263,11 +266,11 @@ static inline void __kddm_tree_for_each(struct kddm_tree *tree,
  *  @param f         The function to execute for each data.
  *  @param priv      Private data passed to the function.
  */
-static void kddm_tree_for_each(struct kddm_tree *tree,
+static void kddm_tree_for_each(struct kddm_set *set,
 			       int(*f)(unsigned long, void*, void*),
 			       void *priv)
 {
-	__kddm_tree_for_each(tree, 0, f, priv);
+	__kddm_tree_for_each(set, 0, f, priv);
 }
 
 
@@ -325,13 +328,13 @@ static void *kddm_tree_alloc (struct kddm_set *set, void *data)
  *  @param f           A function to call on each found data.
  *  @param priv        Private data passed to the function.
  */
-static void kddm_tree_free (void *tree,
+static void kddm_tree_free (struct kddm_set *set,
 			    int (*f)(unsigned long, void *data, void *priv),
 			    void *priv)
 {
-	__kddm_tree_for_each(tree, 1, f, priv);
+	__kddm_tree_for_each(set, 1, f, priv);
 
-	kmem_cache_free(kddm_tree_cachep, tree);
+	kmem_cache_free(kddm_tree_cachep, set->obj_set);
 }
 
 
@@ -394,7 +397,7 @@ static void kddm_tree_for_each_obj_entry(struct kddm_set *set,
 					 void *data)
 {
 	spin_lock (&set->table_lock);
-	kddm_tree_for_each(set->obj_set, f, data);
+	kddm_tree_for_each(set, f, data);
 	spin_unlock (&set->table_lock);
 }
 
