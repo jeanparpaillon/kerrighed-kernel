@@ -149,7 +149,7 @@ static int __free_kddm_obj_entry(unsigned long index,
 	struct kddm_obj *obj_entry = (struct kddm_obj *)data;
 
 	unlock_obj_entry(obj_entry);
-	put_obj_entry_count((struct kddm_set *)priv_data, obj_entry, index);
+	dec_obj_entry_mapcount((struct kddm_set *)priv_data, obj_entry, index);
 
 	return KDDM_OBJ_REMOVED;
 }

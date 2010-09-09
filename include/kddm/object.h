@@ -182,17 +182,22 @@ void free_kddm_obj_entry(struct kddm_set *set,
 			 struct kddm_obj *obj_entry,
 			 objid_t objid);
 
-static inline void put_obj_entry_count(struct kddm_set *set,
-					 struct kddm_obj *obj_entry,
-					 objid_t objid)
+static inline void inc_obj_entry_mapcount(struct kddm_obj *obj_entry)
 {
-	if (atomic_dec_and_test(&obj_entry->count))
+	atomic_inc(&obj_entry->mapcount);
+}
+
+static inline void dec_obj_entry_mapcount(struct kddm_set *set,
+					  struct kddm_obj *obj_entry,
+					  objid_t objid)
+{
+	if (atomic_dec_and_test(&obj_entry->mapcount))
 		free_kddm_obj_entry(set, obj_entry, objid);
 }
 
-static inline int obj_entry_count(struct kddm_obj *obj_entry)
+static inline int obj_entry_mapcount(struct kddm_obj *obj_entry)
 {
-        return atomic_read(&obj_entry->count);
+        return atomic_read(&obj_entry->mapcount);
 }
 
 /** Lookup for an object entry in a kddm set.

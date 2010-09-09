@@ -162,7 +162,7 @@ struct kddm_obj *alloc_kddm_obj_entry(struct kddm_set *set,
 
 	obj_entry->flags = 0;
 	obj_entry->object = NULL;
-	atomic_set(&obj_entry->count, 1);
+	atomic_set(&obj_entry->mapcount, 1);
 
 	BUG_ON(set->def_owner < 0 ||
 	       set->def_owner > KDDM_MAX_DEF_OWNER);
@@ -206,7 +206,7 @@ struct kddm_obj *dup_kddm_obj_entry(struct kddm_obj *src_obj)
 
 	*obj_entry = *src_obj;
 
-	atomic_set(&obj_entry->count, 1);
+	atomic_set(&obj_entry->mapcount, 1);
 	CLEAR_OBJECT_PINNED(obj_entry);
 	atomic_set(&obj_entry->sleeper_count, 0);
 	init_waitqueue_head(&obj_entry->waiting_tsk);
@@ -225,7 +225,7 @@ void free_kddm_obj_entry(struct kddm_set *set,
 			 objid_t objid)
 {
 	BUG_ON(object_frozen(obj_entry));
-	BUG_ON(obj_entry_count(obj_entry) != 0);
+	BUG_ON(obj_entry_mapcount(obj_entry) != 0);
 	BUG_ON(is_locked_obj_entry(obj_entry));
 	BUG_ON(atomic_read(&obj_entry->sleeper_count) != 0);
 	BUG_ON(TEST_OBJECT_PINNED(obj_entry));
@@ -284,7 +284,7 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 	kddm_unlock_obj_table(set);
 
 	put_kddm_obj_entry(set, obj_entry, objid);
-	put_obj_entry_count(set, obj_entry, objid);
+	dec_obj_entry_mapcount(set, obj_entry, objid);
 exit:
 	return 0;
 }
@@ -336,7 +336,7 @@ retry:
 
 	obj_entry = set->ops->get_obj_entry(set, objid, new_obj);
 	if (obj_entry != new_obj)
-		put_obj_entry_count(set, new_obj, objid);
+		dec_obj_entry_mapcount(set, new_obj, objid);
 
 	if (!trylock_obj_entry(obj_entry)) {
 		kddm_unlock_obj_table(set);
