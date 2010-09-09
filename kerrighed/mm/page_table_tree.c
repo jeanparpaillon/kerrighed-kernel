@@ -289,12 +289,19 @@ static inline void __pt_for_each_pte(struct kddm_set *set,
 retry:
 			obj_entry = get_obj_entry_from_pte(mm, addr, ptep,
 							   NULL);
-			ret = do_func_on_obj_entry(set, obj_entry,
-						   addr / PAGE_SIZE, f, priv);
-			if (ret == -EAGAIN)
-				goto retry;
-			if (ret == KDDM_OBJ_REMOVED)
-				pte_clear(mm, addr, ptep);
+			if (obj_entry) {
+				if (!trylock_obj_entry(obj_entry)) {
+					wait_unlock_obj_entry(obj_entry);
+					goto retry;
+				}
+				pte_unmap_unlock(ptep, ptl);
+				ret = f(addr / PAGE_SIZE, obj_entry, priv);
+				if (ret == KDDM_OBJ_REMOVED)
+					pte_clear(mm, addr, ptep);
+				else
+					unlock_obj_entry (obj_entry);
+				ptep = pte_offset_map_lock(mm, pmd, addr, &ptl);
+			}
 		}
 		else {
 			new_obj = init_pte(mm, ptep, set, addr / PAGE_SIZE,
@@ -304,7 +311,7 @@ retry:
 			if (!new_obj) {
 				pte_unmap_unlock(ptep, ptl);
 				new_obj = alloc_kddm_obj_entry(set, 0);
-				ptep = pte_offset_map_lock(mm, pmd, addr,&ptl);
+				ptep = pte_offset_map_lock(mm, pmd, addr, &ptl);
 			}
 		}
 
