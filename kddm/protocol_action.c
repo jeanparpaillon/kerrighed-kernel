@@ -840,6 +840,8 @@ void kddm_workqueue_handler(struct work_struct *work)
 	action->fn(action->sender, action->data);
 	kfree(action->data);
 	kmem_cache_free(kddm_da_cachep, action);
+
+	cond_resched();
 }
 
 void flush_kddm_event(struct kddm_set *set,
