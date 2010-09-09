@@ -85,6 +85,8 @@ typedef enum {
 #define I_AM_DEFAULT_OWNER(set, objid) \
         (kerrighed_node_id == kddm_io_default_owner(set, objid))
 
+#define KDDM_OBJ_REMOVED 1
+
 /*--------------------------------------------------------------------------*
  *                                                                          *
  *                            EXTERN VARIABLES                              *
