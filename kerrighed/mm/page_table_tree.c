@@ -711,11 +711,15 @@ static void kddm_pt_for_each_obj_entry(struct kddm_set *set,
 				       void *data)
 {
 	struct mm_struct *mm = set->obj_set;
+	struct vm_area_struct *vma;
 
 	BUG_ON(!f);
 
 	down_write(&mm->mmap_sem);
-	kddm_pt_for_each(set, mm, 0, PAGE_OFFSET, f, data);
+	for (vma = mm->mmap; vma != NULL; vma = vma->vm_next)
+		if (anon_vma(vma))
+			kddm_pt_for_each(set, mm, vma->vm_start, vma->vm_end,
+					 f, data);
 	up_write(&mm->mmap_sem);
 }
 
