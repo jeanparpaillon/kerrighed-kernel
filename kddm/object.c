@@ -162,7 +162,8 @@ struct kddm_obj *alloc_kddm_obj_entry(struct kddm_set *set,
 
 	obj_entry->flags = 0;
 	obj_entry->object = NULL;
-	atomic_set(&obj_entry->mapcount, 1);
+	atomic_set(&obj_entry->mapcount, 0);
+	atomic_set(&obj_entry->refcount, 0);
 
 	BUG_ON(set->def_owner < 0 ||
 	       set->def_owner > KDDM_MAX_DEF_OWNER);
@@ -206,7 +207,8 @@ struct kddm_obj *dup_kddm_obj_entry(struct kddm_obj *src_obj)
 
 	*obj_entry = *src_obj;
 
-	atomic_set(&obj_entry->mapcount, 1);
+	atomic_set(&obj_entry->mapcount, 0);
+	atomic_set(&obj_entry->refcount, 1);
 	CLEAR_OBJECT_PINNED(obj_entry);
 	atomic_set(&obj_entry->sleeper_count, 0);
 	init_waitqueue_head(&obj_entry->waiting_tsk);
@@ -226,6 +228,7 @@ void free_kddm_obj_entry(struct kddm_set *set,
 {
 	BUG_ON(object_frozen(obj_entry));
 	BUG_ON(obj_entry_mapcount(obj_entry) != 0);
+	BUG_ON(obj_entry_refcount(obj_entry) != 0);
 	BUG_ON(is_locked_obj_entry(obj_entry));
 	BUG_ON(atomic_read(&obj_entry->sleeper_count) != 0);
 	BUG_ON(TEST_OBJECT_PINNED(obj_entry));
@@ -236,7 +239,7 @@ void free_kddm_obj_entry(struct kddm_set *set,
 
 	atomic_dec(&set->nr_entries);
 
-	kmem_cache_free(kddm_obj_cachep, obj_entry);
+	free_obj_entry_struct(obj_entry);
 }
 
 
@@ -252,8 +255,8 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 
 	BUG_ON (object_frozen(obj_entry));
 	/* Check if we are in a flush case i.e. cluster_wide_remove == 0
-	 * or if we have a pending request on the object. In both cases, can
-	 * cannot remove the object entry.
+	 * or if we have a pending request on the object. In both cases, we
+	 * cannot destroy the object entry.
 	 */
 	if ((!cluster_wide_remove) ||
 	    atomic_read (&obj_entry->sleeper_count)) {
@@ -279,12 +282,16 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 		atomic_dec(&set->nr_copies);
 	}
 
+	/* Remove the object from the KDDM object table */
 	kddm_lock_obj_table(set);
 	set->ops->remove_obj_entry(set, objid);
 	kddm_unlock_obj_table(set);
 
-	put_kddm_obj_entry(set, obj_entry, objid);
+	/* Unmap the object */
 	dec_obj_entry_mapcount(set, obj_entry, objid);
+
+	/* Put the reference taken by the called */
+	put_kddm_obj_entry(set, obj_entry, objid);
 exit:
 	return 0;
 }
@@ -302,13 +309,9 @@ retry:
 	kddm_lock_obj_table(set);
 
 	obj_entry = set->ops->lookup_obj_entry(set, objid);
-	if (obj_entry) {
-		if (!trylock_obj_entry(obj_entry)) {
-			kddm_unlock_obj_table(set);
-			wait_unlock_obj_entry(obj_entry);
+	if (obj_entry)
+		if (do_get_kddm_obj_entry(set, obj_entry, objid) == -EAGAIN)
 			goto retry;
-		}
-	}
 
 	kddm_unlock_obj_table(set);
 
@@ -336,13 +339,12 @@ retry:
 
 	obj_entry = set->ops->get_obj_entry(set, objid, new_obj);
 	if (obj_entry != new_obj)
-		dec_obj_entry_mapcount(set, new_obj, objid);
+		free_obj_entry_struct (new_obj);
+	else
+		inc_obj_entry_mapcount(obj_entry);
 
-	if (!trylock_obj_entry(obj_entry)) {
-		kddm_unlock_obj_table(set);
-		wait_unlock_obj_entry(obj_entry);
+	if (do_get_kddm_obj_entry(set, obj_entry, objid) == -EAGAIN)
 		goto retry;
-	}
 
 	kddm_unlock_obj_table(set);
 
@@ -360,19 +362,18 @@ void kddm_insert_object(struct kddm_set * set,
 {
 	BUG_ON(!is_locked_obj_entry(obj_entry));
 
-	set_object_frozen(obj_entry);
-	unlock_obj_entry(obj_entry);
-
 	if (set->ops->insert_object) {
 		kddm_lock_obj_table(set);
 		set->ops->insert_object (set, objid, obj_entry);
 		kddm_unlock_obj_table(set);
 	}
 
+	set_object_frozen(obj_entry);
+	unlock_obj_entry(obj_entry);
+
 	kddm_io_insert_object(obj_entry, set, objid);
 
 	lock_obj_entry(obj_entry);
-
 	object_clear_frozen(obj_entry, set);
 
 	kddm_change_obj_state(set, obj_entry, objid, objectState);
@@ -397,12 +398,10 @@ void kddm_invalidate_local_object_and_unlock(struct kddm_obj * obj_entry,
 {
 	BUG_ON(obj_entry->object == NULL);
 
-	/* No need to take the obj_table lock since the COW operation does not
-	 * change the table structure, it only update the entry of the object
-	 * in the table.
-	 */
+	kddm_lock_obj_table(set);
 	obj_entry = kddm_break_cow_object (set, obj_entry,objid,
 					   KDDM_BREAK_COW_INV);
+	kddm_unlock_obj_table(set);
 
 	if (!obj_entry)
 		goto done;
@@ -444,7 +443,8 @@ void __sleep_on_kddm_obj(struct kddm_set * set,
 
 	set_current_state(TASK_UNINTERRUPTIBLE);
 
-	put_kddm_obj_entry(set, obj_entry, objid);
+	/* Unlock the object but keep a reference on it. */
+	unlock_obj_entry(obj_entry);
 
 	if (kddm_info) {
 		kddm_info->wait_obj = obj_entry;

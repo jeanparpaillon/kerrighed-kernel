@@ -94,12 +94,11 @@ typedef enum {
  *--------------------------------------------------------------------------*/
 
 
-
+extern struct kmem_cache *kddm_obj_cachep;
 extern atomic_t nr_master_objects;  /*< Number of local master objects */
 extern atomic_t nr_copy_objects;    /*< Number of local copy objects */
 extern atomic_t nr_OBJ_STATE[]; /*< Number of objects in each possible state */
 extern const char *state_name[]; /*< Printable state name */
-
 
 
 /*--------------------------------------------------------------------------*
@@ -107,6 +106,16 @@ extern const char *state_name[]; /*< Printable state name */
  *                              EXTERN FUNCTIONS                            *
  *                                                                          *
  *--------------------------------------------------------------------------*/
+
+static inline void kddm_lock_obj_table(struct kddm_set * set)
+{
+	set->ops->lock_obj_table(set);
+}
+
+static inline void kddm_unlock_obj_table(struct kddm_set * set)
+{
+	set->ops->unlock_obj_table(set);
+}
 
 static inline void lock_obj_entry(struct kddm_obj *obj_entry)
 {
@@ -182,9 +191,33 @@ void free_kddm_obj_entry(struct kddm_set *set,
 			 struct kddm_obj *obj_entry,
 			 objid_t objid);
 
+static inline void free_obj_entry_struct(struct kddm_obj *obj_entry)
+{
+	kmem_cache_free(kddm_obj_cachep, obj_entry);
+}
+
+static inline void inc_obj_entry_refcount(struct kddm_obj *obj_entry)
+{
+	atomic_inc(&obj_entry->refcount);
+}
+
+static inline void dec_obj_entry_refcount(struct kddm_set *set,
+					  struct kddm_obj *obj_entry,
+					  objid_t objid)
+{
+	if (atomic_dec_and_test(&obj_entry->refcount))
+		free_kddm_obj_entry(set, obj_entry, objid);
+}
+
+static inline int obj_entry_refcount(struct kddm_obj *obj_entry)
+{
+        return atomic_read(&obj_entry->refcount);
+}
+
 static inline void inc_obj_entry_mapcount(struct kddm_obj *obj_entry)
 {
-	atomic_inc(&obj_entry->mapcount);
+	if (atomic_inc_return(&obj_entry->mapcount) == 1)
+		inc_obj_entry_refcount(obj_entry);
 }
 
 static inline void dec_obj_entry_mapcount(struct kddm_set *set,
@@ -192,12 +225,27 @@ static inline void dec_obj_entry_mapcount(struct kddm_set *set,
 					  objid_t objid)
 {
 	if (atomic_dec_and_test(&obj_entry->mapcount))
-		free_kddm_obj_entry(set, obj_entry, objid);
+		dec_obj_entry_refcount(set, obj_entry, objid);
 }
 
 static inline int obj_entry_mapcount(struct kddm_obj *obj_entry)
 {
         return atomic_read(&obj_entry->mapcount);
+}
+
+static inline int do_get_kddm_obj_entry (struct kddm_set *set,
+					 struct kddm_obj *obj_entry,
+					 objid_t objid)
+{
+	inc_obj_entry_refcount(obj_entry);
+	if (!trylock_obj_entry(obj_entry)) {
+		if (set)
+			kddm_unlock_obj_table(set);
+		wait_unlock_obj_entry(obj_entry);
+		dec_obj_entry_refcount(set, obj_entry, objid);
+		return -EAGAIN;
+	}
+	return 0;
 }
 
 /** Lookup for an object entry in a kddm set.
@@ -246,8 +294,10 @@ static inline void put_kddm_obj_entry (struct kddm_set *set,
 				       struct kddm_obj *obj_entry,
 				       objid_t objid)
 {
-	if (obj_entry)
+	if (obj_entry) {
 		unlock_obj_entry(obj_entry);
+		dec_obj_entry_refcount(set, obj_entry, objid);
+	}
 }
 
 struct kddm_obj *default_get_kddm_obj_entry (struct kddm_set *set,
@@ -297,7 +347,6 @@ static inline struct kddm_obj *_get_alloc_kddm_obj_entry (struct kddm_ns *ns,
 	return obj;
 }
 
-
 static inline int do_func_on_obj_entry (struct kddm_set *set,
 					struct kddm_obj *obj_entry,
 					unsigned long objid,
@@ -309,17 +358,18 @@ static inline int do_func_on_obj_entry (struct kddm_set *set,
 	if (!obj_entry)
 		return 0;
 
-	if (!trylock_obj_entry(obj_entry)) {
-		wait_unlock_obj_entry(obj_entry);
+	if (do_get_kddm_obj_entry(NULL, obj_entry, objid) == -EAGAIN)
 		return -EAGAIN;
-	}
+
 	r = f(objid, obj_entry, data);
 
 	/* Called functions are not allowed to return -EAGAIN */
 	BUG_ON (r == -EAGAIN);
 
-	if (r != KDDM_OBJ_REMOVED)
-		unlock_obj_entry(obj_entry);
+	if (r == KDDM_OBJ_REMOVED)
+		dec_obj_entry_mapcount(set, obj_entry, objid);
+
+	put_kddm_obj_entry(set, obj_entry, objid);
 
 	return r;
 }
@@ -347,16 +397,6 @@ void for_each_kddm_object(int ns_id, kddm_set_id_t set_id,
 void kddm_insert_object (struct kddm_set *set, objid_t objid,
                          struct kddm_obj * obj_entry,
 			 kddm_obj_state_t state);
-
-static inline void kddm_lock_obj_table(struct kddm_set * set)
-{
-	set->ops->lock_obj_table(set);
-}
-
-static inline void kddm_unlock_obj_table(struct kddm_set * set)
-{
-	set->ops->unlock_obj_table(set);
-}
 
 /** Change a kddm object state.
  *  @author Renaud Lottiaux

@@ -137,7 +137,10 @@ typedef struct {
 typedef struct kddm_obj {
 	/* flags field must be kept first in the structure */
 	long flags;                    /* Flags, state, prob_owner, etc... */
-	atomic_t mapcount;         /* Number of structures sharing the object */
+	atomic_t mapcount;         /* Number of structures sharing the object.
+				    * Mapping(s) count for 1 in refcount.
+				    */
+	atomic_t refcount;         /* Reference counter */
 	masterObj_t master_obj;        /* Object informations handled by the
 					  manager */
 	void *object;                  /* Kernel physical object struct */

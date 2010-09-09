@@ -155,20 +155,21 @@ static void **kddm_tree_lookup_slot (struct kddm_tree *tree,
  *  @return The address of the slot hosting the data.
  *          If the data does not exist, an empty slot is allocated.
  */
-static void *__kddm_tree_remove (struct kddm_tree *tree,
+static void *__kddm_tree_remove (struct kddm_set *set,
 				 struct kddm_tree_lvl *cur_level,
 				 int level,
 				 unsigned long index,
 				 int *_sub_level_freed)
 {
+	struct kddm_tree *tree = set->obj_set;
 	struct kddm_tree_lvl *sub_level;
 	int sub_index, sub_level_freed = 0;
-	void *data;
+	struct kddm_obj *obj_entry;
 
 	sub_index = lvl_sub_index(tree, level, index);
 
 	if ((level + 1) == tree->nr_level) {
-		data = cur_level->sub_lvl[sub_index];
+		obj_entry = (struct kddm_obj *)cur_level->sub_lvl[sub_index];
 		goto free_sub_level_slot;
 	}
 
@@ -176,11 +177,11 @@ static void *__kddm_tree_remove (struct kddm_tree *tree,
 	if (sub_level == NULL)
 		return NULL;
 
-	data = __kddm_tree_remove(tree, sub_level, level+1, index,
-				  &sub_level_freed);
+	obj_entry = __kddm_tree_remove(set, sub_level, level+1, index,
+				       &sub_level_freed);
 	if (sub_level_freed)
 		goto free_sub_level_slot;
-	return data;
+	return obj_entry;
 
 free_sub_level_slot:
 	cur_level->sub_lvl[sub_index] = NULL;
@@ -190,7 +191,7 @@ free_sub_level_slot:
 		kmem_cache_free(kddm_tree_lvl_cachep, cur_level);
 		*_sub_level_freed = 1;
 	}
-	return data;
+	return obj_entry;
 }
 
 
@@ -199,13 +200,14 @@ free_sub_level_slot:
  *  @param tree      The tree to lookup in.
  *  @param index     The index of the data to remove.
  */
-static void *kddm_tree_remove(struct kddm_tree *tree,
+static void *kddm_tree_remove(struct kddm_set *set,
 			      unsigned long index)
 {
 	void *data;
 	int sub_level_freed = 0;
+	struct kddm_tree *tree = set->obj_set;
 
-	data = __kddm_tree_remove(tree, tree->lvl1, 0, index,
+	data = __kddm_tree_remove(set, tree->lvl1, 0, index,
 				  &sub_level_freed);
 
 	if (sub_level_freed)
@@ -233,11 +235,15 @@ retry:
 		sub_level = cur_level->sub_lvl[i];
 		if (sub_level != NULL) {
 			if ((level + 1) == tree->nr_level) {
-				res = do_func_on_obj_entry(set,
-						   (struct kddm_obj *)sub_level,
-						   index, f, priv);
+				struct kddm_obj *obj_entry;
+
+				obj_entry = (struct kddm_obj *)sub_level;
+
+				res = do_func_on_obj_entry(set, obj_entry,
+							   index, f, priv);
 				if (res == -EAGAIN)
 					goto retry;
+
 				sub_level_freed = (res == KDDM_OBJ_REMOVED);
 			}
 			else
@@ -398,7 +404,7 @@ static struct kddm_obj *kddm_tree_get_obj_entry (struct kddm_set *set,
 static void kddm_tree_remove_obj_entry (struct kddm_set *set,
 					objid_t objid)
 {
-	kddm_tree_remove (set->obj_set, objid);
+	kddm_tree_remove (set, objid);
 }
 
 

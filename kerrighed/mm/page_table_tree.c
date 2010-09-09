@@ -78,18 +78,17 @@ static inline struct page *replace_zero_page(struct mm_struct *mm,
 
 static inline struct kddm_obj *init_pte_alloc_obj_entry(struct kddm_set *set,
 						objid_t objid,
-						struct kddm_obj **_obj_entry)
+						struct kddm_obj *_obj_entry)
 {
 	struct kddm_obj *obj_entry;
 
-	if (!*_obj_entry) {
+	if (!_obj_entry) {
 		obj_entry = alloc_kddm_obj_entry(set, objid);
 		if (!obj_entry)
 			BUG();
 	}
 	else {
-		obj_entry = *_obj_entry;
-		*_obj_entry = NULL;
+		obj_entry = _obj_entry;
 		change_prob_owner(obj_entry,
 				  kddm_io_default_owner(set, objid));
 	}
@@ -104,18 +103,16 @@ static inline struct kddm_obj *init_swap_pte(struct mm_struct *mm,
 					     objid_t objid,
 					     struct kddm_obj *_obj_entry)
 {
+	unsigned long addr = objid * PAGE_SIZE;
 	struct kddm_obj *obj_entry;
 	swp_entry_t entry;
 
 	if (pte_none(*ptep))
-		return _obj_entry;
+		return NULL;
 
 	if (pte_obj_entry(ptep)) {
-		obj_entry = get_obj_entry_from_pte(mm, objid * PAGE_SIZE,
-						   ptep, NULL);
-		inc_obj_entry_mapcount(obj_entry);
-		BUG_ON(obj_entry_mapcount(obj_entry) == 1);
-		return _obj_entry;
+		obj_entry = get_obj_entry_from_pte(mm, addr, ptep, NULL);
+		goto done;
 	}
 
 	/* pte_file not yet supported */
@@ -127,7 +124,7 @@ static inline struct kddm_obj *init_swap_pte(struct mm_struct *mm,
 	/* Migration entries not yet supported */
 	BUG_ON(is_migration_entry(entry));
 
-	obj_entry = init_pte_alloc_obj_entry(set, objid, &_obj_entry);
+	obj_entry = init_pte_alloc_obj_entry(set, objid, _obj_entry);
 
 	/* Set the first bit in order to distinguish pages from swap ptes */
 	obj_entry->object = (void *) mk_swap_pte_page(ptep);
@@ -135,7 +132,10 @@ static inline struct kddm_obj *init_swap_pte(struct mm_struct *mm,
 
 	set_swap_pte_obj_entry(ptep, obj_entry);
 
-	return _obj_entry;
+done:
+	inc_obj_entry_mapcount(obj_entry);
+
+	return obj_entry;
 }
 
 static inline struct kddm_obj *init_pte(struct mm_struct *mm,
@@ -157,8 +157,10 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 	wait_lock_kddm_page(page);
 
 	if (!PageAnon(page)) {
-		if (!(page == ZERO_PAGE(NULL)))
-			goto done;
+		if (!(page == ZERO_PAGE(NULL))) {
+			unlock_kddm_page(page);
+			return NULL;
+		}
 		new_page = replace_zero_page(mm, vma, page, ptep, addr);
 		/* new_page is returned locked */
 		unlock_kddm_page(page);
@@ -166,14 +168,12 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 	}
 
 	atomic_inc (&page->_kddm_count);
-	if (page->obj_entry != NULL) {
-		struct kddm_obj *obj_entry = page->obj_entry;
-		inc_obj_entry_mapcount(obj_entry);
-		BUG_ON(obj_entry_mapcount(obj_entry) == 1);
-		goto done;
-	}
 
-	obj_entry = init_pte_alloc_obj_entry(set, objid, &_obj_entry);
+	obj_entry = page->obj_entry;
+	if (obj_entry)
+		goto done;
+
+	obj_entry = init_pte_alloc_obj_entry(set, objid, _obj_entry);
 
 	BUG_ON (kddm_io_default_owner(set, objid) != kerrighed_node_id);
 	obj_entry->object = page;
@@ -184,10 +184,13 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 	BUG_ON (page->obj_entry != NULL);
 
 	page->obj_entry = obj_entry;
+
 done:
+	inc_obj_entry_mapcount(obj_entry);
+
 	unlock_kddm_page(page);
 
-	return _obj_entry;
+	return obj_entry;
 }
 
 
@@ -224,8 +227,9 @@ struct kddm_obj *get_obj_entry_from_pte(struct mm_struct *mm,
 		unlock_kddm_page(page);
 	}
 	else {
-		if ((pte_val(*ptep) == 0) && new_obj)
+		if ((pte_val(*ptep) == 0) && new_obj) {
 			set_pte_obj_entry(ptep, new_obj);
+		}
 
 		if (pte_obj_entry(ptep))
 			obj_entry = get_pte_obj_entry(ptep);
@@ -271,6 +275,7 @@ static inline void __pt_for_each_pte(struct kddm_set *set,
 	struct kddm_obj *obj_entry, *new_obj = NULL;
 	unsigned long addr;
 	spinlock_t *ptl;
+	objid_t objid;
 	pte_t *ptep;
 	int ret;
 
@@ -284,43 +289,46 @@ static inline void __pt_for_each_pte(struct kddm_set *set,
 
 	ptep = pte_offset_map_lock(mm, pmd, start, &ptl);
 
+	objid = start / PAGE_SIZE;
 	for (addr = start; addr != end; addr += PAGE_SIZE) {
 		if (f) {
 retry:
 			obj_entry = get_obj_entry_from_pte(mm, addr, ptep,
 							   NULL);
 			if (obj_entry) {
-				if (!trylock_obj_entry(obj_entry)) {
-					wait_unlock_obj_entry(obj_entry);
+				if (do_get_kddm_obj_entry(NULL, obj_entry,
+							  objid) == -EAGAIN)
 					goto retry;
-				}
+
 				pte_unmap_unlock(ptep, ptl);
-				ret = f(addr / PAGE_SIZE, obj_entry, priv);
+
+				ret = f(objid, obj_entry, priv);
 				if (ret == KDDM_OBJ_REMOVED)
 					pte_clear(mm, addr, ptep);
-				else
-					unlock_obj_entry (obj_entry);
+
+				put_kddm_obj_entry(set, obj_entry, objid);
 				ptep = pte_offset_map_lock(mm, pmd, addr, &ptl);
 			}
 		}
 		else {
-			new_obj = init_pte(mm, ptep, set, addr / PAGE_SIZE,
-			priv,new_obj);
+			obj_entry = init_pte(mm, ptep, set, objid, priv,
+					     new_obj);
 
 			/* The object has been used, allocate a new one */
-			if (!new_obj) {
+			if (obj_entry == new_obj) {
 				pte_unmap_unlock(ptep, ptl);
 				new_obj = alloc_kddm_obj_entry(set, 0);
 				ptep = pte_offset_map_lock(mm, pmd, addr, &ptl);
 			}
 		}
 
+		objid++;
 		ptep++;
 	}
 	pte_unmap_unlock(ptep - 1, ptl);
 
 	if (new_obj)
-		dec_obj_entry_mapcount(set, new_obj, 0);
+		free_obj_entry_struct (new_obj);
 }
 
 static inline void __pt_for_each_pmd(struct kddm_set *set,
@@ -605,7 +613,6 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 	}
 
 	BUG_ON(obj_entry_mapcount(obj_entry) == 0);
-	BUG_ON(!is_locked_obj_entry(obj_entry));
 
 	if (page_kddm_count(old_page) == 1) {
 		count = page_mapcount(old_page);
@@ -625,9 +632,8 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 			if (obj_entry_mapcount(obj_entry) != 1) {
 				/* Page shared with another KDDM through the
 				 * swap cache. COW the obj entry. */
-				dec_obj_entry_mapcount(set, obj_entry, objid);
 				new_obj = dup_kddm_obj_entry(obj_entry);
-				unlock_obj_entry(obj_entry);
+				put_kddm_obj_entry(set, obj_entry, objid);
 			}
 			else {
 				/* Page shared with a regular MM, no KDDM COW
@@ -635,16 +641,16 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 				 * Reuse the obj entry. */
 				new_obj = obj_entry;
 			}
+			dec_obj_entry_mapcount(set, obj_entry, objid);
 			unlock_kddm_page(old_page);
 		}
 	}
 	else {
 		/* Page shared with another KDDM. COW the obj entry */
 		BUG_ON(atomic_dec_and_test(&old_page->_kddm_count));
-		dec_obj_entry_mapcount(set, obj_entry, objid);
-		BUG_ON(obj_entry_mapcount(obj_entry) == 0);
 		new_obj = dup_kddm_obj_entry(obj_entry);
-		unlock_obj_entry(obj_entry);
+		put_kddm_obj_entry(set, obj_entry, objid);
+		dec_obj_entry_mapcount(set, obj_entry, objid);
 		unlock_kddm_page(old_page);
 	}
 
@@ -670,6 +676,7 @@ struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
 	/* Map the new page in the set mm */
 
 	__kddm_pt_insert_object (mm, new_page, addr, ptep, new_obj);
+	inc_obj_entry_mapcount(new_obj);
 
 	pte_unmap_unlock(ptep, ptl);
 
@@ -834,7 +841,6 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 	struct kddm_set *set = mm->anon_vma_kddm_set;
 	struct kddm_obj *obj_entry;
 	struct page *page = NULL;
-	objid_t objid = addr / PAGE_SIZE;
 
 	BUG_ON(!set);
 
@@ -866,10 +872,11 @@ void kcb_zap_pte(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 		unlock_kddm_page(page);
 	}
 
-	if (atomic_dec_and_test(&obj_entry->mapcount)) {
-		obj_entry->object = NULL;
-		free_kddm_obj_entry(set, obj_entry, objid);
-	}
+	if (atomic_dec_and_test(&obj_entry->mapcount))
+		if (atomic_dec_and_test(&obj_entry->refcount)) {
+			obj_entry->object = NULL;
+			free_kddm_obj_entry(set, obj_entry, addr / PAGE_SIZE);
+		}
 }
 
 
