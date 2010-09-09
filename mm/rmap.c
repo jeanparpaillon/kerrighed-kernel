@@ -854,7 +854,7 @@ static int try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 		obj_entry = page->obj_entry;
 		if (obj_entry) {
 			if ((mm->anon_vma_kddm_id && !mm->anon_vma_kddm_set) ||
-			    object_frozen(obj_entry, NULL)) {
+			    object_frozen(obj_entry)) {
 				ret = SWAP_FAIL;
 				goto out_unmap;
 			}

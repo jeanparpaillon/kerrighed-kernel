@@ -107,7 +107,7 @@ exit:
 	if (check_sleep_on_local_exclusive(set, obj_entry, objid, flags))
 		goto try_again;
 	if (!(flags & KDDM_NO_FREEZE))
-		set_object_frozen(obj_entry, set);
+		set_object_frozen(obj_entry);
 
 exit_no_freeze:
 	object = obj_entry->object;

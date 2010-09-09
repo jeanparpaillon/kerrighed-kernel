@@ -44,7 +44,7 @@ int _kddm_flush_object(struct kddm_set *set,
 try_again:
 	switch (OBJ_STATE(obj_entry)) {
 	case READ_COPY:
-		if (object_frozen_or_pinned(obj_entry, set)) {
+		if (object_frozen_or_pinned(obj_entry)) {
 			__sleep_on_kddm_obj(set, obj_entry, objid, 0);
 			goto try_again;
 		}
@@ -57,7 +57,7 @@ try_again:
 		goto exit_no_unlock;
 
 	case READ_OWNER:
-		if (object_frozen_or_pinned(obj_entry, set)) {
+		if (object_frozen_or_pinned(obj_entry)) {
 			__sleep_on_kddm_obj(set, obj_entry, objid, 0);
 			goto try_again;
 		}
@@ -93,7 +93,7 @@ send_copy:
 			break;
 		}
 
-		if (object_frozen_or_pinned(obj_entry, set)) {
+		if (object_frozen_or_pinned(obj_entry)) {
 			__sleep_on_kddm_obj(set, obj_entry, objid, 0);
 			goto try_again;
 		}

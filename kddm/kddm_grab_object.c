@@ -20,7 +20,7 @@ static inline struct kddm_obj *check_cow (struct kddm_set *set,
 {
 	*retry = 0;
 	if (flags & KDDM_COW_OBJECT) {
-		if (object_frozen(obj_entry, set)) {
+		if (object_frozen(obj_entry)) {
 			if (!(flags & KDDM_ASYNC_REQ)) {
 				sleep_on_kddm_obj(set, obj_entry, objid,
 						  flags);
@@ -62,7 +62,7 @@ void *generic_kddm_grab_object(struct kddm_set *set,
 try_again:
 	switch (OBJ_STATE(obj_entry)) {
 	case READ_COPY:
-		if (object_frozen(obj_entry, set)) {
+		if (object_frozen(obj_entry)) {
 			if (flags & KDDM_ASYNC_REQ)
 				BUG();
 			goto sleep;
@@ -186,7 +186,7 @@ sleep:
 	if (flags & KDDM_ASYNC_REQ)
 		goto exit_no_freeze;
 
-	if (object_frozen(obj_entry, set) &&
+	if (object_frozen(obj_entry) &&
 	    (flags & KDDM_TRY_GRAB) &&
 	    (kddm_local_exclusive (set)))
 		goto exit_try_failed;
@@ -195,7 +195,7 @@ sleep:
 		goto try_again;
 
 	if (!(flags & KDDM_NO_FREEZE))
-		set_object_frozen(obj_entry, set);
+		set_object_frozen(obj_entry);
 
 exit_no_freeze:
 	object = obj_entry->object;

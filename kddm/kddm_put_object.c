@@ -33,7 +33,7 @@ void _kddm_put_object(struct kddm_set *set,
 		return;
 
 	/* The object is not frozen, nothing to do */
-	if (atomic_read(&obj_entry->frozen_count) == 0)
+	if (!object_frozen(obj_entry))
 		goto exit;
 
 	kddm_io_put_object(obj_entry, set, objid);
