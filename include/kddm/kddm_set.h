@@ -17,7 +17,8 @@
 #include <kddm/name_space.h>
 #include <kddm/kddm_tree.h>
 
-
+extern krgnodemask_t krgnode_kddm_map;
+extern kerrighed_node_t kddm_nb_nodes;
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -45,7 +46,7 @@ enum
 
 
 /** Return the manager id of the given kddm set */
-#define KDDM_SET_MGR(set) ((kerrighed_node_t)(set->id >> UNIQUE_ID_NODE_SHIFT))
+#define KDDM_SET_MGR(set) __kddm_set_mgr(set, &krgnode_kddm_map, kddm_nb_nodes)
 
 #define MAX_PRIVATE_DATA_SIZE (PAGE_SIZE-sizeof(msg_kddm_set_t))
 
@@ -147,6 +148,9 @@ typedef struct {
 
 void kddm_set_init(void);
 void kddm_set_finalize(void);
+
+kerrighed_node_t __kddm_set_mgr(struct kddm_set * set,
+				const krgnodemask_t *nodes, int nr_nodes);
 
 struct kddm_set *__create_new_kddm_set(struct kddm_ns *ns,
 				       kddm_set_id_t kddm_set_id,

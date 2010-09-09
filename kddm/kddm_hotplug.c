@@ -19,8 +19,6 @@
 
 struct cluster_barrier *kddm_barrier;
 
-extern krgnodemask_t krgnode_kddm_map;
-extern kerrighed_node_t kddm_nb_nodes;
 extern kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
 						 objid_t objid,
 						 const krgnodemask_t *nodes,

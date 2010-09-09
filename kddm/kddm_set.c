@@ -32,6 +32,19 @@ struct kmem_cache *kddm_set_cachep;
 extern struct kmem_cache *kddm_tree_cachep;
 extern struct kmem_cache *kddm_tree_lvl_cachep;
 
+kerrighed_node_t __kddm_set_mgr(struct kddm_set * set,
+				const krgnodemask_t *nodes,
+				int nr_nodes)
+{
+	kerrighed_node_t node;
+
+	node = ((kerrighed_node_t)(set->id >> UNIQUE_ID_NODE_SHIFT));
+	if (unlikely(!__krgnode_isset(node, nodes)))
+		node = __nth_krgnode(node, nodes);
+
+	return node;
+}
+
 /** Alloc a new KDDM set id.
  *  @author Renaud Lottiaux
  *
