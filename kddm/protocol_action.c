@@ -152,8 +152,6 @@ int request_sync_object_and_unlock(struct kddm_set * set,
 	kerrighed_node_t dest;
 	int err = 0, flags = KDDM_SYNC_OBJECT;
 
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
-
 	dest = kddm_io_default_owner (set, objid);
 	BUG_ON (dest == kerrighed_node_id);
 
@@ -235,8 +233,6 @@ int request_copies_remove(struct kddm_set * set,
 	msg_server_t msgToServer;
 
 	BUG_ON(sender < 0 || sender > KERRIGHED_MAX_NODES);
-
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	REMOVE_FROM_SET(COPYSET(obj_entry), kerrighed_node_id);
 	REMOVE_FROM_SET(RMSET(obj_entry), kerrighed_node_id);
@@ -343,7 +339,7 @@ void send_copy_on_write(struct kddm_set * set,
 {
 	kddm_obj_state_t state = WRITE_OWNER;
 
-	BUG_ON (!TEST_OBJECT_LOCKED(obj_entry));
+	BUG_ON (!is_locked_obj_entry(obj_entry));
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 	BUG_ON(object_frozen_or_pinned(obj_entry));
@@ -362,14 +358,8 @@ struct kddm_obj *send_copy_on_write_and_inv(struct kddm_set *set,
 					    kerrighed_node_t dest,
 					    int flags)
 {
-	/* Unlock the path to allow sleeping function un send_copy_on_write
-	 * The object itself if still locked.
-	 */
-	kddm_obj_path_unlock(set, objid);
-
+	/* TODO:we should probably release the obj lock in case the send sleep*/
 	send_copy_on_write (set, obj_entry, objid, dest, 0);
-
-	kddm_obj_path_lock(set, objid);
 
 	kddm_invalidate_local_object_and_unlock(obj_entry, set, objid,
 						INV_COPY);
@@ -451,8 +441,6 @@ void transfer_write_access_and_unlock(struct kddm_set * set,
 	msg_injection_t msg;
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
-
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	msg.ns_id = set->ns->id;
 	msg.set_id = set->id;
@@ -625,11 +613,9 @@ int object_first_touch_no_wakeup(struct kddm_set * set,
 	int res;
 
 	kddm_change_obj_state (set, obj_entry, objid, INV_FILLING);
-	put_kddm_obj_entry(set, obj_entry, objid);
 
+	/* TODO: we should probably release the obj_lock during the FT */
 	res = kddm_io_first_touch_object(obj_entry, set, objid, flags);
-
-	kddm_obj_path_lock(set, objid);
 
 	if (res)
 		return res;
@@ -665,8 +651,6 @@ int object_first_touch(struct kddm_set * set,
 
 	BUG_ON(kddm_ft_linked(set) && !I_AM_DEFAULT_OWNER(set, objid));
 
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
-
 	res = object_first_touch_no_wakeup(set, obj_entry, objid, INV_FILLING,
 					   flags);
 	if (res < 0)
@@ -698,8 +682,6 @@ void send_back_object_first_touch(struct kddm_set * set,
 	msg_server_t msgToServer;
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
-
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	msgToServer.ns_id = set->ns->id;
 	msgToServer.set_id = set->id;
@@ -759,8 +741,6 @@ void send_change_ownership_req(struct kddm_set * set,
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
 
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
-
 	changeOwnerMsg.ns_id = set->ns->id;
 	changeOwnerMsg.set_id = set->id;
 	changeOwnerMsg.objid = objid;
@@ -784,8 +764,6 @@ void ack_change_object_owner(struct kddm_set * set,
 	msg_server_t msgToServer;
 
 	BUG_ON(dest_node < 0 || dest_node > KERRIGHED_MAX_NODES);
-
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	msgToServer.ns_id = set->ns->id;
 	msgToServer.set_id = set->id;

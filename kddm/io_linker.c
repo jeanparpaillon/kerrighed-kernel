@@ -212,8 +212,6 @@ int kddm_io_put_object (struct kddm_obj * obj_entry,
 {
 	int res = 0;
 
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
-
 	if (set && set->iolinker->put_object)
 		res = set->iolinker->put_object (obj_entry, set,
 						 objid);
@@ -235,8 +233,6 @@ int kddm_io_invalidate_object (struct kddm_obj * obj_entry,
 			       objid_t objid)
 {
 	int res = 0;
-
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	if (obj_entry->object) {
 		if (set->iolinker && set->iolinker->invalidate_object) {
@@ -288,8 +284,6 @@ int kddm_io_remove_object_and_unlock (struct kddm_obj * obj_entry,
 {
 	int res = 0;
 	void *object;
-
-	ASSERT_OBJ_PATH_LOCKED(set, objid);
 
 	object = obj_entry->object;
 

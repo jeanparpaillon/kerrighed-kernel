@@ -106,23 +106,52 @@ extern const char *state_name[]; /*< Printable state name */
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-#define ASSERT_OBJ_PATH_LOCKED(set, objid) BUG_ON(!mutex_is_locked(&(set)->obj_lock[(objid) % NR_OBJ_ENTRY_LOCKS]))
-
-/** Lock the object (take care about the interrupt context) **/
-static inline void kddm_obj_path_lock (struct kddm_set *set,
-				       objid_t objid)
+static inline void lock_obj_entry(struct kddm_obj *obj_entry)
 {
-	BUG_ON(in_interrupt() || irqs_disabled());
-	mutex_lock (&set->obj_lock[objid % NR_OBJ_ENTRY_LOCKS]);
+#ifdef CONFIG_DEBUG_SPINLOCK
+	spin_lock(&obj_entry->lock);
+#else
+	while (TEST_AND_SET_OBJECT_LOCKED (obj_entry))
+		cpu_relax();
+#endif
 }
 
-static inline void kddm_obj_path_unlock (struct kddm_set *set,
-					 objid_t objid)
+static inline int trylock_obj_entry(struct kddm_obj *obj_entry)
 {
-	mutex_unlock (&set->obj_lock[objid % NR_OBJ_ENTRY_LOCKS]);
+#ifdef CONFIG_DEBUG_SPINLOCK
+	return spin_trylock(&obj_entry->lock);
+#else
+	return !TEST_AND_SET_OBJECT_LOCKED (obj_entry);
+#endif
 }
 
+static inline int is_locked_obj_entry(struct kddm_obj *obj_entry)
+{
+#ifdef CONFIG_DEBUG_SPINLOCK
+	return spin_is_locked(&obj_entry->lock);
+#else
+	return TEST_OBJECT_LOCKED(obj_entry);
+#endif
+}
 
+static inline void unlock_obj_entry(struct kddm_obj *obj_entry)
+{
+#ifdef CONFIG_DEBUG_SPINLOCK
+	spin_unlock(&obj_entry->lock);
+#else
+	CLEAR_OBJECT_LOCKED(obj_entry);
+#endif
+}
+
+static inline void wait_unlock_obj_entry(struct kddm_obj *obj_entry)
+{
+#ifdef CONFIG_DEBUG_SPINLOCK
+	spin_unlock_wait(&obj_entry->lock);
+#else
+	while (TEST_OBJECT_LOCKED(obj_entry))
+		cpu_relax();
+#endif
+}
 
 /** Alloc a new KDDM obj entry structure.
  *  @author Renaud Lottiaux
@@ -211,9 +240,7 @@ static inline void put_kddm_obj_entry (struct kddm_set *set,
 				       objid_t objid)
 {
 	if (obj_entry)
-		CLEAR_OBJECT_LOCKED(obj_entry);
-
-	kddm_obj_path_unlock (set, objid);
+		unlock_obj_entry(obj_entry);
 }
 
 struct kddm_obj *default_get_kddm_obj_entry (struct kddm_set *set,
@@ -264,6 +291,31 @@ static inline struct kddm_obj *_get_alloc_kddm_obj_entry (struct kddm_ns *ns,
 }
 
 
+static inline int do_func_on_obj_entry (struct kddm_set *set,
+					struct kddm_obj *obj_entry,
+					unsigned long objid,
+					int(*f)(unsigned long, void*, void*),
+					void *data)
+{
+	int r;
+
+	if (!obj_entry)
+		return 0;
+
+	if (!trylock_obj_entry(obj_entry)) {
+		wait_unlock_obj_entry(obj_entry);
+		return -EAGAIN;
+	}
+	r = f(objid, obj_entry, data);
+
+	/* Called functions are not allowed to return -EAGAIN */
+	BUG_ON (r == -EAGAIN);
+
+	if (r != KDDM_OBJ_REMOVED)
+		unlock_obj_entry(obj_entry);
+
+	return r;
+}
 
 int destroy_kddm_obj_entry (struct kddm_set *kddm_set,
 			    struct kddm_obj *obj_entry,
@@ -289,16 +341,15 @@ void kddm_insert_object (struct kddm_set *set, objid_t objid,
                          struct kddm_obj * obj_entry,
 			 kddm_obj_state_t state);
 
-static inline struct kddm_obj *kddm_break_cow_object (struct kddm_set * set,
-					      struct kddm_obj *obj_entry,
-					      objid_t objid,
-					      int break_type)
+static inline void kddm_lock_obj_table(struct kddm_set * set)
 {
-	if (set->ops->break_cow)
-		return set->ops->break_cow (set, obj_entry, objid, break_type);
-	return obj_entry;
+	set->ops->lock_obj_table(set);
 }
 
+static inline void kddm_unlock_obj_table(struct kddm_set * set)
+{
+	set->ops->unlock_obj_table(set);
+}
 
 /** Change a kddm object state.
  *  @author Renaud Lottiaux
@@ -355,7 +406,17 @@ void set_object_frozen (struct kddm_obj * obj_entry);
  */
 void object_clear_frozen (struct kddm_obj * obj_entry, struct kddm_set *set);
 
+static inline struct kddm_obj *kddm_break_cow_object (struct kddm_set * set,
+					      struct kddm_obj *obj_entry,
+					      objid_t objid,
+					      int break_type)
+{
+	BUG_ON (object_frozen(obj_entry));
 
+	if (set->ops->break_cow)
+		return set->ops->break_cow (set, obj_entry, objid, break_type);
+	return obj_entry;
+}
 
 static inline int change_prob_owner(struct kddm_obj * obj_entry,
 				     kerrighed_node_t new_owner)

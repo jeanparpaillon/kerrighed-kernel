@@ -45,7 +45,9 @@
 #define SEND_RM_ACK2         9  /* The default owner need an ack2 after
 				   a global remove is done */
 #define FAILURE_FLAG        10
+#ifndef CONFIG_DEBUG_SPINLOCK
 #define OBJECT_LOCKED       11  /* The object is locked */
+#endif
 
 /* Object state */
 #define STATE_INDEX_MASK    0x000FF000  /* Mask to extract the state index */
@@ -70,7 +72,9 @@
 #define TEST_OBJECT_PINNED(obj_entry) \
         test_bit (OBJECT_PINNED, &(obj_entry)->flags)
 
+#ifndef CONFIG_DEBUG_SPINLOCK
 #define SET_OBJECT_LOCKED(obj_entry) \
+	BUG_ON(test_bit(OBJECT_LOCKED, &(obj_entry)->flags));\
         set_bit(OBJECT_LOCKED, &(obj_entry)->flags)
 #define TEST_AND_SET_OBJECT_LOCKED(obj_entry) \
         test_and_set_bit(OBJECT_LOCKED, &(obj_entry)->flags)
@@ -78,6 +82,7 @@
         clear_bit(OBJECT_LOCKED, &(obj_entry)->flags)
 #define TEST_OBJECT_LOCKED(obj_entry) \
         test_bit(OBJECT_LOCKED, &(obj_entry)->flags)
+#endif
 
 #define SET_OBJECT_PENDING(obj_entry) \
         set_bit(OBJECT_PENDING_EVENT, &(obj_entry)->flags)
@@ -132,7 +137,7 @@ typedef struct {
 typedef struct kddm_obj {
 	/* flags field must be kept first in the structure */
 	long flags;                    /* Flags, state, prob_owner, etc... */
-	atomic_t count;                /* Reference counter */
+	atomic_t count;            /* Number of structures sharing the object */
 	masterObj_t master_obj;        /* Object informations handled by the
 					  manager */
 	void *object;                  /* Kernel physical object struct */
@@ -140,6 +145,9 @@ typedef struct kddm_obj {
 	atomic_t sleeper_count;        /* Nunmber of task waiting on the
 					  object */
 	wait_queue_head_t waiting_tsk; /* Process waiting for the object */
+#ifdef CONFIG_DEBUG_SPINLOCK
+	spinlock_t lock;
+#endif
 } __attribute__((aligned(8))) kddm_obj_t;
 
 
@@ -200,6 +208,8 @@ typedef struct kddm_set_ops {
 				   void *data);
 	void (*export) (struct rpc_desc* desc, struct kddm_set *set);
 	void *(*import) (struct rpc_desc* desc, int *free_data);
+	void (*lock_obj_table)(struct kddm_set *set);
+	void (*unlock_obj_table)(struct kddm_set *set);
 } kddm_set_ops_t;
 
 
@@ -212,7 +222,6 @@ typedef int iolinker_id_t;           /**< IO Linker identifier */
 
 typedef struct kddm_set {
 	void *obj_set;               /**< Structure hosting the set objects */
-	spinlock_t table_lock;       /**< Object table lock */
 	struct kddm_ns *ns;          /**< kddm set name space */
 	struct kddm_set_ops *ops;    /**< kddm set operations */
 	kddm_set_id_t id;            /**< kddm set identifier */
@@ -233,7 +242,6 @@ typedef struct kddm_set {
 	void *private_data;                  /**< Data used to instantiate */
 	int private_data_size;               /**< Size of private data... */
 
-	struct mutex obj_lock[NR_OBJ_ENTRY_LOCKS];  /**< Objects lock */
 	struct list_head event_list;
 	spinlock_t event_lock;
 	atomic_t nr_masters;
