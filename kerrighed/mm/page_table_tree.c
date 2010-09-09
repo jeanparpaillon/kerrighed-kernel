@@ -215,9 +215,6 @@ struct kddm_obj *get_obj_entry_from_pte(struct mm_struct *mm,
 		wait_lock_kddm_page(page);
 
 		if (new_obj) {
-			if (page->obj_entry != NULL)
-				printk ("WARN: entry %p in page %p\n",
-					page->obj_entry, page);
 			if (page->obj_entry == NULL) {
 				atomic_inc(&page->_kddm_count);
 				page->obj_entry = new_obj;
