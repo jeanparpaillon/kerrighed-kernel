@@ -85,9 +85,14 @@ int shm_memory_insert_page(struct kddm_obj *objEntry, struct kddm_set *kddm,
 
 	page = objEntry->object;
 	page->index = objid;
-	ret = add_to_page_cache_lru(page, mapping, objid, GFP_ATOMIC);
+
+	/* TODO: add the page in lru lists. This was done in a previous version
+	 * but was leading to corruptions in LRU lists (bug seen with boinc or
+	 * postgreSQL for instance).
+	 */
+	ret = add_to_page_cache(page, mapping, objid, GFP_ATOMIC);
 	if (ret) {
-		printk("shm_memory_insert_page: add_to_page_cache_lru returns %d\n",
+		printk("shm_memory_insert_page: add_to_page_cache returns %d\n",
 		       ret);
 		BUG();
 	}
@@ -130,9 +135,6 @@ int shm_memory_invalidate_page (struct kddm_obj * objEntry,
 			ClearPageDirty(page);
 		}
 		unlock_page(page);
-
-		if (TestClearPageLRU(page))
-			del_page_from_lru(page_zone(page), page);
 
 		page_cache_release (page);
 
