@@ -1,4 +1,8 @@
+comment "Kerrighed supports x86-64 only"
+depends on !X86_64
+
 menu "Cluster support"
+depends on X86_64
 
 config KERRIGHED
 	bool "Add the Kerrighed support"
