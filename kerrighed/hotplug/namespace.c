@@ -63,6 +63,8 @@ int copy_krg_ns(struct task_struct *task, struct nsproxy *new)
 					ns->root_nsproxy.pid_ns;
 #endif
 
+				ns->parent_task = current;
+
 				rcu_assign_pointer(krg_ns, ns);
 			} else {
 				retval = -ENOMEM;
@@ -148,6 +150,9 @@ bool can_create_krg_ns(unsigned long flags)
 #endif
 #ifdef CONFIG_KRG_PROC
 		&& (flags & CLONE_NEWPID)
+#endif
+#ifdef CONFIG_KRG_NET
+		&& (flags & CLONE_NEWNET)
 #endif
 		;
 }

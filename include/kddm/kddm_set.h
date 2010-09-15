@@ -101,6 +101,9 @@ enum
     KDDM_TEST4096,                    // 27
     MM_STRUCT_KDDM_ID,                // 28
     PIDMAP_MAP_KDDM_ID,               // 29
+    CLUSTER_IP_KDDM_ID,		      // 30
+    CLUSTER_PORT_UDP_KDDM_ID,	      // 31
+    CLUSTER_PORT_TCP_KDDM_ID,	      // 32
     MIN_KDDM_ID,           /* MUST always be the last one */
   };
 

@@ -16,6 +16,7 @@ config KERRIGHED
 	select KRG_IPC if !KERRIGHED_DEVEL && KRG_IPC_OTHER_DEPS
 	select KRG_PROC if !KERRIGHED_DEVEL && KRG_PROC_OTHER_DEPS
 	select KRG_EPM if !KERRIGHED_DEVEL
+	select KRG_CLUSTERIP if !KERRIGHED_DEVEL && KRG_CLUSTERIP_OTHER_DEPS
 	select KRG_SCHED if !KERRIGHED_DEVEL
 	help
 	  Say Y if you want to use the Kerrighed features.	
@@ -40,6 +41,15 @@ config KRG_PROC_OTHER_DEPS
 
 comment "WARNING: Kerrighed Process management requires PID namespaces (PID_NS)"
 	depends on KERRIGHED && !PID_NS
+
+config KRG_CLUSTERIP_OTHER_DEPS
+	def_bool NET_NS && IP_NF_TARGET_CLUSTERIP
+
+comment "WARNING: Kerrighed CLUSTERIP requires Network namespaces (NET_NS)"
+	depends on KERRIGHED && !NET_NS
+
+comment "WARNING: Kerrighed CLUSTERIP requires iptables's CLUSTERIP (IP_NF_TARGET_CLUSTERIP)"
+	depends on KERRIGHED && IP_NF_TARGET_CLUSTERIP = n
 
 config KERRIGHED_DEVEL
 	bool "Allow to build a subset of Kerrighed (!! Kerrighed development only !!)"
@@ -225,6 +235,33 @@ config KRG_EPM
 
 config KRG_IPC_EPM
        def_bool KRG_IPC && KRG_EPM
+
+config KRG_NET
+	def_bool n
+
+config KRG_CLUSTERIP
+	bool "Kerrighed support for CLUSTERIP"
+	depends on KERRIGHED && KRG_CLUSTERIP_OTHER_DEPS
+	select KRG_NET
+	help
+	  Enable support to setup a global IP socket address space using iptables
+	  CLUSTERIP module.
+
+	  This will merge the IP socket address space of the Kerrighed
+	  containers of all nodes in the following way:
+	  - a socket bound to a port on INADDR_ANY or on a cluster IP (that is
+	    setup with CLUSTERIP in the Kerrighed container) will reserve the
+	    port on all nodes. No other socket can be bound to the same port,
+	    whatever the node on which it is created.
+	  - as soon as a cluster IP is setup on all nodes, above mentioned
+	    sockets will be able to receive network traffic.
+	  - a socket bound to a port on a local IP (that is not setup with
+	    CLUSTERIP on this node) will keep the port available on other local
+	    IPs and other nodes.
+
+	  Currently only UDP and TCP over IPv4 are supported.
+
+	  If unsure, say Y.
 
 menuconfig KRG_SCHED
 	bool "Kerrighed support for global scheduling"
