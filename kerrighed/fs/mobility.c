@@ -68,14 +68,15 @@ void free_ghost_files (struct task_struct *ghost)
 /*                                                                           */
 /*****************************************************************************/
 
-static inline int populate_fs_struct (ghost_t * ghost,
-				      char *buffer,
-				      struct path *path)
+static inline int populate_fs_struct(struct epm_action *action,
+				     struct task_struct *task,
+				     ghost_t * ghost, char *buffer,
+				     struct path *path)
 {
 	struct prev_root root;
 	int len, r;
 
-	r = ghost_read (ghost, &len, sizeof (int));
+	r = ghost_read(ghost, &len, sizeof (int));
 	if (r)
 		goto error;
 
@@ -93,7 +94,7 @@ static inline int populate_fs_struct (ghost_t * ghost,
 	r = kern_path(buffer, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, path);
 	chroot_to_prev_root(&root);
 	if (r)
-		goto error;
+		epm_error(action, r, task, "Fail to open directory %s", buffer);
 
 error:
 	return r;
@@ -1431,13 +1432,13 @@ int import_fs_struct (struct epm_action *action,
 
 	/* Import the root path name */
 
-	r = populate_fs_struct(ghost, buffer, &fs->root);
+	r = populate_fs_struct(action, tsk, ghost, buffer, &fs->root);
 	if (r)
 		goto exit_free_fs;
 
 	/* Import the pwd path name */
 
-	r = populate_fs_struct(ghost, buffer, &fs->pwd);
+	r = populate_fs_struct(action, tsk, ghost, buffer, &fs->pwd);
 	if (r)
 		goto exit_put_root;
 
