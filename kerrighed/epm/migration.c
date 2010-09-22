@@ -313,6 +313,23 @@ static int do_migrate_process(struct task_struct *task,
 	if (retval)
 		migration_aborted(task);
 
+	if (task_pid_knr(current)) {
+		printk("kerrighed: migration of %d (%s) to node %d requested"
+		       " by %d (%s)\n",
+		       task_pid_knr(task), task->comm, destination_node_id,
+		       task_pid_knr(current), current->comm);
+
+	} else if (is_krgrpc_thread(current)) {
+		printk("kerrighed: migration of %d (%s) to node %d requested"
+		       " remotely\n",
+		       task_pid_knr(task), task->comm, destination_node_id);
+
+	} else {
+		printk("kerrighed: migration of %d (%s) to node %d requested"
+		       " by scheduler\n",
+		       task_pid_knr(task), task->comm, destination_node_id);
+	}
+
 	return retval;
 }
 

@@ -1673,9 +1673,6 @@ int send_kerrighed_signal(int sig, struct siginfo *info, struct task_struct *t)
 	if (!q)
 		return -ENOMEM;
 
-	printk("send_kerrighed_signal: %d (%s) -> %d (%s)\n",
-	       current->pid, current->comm, t->pid, t->comm);
-
 	info->si_signo = sig;
 	info->si_code = SI_KERRIGHED;
 
