@@ -8,6 +8,7 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 #include <linux/errno.h>
+#include <linux/sched.h>
 
 enum rpc_target {
 	RPC_TARGET_NODE,
@@ -318,4 +319,9 @@ kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc);
 
 extern struct task_struct *first_krgrpc;
 extern struct files_struct krgrpc_files;
+
+static inline int is_krgrpc_thread(struct task_struct *task)
+{
+	return (task->files == &krgrpc_files);
+}
 #endif
