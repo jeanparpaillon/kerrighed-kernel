@@ -87,6 +87,13 @@ static inline kerrighed_node_t epm_target_node(struct epm_action *action)
 	}
 }
 
+char *__krg_action_to_str(krg_epm_action_t action);
+
+static inline char *krg_action_to_str(struct epm_action *action)
+{
+	return __krg_action_to_str(action->type);
+}
+
 /*
  * Nests inside and outside of read_lock(&taskslist_lock), but neither inside
  * nor outside write_lock(_irq)(&tasklist_lock).

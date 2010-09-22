@@ -22,6 +22,35 @@ static int action_to_cap_mapping[] = {
 
 DEFINE_RWLOCK(krg_action_lock);
 
+char *__krg_action_to_str(krg_epm_action_t action)
+{
+	static char *migration_str = "migration";
+	static char *remote_fork_str = "remote fork";
+	static char *checkpoint_str = "checkpoint";
+	static char *restart_str = "restart";
+	char *action_str;
+
+	switch(action) {
+	case EPM_MIGRATE:
+		action_str = migration_str;
+		break;
+	case EPM_REMOTE_CLONE:
+		action_str = remote_fork_str;
+		break;
+	case EPM_CHECKPOINT:
+		action_str = checkpoint_str;
+		break;
+	case EPM_RESTART:
+		action_str = restart_str;
+		break;
+	default:
+		BUG();
+		action_str = NULL;
+	}
+
+	return action_str;
+}
+
 static inline void action_lock_lock(void)
 {
 	lockdep_off();

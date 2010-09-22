@@ -389,6 +389,8 @@ struct task_struct *alloc_shared_fake_task_struct(struct app_struct *app)
 		goto err_ns;
 	}
 
+	fake->pid = 0;
+
 	get_uts_ns(krg_ns->root_nsproxy.uts_ns);
 	fake->nsproxy->uts_ns = krg_ns->root_nsproxy.uts_ns;
 	get_ipc_ns(krg_ns->root_nsproxy.ipc_ns);

@@ -332,4 +332,22 @@ void do_ckpt_msg(int err, char *fmt, ...);
 			    __LINE__, err, ##args);			\
 } while (0)
 
+void print_epm_error(struct epm_action *action, int error,
+		     struct task_struct *task,
+		     char *fmt, ...);
+
+#ifdef CONFIG_KRG_DEBUG
+#define epm_error(action, error, task, fmt, args...)			\
+	do {								\
+		print_epm_error(action, error, task,			\
+				"%s:%d: " fmt,				\
+				__func__, __LINE__, ##args);		\
+	} while (0)
+#else
+#define epm_error(action, error, task, fmt, args...)			\
+	do {								\
+		print_epm_error(action, error, task, fmt, ##args);	\
+	} while (0)
+#endif
+
 #endif /* __GHOST_HELPERS_H__ */

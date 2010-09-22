@@ -7,10 +7,12 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/hashtable.h>
+#include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
 #include <kerrighed/hotplug.h>
 #include <kerrighed/krgsyms.h>
 #include <kerrighed/debug.h>
+#include <kerrighed/pid.h>
 #include "epm_internal.h"
 
 struct task_struct *baby_sitter;
@@ -29,6 +31,130 @@ static void init_baby_sitter(void)
 	baby_sitter->real_parent = baby_sitter;
 	baby_sitter->parent = baby_sitter;
 	strncpy(baby_sitter->comm, "baby sitter", 15);
+}
+
+#ifdef CONFIG_DYNAMIC_DEBUG
+#define dynamic_pr_kerrighed(fmt, ...) do {				\
+	static struct _ddebug descriptor				\
+	__used								\
+	__attribute__((section("__verbose"), aligned(8))) =		\
+	{ KBUILD_MODNAME, __func__, __FILE__, fmt, DEBUG_HASH,	\
+		DEBUG_HASH2, __LINE__, _DPRINTK_FLAGS_DEFAULT };	\
+	if (__dynamic_dbg_enabled(descriptor))				\
+		printk(KERN_DEBUG "kerrighed: " pr_fmt(fmt),		\
+				##__VA_ARGS__);				\
+	} while (0)
+#else
+#define dynamic_pr_kerrighed(fmt, ...)  do { } while (0)
+#endif
+
+#define pr_kerrighed(fmt, ...) do { \
+		dynamic_pr_kerrighed(fmt, ##__VA_ARGS__);	\
+	} while (0)
+
+static void __print_low_mem(const char *action, int error)
+{
+	pr_kerrighed("WARNING: Memory is low. %s: error %d\n",
+		     action, error);
+}
+
+static void __print_app_error(const char *action, long appid, int error,
+			      const char *msg)
+{
+	pr_kerrighed("%s of application %ld: error %d: %s\n",
+		     action, appid, error, msg);
+}
+
+void print_app_error(const char *action, long appid, int error,
+		     char *fmt, ...)
+{
+	va_list args;
+	char *buffer;
+
+	va_start(args, fmt);
+	buffer = kvasprintf(GFP_KERNEL, fmt, args);
+	va_end(args);
+
+	if (!buffer) {
+		__print_low_mem(action, error);
+		return;
+	}
+
+	__print_app_error(action, appid, error, buffer);
+}
+
+static void __print_pid_error(const char *action, pid_t pid, int error,
+			      const char *msg)
+{
+	pr_kerrighed("%s of %d: error %d: %s\n",
+		     action, pid, error, msg);
+}
+
+static void __print_task_error(const char *action, pid_t pid, const char *comm,
+			       int error, const char *msg)
+{
+	pr_kerrighed("%s of %d (%s): error %d: %s\n",
+		     action, pid, comm, error, msg);
+}
+
+static void __print_epm_error(struct epm_action *action, int error,
+			      struct task_struct *task, char *fmt,
+			      va_list args)
+{
+	char *buffer;
+	buffer = kvasprintf(GFP_KERNEL, fmt, args);
+
+	if (!buffer) {
+		__print_low_mem(krg_action_to_str(action), error);
+		return;
+	}
+
+	if (task && task->pid)
+		__print_task_error(krg_action_to_str(action),
+				   task_pid_knr(task),
+				   task->comm, error, buffer);
+	else {
+		switch (action->type) {
+		case EPM_MIGRATE:
+			__print_pid_error(krg_action_to_str(action),
+					  action->migrate.pid,
+					  error, buffer);
+			break;
+
+		case EPM_REMOTE_CLONE:
+			__print_pid_error(krg_action_to_str(action),
+					  action->remote_clone.from_pid,
+					  error, buffer);
+			break;
+
+		case EPM_CHECKPOINT:
+			__print_app_error(krg_action_to_str(action),
+					  action->checkpoint.appid,
+					  error, buffer);
+			break;
+
+		case EPM_RESTART:
+			__print_app_error(krg_action_to_str(action),
+					  action->restart.appid,
+					  error, buffer);
+			break;
+
+		default:
+			BUG();
+		}
+	}
+
+	kfree(buffer);
+}
+
+void print_epm_error(struct epm_action *action, int error,
+		       struct task_struct *task, char *fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	__print_epm_error(action, error, task, fmt, args);
+	va_end(args);
 }
 
 /* Krgsyms to register for restart_blocks in ghost processes */
