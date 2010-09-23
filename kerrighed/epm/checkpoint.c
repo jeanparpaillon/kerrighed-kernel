@@ -214,6 +214,7 @@ static void krg_task_checkpoint(int sig, struct siginfo *info,
 	 */
 	while (current_state->checkpoint.ghost) {
 		action.type = EPM_CHECKPOINT;
+		action.checkpoint.appid = current->application->app_id;
 		action.checkpoint.shared = CR_SAVE_LATER;
 		r = checkpoint_task(&action, current, regs);
 

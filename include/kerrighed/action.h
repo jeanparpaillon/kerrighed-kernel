@@ -59,9 +59,11 @@ struct epm_action {
 			struct completion *vfork;
 		} remote_clone;
 		struct {
+			long appid;
 			c_shared_obj_option_t shared;
 		} checkpoint;
 		struct {
+			long appid;
 			r_shared_obj_option_t shared;
 			struct app_struct * app;
 			int flags;

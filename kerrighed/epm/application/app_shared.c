@@ -537,6 +537,7 @@ static int export_shared_objects(ghost_t *ghost,
 	struct rb_node *node, *next_node;
 
 	action.type = EPM_CHECKPOINT;
+	action.checkpoint.appid = app->app_id;
 	action.checkpoint.shared = CR_SAVE_NOW;
 
 	node = rb_first(&app->shared_objects.root);
@@ -1025,6 +1026,7 @@ static int import_shared_objects(ghost_t *ghost, struct app_struct *app,
 	enum shared_obj_type type = NO_OBJ;
 
 	action.type = EPM_CHECKPOINT;
+	action.restart.appid = app->app_id;
 	action.restart.shared = CR_LOAD_NOW;
 	action.restart.app = app;
 

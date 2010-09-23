@@ -149,6 +149,7 @@ struct task_struct *restart_process(struct app_struct *app, pid_t pid,
 		return ERR_PTR(-EALREADY);
 
 	action.type = EPM_CHECKPOINT;
+	action.restart.appid = app->app_id;
 	action.restart.shared = CR_LINK_ONLY;
 	action.restart.app = app;
 	action.restart.flags = flags;
