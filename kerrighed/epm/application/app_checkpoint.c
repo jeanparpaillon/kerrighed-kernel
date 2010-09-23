@@ -47,9 +47,9 @@ static int save_app_kddm_object(struct app_kddm_object *obj)
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
-		ckpt_err(NULL, r,
-			 "Fail to create file /var/chkpt/%ld/v%d/global.bin",
-			 obj->app_id, obj->chkpt_sn);
+		app_error(__krg_action_to_str(EPM_CHECKPOINT), r, obj->app_id,
+			  "Fail to create file /var/chkpt/%ld/v%d/global.bin",
+			  obj->app_id, obj->chkpt_sn);
 		goto exit;
 	}
 
@@ -184,9 +184,9 @@ static inline int save_local_app(struct app_struct *app, int chkpt_sn)
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
-		ckpt_err(NULL, r,
-			 "Fail to create file /var/chkpt/%ld/v%d/node_%u.bin",
-			 app->app_id, chkpt_sn, kerrighed_node_id);
+		app_error(__krg_action_to_str(EPM_CHECKPOINT), r, app->app_id,
+			  "Fail to create file /var/chkpt/%ld/v%d/node_%u.bin",
+			  app->app_id, chkpt_sn, kerrighed_node_id);
 		goto exit;
 	}
 
@@ -250,12 +250,12 @@ static void __chkpt_task_req(struct app_struct *app, task_state_t *tsk)
 				  task_pid_knr(task));
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
-		ckpt_err(NULL, r,
-			 "Fail to create file /var/chkpt/%ld/v%d/task_%d.bin "
-			 "to checkpoint process %d (%s)",
-			 app->app_id, app->chkpt_sn,
-			 task_pid_knr(task),
-			 task_pid_knr(task), task->comm);
+		app_error(__krg_action_to_str(EPM_CHECKPOINT), r, app->app_id,
+			  "Fail to create file /var/chkpt/%ld/v%d/task_%d.bin "
+			  "to checkpoint process %d (%s)",
+			  app->app_id, app->chkpt_sn,
+			  task_pid_knr(task),
+			  task_pid_knr(task), task->comm);
 		__set_task_result(task, r);
 		return;
 	}
@@ -477,25 +477,22 @@ static int _freeze_app(long appid)
 	obj = kddm_grab_object_no_ft(kddm_def_ns, APP_KDDM_ID, appid);
 	if (!obj) {
 		r = -ESRCH;
-		ckpt_err(NULL, r,
-			 "Application %ld does not exist. Can not freeze it",
-			 appid);
+		app_error("freeze", r, appid,
+			  "Application does not exist");
 		goto exit_kddmput;
 	}
 
 	if (obj->state == APP_RUNNING_CS) {
 		r = -EAGAIN;
-		ckpt_err(NULL, r,
-			 "Application %ld is in critical section. Can not freeze it",
-			 appid);
+		app_error("freeze", r, appid,
+			  "Application is in critical section");
 		goto exit_kddmput;
 	}
 
 	if (obj->state != APP_RUNNING) {
 		r = -EPERM;
-		ckpt_err(NULL, r,
-			 "Application %ld is not running. Can not freeze it",
-			 appid);
+		app_error("freeze", r, appid,
+			  "Application is not running");
 		goto exit_kddmput;
 	}
 
@@ -516,17 +513,15 @@ static int _unfreeze_app(long appid, int signal)
 	obj = kddm_grab_object_no_ft(kddm_def_ns, APP_KDDM_ID, appid);
 	if (!obj) {
 		r = -ESRCH;
-		ckpt_err(NULL, r,
-			 "Application %ld does not exist. Can not unfreeze it",
-			 appid);
+		app_error("unfreeze", r, appid,
+			  "Application does not exist");
 		goto exit_kddmput;
 	}
 
 	if (obj->state == APP_RUNNING) {
 		r = -EPERM;
-		ckpt_err(NULL, r,
-			 "Application %ld is running. Can not unfreeze it",
-			 appid);
+		app_error("unfreeze", r, appid,
+			  "Application is already running");
 		goto exit_kddmput;
 	}
 
@@ -546,17 +541,15 @@ static int _checkpoint_frozen_app(struct checkpoint_info *info)
 	obj = kddm_grab_object_no_ft(kddm_def_ns, APP_KDDM_ID, info->app_id);
 	if (!obj) {
 		r = -ESRCH;
-		ckpt_err(NULL, r,
-			 "Application %ld does not exist. Can not checkpoint it",
-			 info->app_id);
+		app_error(__krg_action_to_str(EPM_CHECKPOINT), r, info->app_id,
+			  "Application does not exist");
 		goto exit_kddmput;
 	}
 
 	if (obj->state != APP_FROZEN) {
 		r = -EPERM;
-		ckpt_err(NULL, r,
-			 "Application %ld is not frozen. Can not checkpoint it",
-			 info->app_id);
+		app_error(__krg_action_to_str(EPM_CHECKPOINT), r, info->app_id,
+			  "Application is not frozen");
 		goto exit_kddmput;
 	}
 
@@ -619,26 +612,22 @@ int app_cr_exclude(struct cr_mm_region *mm_regions)
 	obj = kddm_grab_object_no_ft(kddm_def_ns, APP_KDDM_ID, app_id);
 	if (!obj) {
 		r = -ESRCH;
-		ckpt_err(NULL, r,
-			 "Application %ld does not exist. Can not checkpoint it",
-			 app_id);
+		app_error(__krg_action_to_str(EPM_CHECKPOINT), r, app_id,
+			  "Application does not exist");
 		goto exit_kddmput;
 	}
 
 	if (obj->state == APP_RUNNING_CS) {
 		r = -EAGAIN;
-		ckpt_err(NULL, r,
-			 "Application %ld is in critical section. Can not"
-			 " exclude memory regions",
-			 app_id);
+		app_error(__krg_action_to_str(EPM_CHECKPOINT), r, app_id,
+			  "Application is in critical section");
 		goto exit_kddmput;
 	}
 
 	if (obj->state != APP_RUNNING) {
 		r = -EPERM;
-		ckpt_err(NULL, r,
-			 "Application %ld is not running. Can not checkpoint it",
-			 app_id);
+		app_error(__krg_action_to_str(EPM_CHECKPOINT), r, app_id,
+			  "Application is not running");
 		goto exit_kddmput;
 	}
 
@@ -673,7 +662,7 @@ exit_rpc:
 /*--------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-static long get_appid(const struct checkpoint_info *info)
+static long get_appid(const char *action, const struct checkpoint_info *info)
 {
 	long r;
 
@@ -681,17 +670,18 @@ static long get_appid(const struct checkpoint_info *info)
 	if ((info->app_id < 0 || !(info->app_id & GLOBAL_PID_MASK))
 	    || (info->signal < 0 || info->signal >= SIGRTMIN)) {
 		r = -EINVAL;
-		ckpt_err(NULL, r,
-			 "User request contains invalid value(s).");
+		app_error(action, r, info->app_id,
+			  "User request contains invalid value(s)");
 		goto exit;
 	}
 
 	if (info->flags & APP_FROM_PID) {
 		r = get_appid_from_pid(info->app_id);
 		if (r < 0)
-			ckpt_err(NULL, r,
-				 "Fail to find an application hosting process %ld.",
-				 info->app_id);
+			app_error(action, r, -1,
+				  "Fail to find an application hosting "
+				  "process %ld",
+				  info->app_id);
 	} else
 		r = info->app_id;
 
@@ -702,7 +692,7 @@ exit:
 int app_freeze(struct checkpoint_info *info)
 {
 	int r = -EPERM;
-	long app_id = get_appid(info);
+	long app_id = get_appid("freeze", info);
 
 	if (app_id < 0) {
 		r = app_id;
@@ -712,9 +702,8 @@ int app_freeze(struct checkpoint_info *info)
 	/* check that an application does not try to freeze itself */
 	if (current->application && current->application->app_id == app_id) {
 		r = -EPERM;
-		ckpt_err(NULL, r,
-			 "Application %ld is trying to freeze itself.",
-			 app_id);
+		app_error("freeze", r, app_id,
+			  "Application is trying to freeze itself");
 		goto exit;
 	}
 
@@ -729,7 +718,7 @@ exit:
 int app_unfreeze(struct checkpoint_info *info)
 {
 	int r = -EPERM;
-	long app_id = get_appid(info);
+	long app_id = get_appid("unfreeze", info);
 
 	if (app_id < 0) {
 		r = app_id;
@@ -747,7 +736,7 @@ exit:
 int app_chkpt(struct checkpoint_info *info)
 {
 	int r = -EPERM;
-	long app_id = get_appid(info);
+	long app_id = get_appid(__krg_action_to_str(EPM_CHECKPOINT), info);
 
 	if (app_id < 0) {
 		r = app_id;
@@ -757,9 +746,8 @@ int app_chkpt(struct checkpoint_info *info)
 	/* check that an application does not try to checkpoint itself */
 	if (current->application && current->application->app_id == app_id) {
 		r = -EPERM;
-		ckpt_err(NULL, r,
-			"Application %ld is trying to checkpoint itself.",
-			app_id);
+		app_error(__krg_action_to_str(EPM_CHECKPOINT), r, app_id,
+			  "trying to checkpoint itself");
 		goto exit;
 	}
 

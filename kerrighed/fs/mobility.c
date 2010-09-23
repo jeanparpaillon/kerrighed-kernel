@@ -709,6 +709,10 @@ exit_put_files:
 	put_files_struct (exported_files);
 
 err:
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to save struct files_struct");
+
 	return r;
 }
 
@@ -820,6 +824,10 @@ int export_fs_struct (struct epm_action *action,
 
 err_write:
 	free_page ((unsigned long) tmp);
+
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to save struct fs_struct");
 
 	return r;
 }
@@ -1159,6 +1167,9 @@ exit_free_fdt:
 
 exit_free_files:
 	kmem_cache_free(files_cachep, files);
+	epm_error(action, r, tsk,
+		  "Fail to restore struct files_struct");
+
 	return r;
 }
 
@@ -1441,7 +1452,9 @@ int import_fs_struct (struct epm_action *action,
 
 exit:
 	free_page ((unsigned long) buffer);
-
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to restore struct fs_struct");
 	return r;
 
 exit_put_root:
@@ -1508,14 +1521,7 @@ static int cr_export_now_files_struct(struct epm_action *action, ghost_t *ghost,
 				      struct task_struct *task,
 				      union export_args *args)
 {
-	int r;
-	r = export_files_struct(action, ghost, task);
-	if (r)
-		ckpt_err(action, r,
-			 "Fail to save struct files_struct of process %d (%s)",
-			 task_pid_knr(task), task->comm);
-
-	return r;
+	return export_files_struct(action, ghost, task);
 }
 
 static int cr_import_now_files_struct(struct epm_action *action, ghost_t *ghost,
@@ -1526,12 +1532,8 @@ static int cr_import_now_files_struct(struct epm_action *action, ghost_t *ghost,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_files_struct(action, ghost, fake);
-	if (r) {
-		ckpt_err(action, r,
-			 "Fail to restore a struct files_struct",
-			 action->restart.app->app_id);
+	if (r)
 		goto err;
-	}
 
 	*returned_data = fake->files;
 err:
@@ -1571,14 +1573,7 @@ static int cr_export_now_fs_struct(struct epm_action *action, ghost_t *ghost,
 				   struct task_struct *task,
 				   union export_args *args)
 {
-	int r;
-	r = export_fs_struct(action, ghost, task);
-	if (r)
-		ckpt_err(action, r,
-			 "Fail to save struct fs_struct of process %d (%s)",
-			 task_pid_knr(task), task->comm);
-
-	return r;
+	return export_fs_struct(action, ghost, task);
 }
 
 static int cr_import_now_fs_struct(struct epm_action *action, ghost_t *ghost,
@@ -1589,13 +1584,8 @@ static int cr_import_now_fs_struct(struct epm_action *action, ghost_t *ghost,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_fs_struct(action, ghost, fake);
-	if (r) {
-		ckpt_err(action, r,
-			 "App %ld - Fail to restore a struct fs_struct",
-			 action->restart.app->app_id);
+	if (r)
 		goto err;
-	}
-
 	*returned_data = fake->fs;
 err:
 	return r;

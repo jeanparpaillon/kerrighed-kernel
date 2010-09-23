@@ -511,9 +511,8 @@ static int cr_export_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 	r = cr_export_semundos(ghost, task);
 err:
 	if (r)
-		ckpt_err(action, r,
-			 "Fail to save semundos of process %d (%s)",
-			 task_pid_knr(task), task->comm);
+		epm_error(action, r, task,
+			  "Fail to save semundos");
 
 	return r;
 }
@@ -549,9 +548,8 @@ static int cr_import_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 	*returned_data = (void*)fake->sysvsem.undo_list_id;
 err:
 	if (r)
-		ckpt_err(action, r,
-			 "App %ld - Fail to restore semundos",
-			 action->restart.app->app_id);
+		epm_error(action, r, fake,
+			  "Fail to restore semundos");
 	return r;
 }
 

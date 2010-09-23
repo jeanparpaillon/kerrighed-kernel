@@ -521,7 +521,7 @@ static int handle_reserve_pid(struct rpc_desc *desc, void *_msg, size_t size)
 	return r;
 }
 
-int reserve_pid(pid_t pid)
+int reserve_pid(long app_id, pid_t pid)
 {
 	int r;
 	kerrighed_node_t orig_node = ORIG_NODE(pid);
@@ -555,7 +555,8 @@ int reserve_pid(pid_t pid)
 
 out:
 	if (r)
-		ckpt_err(NULL, r, "Fail to reserve pid %d", pid);
+		app_error(__krg_action_to_str(EPM_RESTART), r, app_id,
+			  "Fail to reserve pid %d", pid);
 
 	return r;
 }

@@ -456,6 +456,10 @@ int export_sighand_struct(struct epm_action *action,
 				sizeof(tsk->sighand->action));
 
 err_write:
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to save struct sighand_struct");
+
 	return r;
 }
 
@@ -543,6 +547,10 @@ int import_sighand_struct(struct epm_action *action,
 	}
 
 err_read:
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to restore struct sighand_struct");
+
 	return r;
 }
 
@@ -555,14 +563,7 @@ static int cr_export_now_sighand_struct(struct epm_action *action,
 					struct task_struct *task,
 					union export_args *args)
 {
-	int r;
-	r = export_sighand_struct(action, ghost, task);
-	if (r)
-		ckpt_err(action, r,
-			 "Fail to save struct sighand_struct "
-			 "of process %d (%s)",
-			 task_pid_knr(task), task->comm);
-	return r;
+	return export_sighand_struct(action, ghost, task);
 }
 
 
@@ -577,13 +578,8 @@ static int cr_import_now_sighand_struct(struct epm_action *action,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_sighand_struct(action, ghost, fake);
-	if (r) {
-		ckpt_err(action, r,
-			 "App %d - Fail to restore a struct sighand_struct",
-			 action->restart.app->app_id);
+	if (r)
 		goto err;
-	}
-
 	*returned_data = fake->sighand;
 err:
 	return r;

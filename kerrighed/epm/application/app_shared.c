@@ -520,9 +520,9 @@ static int export_one_shared_object(struct epm_action *action,
 
 error:
 	if (r)
-		ckpt_err(NULL, r,
-			 "Fail to checkpoint object of type: %u and key: %lu",
-			 this->index.type, this->index.key);
+		epm_error(action, r, this->checkpoint.export.task,
+			  "Fail to save object of type: %u and key: %lu",
+			  this->index.type, this->index.key);
 
 	return r;
 }
@@ -589,10 +589,10 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
-		ckpt_err(&action, r,
-			 "Fail to create file "
-			 "/var/chkpt/%ld/v%d/shared_obj_%u.bin",
-			 app->app_id, chkpt_sn, kerrighed_node_id);
+		epm_error(&action, r, NULL,
+			  "Fail to create file "
+			  "/var/chkpt/%ld/v%d/shared_obj_%u.bin",
+			  app->app_id, chkpt_sn, kerrighed_node_id);
 		goto exit_unset_fs;
 	}
 
@@ -601,10 +601,10 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 
 	if (IS_ERR(user_ghost)) {
 		r = PTR_ERR(user_ghost);
-		ckpt_err(&action, r,
-			 "Fail to create file "
-			 "/var/chkpt/%ld/v%d/%s/user_info_%u.txt",
-			 app->app_id, chkpt_sn, kerrighed_node_id);
+		epm_error(&action, r, NULL,
+			  "Fail to create file "
+			  "/var/chkpt/%ld/v%d/%s/user_info_%u.txt",
+			  app->app_id, chkpt_sn, kerrighed_node_id);
 		goto exit_close_ghost;
 	}
 
@@ -1014,9 +1014,9 @@ static int import_one_shared_object(struct epm_action *action, ghost_t *ghost,
 		kfree(s);
 err:
 	if (r)
-		ckpt_err(NULL, r,
-			 "Fail to restore object of type: %u and key: %lu",
-			 type, stmp.index.key);
+		epm_error(action, r, fake,
+			  "Fail to restore object of type: %u and key: %lu",
+			  type, stmp.index.key);
 	return r;
 }
 
@@ -1707,10 +1707,10 @@ static int local_restart_shared_objects(struct rpc_desc *desc,
 
 		if (IS_ERR(ghost)) {
 			r = PTR_ERR(ghost);
-			ckpt_err(&action, r,
-				 "Fail to open file "
-				 "/var/chkpt/%ld/v%d/shared_obj_%u.bin",
-				 app->app_id, chkpt_sn, kerrighed_node_id);
+			epm_error(&action, r, NULL,
+				  "Fail to open file "
+				  "/var/chkpt/%ld/v%d/shared_obj_%u.bin",
+				  app->app_id, chkpt_sn, kerrighed_node_id);
 			goto err_import;
 		}
 
@@ -1874,9 +1874,8 @@ int global_restart_shared(struct rpc_desc *desc,
 error:
 	clear_substitution_files(&substitute_files);
 	if (r)
-		ckpt_err(NULL, r,
-			 "Fail to restore shared objects of application %ld",
-			 obj->app_id);
+		app_error(__krg_action_to_str(EPM_RESTART), r, obj->app_id,
+			  "Fail to restore shared objects");
 
 	return r;
 }

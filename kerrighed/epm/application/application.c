@@ -434,10 +434,9 @@ static int get_local_tasks_stop_result(struct app_struct* app)
 		} else if (t->task->state == TASK_DEAD) {
 			/* Process is zombie !! */
 			r = -E_CR_TASKDEAD;
-			ckpt_err(NULL, r,
-				 "Process %d (%s) of application %ld is dead"
-				 " or zombie",
-				 t->task->pid, t->task->comm, app->app_id);
+			app_error("freeze", r, app->app_id,
+				  "Process %d (%s) is dead or zombie",
+				  t->task->pid, t->task->comm);
 			goto exit;
 		}
 		if (!r)
@@ -652,10 +651,10 @@ static int local_prepare_stop(struct app_struct *app)
 
 			r = krg_action_start(tsk->task, EPM_CHECKPOINT);
 			if (r) {
-				ckpt_err(NULL, r,
-					 "krg_action_start fails for "
-					 "process %d %s",
-					 tsk->task->pid, tsk->task->comm);
+				app_error("freeze", r, app->app_id,
+					  "krg_action_start fails for "
+					  "process %d %s",
+					  tsk->task->pid, tsk->task->comm);
 				goto error;
 			}
 

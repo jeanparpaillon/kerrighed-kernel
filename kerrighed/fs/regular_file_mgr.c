@@ -111,10 +111,9 @@ static struct file *import_regular_file_from_krg_desc(
 			file = reopen_file_entry_from_krg_desc(task, desc);
 
 		if (IS_ERR(file))
-			ckpt_err(action, PTR_ERR(file),
-				 "App %ld - Fail to import file %s",
-				 action->restart.app->app_id,
-				 desc->file.filename);
+			epm_error(action, PTR_ERR(file), task,
+				  "Fail to import file %s",
+				  desc->file.filename);
 	}
 
 	return file;
@@ -446,11 +445,9 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 
 error:
 	if (r)
-		ckpt_err(NULL, r,
-			 "Fail to relink process %d of application %ld"
-			 " to file %d:%lu",
-			 task_pid_knr(task), action->restart.app->app_id,
-			 type, key);
+		epm_error(action, r, task,
+			  "Fail to relink process to file %d:%lu",
+			  type, key);
 
 	return r;
 
@@ -573,18 +570,15 @@ error:
 		char *buffer, *filename;
 		filename = alloc_filename(args->file_args.file, &buffer);
 		if (!IS_ERR(filename)) {
-			ckpt_err(action, r,
-				 "Fail to save information needed to reopen "
-				 "file %s as fd %d of process %d (%s)",
-				 filename, args->file_args.index,
-				 task_pid_knr(task), task->comm);
+			epm_error(action, r, task,
+				  "Fail to save information about file %s "
+				  "as fd %d",
+				  filename, args->file_args.index);
 			free_filename(buffer);
 		} else {
-			ckpt_err(action, r,
-				 "Fail to save information needed to reopen "
-				 "fd %d of process %d (%s)",
-				 args->file_args.index,
-				 task_pid_knr(task), task->comm);
+			epm_error(action, r, task,
+				  "Fail to save information about fd %d",
+				  args->file_args.index);
 		}
 	}
 
@@ -892,9 +886,8 @@ err_free_desc:
 	kfree(desc);
 error:
 	if (r)
-		ckpt_err(action, r,
-			 "App %ld - Fail to restore a file",
-			 action->restart.app->app_id);
+		epm_error(action, r, fake,
+			  "Fail to restore a file");
 	return r;
 }
 

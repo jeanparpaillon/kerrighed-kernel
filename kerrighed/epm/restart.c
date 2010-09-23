@@ -85,10 +85,9 @@ struct task_struct *restart_task_from_disk(struct epm_action *action,
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
-		ckpt_err(action, r,
-			 "Fail to open file /var/chkpt/%ld/v%d/task_%d.bin to "
-			 "restart process %d",
-			 app_id, chkpt_sn, pid, pid);
+		epm_error(action, r, NULL,
+			  "Fail to open file /var/chkpt/%ld/v%d/task_%d.bin",
+			  app_id, chkpt_sn, pid);
 		return ERR_PTR(r);
 	}
 
@@ -158,9 +157,9 @@ struct task_struct *restart_process(struct app_struct *app, pid_t pid,
 
 	task = restart_task(&action, pid, app->app_id, app->chkpt_sn);
 	if (IS_ERR(task))
-		ckpt_err(&action, PTR_ERR(task),
-			 "Fail to restart process %d",
-			 pid);
+		epm_error(&action, PTR_ERR(task), NULL,
+			  "Fail to restart process %d",
+			  pid);
 
 	return task;
 }

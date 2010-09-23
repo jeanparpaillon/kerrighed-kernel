@@ -771,9 +771,12 @@ up_mmap_sem:
 	}
 
 	up_read(&mm->mmap_sem);
-	if (r)
-		goto out;
+
 out:
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to save struct mm_struct");
+
 	return r;
 
 exit_put_mm:
@@ -1426,6 +1429,10 @@ int import_mm_struct (struct epm_action *action,
 err:
 	krg_put_mm (mm->mm_id);
 	unimport_mm_struct(tsk);
+
+	epm_error(action, r, tsk,
+		  "Fail to restore struct mm_struct");
+
 	return r;
 }
 
@@ -1442,13 +1449,7 @@ static int cr_export_now_mm_struct(struct epm_action *action, ghost_t *ghost,
 				   struct task_struct *task,
 				   union export_args *args)
 {
-	int r;
-	r = export_mm_struct(action, ghost, task);
-	if (r)
-		ckpt_err(action, r,
-			 "Fail to save struct mm_struct of process %d (%s)",
-			 task_pid_knr(task), task->comm);
-	return r;
+	return export_mm_struct(action, ghost, task);
 }
 
 
@@ -1460,12 +1461,8 @@ static int cr_import_now_mm_struct(struct epm_action *action, ghost_t *ghost,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_mm_struct(action, ghost, fake);
-	if (r) {
-		ckpt_err(action, r,
-			 "Fail to restore a struct mm_struct",
-			 action->restart.app->app_id);
+	if (r)
 		goto err;
-	}
 
 	*returned_data = fake->mm;
 err:
