@@ -794,6 +794,9 @@ static int boot_node_ready(struct krg_namespace *ns)
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
+	if (krgnode_online(kerrighed_node_id))
+		return -EALREADY;
+
 	ctx = hotplug_ctx_alloc(ns);
 	if (!ctx)
 		return -ENOMEM;
