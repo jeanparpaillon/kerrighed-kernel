@@ -608,7 +608,7 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 		if (cluster_start_ctx
 		    && msg->seq_id == cluster_start_msg.seq_id) {
 			BUG_ON(!krgnodes_equal(msg->node_set.v,
-					       cluster_start_ctx->node_set.v));
+					       cluster_start_msg.node_set.v));
 			hotplug_ctx_get(cluster_start_ctx);
 			ctx = cluster_start_ctx;
 			err = 0;
