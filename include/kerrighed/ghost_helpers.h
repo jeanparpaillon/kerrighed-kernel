@@ -332,6 +332,25 @@ void do_ckpt_msg(int err, char *fmt, ...);
 			    __LINE__, err, ##args);			\
 } while (0)
 
+void print_app_error(const char *action_str, long appid, int error,
+		     char *fmt, ...);
+
+#ifdef CONFIG_KRG_DEBUG
+#define app_error(action_str, error, appid, fmt, args...)		\
+	do {								\
+		print_app_error(action_str, appid, error,		\
+				"%s:%d: " fmt,				\
+				__func__, __LINE__, ##args);		\
+	} while (0)
+#else
+#define app_error(action_str, error, appid, fmt, args...)		\
+	do {								\
+		print_app_error(action_str, appid, error,		\
+				fmt, ##args);				\
+	} while (0)
+#endif
+
+
 void print_epm_error(struct epm_action *action, int error,
 		     struct task_struct *task,
 		     char *fmt, ...);
