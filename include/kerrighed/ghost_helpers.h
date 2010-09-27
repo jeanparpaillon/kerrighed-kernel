@@ -325,7 +325,9 @@ void do_ckpt_msg(int err, char *fmt, ...);
 
 #define ckpt_err(ctx, err, fmt, args...) do {				\
 	struct epm_action *_action = ctx;				\
-	if (!_action || _action->type == EPM_CHECKPOINT)		\
+	if (!_action							\
+	    || _action->type == EPM_CHECKPOINT				\
+	    || _action->type == EPM_RESTART)				\
 		do_ckpt_msg(err, "[E @ %s:%d : %d] " fmt, __func__,	\
 			    __LINE__, err, ##args);			\
 } while (0)

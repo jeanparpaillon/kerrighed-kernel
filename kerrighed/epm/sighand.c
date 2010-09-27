@@ -437,6 +437,8 @@ int export_sighand_struct(struct epm_action *action,
 {
 	int r;
 
+	BUG_ON(action->type == EPM_RESTART);
+
 	if (action->type == EPM_CHECKPOINT
 	    && action->checkpoint.shared == CR_SAVE_LATER) {
 		r = cr_export_later_sighand_struct(action, ghost, tsk);
@@ -493,7 +495,9 @@ int import_sighand_struct(struct epm_action *action,
 	unsigned long krg_objid;
 	int r;
 
-	if (action->type == EPM_CHECKPOINT
+	BUG_ON(action->type == EPM_CHECKPOINT);
+
+	if (action->type == EPM_RESTART
 	    && action->restart.shared == CR_LINK_ONLY) {
 		r = cr_link_to_sighand_struct(action, ghost, tsk);
 		return r;
@@ -518,7 +522,7 @@ int import_sighand_struct(struct epm_action *action,
 		BUG_ON(!tsk->sighand);
 		krg_sighand_unlock(krg_objid);
 		break;
-	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		tsk->sighand = cr_sighand_alloc();
 		krg_objid = tsk->sighand->krg_objid;
 
@@ -534,7 +538,8 @@ int import_sighand_struct(struct epm_action *action,
 		krg_sighand_unlock(krg_objid);
 		break;
 	default:
-		PANIC("Case not supported: %d\n", action->type);
+		BUG();
+		r = -EINVAL;
 	}
 
 err_read:

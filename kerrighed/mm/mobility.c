@@ -1079,7 +1079,7 @@ static int import_one_vma (struct epm_action *action,
 		vma->vm_flags &= ~VM_LOCKED;
 	}
 
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_RESTART)
 		restore_initial_vm_ops(vma);
 
 	if (vm_ops_type == KRGSYMS_VM_OPS_SPECIAL_MAPPING)
@@ -1306,7 +1306,7 @@ static inline int do_import_mm_struct(struct epm_action *action,
 	int r = 0;
 
 	switch(action->type) {
-	  case EPM_CHECKPOINT:
+	  case EPM_RESTART:
 		  mm = allocate_mm();
 		  if (!mm)
 			  goto done;
@@ -1367,7 +1367,7 @@ int import_mm_struct (struct epm_action *action,
 	struct kddm_set *set;
 	int r;
 
-	if (action->type == EPM_CHECKPOINT
+	if (action->type == EPM_RESTART
 	    && action->restart.shared == CR_LINK_ONLY) {
 		r = cr_link_to_mm_struct(action, ghost, tsk);
 		return r;
@@ -1409,7 +1409,7 @@ int import_mm_struct (struct epm_action *action,
 	    && !(action->remote_clone.clone_flags & CLONE_VM))
 		mm->locked_vm = 0;
 
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_RESTART)
 		r = cr_import_process_pages(action, ghost, mm);
 	else
 		r = import_mm_struct_end(mm, tsk);

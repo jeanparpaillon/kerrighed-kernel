@@ -18,6 +18,7 @@ typedef enum {
 	EPM_MIGRATE,
 	EPM_REMOTE_CLONE,
 	EPM_CHECKPOINT,
+	EPM_RESTART, /* Never used in krg_action_start/stop */
 	EPM_ACTION_MAX	   /* Always in last position */
 } krg_epm_action_t;
 
@@ -79,6 +80,7 @@ static inline kerrighed_node_t epm_target_node(struct epm_action *action)
 	case EPM_REMOTE_CLONE:
 		return action->remote_clone.target;
 	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		return KERRIGHED_NODE_ID_NONE;
 	default:
 		BUG();

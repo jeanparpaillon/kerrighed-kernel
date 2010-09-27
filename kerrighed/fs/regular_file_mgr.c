@@ -130,6 +130,7 @@ int check_flush_file (struct epm_action *action,
 	case EPM_REMOTE_CLONE:
 	case EPM_MIGRATE:
 	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		  if (file->f_dentry) {
 			  if (file->f_op && file->f_op->flush)
 				  err = file->f_op->flush(file, id);
@@ -413,7 +414,7 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 	enum shared_obj_type type;
 	struct cr_file_link *file_link;
 
-	BUG_ON(action->type != EPM_CHECKPOINT);
+	BUG_ON(action->type != EPM_RESTART);
 
 	/* files are linked while loading files_struct or mm_struct */
 	BUG_ON(action->restart.shared != CR_LOAD_NOW);
@@ -530,7 +531,7 @@ int regular_file_import(struct epm_action *action,
 	struct regular_file_krg_desc *desc;
 	int desc_size, r = 0;
 
-	BUG_ON(action->type == EPM_CHECKPOINT);
+	BUG_ON(action->type == EPM_RESTART);
 
 	r = ghost_read_file_krg_desc(ghost, (void **)(&desc), &desc_size);
 	if (r)

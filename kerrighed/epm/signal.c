@@ -873,7 +873,7 @@ int import_signal_struct(struct epm_action *action,
 	struct signal_struct *sig;
 	int r;
 
-	if (action->type == EPM_CHECKPOINT
+	if (action->type == EPM_RESTART
 	    && action->restart.shared == CR_LINK_ONLY) {
 		r = cr_link_to_signal_struct(action, ghost, tsk);
 		return r;
@@ -928,7 +928,7 @@ out_mig_unlock:
 		tsk->signal = sig;
 		break;
 
-	case EPM_CHECKPOINT: {
+	case EPM_RESTART: {
 		struct signal_struct tmp_sig;
 
 		sig = cr_signal_alloc(krg_objid);
@@ -1022,7 +1022,8 @@ err_free_signal:
 		goto err_read;
 
 	} default:
-		PANIC("Case not supported: %d\n", action->type);
+		BUG();
+		r = -EINVAL;
 	}
 
 err_read:
@@ -1162,7 +1163,7 @@ int import_private_signals(struct epm_action *action,
 
 	switch (action->type) {
 	case EPM_MIGRATE:
-	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		err = import_sigpending(ghost, task, &task->pending);
 		break;
 	default:

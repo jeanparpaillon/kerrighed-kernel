@@ -1692,7 +1692,7 @@ static int local_restart_shared_objects(struct rpc_desc *desc,
 	struct epm_action action;
 	ghost_t *ghost;
 
-	action.type = EPM_CHECKPOINT;
+	action.type = EPM_RESTART;
 	action.restart.appid = app->app_id;
 	action.restart.shared = CR_LOAD_NOW;
 	action.restart.app = app;

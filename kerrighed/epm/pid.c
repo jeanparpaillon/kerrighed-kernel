@@ -618,7 +618,7 @@ int import_pid(struct epm_action *action, ghost_t *ghost, struct pid_link *link,
 	if (retval)
 		return retval;
 
-	if (action->type == EPM_CHECKPOINT) {
+	if (action->type == EPM_RESTART) {
 		if ((action->restart.flags & APP_REPLACE_PGRP)
 		    && type == PIDTYPE_PGID)
 			nr = action->restart.app->restart.substitution_pgrp;

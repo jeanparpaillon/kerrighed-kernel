@@ -183,7 +183,7 @@ int faf_file_import (struct epm_action *action,
 	struct file *file;
 	int r, desc_size;
 
-	BUG_ON(action->type == EPM_CHECKPOINT);
+	BUG_ON(action->type == EPM_RESTART);
 
 	r = ghost_read_file_krg_desc(ghost, &desc, &desc_size);
 	if (r)

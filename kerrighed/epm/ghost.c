@@ -653,7 +653,7 @@ static void unimport_krg_structs(struct epm_action  *action,
 {
 	switch (action->type) {
 	case EPM_REMOTE_CLONE:
-	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		__krg_task_free(task);
 		break;
 	default:
@@ -770,7 +770,7 @@ void unimport_children(struct epm_action *action, struct task_struct *task)
 {
 	switch (action->type) {
 	case EPM_REMOTE_CLONE:
-	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		__krg_children_writelock(task);
 		krg_children_exit(task);
 		break;
@@ -937,7 +937,7 @@ static int import_children(struct epm_action *action,
 		break;
 
 	case EPM_REMOTE_CLONE:
-	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		/*
 		 * C/R: children are restored later in
 		 * app_restart.c:local_restore_children_objects()
@@ -973,7 +973,7 @@ static int import_group_leader(struct epm_action *action,
 	 * otherwise.
 	 */
 	if (task->pid != task->tgid) {
-		BUG_ON(action->type != EPM_CHECKPOINT);
+		BUG_ON(action->type != EPM_RESTART);
 
 		err = ghost_read(ghost, &tgid, sizeof(tgid));
 		if (err)
@@ -1319,7 +1319,7 @@ static int import_krg_structs(struct epm_action *action,
 		break;
 	case EPM_MIGRATE:
 		break;
-	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		/*
 		 * Initialization of the (real) parent pid and real parent
 		 * tgid in case of restart
@@ -1459,14 +1459,14 @@ static struct task_struct *import_task(struct epm_action *action,
 	task->lockdep_recursion = 0;
 #endif
 	/* End of lock debugging stuff */
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_RESTART)
 		task->journal_info = NULL;
 	else
 		BUG_ON(task->journal_info);
 	BUG_ON(task->bio_list);
 	BUG_ON(task->bio_tail);
 	BUG_ON(task->reclaim_state);
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_RESTART)
 		task->backing_dev_info = NULL;
 	else
 		BUG_ON(task->backing_dev_info);
@@ -1754,6 +1754,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	int retval;
 
 	BUG_ON(!l_regs || !tskRecv);
+	BUG_ON(action->type == EPM_CHECKPOINT);
 
 	/*
 	 * The active process must be considered as remote until all links
@@ -1852,7 +1853,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	BUG_ON(action->type == EPM_MIGRATE &&
 	       newTsk->exit_signal != tskRecv->exit_signal);
 
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_RESTART)
 		newTsk->exit_signal = tskRecv->exit_signal;
 
 	/* TODO: distributed threads */
@@ -1872,7 +1873,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 			      action->remote_clone.from_pid);
 	}
 
-	if (action->type == EPM_MIGRATE || action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_MIGRATE || action->type == EPM_RESTART)
 		newTsk->did_exec = tskRecv->did_exec;
 
 	__krg_task_unlock(tskRecv);
@@ -1881,7 +1882,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	BUG_ON(retval);
 
 	if (action->type == EPM_MIGRATE
-	    || action->type == EPM_CHECKPOINT) {
+	    || action->type == EPM_RESTART) {
 		/*
 		 * signals should be copied from the ghost, as do_fork does not
 		 * clone the signal queue
@@ -1912,7 +1913,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	newTsk->files->next_fd = tskRecv->files->next_fd;
 
 	if (action->type == EPM_MIGRATE
-	    || action->type == EPM_CHECKPOINT) {
+	    || action->type == EPM_RESTART) {
 		/* Remember process times until now (cleared by do_fork) */
 		newTsk->utime = tskRecv->utime;
 		/* stime will be updated later to account for migration time */

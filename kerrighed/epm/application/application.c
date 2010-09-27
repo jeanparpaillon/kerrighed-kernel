@@ -547,6 +547,7 @@ int export_application(struct epm_action *action,
 	long app_id = -1;
 
 	BUG_ON(!task);
+	BUG_ON(action->type == EPM_RESTART);
 
 	/* leave an application if no more checkpointable */
 	if (!cap_raised(task->krg_caps.effective, CAP_CHECKPOINTABLE) &&
@@ -582,7 +583,9 @@ int import_application(struct epm_action *action,
 	if (r)
 		goto out;
 
-	if (action->type == EPM_CHECKPOINT)
+	BUG_ON(action->type == EPM_CHECKPOINT);
+
+	if (action->type == EPM_RESTART)
 		return 0;
 
 	if (!cap_raised(task->krg_caps.effective, CAP_CHECKPOINTABLE))

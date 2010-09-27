@@ -58,6 +58,8 @@ int export_kddm_info_struct (struct epm_action *action,
 		  break;
 
 	  default:
+		  BUG();
+		  r = -EINVAL;
 		  break;
 	}
 
@@ -86,7 +88,7 @@ int import_kddm_info_struct (struct epm_action *action,
 		  r = initialize_kddm_info_struct (tsk);
 		  break;
 
-	  case EPM_CHECKPOINT:
+	  case EPM_RESTART:
 	  case EPM_MIGRATE:
 		  r = -ENOMEM;
 		  kddm_info = kmem_cache_alloc(kddm_info_cachep,
