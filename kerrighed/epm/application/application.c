@@ -1200,24 +1200,6 @@ exit:
 	return r;
 }
 
-void do_ckpt_msg(int err, char *fmt, ...)
-{
-	va_list args;
-	char *buffer;
-
-	va_start(args, fmt);
-	buffer = kvasprintf(GFP_KERNEL, fmt, args);
-	va_end(args);
-
-	if (buffer) {
-		printk("%s\n", buffer);
-		kfree(buffer);
-	} else
-		printk("WARNING: Memory is low\n"
-		       "Chekpoint/Restart operation failed with error %d\n",
-		       err);
-}
-
 /*--------------------------------------------------------------------------*
  *                                                                          *
  *          APPLICATION CHECKPOINT SERVER MANAGEMENT                        *
