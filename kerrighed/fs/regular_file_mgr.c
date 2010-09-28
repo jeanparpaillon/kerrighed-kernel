@@ -226,6 +226,24 @@ exit:
 	return r;
 }
 
+static void epm_error_saving_file(struct epm_action *action, int error,
+				  struct task_struct *task, struct file *file,
+				  int index)
+{
+	char *buffer, *filename;
+	filename = alloc_filename(file, &buffer);
+	if (!IS_ERR(filename)) {
+		epm_error(action, error, task,
+			  "Fail to save information about file %s "
+			  "as fd %d", filename, index);
+		free_filename(buffer);
+	} else {
+		epm_error(action, error, task,
+			  "Fail to save information about fd %d",
+			  index);
+	}
+}
+
 /*****************************************************************************/
 
 int ghost_read_file_krg_desc(ghost_t *ghost, void **desc, int *desc_size)
@@ -485,6 +503,8 @@ int regular_file_export (struct epm_action *action,
 	check_flush_file(action, task->files, file);
 
 	r = ghost_write_regular_file_krg_desc(ghost, file);
+	if (r)
+		epm_error_saving_file(action, r, task, file, index);
 
 	return r;
 }
@@ -557,8 +577,12 @@ static int cr_export_now_file(struct epm_action *action, ghost_t *ghost,
 	supported = can_checkpoint_file(args->file_args.file);
 
 	r = ghost_write(ghost, &supported, sizeof(supported));
-	if (r)
+	if (r) {
+		epm_error_saving_file(action, r, task,
+				      args->file_args.file,
+				      args->file_args.index);
 		goto error;
+	}
 
 	if (supported)
 		r = regular_file_export(action, ghost, task,
@@ -566,22 +590,6 @@ static int cr_export_now_file(struct epm_action *action, ghost_t *ghost,
 					args->file_args.file);
 
 error:
-	if (r) {
-		char *buffer, *filename;
-		filename = alloc_filename(args->file_args.file, &buffer);
-		if (!IS_ERR(filename)) {
-			epm_error(action, r, task,
-				  "Fail to save information about file %s "
-				  "as fd %d",
-				  filename, args->file_args.index);
-			free_filename(buffer);
-		} else {
-			epm_error(action, r, task,
-				  "Fail to save information about fd %d",
-				  args->file_args.index);
-		}
-	}
-
 	return r;
 }
 
