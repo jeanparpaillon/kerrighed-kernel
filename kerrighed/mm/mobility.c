@@ -744,7 +744,7 @@ int export_mm_struct(struct epm_action *action,
 
 	r = do_export_mm_struct (action, ghost, exported_mm);
 	if (r)
-		goto up_mmap_sem;
+		goto out;
 
 	down_read(&mm->mmap_sem);
 	r = export_context_struct(ghost, exported_mm);
@@ -762,14 +762,13 @@ int export_mm_struct(struct epm_action *action,
 		goto up_mmap_sem;
 
 	r = export_mm_counters(action, ghost, mm, exported_mm);
+	if (r)
+		goto up_mmap_sem;
+
+	if (action->type == EPM_CHECKPOINT)
+		r = cr_export_process_pages(tsk->application, ghost, tsk);
 
 up_mmap_sem:
-	if (action->type == EPM_CHECKPOINT) {
-		r = cr_export_process_pages(tsk->application, ghost, tsk);
-		if (r)
-			goto out;
-	}
-
 	up_read(&mm->mmap_sem);
 
 out:
@@ -782,7 +781,7 @@ out:
 exit_put_mm:
 	if (exported_mm != mm)
 		mmput(exported_mm);
-	return r;
+	goto out;
 }
 
 
