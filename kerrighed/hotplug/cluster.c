@@ -4,6 +4,7 @@
 
 #define MODULE_NAME "Hotplug"
 
+#include <linux/compile.h>
 #include <linux/sched.h>
 #include <linux/rwsem.h>
 #include <linux/mutex.h>
@@ -513,6 +514,78 @@ struct krg_namespace *create_krg_container(struct krg_namespace *ns)
 	return ns;
 }
 
+static int send_kernel_version(struct rpc_desc *desc)
+{
+	kerrighed_node_t node;
+	int len, err, ret;
+
+	len = strlen(UTS_VERSION) + 1;
+	err = rpc_pack_type(desc, len);
+	if (err)
+		goto error;
+
+	err = rpc_pack(desc, 0, UTS_VERSION, len);
+	if (err)
+		goto error;
+
+	for_each_krgnode_mask(node, desc->nodes) {
+		err = rpc_unpack_type_from(desc, node, ret);
+		if (err)
+			goto error;
+
+		if (ret)
+			goto bad_version;
+	}
+
+bad_version:
+	err = ret;
+error:
+	return err;
+}
+
+static int check_kernel_version(struct rpc_desc *desc)
+{
+	char *uts_version;
+	int len, err, ret;
+
+	err = rpc_unpack_type(desc, len);
+	if (err)
+		goto error;
+
+	if (len > 1024) {
+		err = -EINVAL;
+		goto error;
+	}
+
+	uts_version = kmalloc(len, GFP_KERNEL);
+	if (!uts_version) {
+		err = -ENOMEM;
+		goto error;
+	}
+
+	err = rpc_unpack(desc, 0, uts_version, len);
+	if (err)
+		goto err_free_version;
+
+	ret = 0;
+	if (strncmp(UTS_VERSION, uts_version, len)) {
+		pr_err("kerrighed: [ADD] Kernel version differs from "
+		       "other nodes\n");
+		ret = -EPERM;
+	}
+
+	err = rpc_pack_type(desc, ret);
+	if (err)
+		goto err_free_version;
+
+	err = ret;
+
+err_free_version:
+	kfree(uts_version);
+error:
+	return err;
+}
+
 static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 {
 	struct cluster_start_msg *msg = data;
@@ -523,6 +596,11 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 	int err;
 
 	mutex_lock(&cluster_start_mutex);
+
+	/* Check Kernel version before attempting to start the node */
+	err = check_kernel_version(desc);
+	if (err)
+		goto cancel;
 
 	if (master) {
 		err = -EPIPE;
@@ -635,6 +713,11 @@ static void cluster_start_worker(struct work_struct *work)
 	err = rpc_pack_type(desc, cluster_start_msg);
 	if (err)
 		goto end;
+
+	err = send_kernel_version(desc);
+	if (err)
+		goto cancel;
+
 	for_each_krgnode_mask(node, cluster_start_ctx->node_set.v) {
 		err = rpc_unpack_type_from(desc, node, ret);
 		if (err)
