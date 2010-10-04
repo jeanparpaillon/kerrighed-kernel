@@ -687,7 +687,7 @@ cancel:
 	goto out;
 }
 
-static void cluster_start_worker(struct work_struct *work)
+static int cluster_start_worker(void)
 {
 	struct rpc_desc *desc;
 	char *page;
@@ -707,8 +707,11 @@ static void cluster_start_worker(struct work_struct *work)
 	free_page((unsigned long)page);
 
 	desc = rpc_begin_m(CLUSTER_START, &cluster_start_ctx->node_set.v);
-	if (!desc)
+	if (!desc) {
+		err = -ENOMEM;
 		goto out;
+	}
+
 	err = rpc_pack_type(desc, cluster_start_msg);
 	if (err)
 		goto end;
@@ -721,6 +724,11 @@ static void cluster_start_worker(struct work_struct *work)
 		err = rpc_unpack_type_from(desc, node, ret);
 		if (err)
 			goto cancel;
+
+		if (ret) {
+			err = ret;
+			goto cancel;
+		}
 	}
 	ret = 0;
 	err = rpc_pack_type(desc, ret);
@@ -743,15 +751,14 @@ out:
 	hotplug_ctx_put(cluster_start_ctx);
 	cluster_start_ctx = NULL;
 	spin_unlock(&cluster_start_lock);
-	return;
+
+	return err;
 cancel:
 	rpc_cancel(desc);
-	if (err > 0)
+	if (err == -ECANCELED)
 		err = -EPIPE;
 	goto end;
 }
-
-static DECLARE_WORK(cluster_start_work, cluster_start_worker);
 
 int do_cluster_start(struct hotplug_context *ctx)
 {
@@ -764,18 +771,19 @@ int do_cluster_start(struct hotplug_context *ctx)
 			printk(KERN_WARNING "kerrighed: [ADD] "
 					"Max number of add attempts "
 					"reached! You should reboot host.\n");
+			spin_unlock(&cluster_start_lock);
 		} else {
-			r = 0;
 			hotplug_ctx_get(ctx);
 			cluster_start_ctx = ctx;
 			cluster_start_msg.seq_id++;
 			krgnodes_or(cluster_start_msg.node_set.v,
 					ctx->node_set.v,
 					krgnode_online_map);
-			queue_work(krg_wq, &cluster_start_work);
+			spin_unlock(&cluster_start_lock);
+
+			r = cluster_start_worker();
 		}
 	}
-	spin_unlock(&cluster_start_lock);
 
 	return r;
 }
