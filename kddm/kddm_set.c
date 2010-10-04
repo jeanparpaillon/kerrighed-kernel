@@ -604,6 +604,24 @@ done:
 }
 
 
+/** kddm set manager change.
+ *  @author Renaud Lottiaux
+ *
+ *  @param sender    Identifier of the remote requesting machine.
+ *  @param msg       Identifier of the kddm set to lookup for.
+ */
+int handle_req_kddm_set_change_mgr(struct rpc_desc* desc,
+				   void *_msg, size_t size)
+{
+	kddm_id_msg_t *kddm_id = (kddm_id_msg_t *) _msg;
+	struct kddm_set *kddm_set;
+
+	kddm_set = find_get_kddm_set(kddm_id->ns_id, kddm_id->set_id);
+	put_kddm_set(kddm_set);
+
+	return 0;
+}
+
 
 /** kddm set destroy handler.
  *  @author Renaud Lottiaux
@@ -726,6 +744,10 @@ void kddm_set_init()
 	__rpc_register(REQ_KDDM_SET_LOOKUP,
 		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_VOID,
 		       kddm_server, handle_req_kddm_set_lookup, 0);
+
+	__rpc_register(REQ_KDDM_CHANGE_MGR,
+		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_INT,
+		       kddm_server, handle_req_kddm_set_change_mgr, 0);
 
 	__rpc_register(REQ_KDDM_SET_DESTROY,
 		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_VOID,

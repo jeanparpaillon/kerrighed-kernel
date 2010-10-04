@@ -61,6 +61,7 @@ enum rpcid {
 
 /* Ctnr Container Manager Types */
 	REQ_KDDM_SET_LOOKUP,
+	REQ_KDDM_CHANGE_MGR,
 	REQ_KDDM_SET_DESTROY,
 	SEND_KDDM_SET_CREATE_DATA,
 	REQ_INC_KDDM_SET_USE,
