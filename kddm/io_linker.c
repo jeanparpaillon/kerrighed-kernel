@@ -406,23 +406,34 @@ kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
 					  const krgnodemask_t *nodes,
 					  int nr_nodes)
 {
+	kerrighed_node_t node;
+
+	if (unlikely(__krgnodes_empty(nodes)))
+		return kerrighed_node_id;
+
 	switch (set->def_owner) {
 	  case KDDM_RR_DEF_OWNER:
-		  if (likely(__krgnode_isset(kerrighed_node_id, nodes)))
-			  return __nth_krgnode(objid % nr_nodes, nodes);
-		  else
-			  return kerrighed_node_id;
+		  node = __nth_krgnode(objid % nr_nodes, nodes);
+		  break;
 
 	  case KDDM_UNIQUE_ID_DEF_OWNER:
-		  return objid >> UNIQUE_ID_NODE_SHIFT;
+		  node = objid >> UNIQUE_ID_NODE_SHIFT;
+		  if (unlikely(!__krgnode_isset(node, nodes)))
+			  node = __nth_krgnode(objid % nr_nodes, nodes);
+		  break;
 
 	  case KDDM_CUSTOM_DEF_OWNER:
-		  return set->iolinker->default_owner (set, objid,
+		  node = set->iolinker->default_owner (set, objid,
 						       nodes, nr_nodes);
+		  break;
 
 	  default:
-		  return set->def_owner;
+		  node = set->def_owner;
+		  if (unlikely(!__krgnode_isset(node, nodes)))
+			  node = __nth_krgnode(objid % nr_nodes, nodes);
 	}
+
+	return node;
 }
 
 kerrighed_node_t kddm_io_default_owner (struct kddm_set * set, objid_t objid)
