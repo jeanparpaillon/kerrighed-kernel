@@ -28,6 +28,8 @@
 #include "mm_server.h"
 #include "injection.h"
 
+extern int mm_notification(struct notifier_block *nb, hotplug_event_t event,
+			   void *data);
 
 /** Initialisation of the DSM module.
  *  @author Renaud Lottiaux
@@ -59,6 +61,8 @@ int init_kermm(void)
 	mm_struct_init ();
 	mm_server_init();
 	mm_injection_init();
+
+	register_hotplug_notifier(mm_notification, HOTPLUG_PRIO_MM);
 
 	printk ("KerMM initialisation done\n");
 
