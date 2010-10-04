@@ -153,9 +153,9 @@ struct flush_set_data {
 	void *data;
 };
 
-static int kddm_flush_object(unsigned long objid,
-			     void *_obj_entry,
-			     void *_data)
+static int __kddm_flush_object(unsigned long objid,
+			       void *_obj_entry,
+			       void *_data)
 {
 	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
 	struct flush_set_data *param = _data;
@@ -230,7 +230,7 @@ void _kddm_flush_set(struct kddm_set *set,
 	param.f = f;
 	param.set = set;
 	param.data = data;
-	__for_each_kddm_object(set, kddm_flush_object, &param);
+	__for_each_kddm_object(set, __kddm_flush_object, &param);
 }
 
 EXPORT_SYMBOL(_kddm_flush_set);
