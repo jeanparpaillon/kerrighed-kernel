@@ -415,6 +415,14 @@ SYSCALL_DEFINE(fallocate)(int fd, int mode, loff_t offset, loff_t len)
 		goto out;
 	if (!(file->f_mode & FMODE_WRITE))
 		goto out_fput;
+
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		ret = krg_faf_fallocate(file, mode, offset, len);
+		goto out_fput;
+	}
+#endif
+
 	/*
 	 * Revalidate the write permissions, in case security policy has
 	 * changed since the files were opened.

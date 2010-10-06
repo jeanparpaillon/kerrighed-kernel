@@ -1010,6 +1010,45 @@ cancel:
 	goto out_end;
 }
 
+long krg_faf_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
+{
+	faf_client_data_t *data = file->private_data;
+	struct faf_allocate_msg msg;
+	struct rpc_desc *desc;
+	int err;
+	long ret;
+
+	msg.server_fd = data->server_fd;
+	msg.mode = mode;
+	msg.offset = offset;
+	msg.len = len;
+
+	desc = rpc_begin(RPC_FAF_FALLOCATE, data->server_id);
+	if (!desc) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, ret);
+	if (err)
+		goto cancel;
+
+out_end:
+	rpc_end(desc, 0);
+out:
+	return ret;
+cancel:
+	ret = err;
+	if (ret > 0)
+		ret = -EPIPE;
+	rpc_cancel(desc);
+	goto out_end;
+}
+
 static char *__krg_faf_d_path(const struct path *root, const struct file *file,
 			      char *buff, int size, bool *deleted)
 {

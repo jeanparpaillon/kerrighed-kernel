@@ -862,6 +862,19 @@ cancel:
 	goto out;
 }
 
+void handle_faf_fallocate(struct rpc_desc* desc, void *msgIn, size_t size)
+{
+	struct faf_allocate_msg *msg = msgIn;
+	long ret;
+	int err;
+
+	ret = sys_fallocate(msg->server_fd, msg->mode, msg->offset, msg->len);
+
+	err = rpc_pack_type(desc, ret);
+	if (err)
+		rpc_cancel(desc);
+}
+
 /*
  * Handlers for polling a FAF open file.
  * @author Louis Rilling

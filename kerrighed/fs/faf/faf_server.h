@@ -96,6 +96,13 @@ struct faf_chown_msg {
 	gid_t group;
 };
 
+struct faf_allocate_msg {
+	int server_fd;
+	int mode;
+	loff_t offset;
+	loff_t len;
+};
+
 struct faf_bind_msg {
 	int server_fd;
 	int addrlen;
