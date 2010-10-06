@@ -90,6 +90,12 @@ struct faf_chmod_msg {
 	mode_t mode;
 };
 
+struct faf_chown_msg {
+	int server_fd;
+	uid_t user;
+	gid_t group;
+};
+
 struct faf_bind_msg {
 	int server_fd;
 	int addrlen;

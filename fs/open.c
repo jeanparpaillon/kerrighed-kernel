@@ -785,6 +785,13 @@ SYSCALL_DEFINE3(fchown, unsigned int, fd, uid_t, user, gid_t, group)
 	if (!file)
 		goto out;
 
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		error = krg_faf_fchown(file, user, group);
+		goto out_fput;
+	}
+#endif
+
 	error = mnt_want_write(file->f_path.mnt);
 	if (error)
 		goto out_fput;

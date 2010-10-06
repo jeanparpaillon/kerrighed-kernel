@@ -839,6 +839,29 @@ cancel:
 	goto out;
 }
 
+int handle_faf_fchown(struct rpc_desc* desc, void *msgIn, size_t size)
+{
+	struct faf_chown_msg *msg = msgIn;
+	const struct cred *old_cred;
+	long ret;
+
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		ret = PTR_ERR(old_cred);
+		goto cancel;
+	}
+
+	ret = sys_fchown(msg->server_fd, msg->user, msg->group);
+	revert_creds(old_cred);
+
+out:
+	return ret;
+
+cancel:
+	rpc_cancel(desc);
+	goto out;
+}
+
 /*
  * Handlers for polling a FAF open file.
  * @author Louis Rilling
@@ -1680,6 +1703,7 @@ void faf_server_init (void)
 	rpc_register_void(RPC_FAF_FTRUNCATE, handle_faf_ftruncate, 0);
 	rpc_register_void(RPC_FAF_FLOCK, handle_faf_flock, 0);
 	rpc_register_int(RPC_FAF_FCHMOD, handle_faf_fchmod, 0);
+	rpc_register_int(RPC_FAF_FCHOWN, handle_faf_fchown, 0);
 	rpc_register_void(RPC_FAF_LSEEK, handle_faf_lseek, 0);
 	rpc_register_void(RPC_FAF_LLSEEK, handle_faf_llseek, 0);
 	rpc_register_void(RPC_FAF_D_PATH, handle_faf_d_path, 0);

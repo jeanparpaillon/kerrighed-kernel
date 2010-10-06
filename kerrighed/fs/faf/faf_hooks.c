@@ -969,6 +969,47 @@ cancel:
 	goto out_end;
 }
 
+int krg_faf_fchown(struct file *file, uid_t user, gid_t group)
+{
+	faf_client_data_t *data = file->private_data;
+	struct faf_chown_msg msg;
+	struct rpc_desc *desc;
+	int ret, err;
+
+	msg.server_fd = data->server_fd;
+	msg.user = user;
+	msg.group = group;
+
+	desc = rpc_begin(RPC_FAF_FCHOWN, data->server_id);
+	if (!desc) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = pack_creds(desc, current_cred());
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, ret);
+	if (err)
+		goto cancel;
+
+out_end:
+	rpc_end(desc, 0);
+out:
+	return ret;
+cancel:
+	ret = err;
+	if (ret > 0)
+		ret = -EPIPE;
+	rpc_cancel(desc);
+	goto out_end;
+}
+
 static char *__krg_faf_d_path(const struct path *root, const struct file *file,
 			      char *buff, int size, bool *deleted)
 {
