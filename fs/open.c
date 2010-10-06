@@ -624,6 +624,13 @@ SYSCALL_DEFINE2(fchmod, unsigned int, fd, mode_t, mode)
 	if (!file)
 		goto out;
 
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		err = krg_faf_fchmod(file, mode);
+		goto out_putf;
+	}
+#endif
+
 	dentry = file->f_path.dentry;
 	inode = dentry->d_inode;
 

@@ -85,6 +85,11 @@ struct faf_truncate_msg {
 	int small;
 };
 
+struct faf_chmod_msg {
+	int server_fd;
+	mode_t mode;
+};
+
 struct faf_bind_msg {
 	int server_fd;
 	int addrlen;
