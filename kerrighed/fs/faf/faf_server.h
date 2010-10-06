@@ -79,6 +79,12 @@ struct faf_llseek_msg {
 	unsigned int origin;
 };
 
+struct faf_truncate_msg {
+	int server_fd;
+	loff_t length;
+	int small;
+};
+
 struct faf_bind_msg {
 	int server_fd;
 	int addrlen;

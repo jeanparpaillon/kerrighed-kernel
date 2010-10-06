@@ -760,6 +760,24 @@ int handle_faf_fsync (struct rpc_desc* desc,
 	return r;
 }
 
+void handle_faf_ftruncate(struct rpc_desc* desc, void *msgIn, size_t size)
+{
+	struct faf_truncate_msg *msg = msgIn;
+	long ret;
+	int err;
+
+#if BITS_PER_LONG == 32
+	if (!msg->small)
+		ret = sys_ftruncate64(msg->server_fd, msg->length);
+	else
+#endif
+		ret = sys_ftruncate(msg->server_fd, msg->length);
+
+	err = rpc_pack_type(desc, ret);
+	if (err)
+		rpc_cancel(desc);
+}
+
 /** Handler for locking in a FAF open file.
  *  @author Renaud Lottiaux
  *
@@ -1636,6 +1654,7 @@ void faf_server_init (void)
 	rpc_register_void(RPC_FAF_FSTAT, handle_faf_fstat, 0);
 	rpc_register_void(RPC_FAF_FSTATFS, handle_faf_fstatfs, 0);
 	rpc_register_int(RPC_FAF_FSYNC, handle_faf_fsync, 0);
+	rpc_register_void(RPC_FAF_FTRUNCATE, handle_faf_ftruncate, 0);
 	rpc_register_void(RPC_FAF_FLOCK, handle_faf_flock, 0);
 	rpc_register_void(RPC_FAF_LSEEK, handle_faf_lseek, 0);
 	rpc_register_void(RPC_FAF_LLSEEK, handle_faf_llseek, 0);

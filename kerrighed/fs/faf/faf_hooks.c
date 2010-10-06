@@ -891,6 +891,44 @@ cancel:
 	goto out_end;
 }
 
+long krg_faf_ftruncate(struct file *file, loff_t length, int small)
+{
+	faf_client_data_t *data = file->private_data;
+	struct faf_truncate_msg msg;
+	struct rpc_desc *desc;
+	int err;
+	long ret;
+
+	msg.server_fd = data->server_fd;
+	msg.length = length;
+	msg.small = small;
+
+	desc = rpc_begin(RPC_FAF_FTRUNCATE, data->server_id);
+	if (!desc) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, ret);
+	if (err)
+		goto cancel;
+
+out_end:
+	rpc_end(desc, 0);
+out:
+	return ret;
+cancel:
+	ret = err;
+	if (ret > 0)
+		ret = -EPIPE;
+	rpc_cancel(desc);
+	goto out_end;
+}
+
 static char *__krg_faf_d_path(const struct path *root, const struct file *file,
 			      char *buff, int size, bool *deleted)
 {

@@ -59,6 +59,7 @@ long krg_faf_ioctl(struct file *file, unsigned int cmd,
 long krg_faf_fstat(struct file *file, struct kstat *stat);
 long krg_faf_fstatfs(struct file *file, struct statfs *statfs);
 long krg_faf_fsync(struct file *file);
+long krg_faf_ftruncate(struct file *file, loff_t length, int small);
 long krg_faf_flock(struct file *file, unsigned int cmd);
 char *krg_faf_d_path(const struct file *file, char *buffer, int size, bool *deleted);
 char *krg_faf_phys_d_path(const struct file *file, char *buff, int size, bool *deleted);

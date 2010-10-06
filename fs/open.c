@@ -319,6 +319,13 @@ static long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 	if (!file)
 		goto out;
 
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		error = krg_faf_ftruncate(file, length, small);
+		goto out_putf;
+	}
+#endif
+
 	/* explicitly opened as large or we are on 64-bit box */
 	if (file->f_flags & O_LARGEFILE)
 		small = 0;
