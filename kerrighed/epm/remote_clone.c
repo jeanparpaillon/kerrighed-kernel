@@ -63,9 +63,11 @@ int krg_do_fork(unsigned long clone_flags,
 		/* Authorize LinuxThreads' pthread_create() */
 		if ((clone_flags & ~CSIGNAL) == (CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND))
 			printk("kerrighed %d(%s): Remote pthread_create() attempted\n", task_pid_knr(current), current->comm);
-		else
+		else {
 			/* Unsupported clone flags are requested. Abort */
+			printk("kerrighed %d(%s): unsupported flags %lx\n", task_pid_knr(current), current->comm, clone_flags);
 			goto out;
+		}
 	}
 
 	if (!task->sighand->krg_objid || !task->signal->krg_objid
