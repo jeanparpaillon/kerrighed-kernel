@@ -205,7 +205,7 @@ struct kddm_set *_generic_local_get_kddm_set(struct kddm_ns *ns,
 	struct kddm_set *kddm_set;
 
 	if (!(flags & KDDM_LOCK_FREE))
-		down (&ns->table_sem);
+		down_read (&ns->table_sem);
 	kddm_set = __hashtable_find (ns->kddm_set_table, set_id);
 
 	if ( (kddm_set != NULL) && (flags & KDDM_CHECK_UNIQUE)) {
@@ -215,7 +215,13 @@ struct kddm_set *_generic_local_get_kddm_set(struct kddm_ns *ns,
 
 	if ( (kddm_set == NULL) && (flags & KDDM_ALLOC_STRUCT)) {
 		kddm_set = alloc_kddm_set_struct(ns, set_id, init_state);
+		if (!(flags & KDDM_LOCK_FREE)) {
+			up_read (&ns->table_sem);
+			down_write (&ns->table_sem);
+		}
 		__hashtable_add (ns->kddm_set_table, set_id, kddm_set);
+		if (!(flags & KDDM_LOCK_FREE))
+			downgrade_write(&ns->table_sem);
 	}
 
 	if (likely(kddm_set != NULL))
@@ -223,7 +229,7 @@ struct kddm_set *_generic_local_get_kddm_set(struct kddm_ns *ns,
 
 found:
 	if (!(flags & KDDM_LOCK_FREE))
-		up (&ns->table_sem);
+		up_read (&ns->table_sem);
 
 	return kddm_set;
 }
@@ -530,7 +536,7 @@ static void do_unfreeze_kddm_set(void *_set, void *_data)
 
 void freeze_kddm(void)
 {
-	down (&kddm_def_ns->table_sem);
+	down_read (&kddm_def_ns->table_sem);
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
 				 do_freeze_kddm_set, NULL);
 }
@@ -539,7 +545,7 @@ void unfreeze_kddm(void)
 {
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
 				 do_unfreeze_kddm_set, NULL);
-	up (&kddm_def_ns->table_sem);
+	up_read (&kddm_def_ns->table_sem);
 }
 
 
@@ -642,9 +648,9 @@ static int do_kddm_set_destroy(kddm_id_msg_t *kddm_id)
 	if (ns == NULL)
 		return -EINVAL;
 
-	down (&ns->table_sem);
+	down_write (&ns->table_sem);
 	kddm_set = __hashtable_remove(ns->kddm_set_table, kddm_id->set_id);
-	up (&ns->table_sem);
+	up_write (&ns->table_sem);
 
 	kddm_ns_put (ns);
 
