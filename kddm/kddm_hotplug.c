@@ -871,21 +871,29 @@ static void set_failure(krgnodemask_t * vector)
 static int kddm_notification(struct notifier_block *nb, hotplug_event_t event,
 			     void *data){
 	struct hotplug_context *ctx;
-	struct hotplug_node_set *node_set;
+
+	ctx = data;
 
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:
-		ctx = data;
 		set_add(&ctx->node_set.v);
 		break;
-	case HOTPLUG_NOTIFY_REMOVE:
-		ctx = data;
+	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
+	case HOTPLUG_NOTIFY_REMOVE_ADVERT:
 		set_remove(&ctx->node_set.v);
 		break;
-	case HOTPLUG_NOTIFY_FAIL:
-		node_set = data;
-//		set_failure(&node_set->v);
+
+	case HOTPLUG_NOTIFY_REMOVE_DISTANT:
+		/* Nothing to do */
 		break;
+
+	case HOTPLUG_NOTIFY_REMOVE_ACK:
+		/* Nothing to do */
+		break;
+
+	case HOTPLUG_NOTIFY_FAIL:
+		/* Not yet managed */
+		BUG();
 	default:
 		break;
 	}
