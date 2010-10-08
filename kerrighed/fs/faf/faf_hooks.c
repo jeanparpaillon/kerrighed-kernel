@@ -1786,6 +1786,53 @@ out:
 	return retval;
 }
 
+int krg_faf_utimes(struct file *file, struct timespec *times, int flags)
+{
+	faf_client_data_t *data = file->private_data;
+	struct faf_utimes_msg msg;
+	struct rpc_desc *desc;
+	int err, ret;
+
+	msg.server_fd = data->server_fd;
+	msg.flags = flags;
+	if (times) {
+		msg.times_not_null = true;
+		msg.times[0] = times[0];
+		msg.times[1] = times[1];
+	} else
+		msg.times_not_null = false;
+
+	desc = rpc_begin(RPC_FAF_UTIMES, data->server_id);
+	if (!desc) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = pack_creds(desc, current_cred());
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, ret);
+	if (err)
+		goto cancel;
+
+out_end:
+	rpc_end(desc, 0);
+out:
+	return ret;
+
+cancel:
+	ret = err;
+	if (ret > 0)
+		ret = -EPIPE;
+	rpc_cancel(desc);
+	goto out_end;
+}
+
 void krg_faf_srv_close(struct file *file)
 {
 	check_close_faf_srv_file(file);

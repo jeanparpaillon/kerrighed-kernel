@@ -64,6 +64,10 @@ long krg_faf_flock(struct file *file, unsigned int cmd);
 int krg_faf_fchmod(struct file *file, mode_t mode);
 int krg_faf_fchown(struct file *file, uid_t user, gid_t group);
 long krg_faf_fallocate(struct file *file, int mode, loff_t offset, loff_t len);
+
+struct timespec;
+int krg_faf_utimes(struct file *file, struct timespec *times, int flags);
+
 char *krg_faf_d_path(const struct file *file, char *buffer, int size, bool *deleted);
 char *krg_faf_phys_d_path(const struct file *file, char *buff, int size, bool *deleted);
 int krg_faf_do_path_lookup(struct file *file, const char *name,

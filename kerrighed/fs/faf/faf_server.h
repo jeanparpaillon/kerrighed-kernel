@@ -8,6 +8,7 @@
 #define __FAF_SERVER__
 
 #include <linux/socket.h>
+#include <linux/time.h>
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -154,6 +155,13 @@ struct faf_poll_wait_msg {
 	int server_fd;
 	unsigned long objid;
 	int wait;
+};
+
+struct faf_utimes_msg {
+	int server_fd;
+	int flags;
+	bool times_not_null;
+	struct timespec times[2];
 };
 
 struct old_linux_dirent;
