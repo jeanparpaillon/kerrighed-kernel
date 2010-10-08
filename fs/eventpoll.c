@@ -676,7 +676,10 @@ static unsigned int ep_eventpoll_poll(struct file *file, poll_table *wait)
 }
 
 /* File callbacks that implement the eventpoll file behaviour */
-static const struct file_operations eventpoll_fops = {
+#ifndef CONFIG_KRG_DVFS
+static
+#endif
+const struct file_operations eventpoll_fops = {
 	.release	= ep_eventpoll_release,
 	.poll		= ep_eventpoll_poll
 };
