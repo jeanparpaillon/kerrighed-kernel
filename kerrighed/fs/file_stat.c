@@ -265,7 +265,7 @@ int can_checkpoint_file(const struct file *file)
 	return 1;
 }
 
-int can_export_file(const struct file *file)
+int can_faf_file(const struct file *file)
 {
 	if (is_posix_mqueue(file)) {
 		pr_kerrighed("Export of posix message queue "

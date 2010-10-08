@@ -54,6 +54,11 @@ int setup_faf_file(struct file *file)
 	int res = 0;
 	struct files_struct *files = first_krgrpc->files;
 
+	if (!can_faf_file(file)) {
+		res = -ENOSYS;
+		goto out;
+	}
+
 	/* Install the file in the destination task file array */
 	if (file->f_flags & O_FAF_SRV) {
 		res = -EALREADY;
