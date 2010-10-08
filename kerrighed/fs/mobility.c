@@ -141,11 +141,6 @@ int export_one_open_file (struct epm_action *action,
 
 	BUG_ON(action->type == EPM_CHECKPOINT);
 
-	if (!can_export_file(file)) {
-		r = -ENOSYS;
-		goto err;
-	}
-
 	if (index != MMAPPED_FILE) {
 		if (!file->f_objid)
 			create_kddm_file_object(file);

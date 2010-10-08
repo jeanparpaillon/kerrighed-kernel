@@ -62,6 +62,6 @@ void free_filename(char *buffer);
 
 int can_checkpoint_file(const struct file *file);
 
-int can_export_file(const struct file *file);
+int can_faf_file(const struct file *file);
 
 #endif

@@ -14,6 +14,7 @@
 #include <kerrighed/action.h>
 #include <kerrighed/faf.h>
 #include <kerrighed/file.h>
+#include <kerrighed/file_stat.h>
 #include "faf_internal.h"
 #include "faf_server.h"
 #include "faf_hooks.h"
@@ -39,6 +40,11 @@ int setup_faf_file(struct file *file)
 	int server_fd = 0;
 	int res = 0;
 	struct files_struct *files = first_krgrpc->files;
+
+	if (!can_faf_file(file)) {
+		res = -ENOSYS;
+		goto out;
+	}
 
 	/* Install the file in the destination task file array */
 	if (file->f_flags & O_FAF_SRV) {
