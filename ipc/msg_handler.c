@@ -338,12 +338,11 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 		    struct ipc_namespace *ns, pid_t tgid)
 {
 	struct rpc_desc * desc;
-	enum rpc_error err;
 	struct kddm_set *master_set;
 	kerrighed_node_t *master_node;
-	void * buffer;
+	void *buffer = NULL;
 	long r;
-	int retval;
+	int err;
 	int index;
 	struct msgrcv_msg msg;
 
@@ -377,49 +376,51 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 	desc = rpc_begin(IPC_MSG_RCV, *master_node);
 	_kddm_put_object(master_set, index);
 
-	r = rpc_pack_type(desc, msg);
-	if (r)
-		goto exit;
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
 
-	r = unpack_remote_sleep_res_prepare(desc);
-	if (r)
-		goto exit;
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
 
 	err = unpack_remote_sleep_res_type(desc, r);
-	if (!err) {
-		if (r > 0) {
-			/* get the real msg type */
-			err = rpc_unpack(desc, 0, pmtype, sizeof(long));
-			if (err)
-				goto err_rpc;
+	if (err)
+		goto cancel;
 
-			buffer = kmalloc(r, GFP_KERNEL);
-			if (!buffer) {
-				r = -ENOMEM;
-				goto exit;
-			}
+	if (r < 0)
+		goto exit;
 
-			err = rpc_unpack(desc, 0, buffer, r);
-			if (err) {
-				kfree(buffer);
-				goto err_rpc;
-			}
+	/* get the real msg type */
+	err = rpc_unpack(desc, 0, pmtype, sizeof(long));
+	if (err)
+		goto cancel;
 
-			retval = copy_to_user(mtext, buffer, r);
-			kfree(buffer);
-			if (retval)
-				r = retval;
-		}
-	} else {
-		r = err;
+	buffer = kmalloc(r, GFP_KERNEL);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto cancel;
 	}
 
+	err = rpc_unpack(desc, 0, buffer, r);
+	if (err)
+		goto cancel;
+
+	err = copy_to_user(mtext, buffer, r);
+	if (err)
+		goto cancel;
+
 exit:
+	if (buffer)
+		kfree(buffer);
 	rpc_end(desc, 0);
 	return r;
 
-err_rpc:
-	r = -EPIPE;
+cancel:
+	r = err;
+	if (r == -ECANCELED)
+		r = -EPIPE;
+	rpc_cancel(desc);
 	goto exit;
 }
 

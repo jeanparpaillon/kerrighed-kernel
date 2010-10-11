@@ -125,7 +125,7 @@ end_request:
 
 err_cancel:
 	rpc_cancel(show_desc->desc);
-	if (err == RPC_EPIPE)
+	if (err == -ECANCELED)
 		err = -EPIPE;
 	BUG_ON(err >= 0);
 	show_desc->ret = err;

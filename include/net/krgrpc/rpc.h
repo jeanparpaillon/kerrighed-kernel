@@ -22,12 +22,7 @@ enum rpc_handler {
 	RPC_HANDLER_MAX
 };
 
-enum rpc_error {
-	RPC_EOK = 0,
-	RPC_EINTR,
-	RPC_ESIGACK,
-	RPC_EPIPE,
-};
+#define ESIGACK 542
 
 enum {
 	__RPC_FLAGS_NOBLOCK, /* request async operation */
@@ -150,9 +145,9 @@ int rpc_cancel_pack(struct rpc_desc* desc);
 
 int rpc_forward(struct rpc_desc* desc, kerrighed_node_t node);
 
-enum rpc_error rpc_unpack(struct rpc_desc* desc, int flags, void* data, size_t size);
-enum rpc_error rpc_unpack_from(struct rpc_desc* desc, kerrighed_node_t node,
-			       int flags, void* data, size_t size);
+int rpc_unpack(struct rpc_desc* desc, int flags, void* data, size_t size);
+int rpc_unpack_from(struct rpc_desc* desc, kerrighed_node_t node,
+		    int flags, void* data, size_t size);
 void rpc_cancel_unpack(struct rpc_desc* desc);
 
 kerrighed_node_t rpc_wait_return(struct rpc_desc* desc, int* value);

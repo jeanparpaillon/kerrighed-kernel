@@ -648,7 +648,7 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 	BUG_ON(rpc_desc_forwarded(desc));
 
 	if (desc_recv->flags & RPC_FLAGS_CLOSED)
-		return RPC_EPIPE;
+		return -ECANCELED;
 
 	if (unlikely(desc_recv->flags & RPC_FLAGS_REPOST))
 		atomic_set(&seq_id, atomic_read(&desc_recv->seq_id));
@@ -668,7 +668,7 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 				spin_unlock_bh(&desc->desc_lock);
 				rpc_desc_elem_free(descelem);
 				desc_recv->flags |= RPC_FLAGS_REPOST;
-				return RPC_ESIGACK;
+				return -ESIGACK;
 			}
 			/* Store discarded sigacks in a list to free them with
 			 * desc_lock released */
@@ -724,7 +724,7 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 
 	if (desc_recv->iter->flags & __RPC_HEADER_FLAGS_CANCEL_PACK) {
 		desc_recv->flags |= RPC_FLAGS_CLOSED;
-		return RPC_EPIPE;
+		return -ECANCELED;
 	}
 
 	if (flags & RPC_FLAGS_NOCOPY) {
@@ -746,7 +746,7 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 	}
 
 	desc_recv->flags &= ~RPC_FLAGS_REPOST;
-	return RPC_EOK;
+	return 0;
 
  __restart:
 	if (flags&RPC_FLAGS_NOBLOCK) {
@@ -770,7 +770,7 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 		
 		spin_unlock_bh(&desc->desc_lock);
 		desc_recv->flags &= ~RPC_FLAGS_REPOST;
-		return RPC_EOK;
+		return 0;
 	}
 
 	desc->thread = current;
@@ -782,14 +782,14 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 	schedule();
 	if (signal_pending(current) && (flags & RPC_FLAGS_INTR)) {
 		desc_recv->flags |= RPC_FLAGS_REPOST;
-		return RPC_EINTR;
+		return -EINTR;
 	}
 
 	goto restart;
 }
 
-enum rpc_error
-rpc_unpack(struct rpc_desc* desc, int flags, void* data, size_t size){
+int rpc_unpack(struct rpc_desc* desc, int flags, void* data, size_t size)
+{
 	switch(desc->type){
 	case RPC_RQ_CLT:{
 		kerrighed_node_t node;
@@ -815,9 +815,8 @@ rpc_unpack(struct rpc_desc* desc, int flags, void* data, size_t size){
 	return 0;
 }
 
-enum rpc_error
-rpc_unpack_from(struct rpc_desc* desc, kerrighed_node_t node,
-		int flags, void* data, size_t size)
+int rpc_unpack_from(struct rpc_desc* desc, kerrighed_node_t node,
+		    int flags, void* data, size_t size)
 {
 	switch(desc->type){
 	case RPC_RQ_CLT:

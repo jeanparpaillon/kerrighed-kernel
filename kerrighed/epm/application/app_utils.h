@@ -15,12 +15,12 @@ static inline int app_wait_returns_from_nodes(struct rpc_desc *desc,
 {
 	kerrighed_node_t node;
 	int ret, r=0;
-	enum rpc_error error;
+	int err;
 
 	for_each_krgnode_mask(node, nodes) {
-		error = rpc_unpack_type_from(desc, node, ret);
-		if (error) /* unpack has failed */
-			r = error;
+		err = rpc_unpack_type_from(desc, node, ret);
+		if (err) /* unpack has failed */
+			r = err;
 		else if (ret)
 			r = ret;
         }
@@ -30,20 +30,19 @@ static inline int app_wait_returns_from_nodes(struct rpc_desc *desc,
 
 static inline int send_result(struct rpc_desc *desc, int result)
 {
-	int r;
-	enum rpc_error error;
+	int ret, err;
 
-	error = rpc_pack_type(desc, result);
-	if (error)
+	err = rpc_pack_type(desc, result);
+	if (err)
 		goto err_rpc;
-	error = rpc_unpack_type(desc, r);
-	if (error)
+	err = rpc_unpack_type(desc, ret);
+	if (err)
 		goto err_rpc;
 
 exit:
-	return r;
+	return ret;
 err_rpc:
-	r = error;
+	ret = err;
 	goto exit;
 }
 
@@ -51,19 +50,15 @@ static inline int ask_nodes_to_continue(struct rpc_desc *desc,
 					krgnodemask_t nodes,
 					int result)
 {
-	int r;
-	enum rpc_error error;
+	int err;
 
-	error = rpc_pack_type(desc, result);
-	if (error)
-		goto err_rpc;
+	err = rpc_pack_type(desc, result);
+	if (err)
+		goto exit;
 
-	r = app_wait_returns_from_nodes(desc, nodes);
+	err = app_wait_returns_from_nodes(desc, nodes);
 exit:
-	return r;
-err_rpc:
-	r = error;
-	goto exit;
+	return err;
 }
 
 struct task_struct *alloc_shared_fake_task_struct(struct app_struct *app);

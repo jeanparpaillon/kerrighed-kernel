@@ -53,9 +53,10 @@ int unpack_remote_sleep_res(struct rpc_desc *desc, void *res, size_t size)
 	for (;;) {
 		err = rpc_unpack(desc, flags, res, size);
 		switch (err) {
-			case RPC_EOK:
-				return 0;
-			case RPC_EINTR:
+			case 0:
+			case -ECANCELED:
+				return err;
+			case -EINTR:
 				BUG_ON(flags != RPC_FLAGS_INTR);
 				rpc_signal(desc, SIGINT);
 				/*
@@ -65,8 +66,6 @@ int unpack_remote_sleep_res(struct rpc_desc *desc, void *res, size_t size)
 				 */
 				flags = 0;
 				break;
-			case RPC_EPIPE:
-				return -EPIPE;
 			default:
 				BUG();
 		}

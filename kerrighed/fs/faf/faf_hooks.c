@@ -799,32 +799,37 @@ long krg_faf_fstatfs(struct file *file,
 	faf_client_data_t *data = file->private_data;
 	struct faf_statfs_msg msg;
 	long r;
-	enum rpc_error err;
+	int err;
 	struct rpc_desc *desc;
 
 	msg.server_fd = data->server_fd;
 
 	desc = rpc_begin(RPC_FAF_FSTATFS, data->server_id);
 
-	r = rpc_pack_type(desc, msg);
-	if (r)
-		goto exit;
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
 
 	err = rpc_unpack_type(desc, r);
 	if (err)
-		goto err_rpc;
+		goto cancel;
 
-	if (!r)
-		err = rpc_unpack_type(desc, buffer);
+	if (r)
+		goto exit;
 
-	rpc_end(desc, 0);
+	err = rpc_unpack_type(desc, buffer);
+	if (err)
+		goto cancel;
 
 	*statfsbuf = buffer;
 
 exit:
+	rpc_end(desc, 0);
 	return r;
-err_rpc:
-	r = -EPIPE;
+
+cancel:
+	r = -EIO;
+	rpc_cancel(desc);
 	goto exit;
 }
 
