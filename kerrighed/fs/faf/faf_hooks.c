@@ -986,8 +986,8 @@ out:
 	return ret;
 cancel:
 	ret = err;
-	if (ret > 0)
-		ret = -EPIPE;
+	if (ret == -ECANCELED)
+		ret = -EIO;
 	rpc_cancel(desc);
 	goto out_end;
 }
@@ -1026,8 +1026,8 @@ out:
 	return ret;
 cancel:
 	ret = err;
-	if (ret > 0)
-		ret = -EPIPE;
+	if (ret == -ECANCELED)
+		ret = -EIO;
 	rpc_cancel(desc);
 	goto out_end;
 }
@@ -1067,8 +1067,8 @@ out:
 	return ret;
 cancel:
 	ret = err;
-	if (ret > 0)
-		ret = -EPIPE;
+	if (ret == -ECANCELED)
+		ret = -EIO;
 	rpc_cancel(desc);
 	goto out_end;
 }
@@ -1106,8 +1106,8 @@ out:
 	return ret;
 cancel:
 	ret = err;
-	if (ret > 0)
-		ret = -EPIPE;
+	if (ret == -ECANCELED)
+		ret = -EIO;
 	rpc_cancel(desc);
 	goto out_end;
 }
@@ -1281,7 +1281,7 @@ out:
 
 cancel:
 	rpc_cancel(desc);
-	if (err > 0)
+	if (err == -ECANCELED)
 		err = -EPIPE;
 	r = err;
 	goto out_end;
@@ -1581,7 +1581,7 @@ out:
 
 err_cancel:
 	rpc_cancel(desc);
-	if (err > 0)
+	if (err == -ECANCELED)
 		err = -ENOMEM;
 	r = err;
 	goto out_end;
@@ -1632,7 +1632,7 @@ out:
 
 err_cancel:
 	rpc_cancel(desc);
-	if (err > 0)
+	if (err == -ECANCELED)
 		err = -ENOMEM;
 	r = err;
 	goto out_end;
@@ -1731,7 +1731,7 @@ out_end:
 
 cancel:
 	rpc_cancel(desc);
-	if (err > 0)
+	if (err == -ECANCELED)
 		err = -EPIPE;
 	r = err;
 	goto out_end;
@@ -1890,7 +1890,7 @@ out:
 
 cancel:
 	ret = err;
-	if (ret > 0)
+	if (ret == -ECANCELED)
 		ret = -EPIPE;
 	rpc_cancel(desc);
 	goto out_end;
@@ -1948,7 +1948,7 @@ out:
 
 err_cancel:
 	rpc_cancel(desc);
-	if (err > 0)
+	if (err == -ECANCELED)
 		err = -ENOMEM;
 	goto out_end;
 }
