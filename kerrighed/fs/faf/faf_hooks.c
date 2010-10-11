@@ -795,29 +795,48 @@ cancel:
  *  @param file          File to do an fcntl to.
  *  @param statbuf       Kernel buffer to store file stats.
  */
-long krg_faf_fstat (struct file *file,
-		    struct kstat *statbuf)
+long krg_faf_fstat(struct file *file, struct kstat *statbuf)
 {
 	struct kstat buffer;
 	faf_client_data_t *data = file->private_data;
 	struct faf_stat_msg msg;
 	long r;
 	struct rpc_desc* desc;
+	int err;
 
 	msg.server_fd = data->server_fd;
 
 	desc = rpc_begin(RPC_FAF_FSTAT, data->server_id);
+	if (!desc) {
+		r = -ENOMEM;
+		goto out;
+	}
 
-	rpc_pack_type(desc, msg);
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
 
-	rpc_unpack_type(desc, r);
-	rpc_unpack_type(desc, buffer);
+	err = rpc_unpack_type(desc, r);
+	if (err)
+		goto cancel;
 
-	rpc_end(desc, 0);
+	err = rpc_unpack_type(desc, buffer);
+	if (err)
+		goto cancel;
 
 	*statbuf = buffer;
 
+out_end:
+	rpc_end(desc, 0);
+out:
 	return r;
+
+cancel:
+	r = err;
+	if (r == -ECANCELED)
+		r = -EIO;
+	rpc_cancel(desc);
+	goto out_end;
 }
 
 /** Kerrighed kernel hook for FAF fstat function.
