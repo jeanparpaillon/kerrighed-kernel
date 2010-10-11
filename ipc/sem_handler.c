@@ -299,6 +299,7 @@ void krg_ipc_sem_wakeup_process(struct sem_queue *q, int error)
 {
 	struct ipcsem_wakeup_msg msg;
 	struct rpc_desc *desc;
+	int err;
 
 	msg.requester = kerrighed_node_id;
 	msg.sem_id = q->semid;
@@ -306,9 +307,25 @@ void krg_ipc_sem_wakeup_process(struct sem_queue *q, int error)
 	msg.error = error;
 
 	desc = rpc_begin(IPC_SEM_WAKEUP, q->node);
-	rpc_pack_type(desc, msg);
-	rpc_unpack_type(desc, msg.error);
+	if (!desc)
+		goto out;
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, msg.error);
+	if (err)
+		goto cancel;
+
+out_end:
 	rpc_end(desc, 0);
+out:
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto out_end;
 }
 
 static inline struct semundo_list_object * __create_semundo_proc_list(
