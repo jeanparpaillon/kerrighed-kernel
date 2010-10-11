@@ -136,28 +136,42 @@ out:
  *  @param offset  Offset to seek at.
  *  @param origin  Origin of the seek.
  */
-off_t krg_faf_lseek (struct file * file,
-		     off_t offset,
-		     unsigned int origin)
+off_t krg_faf_lseek(struct file * file, off_t offset, unsigned int origin)
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_seek_msg msg;
 	off_t r;
 	struct rpc_desc* desc;
+	int err;
 
 	msg.server_fd = data->server_fd;
 	msg.offset = offset;
 	msg.origin = origin;
 
 	desc = rpc_begin(RPC_FAF_LSEEK, data->server_id);
+	if (!desc) {
+		r = -ENOMEM;
+		goto out;
+	}
 
-	rpc_pack_type(desc, msg);
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
 
-	rpc_unpack_type(desc, r);
+	err = rpc_unpack_type(desc, r);
+	if (err)
+		goto cancel;
 
+out_end:
 	rpc_end(desc, 0);
-
+out:
 	return r;
+cancel:
+	r = err;
+	if (r == -ECANCELED)
+		r = -EIO;
+	rpc_cancel(desc);
+	goto out_end;
 }
 
 /** Kerrighed kernel hook for FAF llseek function.
