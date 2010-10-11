@@ -1521,24 +1521,32 @@ cancel:
 	goto out;
 }
 
-int handle_faf_getpeername (struct rpc_desc* desc,
-			    void *msgIn, size_t size)
+int handle_faf_getpeername(struct rpc_desc* desc, void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
 	struct prev_root prev_root;
-	int r;
+	int r, err;
 
 	unpack_root(desc, &prev_root);
 
 	r = sys_getpeername(msg->server_fd,
 			    (struct sockaddr *)&msg->sa, &msg->addrlen);
 
-	rpc_pack_type(desc, msg->addrlen);
-	rpc_pack(desc, 0, &msg->sa, msg->addrlen);
+	err = rpc_pack_type(desc, msg->addrlen);
+	if (err)
+		goto cancel;
 
+	err = rpc_pack(desc, 0, &msg->sa, msg->addrlen);
+	if (err)
+		goto cancel;
+
+out:
 	chroot_to_prev_root(&prev_root);
-
 	return r;
+
+cancel:
+	rpc_cancel(desc);
+	goto out;
 }
 
 int handle_faf_shutdown (struct rpc_desc* desc,
