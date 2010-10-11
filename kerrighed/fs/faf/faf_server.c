@@ -672,11 +672,22 @@ void handle_faf_fstat (struct rpc_desc* desc,
 	struct kstat statbuf;
 	struct faf_stat_msg *msg = msgIn;
 	long r;
+	int err;
 
-	r = vfs_fstat (msg->server_fd, &statbuf);
+	r = vfs_fstat(msg->server_fd, &statbuf);
 
-	rpc_pack_type(desc, r);
-	rpc_pack_type(desc, statbuf);
+	err = rpc_pack_type(desc, r);
+	if (err)
+		goto cancel;
+
+	err = rpc_pack_type(desc, statbuf);
+	if (err)
+		goto cancel;
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
 }
 
 /** Handler for doing an FSTATFS in a FAF open file.
