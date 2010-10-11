@@ -313,8 +313,8 @@ out:
 
 cancel:
 	rpc_cancel(desc);
-	if (err > 0)
-		err = -EPIPE;
+	if (err == -ECANCELED)
+		err = -EIO;
 	nr = err;
 	goto out_end;
 }
@@ -407,8 +407,8 @@ out:
 
 cancel:
 	rpc_cancel(desc);
-	if (err > 0)
-		err = -EPIPE;
+	if (err == -ECANCELED)
+		err = -EIO;
 	nr = err;
 	goto out_end;
 }
@@ -471,8 +471,8 @@ out:
 
 cancel:
 	rpc_cancel(desc);
-	if (err > 0)
-		err = -EPIPE;
+	if (err == -ECANCELED)
+		err = -EIO;
 	ret.ret = err;
 	goto out_end;
 }
@@ -535,8 +535,8 @@ out:
 
 cancel:
 	rpc_cancel(desc);
-	if (err > 0)
-		err = -EPIPE;
+	if (err == -ECANCELED)
+		err = -EIO;
 	ret.ret = err;
 	goto out_end;
 }
