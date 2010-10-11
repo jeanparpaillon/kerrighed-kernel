@@ -423,6 +423,11 @@ static int global_do_chkpt(struct app_kddm_object *obj, int flags)
 	msg.flags = flags;
 
 	desc = rpc_begin_m(APP_DO_CHKPT, &obj->nodes);
+	if (!desc) {
+		r = -ENOMEM;
+		goto exit;
+	}
+
 	err_rpc = rpc_pack_type(desc, msg);
 	if (err_rpc)
 		goto err_rpc;
