@@ -27,8 +27,6 @@ enum rpc_error {
 	RPC_EINTR,
 	RPC_ESIGACK,
 	RPC_EPIPE,
-	RPC_ECLOSE,
-	RPC_EVAL,
 };
 
 enum {
