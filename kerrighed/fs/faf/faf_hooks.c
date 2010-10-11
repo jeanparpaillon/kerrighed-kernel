@@ -183,16 +183,17 @@ cancel:
  *  @param result        ...
  *  @param origin        Origin of the seek.
  */
-long krg_faf_llseek (struct file *file,
-		     unsigned long offset_high,
-		     unsigned long offset_low,
-		     loff_t * result,
-		     unsigned int origin)
+long krg_faf_llseek(struct file *file,
+		    unsigned long offset_high,
+		    unsigned long offset_low,
+		    loff_t * result,
+		    unsigned int origin)
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_llseek_msg msg;
 	long r;
 	struct rpc_desc* desc;
+	int err;
 
 	msg.server_fd = data->server_fd;
 	msg.offset_high = offset_high;
@@ -200,15 +201,34 @@ long krg_faf_llseek (struct file *file,
 	msg.origin = origin;
 
 	desc = rpc_begin(RPC_FAF_LLSEEK, data->server_id);
+	if (!desc) {
+		r = -ENOMEM;
+		goto out;
+	}
 
-	rpc_pack_type(desc, msg);
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
 
-	rpc_unpack_type(desc, r);
-	rpc_unpack(desc, 0, result, sizeof(*result));
+	err = rpc_unpack_type(desc, r);
+	if (err)
+		goto cancel;
 
+	err = rpc_unpack(desc, 0, result, sizeof(*result));
+	if (err)
+		goto cancel;
+
+out_end:
 	rpc_end(desc, 0);
-
+out:
 	return r;
+
+cancel:
+	r = err;
+	if (r == -ECANCELED)
+		r = -EIO;
+	rpc_cancel(desc);
+	goto out_end;
 }
 
 /** Kerrighed kernel hook for FAF read function.
