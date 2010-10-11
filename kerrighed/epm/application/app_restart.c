@@ -480,6 +480,10 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn, int fl
 
 	if (!krgnodes_empty(nodes)) {
 		desc = rpc_begin_m(APP_INIT_RESTART, &nodes);
+		if (!desc) {
+			r = -ENOMEM;
+			goto exit;
+		}
 
 		r = rpc_pack_type(desc, msg);
 		if (r)
@@ -504,6 +508,11 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn, int fl
 		krgnode_set(recovery_node, nodes);
 
 		desc = rpc_begin(APP_INIT_RESTART, recovery_node);
+		if (!desc) {
+			r = -ENOMEM;
+			goto exit;
+		}
+
 		r = rpc_pack_type(desc, msg);
 		if (r)
 			goto err_rpc;
