@@ -742,18 +742,28 @@ void handle_faf_lseek(struct rpc_desc* desc, void *msgIn, size_t size)
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-void handle_faf_llseek (struct rpc_desc* desc,
-			void *msgIn, size_t size)
+void handle_faf_llseek(struct rpc_desc* desc, void *msgIn, size_t size)
 {
 	struct faf_llseek_msg *msg = msgIn;
 	long r = -EINVAL;
 	loff_t result;
+	int err;
 
 	r = sys_llseek (msg->server_fd, msg->offset_high, msg->offset_low,
 			&result, msg->origin);
 
-	rpc_pack_type(desc, r);
-	rpc_pack_type(desc, result);
+	err = rpc_pack_type(desc, r);
+	if (err)
+		goto cancel;
+
+	err = rpc_pack_type(desc, result);
+	if (err)
+		goto cancel;
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
 }
 
 /** Handler for syncing in a FAF open file.
