@@ -1457,36 +1457,61 @@ err_close_faf_file:
 	goto out_put_fd;
 }
 
-long krg_faf_getsockname (struct file * file,
-			  struct sockaddr __user *usockaddr,
-			  int __user *usockaddr_len)
+long krg_faf_getsockname(struct file * file,
+			 struct sockaddr __user *usockaddr,
+			 int __user *usockaddr_len)
 {
 	faf_client_data_t *data = file->private_data;
 	struct faf_bind_msg msg;
 	struct sockaddr_storage sa;
 	int sa_len;
 	struct rpc_desc *desc;
-	int r = -EFAULT;
+	int r = -EFAULT, err;
 
 	msg.server_fd = data->server_fd;
 	if (get_user(msg.addrlen, usockaddr_len))
 		goto out;
 
 	desc = rpc_begin(RPC_FAF_GETSOCKNAME, data->server_id);
-	rpc_pack_type(desc, msg);
-	pack_root(desc);
+	if (!desc) {
+		r = -ENOMEM;
+		goto out;
+	}
 
-	rpc_unpack_type(desc, r);
-	rpc_unpack_type(desc, sa_len);
-	rpc_unpack(desc, 0, &sa, sa_len);
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = pack_root(desc);
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, r);
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, sa_len);
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack(desc, 0, &sa, sa_len);
+	if (err)
+		goto cancel;
+
+	if (r)
+		goto out_end;
+
+	r = move_addr_to_user((struct sockaddr *)&sa, sa_len,
+			      usockaddr, usockaddr_len);
+
+out_end:
 	rpc_end(desc, 0);
-
-	if (!r)
-		r = move_addr_to_user((struct sockaddr *)&sa, sa_len,
-				      usockaddr, usockaddr_len);
-
 out:
 	return r;
+
+cancel:
+	r = err;
+	goto out_end;
 }
 
 long krg_faf_getpeername (struct file * file,
