@@ -858,6 +858,10 @@ long krg_faf_fstatfs(struct file *file,
 	msg.server_fd = data->server_fd;
 
 	desc = rpc_begin(RPC_FAF_FSTATFS, data->server_id);
+	if (!desc) {
+		r = -ENOMEM;
+		goto out;
+	}
 
 	err = rpc_pack_type(desc, msg);
 	if (err)
@@ -868,7 +872,7 @@ long krg_faf_fstatfs(struct file *file,
 		goto cancel;
 
 	if (r)
-		goto exit;
+		goto out_end;
 
 	err = rpc_unpack_type(desc, buffer);
 	if (err)
@@ -876,14 +880,15 @@ long krg_faf_fstatfs(struct file *file,
 
 	*statfsbuf = buffer;
 
-exit:
+out_end:
 	rpc_end(desc, 0);
+out:
 	return r;
 
 cancel:
 	r = -EIO;
 	rpc_cancel(desc);
-	goto exit;
+	goto out_end;
 }
 
 /** Kerrighed kernel hook for FAF fsync function.
