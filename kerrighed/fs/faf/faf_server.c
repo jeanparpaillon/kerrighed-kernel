@@ -723,15 +723,17 @@ err_rpc:
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-void handle_faf_lseek (struct rpc_desc* desc,
-		       void *msgIn, size_t size)
+void handle_faf_lseek(struct rpc_desc* desc, void *msgIn, size_t size)
 {
 	struct faf_seek_msg *msg = msgIn;
 	off_t r = -EINVAL;
+	int err;
 
 	r = sys_lseek (msg->server_fd, msg->offset, msg->origin);
 
-	rpc_pack_type(desc, r);
+	err = rpc_pack_type(desc, r);
+	if (err)
+		rpc_cancel(desc);
 }
 
 /** Handler for seeking in a FAF open file.
