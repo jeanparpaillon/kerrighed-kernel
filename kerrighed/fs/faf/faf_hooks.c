@@ -1573,15 +1573,13 @@ cancel:
 	goto out_end;
 }
 
-long krg_faf_shutdown (struct file * file,
-		       int how)
+long krg_faf_shutdown(struct file *file, int how)
 {
 	faf_client_data_t *data = file->private_data;
-	struct faf_shutdown_msg msg ;
+	struct faf_shutdown_msg msg;
 	int r;
 
 	msg.server_fd = data->server_fd;
-
 	msg.how = how;
 
 	r = rpc_sync(RPC_FAF_SHUTDOWN, data->server_id, &msg, sizeof(msg));
