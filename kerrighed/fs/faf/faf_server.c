@@ -1490,24 +1490,35 @@ err_close_file:
 	goto err_cancel;
 }
 
-int handle_faf_getsockname (struct rpc_desc* desc,
-			    void *msgIn, size_t size)
+int handle_faf_getsockname(struct rpc_desc* desc, void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
 	struct prev_root prev_root;
-	int r;
+	int r, err;
 
-	unpack_root(desc, &prev_root);
+	err = unpack_root(desc, &prev_root);
+	if (err)
+		goto cancel;
 
 	r = sys_getsockname(msg->server_fd,
 			    (struct sockaddr *)&msg->sa, &msg->addrlen);
 
-	rpc_pack_type(desc, msg->addrlen);
-	rpc_pack(desc, 0, &msg->sa, msg->addrlen);
+	err = rpc_pack_type(desc, msg->addrlen);
+	if (err)
+		goto cancel;
 
+	err = rpc_pack(desc, 0, &msg->sa, msg->addrlen);
+	if (err)
+		goto cancel;
+
+out:
 	chroot_to_prev_root(&prev_root);
-
 	return r;
+
+cancel:
+	r = err;
+	rpc_cancel(desc);
+	goto out;
 }
 
 int handle_faf_getpeername (struct rpc_desc* desc,
