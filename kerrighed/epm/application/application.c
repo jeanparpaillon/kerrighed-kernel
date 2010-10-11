@@ -793,6 +793,11 @@ int global_stop(struct app_kddm_object *obj)
 	msg.app_id = obj->app_id;
 
 	desc = rpc_begin_m(APP_STOP, &obj->nodes);
+	if (!desc) {
+		r = -ENOMEM;
+		goto out;
+	}
+
 	err_rpc = rpc_pack_type(desc, msg);
 	if (err_rpc)
 		goto err_rpc;
@@ -821,15 +826,16 @@ int global_stop(struct app_kddm_object *obj)
 	if (err_rpc)
 		goto err_rpc;
 
-exit:
+out_end:
 	rpc_end(desc, 0);
+out:
 	return r;
 
 err_rpc:
 	r = err_rpc;
 error:
 	rpc_cancel(desc);
-	goto exit;
+	goto out_end;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -912,6 +918,10 @@ static int global_continue(struct app_kddm_object *obj)
 		msg.first_run = 0;
 
 	desc = rpc_begin_m(APP_CONTINUE, &obj->nodes);
+	if (!desc) {
+		r = -ENOMEM;
+		goto out;
+	}
 
 	r = rpc_pack_type(desc, msg);
 	if (r)
@@ -920,14 +930,14 @@ static int global_continue(struct app_kddm_object *obj)
 	/* waiting results from the node hosting the application */
 	r = app_wait_returns_from_nodes(desc, obj->nodes);
 
-exit:
+out_end:
 	rpc_end(desc, 0);
-
+out:
 	return r;
 
 err_rpc:
 	rpc_cancel(desc);
-	goto exit;
+	goto out_end;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -1018,6 +1028,8 @@ static int global_kill(struct app_kddm_object *obj, int signal)
 	msg.signal = signal;
 
 	desc = rpc_begin_m(APP_KILL, &obj->nodes);
+	if (!desc)
+		goto out;
 
 	r = rpc_pack_type(desc, msg);
 	if (r)
@@ -1029,14 +1041,14 @@ static int global_kill(struct app_kddm_object *obj, int signal)
 	/* waiting results from the node hosting the application */
 	r = app_wait_returns_from_nodes(desc, obj->nodes);
 
-exit:
+out_end:
 	rpc_end(desc, 0);
-
+out:
 	return r;
 
 err_rpc:
 	rpc_cancel(desc);
-	goto exit;
+	goto out_end;
 }
 
 int global_unfreeze(struct app_kddm_object *obj, int signal)
