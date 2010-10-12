@@ -64,6 +64,7 @@ typedef struct {
 	int flags;                   /**< No First Touch request ? */
 	kerrighed_node_t reply_node; /**< Identifier of the requesting node */
 	kerrighed_node_t new_owner;  /**< Identifier of the new object owner */
+	kerrighed_node_t sender_probe_owner;
 } msg_server_t;
 
 /** WARNING: in this structure, field order matter */
