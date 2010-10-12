@@ -68,6 +68,8 @@ long krg_faf_fallocate(struct file *file, int mode, loff_t offset, loff_t len);
 struct timespec;
 int krg_faf_utimes(struct file *file, struct timespec *times, int flags);
 
+int krg_faf_fremovexattr(struct file *file, const char __user *name);
+
 char *krg_faf_d_path(const struct file *file, char *buffer, int size, bool *deleted);
 char *krg_faf_phys_d_path(const struct file *file, char *buff, int size, bool *deleted);
 int krg_faf_do_path_lookup(struct file *file, const char *name,
