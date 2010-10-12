@@ -104,6 +104,11 @@ struct faf_allocate_msg {
 	loff_t len;
 };
 
+struct faf_removexattr_msg {
+	int server_fd;
+	size_t name_len;
+};
+
 struct faf_bind_msg {
 	int server_fd;
 	int addrlen;

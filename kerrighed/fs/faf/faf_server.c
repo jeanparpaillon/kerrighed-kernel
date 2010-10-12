@@ -9,6 +9,7 @@
 #include <linux/fs_struct.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
+#include <linux/limits.h>
 #include <linux/syscalls.h>
 #include <linux/socket.h>
 #include <linux/sched.h>
@@ -896,6 +897,37 @@ void handle_faf_fallocate(struct rpc_desc* desc, void *msgIn, size_t size)
 	err = rpc_pack_type(desc, ret);
 	if (err)
 		rpc_cancel(desc);
+}
+
+int handle_faf_removexattr(struct rpc_desc* desc, void *msgIn, size_t size)
+{
+	struct faf_removexattr_msg *msg = msgIn;
+	const struct cred *old_cred = NULL;
+	char kname[XATTR_NAME_MAX + 1];
+	int err, ret;
+
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		err = PTR_ERR(old_cred);
+		old_cred = NULL;
+		goto cancel;
+	}
+
+	err = rpc_unpack(desc, 0, kname, msg->name_len);
+	if (err)
+		goto cancel;
+
+	ret = sys_fremovexattr(msg->server_fd, kname);
+
+out:
+	if (old_cred)
+		revert_creds(old_cred);
+	return ret;
+
+cancel:
+	ret = err;
+	rpc_cancel(desc);
+	goto out;
 }
 
 int handle_faf_utimes(struct rpc_desc* desc, void *msgIn, size_t size)
@@ -1793,6 +1825,7 @@ void faf_server_init (void)
 	rpc_register_void(RPC_FAF_FLOCK, handle_faf_flock, 0);
 	rpc_register_int(RPC_FAF_FCHMOD, handle_faf_fchmod, 0);
 	rpc_register_int(RPC_FAF_FCHOWN, handle_faf_fchown, 0);
+	rpc_register_int(RPC_FAF_FREMOVEXATTR, handle_faf_removexattr, 0);
 	rpc_register_int(RPC_FAF_UTIMES, handle_faf_utimes, 0);
 	rpc_register_void(RPC_FAF_LSEEK, handle_faf_lseek, 0);
 	rpc_register_void(RPC_FAF_LLSEEK, handle_faf_llseek, 0);

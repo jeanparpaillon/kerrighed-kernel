@@ -19,7 +19,9 @@
 #include <linux/fsnotify.h>
 #include <linux/audit.h>
 #include <asm/uaccess.h>
-
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
 
 /*
  * Check permissions for extended attribute access.  This is a bit complicated
@@ -522,6 +524,13 @@ SYSCALL_DEFINE2(fremovexattr, int, fd, const char __user *, name)
 	f = fget(fd);
 	if (!f)
 		return error;
+
+#ifdef CONFIG_KRG_FAF
+	if (f->f_flags & O_FAF_CLT) {
+		error = krg_faf_fremovexattr(f, name);
+		goto out;
+	}
+#endif
 	dentry = f->f_path.dentry;
 	audit_inode(NULL, dentry);
 	error = mnt_want_write(f->f_path.mnt);
@@ -529,6 +538,9 @@ SYSCALL_DEFINE2(fremovexattr, int, fd, const char __user *, name)
 		error = removexattr(dentry, name);
 		mnt_drop_write(f->f_path.mnt);
 	}
+#ifdef CONFIG_KRG_FAF
+out:
+#endif
 	fput(f);
 	return error;
 }

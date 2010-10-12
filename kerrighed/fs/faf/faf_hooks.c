@@ -7,6 +7,7 @@
 #include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/fs_struct.h>
+#include <linux/limits.h>
 #include <linux/mount.h>
 #include <linux/file.h>
 #include <linux/uio.h>
@@ -1110,6 +1111,60 @@ cancel:
 		ret = -EIO;
 	rpc_cancel(desc);
 	goto out_end;
+}
+
+int krg_faf_fremovexattr(struct file *file, const char __user *name)
+{
+	faf_client_data_t *data = file->private_data;
+	struct faf_removexattr_msg msg;
+	struct rpc_desc *desc;
+	char kname[XATTR_NAME_MAX + 1];
+	int ret, err;
+
+	err = strncpy_from_user(kname, name, sizeof(kname));
+	if (err == 0 || err == sizeof(kname))
+		err = -ERANGE;
+	if (err < 0) {
+		ret = err;
+		goto out;
+	}
+
+	msg.server_fd = data->server_fd;
+	msg.name_len = strlen(kname) + 1;
+
+	desc = rpc_begin(RPC_FAF_FREMOVEXATTR, data->server_id);
+	if (!desc) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = pack_creds(desc, current_cred());
+	if (err)
+		goto cancel;
+
+	err = rpc_pack(desc, 0, kname, msg.name_len);
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, ret);
+	if (err)
+		goto cancel;
+
+out_end:
+	rpc_end(desc, 0);
+out:
+	return ret;
+cancel:
+	ret = err;
+	if (ret == -ECANCELED)
+		ret = -EIO;
+	rpc_cancel(desc);
+	goto out_end;
+
 }
 
 static char *__krg_faf_d_path(const struct path *root, const struct file *file,
