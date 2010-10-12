@@ -305,8 +305,9 @@ retry:
 				ret = f(objid, obj_entry, priv);
 				if (ret == KDDM_OBJ_REMOVED)
 					pte_clear(mm, addr, ptep);
-
-				put_kddm_obj_entry(set, obj_entry, objid);
+				else
+					put_kddm_obj_entry(set, obj_entry,
+							   objid);
 				ptep = pte_offset_map_lock(mm, pmd, addr, &ptl);
 			}
 		}

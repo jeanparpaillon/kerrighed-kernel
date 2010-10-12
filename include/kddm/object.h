@@ -366,10 +366,8 @@ static inline int do_func_on_obj_entry (struct kddm_set *set,
 	/* Called functions are not allowed to return -EAGAIN */
 	BUG_ON (r == -EAGAIN);
 
-	if (r == KDDM_OBJ_REMOVED)
-		dec_obj_entry_mapcount(set, obj_entry, objid);
-
-	put_kddm_obj_entry(set, obj_entry, objid);
+	if (r != KDDM_OBJ_REMOVED)
+		put_kddm_obj_entry(set, obj_entry, objid);
 
 	return r;
 }
@@ -378,6 +376,13 @@ int destroy_kddm_obj_entry (struct kddm_set *kddm_set,
 			    struct kddm_obj *obj_entry,
 			    objid_t objid,
 			    int cluster_wide_remove);
+
+static inline void ___for_each_kddm_object(struct kddm_set *set,
+				   int(*f)(unsigned long, void *, void*),
+				   void *data)
+{
+	set->ops->for_each_obj_entry(set, f, data);
+}
 
 void __for_each_kddm_object(struct kddm_set *kddm_set,
 			    int(*f)(unsigned long, void *, void*),
