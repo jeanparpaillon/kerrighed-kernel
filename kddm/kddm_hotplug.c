@@ -55,9 +55,14 @@ static int add_browse_objects(unsigned long objid,
 
 	BUG_ON (!krgnode_isset(new_def_owner, param->new_nodes_map));
 
-	if (new_def_owner == old_def_owner)
+	if ((new_def_owner == old_def_owner) &&
+	    (set->def_owner != KDDM_UNIQUE_ID_DEF_OWNER))
 		goto done;
 
+	/* TODO: in KDDM_UNIQUE_ID_DEF_OWNER case, we can also  consider the
+	 * job done if the new def_owner is not on a node we are adding.
+	 * If the new def_owner is on a node already present: nothing to do.
+	 */
 	switch (OBJ_STATE(obj_entry)) {
 	case READ_OWNER:
 	case WRITE_GHOST:
@@ -119,13 +124,11 @@ static void add_browse_sets(void *_set, void *_data)
 	switch (set->def_owner) {
 	case KDDM_RR_DEF_OWNER:
 	case KDDM_CUSTOM_DEF_OWNER:
+	case KDDM_UNIQUE_ID_DEF_OWNER:
 		param->set = set;
 		__for_each_kddm_object(set, add_browse_objects, _data);
 		break;
 
-	case KDDM_UNIQUE_ID_DEF_OWNER:
-		/* The unique_id default owners are hard-coded depending on
-		 * object ids. Adding a node doesn't change anything. */
 	default:
 		/* The default owner is hard coded to a given node.
 		 * Adding a node doesn't change anything for these cases.
