@@ -328,10 +328,15 @@ retry:
 
 /*** Get or alloc an object entry from a kddm set. ***/
 
-struct kddm_obj *__get_alloc_kddm_obj_entry (struct kddm_set *set,
-					     objid_t objid)
+struct kddm_obj *___get_alloc_kddm_obj_entry (struct kddm_set *set,
+					      objid_t objid,
+					      int lock_free)
 {
 	struct kddm_obj *obj_entry, *new_obj;
+	struct kddm_set *_set = NULL;
+
+	if (!lock_free)
+		_set = set;
 
 	/* Since we cannot allocate in a lock section, we need to
 	 * pre-allocate an obj_entry and free it after the lock section if an
@@ -341,7 +346,8 @@ struct kddm_obj *__get_alloc_kddm_obj_entry (struct kddm_set *set,
 retry:
 	new_obj = alloc_kddm_obj_entry(set, objid);
 
-	kddm_lock_obj_table(set);
+	if (!lock_free)
+		kddm_lock_obj_table(set);
 
 	obj_entry = set->ops->get_obj_entry(set, objid, new_obj);
 	if (obj_entry != new_obj)
@@ -349,10 +355,11 @@ retry:
 	else
 		inc_obj_entry_mapcount(obj_entry);
 
-	if (do_get_kddm_obj_entry(set, obj_entry, objid) == -EAGAIN)
+	if (do_get_kddm_obj_entry(_set, obj_entry, objid) == -EAGAIN)
 		goto retry;
 
-	kddm_unlock_obj_table(set);
+	if (!lock_free)
+		kddm_unlock_obj_table(set);
 
 	return obj_entry;
 }

@@ -314,8 +314,9 @@ struct kddm_obj *default_get_kddm_obj_entry (struct kddm_set *set,
  *  @return        Object entry of the object. If the object does not exist,
  *                 it is allocated
  */
-struct kddm_obj *__get_alloc_kddm_obj_entry (struct kddm_set *kddm_set,
-					     objid_t objid);
+struct kddm_obj *___get_alloc_kddm_obj_entry (struct kddm_set *kddm_set,
+					      objid_t objid,
+					      int lock_free);
 
 static inline struct kddm_obj *get_alloc_kddm_obj_entry (int ns_id,
 							 kddm_set_id_t set_id,
@@ -326,7 +327,7 @@ static inline struct kddm_obj *get_alloc_kddm_obj_entry (int ns_id,
 
 	*kddm_set = find_get_kddm_set (ns_id, set_id);
 	if (*kddm_set) {
-		obj = __get_alloc_kddm_obj_entry (*kddm_set, objid);
+		obj = ___get_alloc_kddm_obj_entry (*kddm_set, objid, 0);
 		put_kddm_set(*kddm_set);
 	}
 	return obj;
@@ -341,10 +342,17 @@ static inline struct kddm_obj *_get_alloc_kddm_obj_entry (struct kddm_ns *ns,
 
 	*kddm_set = _find_get_kddm_set (ns, set_id);
 	if (*kddm_set) {
-		obj = __get_alloc_kddm_obj_entry (*kddm_set, objid);
+		obj = ___get_alloc_kddm_obj_entry (*kddm_set, objid, 0);
 		put_kddm_set(*kddm_set);
 	}
 	return obj;
+}
+
+static inline struct kddm_obj *__get_alloc_kddm_obj_entry (
+	                                             struct kddm_set *kddm_set,
+						     objid_t objid)
+{
+	return ___get_alloc_kddm_obj_entry(kddm_set, objid, 0);
 }
 
 static inline int do_func_on_obj_entry (struct kddm_set *set,

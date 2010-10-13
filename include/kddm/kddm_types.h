@@ -188,9 +188,9 @@ typedef struct kddm_obj {
 #define set_kddm_ft_linked(kddm) set_bit(_KDDM_FT_LINKED, &kddm->flags);
 #define clear_kddm_ft_linked(kddm) clear_bit(_KDDM_FT_LINKED, &kddm->flags);
 
-#define kddm_frozen(kddm) test_bit(_KDDM_FROZEN, &kddm->flags)
-#define set_kddm_frozen(kddm) set_bit(_KDDM_FROZEN, &kddm->flags);
-#define clear_kddm_frozen(kddm) clear_bit(_KDDM_FROZEN, &kddm->flags);
+#define kddm_frozen(kddm) test_bit(_KDDM_FROZEN, &(kddm)->flags)
+#define set_kddm_frozen(kddm) set_bit(_KDDM_FROZEN, &(kddm)->flags);
+#define clear_kddm_frozen(kddm) clear_bit(_KDDM_FROZEN, &(kddm)->flags);
 
 #define KDDM_BREAK_COW_COPY 1
 #define KDDM_BREAK_COW_INV 2

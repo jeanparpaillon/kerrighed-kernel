@@ -29,7 +29,9 @@ static inline struct kddm_obj *get_alloc_kddm_obj_entry_lock_free (int ns_id,
 	kddm_ns_put(ns);
 
 	if (*kddm_set) {
-		obj = __get_alloc_kddm_obj_entry (*kddm_set, objid);
+		BUG_ON(!kddm_frozen(*kddm_set));
+		obj = ___get_alloc_kddm_obj_entry (*kddm_set, objid,
+						   KDDM_LOCK_FREE);
 		put_kddm_set(*kddm_set);
 	}
 	return obj;
