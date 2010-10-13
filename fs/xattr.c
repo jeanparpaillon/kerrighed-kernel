@@ -383,8 +383,18 @@ SYSCALL_DEFINE4(fgetxattr, int, fd, const char __user *, name,
 	f = fget(fd);
 	if (!f)
 		return error;
+
+#ifdef CONFIG_KRG_FAF
+	if (f->f_flags & O_FAF_CLT) {
+		error = krg_faf_fgetxattr(f, name, value, size);
+		goto out;
+	}
+#endif
 	audit_inode(NULL, f->f_path.dentry);
 	error = getxattr(f->f_path.dentry, name, value, size);
+#ifdef CONFIG_KRG_FAF
+out:
+#endif
 	fput(f);
 	return error;
 }

@@ -899,6 +899,54 @@ void handle_faf_fallocate(struct rpc_desc* desc, void *msgIn, size_t size)
 		rpc_cancel(desc);
 }
 
+void handle_faf_getxattr(struct rpc_desc* desc, void *msgIn, size_t size)
+{
+	struct faf_getxattr_msg *msg = msgIn;
+	const struct cred *old_cred = NULL;
+	char kname[XATTR_NAME_MAX + 1];
+	char *kvalue = NULL;
+	int err;
+	ssize_t v_size;
+
+	old_cred = unpack_override_creds(desc);
+	if (IS_ERR(old_cred)) {
+		old_cred = NULL;
+		goto cancel;
+	}
+
+	err = rpc_unpack(desc, 0, kname, msg->name_len);
+	if (err)
+		goto cancel;
+
+	kvalue = kmalloc(msg->size, GFP_KERNEL);
+	if (!kvalue)
+		goto cancel;
+
+	v_size = sys_fgetxattr(msg->server_fd, kname, kvalue, msg->size);
+
+	err = rpc_pack_type(desc, v_size);
+	if (err)
+		goto cancel;
+
+	if (v_size <= 0 || msg->size < v_size)
+		goto out;
+
+	err = rpc_pack(desc, 0, kvalue, v_size);
+	if (err)
+		goto cancel;
+
+out:
+	if (kvalue)
+		kfree(kvalue);
+	if (old_cred)
+		revert_creds(old_cred);
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto out;
+}
+
 void handle_faf_listxattr(struct rpc_desc* desc, void *msgIn, size_t size)
 {
 	struct faf_listxattr_msg *msg = msgIn;
@@ -1868,6 +1916,7 @@ void faf_server_init (void)
 	rpc_register_void(RPC_FAF_FLOCK, handle_faf_flock, 0);
 	rpc_register_int(RPC_FAF_FCHMOD, handle_faf_fchmod, 0);
 	rpc_register_int(RPC_FAF_FCHOWN, handle_faf_fchown, 0);
+	rpc_register_void(RPC_FAF_FGETXATTR, handle_faf_getxattr, 0);
 	rpc_register_void(RPC_FAF_FLISTXATTR, handle_faf_listxattr, 0);
 	rpc_register_int(RPC_FAF_FREMOVEXATTR, handle_faf_removexattr, 0);
 	rpc_register_int(RPC_FAF_UTIMES, handle_faf_utimes, 0);
