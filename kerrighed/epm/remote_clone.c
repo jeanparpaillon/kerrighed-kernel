@@ -59,9 +59,12 @@ int krg_do_fork(unsigned long clone_flags,
 	     ~(CSIGNAL |
 	       CLONE_CHILD_CLEARTID | CLONE_CHILD_SETTID |
 	       CLONE_VFORK | CLONE_SYSVSEM | CLONE_UNTRACED))
-	    || trace)
-		/* Unsupported clone flags are requested. Abort */
-		goto out;
+	    || trace) {
+		/* Authorize LinuxThreads' pthread_create() */
+		if ((clone_flags & ~CSIGNAL) != (CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND))
+			/* Unsupported clone flags are requested. Abort */
+			goto out;
+	}
 
 	if (!task->sighand->krg_objid || !task->signal->krg_objid
 	    || !task->task_obj || !task->children_obj) {
