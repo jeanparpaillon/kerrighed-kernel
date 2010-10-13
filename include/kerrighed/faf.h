@@ -68,6 +68,8 @@ long krg_faf_fallocate(struct file *file, int mode, loff_t offset, loff_t len);
 struct timespec;
 int krg_faf_utimes(struct file *file, struct timespec *times, int flags);
 
+int krg_faf_fsetxattr(struct file *file, const char __user *name,
+		      const void __user *value, size_t size, int flags);
 ssize_t krg_faf_fgetxattr(struct file *file, const char __user *name,
 			  void __user *value, size_t size);
 ssize_t krg_faf_flistxattr(struct file *file, char __user *list, size_t size);

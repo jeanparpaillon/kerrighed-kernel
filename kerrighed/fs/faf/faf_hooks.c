@@ -1113,6 +1113,83 @@ cancel:
 	goto out_end;
 }
 
+int krg_faf_fsetxattr(struct file *file, const char __user *name,
+		      const void __user *value, size_t size, int flags)
+{
+	faf_client_data_t *data = file->private_data;
+	struct faf_setxattr_msg msg;
+	struct rpc_desc *desc;
+	char kname[XATTR_NAME_MAX + 1];
+	void *kvalue = NULL;
+	int err, ret;
+
+	err = strncpy_from_user(kname, name, sizeof(kname));
+	if (err == 0 || err == sizeof(kname))
+		err = -ERANGE;
+	if (err < 0) {
+		ret = err;
+		goto out;
+	}
+
+	if (size) {
+		if (size > XATTR_SIZE_MAX) {
+			ret = -E2BIG;
+			goto out;
+		}
+		kvalue = memdup_user(value, size);
+		if (IS_ERR(kvalue)) {
+			ret = PTR_ERR(kvalue);
+			goto out;
+		}
+	}
+
+	msg.server_fd = data->server_fd;
+	msg.name_len = strlen(kname) + 1;
+	msg.size = size;
+	msg.flags = flags;
+
+	desc = rpc_begin(RPC_FAF_FSETXATTR, data->server_id);
+	if (!desc) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = pack_creds(desc, current_cred());
+	if (err)
+		goto cancel;
+
+	err = rpc_pack(desc, 0, kname, msg.name_len);
+	if (err)
+		goto cancel;
+
+	if (msg.size) {
+		err = rpc_pack(desc, 0, kvalue, msg.size);
+		if (err)
+			goto cancel;
+	}
+
+	err = rpc_unpack_type(desc, ret);
+	if (err)
+		goto cancel;
+
+out_end:
+	if (kvalue)
+		kfree(kvalue);
+	rpc_end(desc, 0);
+out:
+	return ret;
+cancel:
+	ret = err;
+	if (ret == -ECANCELED)
+		ret = -EIO;
+	rpc_cancel(desc);
+	goto out_end;
+}
+
 ssize_t krg_faf_fgetxattr(struct file *file, const char __user *name,
 			  void __user *value, size_t size)
 {
