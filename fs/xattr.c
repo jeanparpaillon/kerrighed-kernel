@@ -297,6 +297,13 @@ SYSCALL_DEFINE5(fsetxattr, int, fd, const char __user *, name,
 	f = fget(fd);
 	if (!f)
 		return error;
+
+#ifdef CONFIG_KRG_FAF
+	if (f->f_flags & O_FAF_CLT) {
+		error = krg_faf_fsetxattr(f, name, value, size, flags);
+		goto out;
+	}
+#endif
 	dentry = f->f_path.dentry;
 	audit_inode(NULL, dentry);
 	error = mnt_want_write(f->f_path.mnt);
@@ -304,6 +311,9 @@ SYSCALL_DEFINE5(fsetxattr, int, fd, const char __user *, name,
 		error = setxattr(dentry, name, value, size, flags);
 		mnt_drop_write(f->f_path.mnt);
 	}
+#ifdef CONFIG_KRG_FAF
+out:
+#endif
 	fput(f);
 	return error;
 }
