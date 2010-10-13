@@ -104,6 +104,12 @@ struct faf_allocate_msg {
 	loff_t len;
 };
 
+struct faf_getxattr_msg {
+	int server_fd;
+	size_t name_len;
+	size_t size;
+};
+
 struct faf_listxattr_msg {
 	int server_fd;
 	size_t size;

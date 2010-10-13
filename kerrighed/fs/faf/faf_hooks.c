@@ -1113,6 +1113,82 @@ cancel:
 	goto out_end;
 }
 
+ssize_t krg_faf_fgetxattr(struct file *file, const char __user *name,
+			  void __user *value, size_t size)
+{
+	faf_client_data_t *data = file->private_data;
+	struct faf_getxattr_msg msg;
+	struct rpc_desc *desc;
+	int err;
+	char kname[XATTR_NAME_MAX + 1];
+	char *kvalue = NULL;
+	ssize_t v_size;
+
+	err = strncpy_from_user(kname, name, sizeof(kname));
+	if (err == 0 || err == sizeof(kname))
+		err = -ERANGE;
+	if (err < 0) {
+		v_size = err;
+		goto out;
+	}
+
+	msg.server_fd = data->server_fd;
+	msg.name_len = strlen(kname) + 1;
+	msg.size = size;
+
+	desc = rpc_begin(RPC_FAF_FGETXATTR, data->server_id);
+	if (!desc) {
+		v_size = -ENOMEM;
+		goto out;
+	}
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = pack_creds(desc, current_cred());
+	if (err)
+		goto cancel;
+
+	err = rpc_pack(desc, 0, kname, msg.name_len);
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, v_size);
+	if (err)
+		goto cancel;
+
+	if (v_size <= 0 || msg.size < v_size)
+		goto out_end;
+
+	kvalue = kmalloc(v_size, GFP_KERNEL);
+	if (!kvalue) {
+		err = -ENOMEM;
+		goto cancel;
+	}
+
+	err = rpc_unpack(desc, 0, kvalue, v_size);
+	if (err)
+		goto cancel;
+
+	err = copy_to_user(value, kvalue, v_size);
+	if (err)
+		v_size = -EFAULT;
+
+out_end:
+	if (kvalue)
+		kfree(kvalue);
+	rpc_end(desc, 0);
+out:
+	return v_size;
+cancel:
+	v_size = err;
+	if (v_size == -ECANCELED)
+		v_size = -EIO;
+	rpc_cancel(desc);
+	goto out_end;
+}
+
 ssize_t krg_faf_flistxattr(struct file *file, char __user *list, size_t size)
 {
 	faf_client_data_t *data = file->private_data;
