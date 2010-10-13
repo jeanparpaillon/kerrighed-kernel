@@ -455,8 +455,18 @@ SYSCALL_DEFINE3(flistxattr, int, fd, char __user *, list, size_t, size)
 	f = fget(fd);
 	if (!f)
 		return error;
+
+#ifdef CONFIG_KRG_FAF
+	if (f->f_flags & O_FAF_CLT) {
+		error = krg_faf_flistxattr(f, list, size);
+		goto out;
+	}
+#endif
 	audit_inode(NULL, f->f_path.dentry);
 	error = listxattr(f->f_path.dentry, list, size);
+#ifdef CONFIG_KRG_FAF
+out:
+#endif
 	fput(f);
 	return error;
 }

@@ -1113,6 +1113,67 @@ cancel:
 	goto out_end;
 }
 
+ssize_t krg_faf_flistxattr(struct file *file, char __user *list, size_t size)
+{
+	faf_client_data_t *data = file->private_data;
+	struct faf_listxattr_msg msg;
+	struct rpc_desc *desc;
+	int err;
+	char *klist = NULL;
+	ssize_t list_size;
+
+	msg.server_fd = data->server_fd;
+	msg.size = size;
+
+	desc = rpc_begin(RPC_FAF_FLISTXATTR, data->server_id);
+	if (!desc) {
+		list_size = -ENOMEM;
+		goto out;
+	}
+
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
+
+	err = pack_creds(desc, current_cred());
+	if (err)
+		goto cancel;
+
+	err = rpc_unpack_type(desc, list_size);
+	if (err)
+		goto cancel;
+
+	if (list_size <= 0 || msg.size < list_size)
+		goto out_end;
+
+	klist = kmalloc(list_size, GFP_KERNEL);
+	if (!klist) {
+		err = -ENOMEM;
+		goto cancel;
+	}
+
+	err = rpc_unpack(desc, 0, klist, list_size);
+	if (err)
+		goto cancel;
+
+	err = copy_to_user(list, klist, list_size);
+	if (err)
+		list_size = -EFAULT;
+
+out_end:
+	if (klist)
+		kfree(klist);
+	rpc_end(desc, 0);
+out:
+	return list_size;
+cancel:
+	list_size = err;
+	if (list_size == -ECANCELED)
+		list_size = -EIO;
+	rpc_cancel(desc);
+	goto out_end;
+}
+
 int krg_faf_fremovexattr(struct file *file, const char __user *name)
 {
 	faf_client_data_t *data = file->private_data;
