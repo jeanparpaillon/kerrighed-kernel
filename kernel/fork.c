@@ -1651,7 +1651,9 @@ bad_fork_cleanup_namespaces:
 	exit_task_namespaces(p);
 bad_fork_cleanup_mm:
 #ifdef CONFIG_KRG_MM
-	if (p->mm && !krgnodes_empty(p->mm->copyset) && (clone_flags & CLONE_VM))
+	BUG_ON(p->mm && (!!(!krgnodes_empty(p->mm->copyset)) ^
+			 !!p->mm->anon_vma_kddm_set));
+	if (p->mm && p->mm->anon_vma_kddm_set && (clone_flags & CLONE_VM))
 #ifdef CONFIG_KRG_EPM
 		if (!krg_current)
 #endif

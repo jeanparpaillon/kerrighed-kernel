@@ -1189,7 +1189,9 @@ NORET_TYPE void do_exit(long code)
 	tsk->exit_code = code;
 	taskstats_exit(tsk, group_dead);
 #ifdef CONFIG_KRG_MM
-	if (tsk->mm && !krgnodes_empty(tsk->mm->copyset))
+	BUG_ON(tsk->mm && (!!(!krgnodes_empty(tsk->mm->copyset)) ^
+			   !!tsk->mm->anon_vma_kddm_set));
+	if (tsk->mm && tsk->mm->anon_vma_kddm_set)
 		mm = tsk->mm;
 #endif
 	exit_mm(tsk);

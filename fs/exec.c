@@ -737,7 +737,9 @@ static int exec_mmap(struct mm_struct *mm)
 		 * checking core_state and changing tsk->mm.
 		 */
 #ifdef CONFIG_KRG_MM
-		if (!krgnodes_empty(old_mm->copyset))
+		BUG_ON(!!(!krgnodes_empty(old_mm->copyset)) ^
+		       !!old_mm->anon_vma_kddm_set);
+		if (old_mm->anon_vma_kddm_set)
 			mm_id = old_mm->mm_id;
 #endif
 		down_read(&old_mm->mmap_sem);

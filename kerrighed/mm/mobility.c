@@ -674,7 +674,9 @@ static inline int do_export_mm_struct(struct epm_action *action,
 	switch (action->type) {
 	case EPM_CHECKPOINT:  {
 		  unique_id_t mm_id = 0;
-		  if (!krgnodes_empty(mm->copyset))
+
+		  BUG_ON(!!(!krgnodes_empty(mm->copyset)) ^ !!mm->anon_vma_kddm_set);
+		  if (mm->anon_vma_kddm_set)
 			  mm_id = mm->mm_id;
 
 		  if (mm_id)

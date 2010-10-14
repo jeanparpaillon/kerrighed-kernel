@@ -246,7 +246,6 @@ static void create_mm_struct_object(struct mm_struct *mm)
 	struct mm_struct *_mm;
 
 	BUG_ON(atomic_read(&mm->mm_ltasks) > 1);
-	BUG_ON(!krgnodes_empty(mm->copyset));
 	BUG_ON(!mm->mm_id);
 
 	atomic_inc(&mm->mm_users); // Get a reference count for the KDDM.
@@ -347,7 +346,8 @@ void kcb_mm_get(struct mm_struct *mm)
 	if (!mm)
 		return;
 
-	if (krgnodes_empty(mm->copyset)) {
+	BUG_ON(!!(!krgnodes_empty(mm->copyset)) ^ !!mm->anon_vma_kddm_set);
+	if (!mm->anon_vma_kddm_set) {
 		atomic_inc (&mm->mm_tasks);
 		return;
 	}
@@ -394,8 +394,6 @@ static void kcb_mm_release(struct mm_struct *mm, int notify)
 	if (!mm)
 		return;
 
-	BUG_ON(krgnodes_empty(mm->copyset));
-
 	if (!notify) {
 		/* Not a real exit: clean up VMAs */
 		BUG_ON (atomic_read(&mm->mm_ltasks) != 0);
@@ -433,8 +431,6 @@ void krg_do_mmap_region(struct vm_area_struct *vma,
 	if (!mm->anon_vma_kddm_set)
 		return;
 
-	BUG_ON(krgnodes_empty(mm->copyset));
-
 	check_link_vma_to_anon_memory_kddm_set (vma);
 
 	if (!(vma->vm_flags & VM_KDDM))
@@ -464,7 +460,8 @@ void krg_do_munmap(struct mm_struct *mm,
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
 
-	if (krgnodes_empty(mm->copyset))
+	BUG_ON(!!(!krgnodes_empty(mm->copyset)) ^ !!mm->anon_vma_kddm_set);
+	if (!mm->anon_vma_kddm_set)
 		return;
 
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
@@ -488,7 +485,8 @@ void krg_do_mremap(struct mm_struct *mm, unsigned long addr,
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
 
-	if (krgnodes_empty(mm->copyset))
+	BUG_ON(!!(!krgnodes_empty(mm->copyset)) ^ !!mm->anon_vma_kddm_set);
+	if (!mm->anon_vma_kddm_set)
 		return;
 
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
@@ -517,8 +515,6 @@ void krg_do_brk(struct mm_struct *mm,
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
 
-	BUG_ON(krgnodes_empty(mm->copyset));
-
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
 		return;
 
@@ -540,8 +536,6 @@ int krg_expand_stack(struct vm_area_struct *vma,
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
 	int r;
-
-	BUG_ON(krgnodes_empty(mm->copyset));
 
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
 		return 0;
@@ -567,7 +561,8 @@ void krg_do_mprotect(struct mm_struct *mm,
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
 
-	if (krgnodes_empty(mm->copyset))
+	BUG_ON(!!(!krgnodes_empty(mm->copyset)) ^ !!mm->anon_vma_kddm_set);
+	if (!mm->anon_vma_kddm_set)
 		return;
 
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))

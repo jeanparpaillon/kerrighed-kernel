@@ -234,8 +234,8 @@ static int flush_page(struct page *page,
 	if (mm->anon_vma_kddm_set == NULL)
 		return SWAP_FAIL;
 
-	/* copy_set empty means the mm is being freed */
-	if (krgnodes_empty(mm->copyset))
+	/* mm_id == 0 means the mm is being freed */
+	if (mm->mm_id == 0)
 		return SWAP_FAIL;
 
 	if (PageMigratable(page))
