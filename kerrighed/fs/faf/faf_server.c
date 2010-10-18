@@ -267,7 +267,7 @@ cancel:
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-void handle_faf_write(struct rpc_desc* desc, void *msgIn, size_t size)
+void handle_faf_write(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_rw_msg *msg = msgIn;
 	struct file *file = NULL;
@@ -567,8 +567,7 @@ out_err:
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-void handle_faf_fcntl (struct rpc_desc* desc,
-		       void *msgIn, size_t size)
+void handle_faf_fcntl(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_ctl_msg *msg = msgIn;
 	const struct cred *old_cred;
@@ -617,8 +616,7 @@ cancel:
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-void handle_faf_fcntl64 (struct rpc_desc* desc,
-			 void *msgIn, size_t size)
+void handle_faf_fcntl64(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_ctl_msg *msg = msgIn;
 	const struct cred *old_cred;
@@ -667,8 +665,7 @@ cancel:
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-void handle_faf_fstat (struct rpc_desc* desc,
-		       void *msgIn, size_t size)
+void handle_faf_fstat(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct kstat statbuf;
 	struct faf_stat_msg *msg = msgIn;
@@ -697,8 +694,7 @@ cancel:
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-static void handle_faf_fstatfs(struct rpc_desc* desc,
-			       void *msgIn, size_t size)
+static void handle_faf_fstatfs(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct statfs statbuf;
 	struct faf_statfs_msg *msg = msgIn;
@@ -724,7 +720,7 @@ err_rpc:
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-void handle_faf_lseek(struct rpc_desc* desc, void *msgIn, size_t size)
+void handle_faf_lseek(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_seek_msg *msg = msgIn;
 	off_t r = -EINVAL;
@@ -743,7 +739,7 @@ void handle_faf_lseek(struct rpc_desc* desc, void *msgIn, size_t size)
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-void handle_faf_llseek(struct rpc_desc* desc, void *msgIn, size_t size)
+void handle_faf_llseek(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_llseek_msg *msg = msgIn;
 	long r = -EINVAL;
@@ -773,8 +769,7 @@ cancel:
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-int handle_faf_fsync (struct rpc_desc* desc,
-                      void *msgIn, size_t size)
+int handle_faf_fsync(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_rw_msg *msg = msgIn;
 	long r = -EINVAL;
@@ -784,7 +779,7 @@ int handle_faf_fsync (struct rpc_desc* desc,
 	return r;
 }
 
-void handle_faf_ftruncate(struct rpc_desc* desc, void *msgIn, size_t size)
+void handle_faf_ftruncate(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_truncate_msg *msg = msgIn;
 	long ret;
@@ -840,7 +835,7 @@ cancel:
 	rpc_cancel(desc);
 }
 
-int handle_faf_fchmod(struct rpc_desc* desc, void *msgIn, size_t size)
+int handle_faf_fchmod(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_chmod_msg *msg = msgIn;
 	const struct cred *old_cred;
@@ -863,7 +858,7 @@ cancel:
 	goto out;
 }
 
-int handle_faf_fchown(struct rpc_desc* desc, void *msgIn, size_t size)
+int handle_faf_fchown(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_chown_msg *msg = msgIn;
 	const struct cred *old_cred;
@@ -886,7 +881,7 @@ cancel:
 	goto out;
 }
 
-void handle_faf_fallocate(struct rpc_desc* desc, void *msgIn, size_t size)
+void handle_faf_fallocate(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_allocate_msg *msg = msgIn;
 	long ret;
@@ -899,7 +894,7 @@ void handle_faf_fallocate(struct rpc_desc* desc, void *msgIn, size_t size)
 		rpc_cancel(desc);
 }
 
-int handle_faf_setxattr(struct rpc_desc* desc, void *msgIn, size_t size)
+int handle_faf_setxattr(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_setxattr_msg *msg = msgIn;
 	const struct cred *old_cred = NULL;
@@ -945,7 +940,7 @@ cancel:
 	goto out;
 }
 
-void handle_faf_getxattr(struct rpc_desc* desc, void *msgIn, size_t size)
+void handle_faf_getxattr(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_getxattr_msg *msg = msgIn;
 	const struct cred *old_cred = NULL;
@@ -993,7 +988,7 @@ cancel:
 	goto out;
 }
 
-void handle_faf_listxattr(struct rpc_desc* desc, void *msgIn, size_t size)
+void handle_faf_listxattr(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_listxattr_msg *msg = msgIn;
 	const struct cred *old_cred = NULL;
@@ -1036,7 +1031,7 @@ cancel:
 	goto out;
 }
 
-int handle_faf_removexattr(struct rpc_desc* desc, void *msgIn, size_t size)
+int handle_faf_removexattr(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_removexattr_msg *msg = msgIn;
 	const struct cred *old_cred = NULL;
@@ -1067,7 +1062,7 @@ cancel:
 	goto out;
 }
 
-int handle_faf_utimes(struct rpc_desc* desc, void *msgIn, size_t size)
+int handle_faf_utimes(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_utimes_msg *msg = msgIn;
 	const struct cred *old_cred;
@@ -1425,7 +1420,7 @@ err:
 }
 
 static
-void handle_faf_poll_dequeue(struct rpc_desc* desc, void *_msg, size_t size)
+void handle_faf_poll_dequeue(struct rpc_desc *desc, void *_msg, size_t size)
 {
 	struct faf_notify_msg *msg = _msg;
 
@@ -1456,8 +1451,7 @@ static void faf_poll_init(void)
  *  @param from    Node sending the request
  *  @param msgIn   Request message
  */
-void handle_faf_d_path (struct rpc_desc* desc,
-			void *msgIn, size_t size)
+void handle_faf_d_path(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_d_path_msg *msg = msgIn;
 	char *buff, *file_name = NULL;
@@ -1523,8 +1517,7 @@ err_cancel:
 
 
 
-int handle_faf_bind (struct rpc_desc* desc,
-                     void *msgIn, size_t size)
+int handle_faf_bind(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
 	struct prev_root prev_root;
@@ -1581,8 +1574,7 @@ cancel:
 	goto out;
 }
 
-int handle_faf_listen (struct rpc_desc* desc,
-		       void *msgIn, size_t size)
+int handle_faf_listen(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_listen_msg *msg = msgIn;
 	int r;
@@ -1592,8 +1584,7 @@ int handle_faf_listen (struct rpc_desc* desc,
 	return r;
 }
 
-void handle_faf_accept (struct rpc_desc *desc,
-		        void *msgIn, size_t size)
+void handle_faf_accept(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
 	int err, r;
@@ -1659,7 +1650,7 @@ err_close_file:
 	goto err_cancel;
 }
 
-int handle_faf_getsockname(struct rpc_desc* desc, void *msgIn, size_t size)
+int handle_faf_getsockname(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
 	struct prev_root prev_root;
@@ -1690,7 +1681,7 @@ cancel:
 	goto out;
 }
 
-int handle_faf_getpeername(struct rpc_desc* desc, void *msgIn, size_t size)
+int handle_faf_getpeername(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_bind_msg *msg = msgIn;
 	struct prev_root prev_root;
@@ -1718,8 +1709,7 @@ cancel:
 	goto out;
 }
 
-int handle_faf_shutdown (struct rpc_desc* desc,
-                     void *msgIn, size_t size)
+int handle_faf_shutdown(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_shutdown_msg *msg = msgIn;
 	int r;
@@ -1729,8 +1719,7 @@ int handle_faf_shutdown (struct rpc_desc* desc,
 	return r;
 }
 
-void handle_faf_setsockopt (struct rpc_desc *desc,
-			    void *msgIn, size_t size)
+void handle_faf_setsockopt(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_setsockopt_msg *msg = msgIn;
 	struct prev_root prev_root;
@@ -1909,8 +1898,7 @@ cancel:
 	rpc_cancel(desc);
 }
 
-int handle_faf_notify_close (struct rpc_desc* desc,
-			     void *msgIn, size_t size)
+int handle_faf_notify_close(struct rpc_desc *desc, void *msgIn, size_t size)
 {
 	struct faf_notify_msg *msg = msgIn;
 	struct file *file;
