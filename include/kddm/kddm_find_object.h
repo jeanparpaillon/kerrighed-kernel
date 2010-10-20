@@ -9,6 +9,7 @@
 #define __KDDM_FIND_OBJECT__
 
 #include <kddm/kddm_set.h>
+#include <kddm/object.h>
 
 
 
