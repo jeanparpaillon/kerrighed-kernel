@@ -21,8 +21,7 @@ int handle_do_mmap_region (struct rpc_desc* desc,
 	struct vm_area_struct *vma;
 	struct mm_struct *mm;
 
-	mm = krg_get_mm(msg->mm_id);
-
+	mm = krg_find_mm(msg->mm_id);
 	if (!mm)
 		return 0;
 
@@ -38,8 +37,6 @@ int handle_do_mmap_region (struct rpc_desc* desc,
 
 	up_write(&mm->mmap_sem);
 
-	krg_put_mm(msg->mm_id);
-
 	return 0;
 }
 
@@ -52,8 +49,7 @@ int handle_do_mremap (struct rpc_desc* desc,
 	struct mm_mmap_msg *msg = msgIn;
 	struct mm_struct *mm;
 
-	mm = krg_get_mm(msg->mm_id);
-
+	mm = krg_find_mm(msg->mm_id);
 	if (!mm)
 		return 0;
 
@@ -63,8 +59,6 @@ int handle_do_mremap (struct rpc_desc* desc,
 		    msg->new_addr, &msg->_new_addr, msg->lock_limit);
 
 	up_write(&mm->mmap_sem);
-
-	krg_put_mm(msg->mm_id);
 
 	return 0;
 }
@@ -78,8 +72,7 @@ int handle_do_munmap (struct rpc_desc* desc,
 	struct mm_mmap_msg *msg = msgIn;
 	struct mm_struct *mm;
 
-	mm = krg_get_mm(msg->mm_id);
-
+	mm = krg_find_mm(msg->mm_id);
 	if (!mm)
 		return 0;
 
@@ -88,8 +81,6 @@ int handle_do_munmap (struct rpc_desc* desc,
 	do_munmap(mm, msg->start, msg->len);
 
 	up_write(&mm->mmap_sem);
-
-	krg_put_mm(msg->mm_id);
 
 	return 0;
 }
@@ -103,8 +94,7 @@ int handle_do_brk (struct rpc_desc* desc,
 	struct mm_mmap_msg *msg = msgIn;
 	struct mm_struct *mm;
 
-	mm = krg_get_mm(msg->mm_id);
-
+	mm = krg_find_mm(msg->mm_id);
 	if (!mm)
 		return 0;
 
@@ -113,8 +103,6 @@ int handle_do_brk (struct rpc_desc* desc,
 	__sys_brk(mm, msg->brk, msg->lock_limit, msg->data_limit);
 
 	up_write(&mm->mmap_sem);
-
-	krg_put_mm(msg->mm_id);
 
 	return 0;
 }
@@ -130,8 +118,7 @@ int handle_expand_stack (struct rpc_desc* desc,
 	struct mm_struct *mm;
 	int r;
 
-	mm = krg_get_mm(msg->mm_id);
-
+	mm = krg_find_mm(msg->mm_id);
 	if (!mm)
 		return -EINVAL;
 
@@ -142,8 +129,6 @@ int handle_expand_stack (struct rpc_desc* desc,
 	r = __expand_stack(vma, msg->flags);
 
 	up_write(&mm->mmap_sem);
-
-	krg_put_mm(msg->mm_id);
 
 	return r;
 }
@@ -157,14 +142,11 @@ int handle_do_mprotect (struct rpc_desc* desc,
 	struct mm_mmap_msg *msg = msgIn;
 	struct mm_struct *mm;
 
-	mm = krg_get_mm(msg->mm_id);
-
+	mm = krg_find_mm(msg->mm_id);
 	if (!mm)
 		return 0;
 
 	do_mprotect (mm, msg->start, msg->len, msg->prot, msg->personality);
-
-	krg_put_mm(msg->mm_id);
 
 	return 0;
 }
