@@ -170,8 +170,7 @@ static int __kddm_flush_object(unsigned long objid,
 		/* There exist another copy in the cluster.
 		   Just invalidate the local one */
 		send_invalidation_ack(set, objid, get_prob_owner(obj_entry));
-		destroy_kddm_obj_entry(set, obj_entry, objid, 0);
-		return KDDM_OBJ_REMOVED;
+		break;
 
 	case READ_OWNER:
 		REMOVE_FROM_SET(COPYSET(obj_entry), kerrighed_node_id);
@@ -190,7 +189,13 @@ static int __kddm_flush_object(unsigned long objid,
 		SET_OBJECT_RM_SO_ACK(obj_entry);
 		send_change_ownership_req(set, obj_entry, objid, dest,
 					  &obj_entry->master_obj);
-		break;
+		/* Fallthrough */
+	case WAIT_CHG_OWN_ACK:
+		/*
+		 * FIXME: Must be handled in
+		 * remove_browse_objects_on_leaving_nodes()
+		 */
+		return 0;
 
 	case WRITE_GHOST:
 	case WRITE_OWNER:
@@ -198,26 +203,36 @@ static int __kddm_flush_object(unsigned long objid,
 send_copy:
 		dest = param->f(set, objid, obj_entry, param->data);
 		send_copy_on_write(set, obj_entry, objid, dest, 0);
-		destroy_kddm_obj_entry(set, obj_entry, objid, 0);
-		return KDDM_OBJ_REMOVED;
-
-	case WAIT_ACK_INV:
-	case WAIT_OBJ_RM_DONE:
-	case WAIT_OBJ_RM_ACK:
-	case WAIT_OBJ_RM_ACK2:
+		/*
+		 * TODO: Don't call destroy_kddm_obj_entry() when
+		 * send_copy_on_write() becomes synchronous
+		 */
 		break;
 
 	case INV_OWNER:
 	case INV_COPY:
+		break;
+
+	case WAIT_OBJ_RM_ACK2:
+		/*
+		 * FIXME: Must be handled in
+		 * remove_browse_objects_on_leaving_nodes()
+		 */
+		return 0;
+
+	case WAIT_OBJ_RM_DONE:
+	case WAIT_OBJ_RM_ACK:
+	case WAIT_ACK_INV:
 	case WAIT_ACK_WRITE:
-	case WAIT_CHG_OWN_ACK:
 	case WAIT_OBJ_READ:
 	case WAIT_OBJ_WRITE:
 	case INV_FILLING:
-		break;
+		BUG();
+		return 0;
 	}
 
-	return 0;
+	destroy_kddm_obj_entry(set, obj_entry, objid, 0);
+	return KDDM_OBJ_REMOVED;
 }
 
 void _kddm_flush_set(struct kddm_set *set,
