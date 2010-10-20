@@ -785,6 +785,10 @@ void handle_faf_ftruncate(struct rpc_desc *desc, void *msgIn, size_t size)
 	long ret;
 	int err;
 
+	err = remote_sleep_prepare(desc);
+	if (err)
+		goto cancel;
+
 #if BITS_PER_LONG == 32
 	if (!msg->small)
 		ret = sys_ftruncate64(msg->server_fd, msg->length);
@@ -794,7 +798,15 @@ void handle_faf_ftruncate(struct rpc_desc *desc, void *msgIn, size_t size)
 
 	err = rpc_pack_type(desc, ret);
 	if (err)
-		rpc_cancel(desc);
+		goto cancel;
+
+out:
+	remote_sleep_finish();
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto out;
 }
 
 /** Handler for locking in a FAF open file.
