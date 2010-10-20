@@ -977,7 +977,11 @@ long krg_faf_ftruncate(struct file *file, loff_t length, int small)
 	if (err)
 		goto cancel;
 
-	err = rpc_unpack_type(desc, ret);
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
+
+	err = unpack_remote_sleep_res_type(desc, ret);
 	if (err)
 		goto cancel;
 
