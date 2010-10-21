@@ -64,6 +64,8 @@ extern struct vm_operations_struct special_mapping_vmops;
 
 void free_ghost_mm (struct task_struct *tsk)
 {
+	clear_bit(MMF_VM_CLONED, &tsk->mm->flags);
+
 	/* if not NULL, mm_release will try to write in userspace... which
 	 * does not exist anyway since we are in kernel thread context
 	 */
@@ -580,13 +582,11 @@ err:
 
 static int export_mm_counters(struct epm_action *action,
 			      ghost_t *ghost,
-			      struct mm_struct* mm,
-			      struct mm_struct *exported_mm)
+			      struct mm_struct* mm)
 {
 	int r;
 
 	r = ghost_write(ghost, mm, sizeof(struct mm_struct));
-	r = ghost_write(ghost, &exported_mm->mm_tasks, sizeof(atomic_t));
 	return r;
 }
 
@@ -772,7 +772,7 @@ int export_mm_struct(struct epm_action *action,
 	if (r)
 		goto up_mmap_sem;
 
-	r = export_mm_counters(action, ghost, mm, exported_mm);
+	r = export_mm_counters(action, ghost, mm);
 	if (r)
 		goto up_mmap_sem;
 
@@ -1269,8 +1269,6 @@ static int import_mm_counters(struct epm_action *action,
 	mm->brk = src_mm->brk;
 	mm->flags = src_mm->flags;
 
-	r = ghost_read(ghost, &mm->mm_tasks, sizeof(atomic_t));
-
 out_free_mm:
 	free_mm(src_mm);
 err:
@@ -1343,7 +1341,14 @@ static inline int do_import_mm_struct(struct epm_action *action,
 		  r = ghost_read (ghost, &mm_id, sizeof (unique_id_t));
 		  if (r)
 			  return r;
-		  mm = krg_get_mm(mm_id);
+		  if ((action->type == EPM_REMOTE_CLONE)
+		      && (action->remote_clone.clone_flags & CLONE_VM)) {
+			  mm = krg_grab_mm(mm_id);
+			  atomic_inc(&mm->mm_tasks);
+			  set_bit(MMF_VM_CLONED, &mm->flags);
+		  }
+		  else
+			  mm = krg_get_mm(mm_id);
 		  if (mm)
 			  /* Reflect the belonging to the ghost task struct */
 			  atomic_inc(&mm->mm_users);
@@ -1451,6 +1456,9 @@ err:
 
 void unimport_mm_struct(struct task_struct *task)
 {
+	if (test_bit(MMF_VM_CLONED, &task->mm->flags))
+		kh_mm_release(task->mm, 1);
+
 	free_ghost_mm(task);
 }
 
