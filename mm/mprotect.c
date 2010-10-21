@@ -272,6 +272,9 @@ SYSCALL_DEFINE3(mprotect, unsigned long, start, size_t, len,
 	vm_flags = calc_vm_prot_bits(prot);
 
 #ifdef CONFIG_KRG_MM
+	if (mm->anon_vma_kddm_set)
+		krg_lock_mm(mm);
+
 	down_write(&mm->mmap_sem);
 	vma = find_vma_prev(mm, start, &prev);
 #else
@@ -341,6 +344,9 @@ SYSCALL_DEFINE3(mprotect, unsigned long, start, size_t, len,
 out:
 #ifdef CONFIG_KRG_MM
 	up_write(&mm->mmap_sem);
+
+	if (mm->anon_vma_kddm_set)
+		krg_unlock_mm(mm);
 #else
 	up_write(&current->mm->mmap_sem);
 #endif

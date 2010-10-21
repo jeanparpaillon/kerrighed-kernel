@@ -5,6 +5,10 @@
 #include <linux/fs.h>
 #include <linux/sched.h>
 
+#include <kddm/kddm_grab_object.h>
+#include <kddm/kddm_put_object.h>
+
+
 #ifdef CONFIG_USERMODE
 #ifdef PTE_MASK
 // At this time (2.6.11) PTE_MASK is not defined in UM, so as soon as this
@@ -38,6 +42,7 @@ void remove_vma_list(struct mm_struct *mm, struct vm_area_struct *vma);
 
 extern struct kmem_cache *mm_cachep;
 extern struct vm_operations_struct generic_file_vm_ops ;
+extern struct kddm_set *mm_struct_kddm_set;
 
 int special_mapping_vm_ops_krgsyms_register(void);
 int special_mapping_vm_ops_krgsyms_unregister(void);
@@ -96,6 +101,16 @@ int try_to_flush_page(struct page *page);
 void krg_notify_mem(int mem_usage);
 
 void krg_check_vma_link(struct vm_area_struct *vma);
+
+static inline void krg_lock_mm(struct mm_struct *mm)
+{
+	_kddm_grab_object (mm_struct_kddm_set, mm->mm_id);
+}
+
+static inline void krg_unlock_mm(struct mm_struct *mm)
+{
+	_kddm_put_object (mm_struct_kddm_set, mm->mm_id);
+}
 
 void krg_do_mmap_region(struct vm_area_struct *vma, unsigned long flags,
 			unsigned int vm_flags);
