@@ -95,6 +95,7 @@ int mm_export_object (struct rpc_desc *desc,
 	rpc_pack(desc, 0, &mm->anon_vma_kddm_id, sizeof(unique_id_t));
 	rpc_pack(desc, 0, &mm->context.vdso, sizeof(void*));
 	rpc_pack(desc, 0, &mm->copyset, sizeof(krgnodemask_t));
+	rpc_pack(desc, 0, &mm->mm_tasks, sizeof(atomic_t));
 
 	get_unmap_id = krgsyms_export(mm->get_unmapped_area);
 	BUG_ON(mm->get_unmapped_area && get_unmap_id == KRGSYMS_UNDEF);
@@ -156,6 +157,10 @@ int mm_import_object (struct rpc_desc *desc,
 	}
 
 	r = rpc_unpack(desc, 0, &mm->copyset, sizeof(krgnodemask_t));
+	if (r)
+		return r;
+
+	r = rpc_unpack(desc, 0, &mm->mm_tasks, sizeof(atomic_t));
 	if (r)
 		return r;
 
