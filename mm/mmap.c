@@ -352,6 +352,9 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 	struct mm_struct *mm = current->mm;
 	unsigned long retval;
 
+	if (mm->anon_vma_kddm_set)
+		krg_lock_mm(mm);
+
 	down_write(&mm->mmap_sem);
 
 	retval = __sys_brk(mm, brk,
@@ -364,6 +367,9 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 			   current->signal->rlim[RLIMIT_DATA].rlim_cur);
 
 	up_write(&mm->mmap_sem);
+
+	if (mm->anon_vma_kddm_set)
+		krg_unlock_mm(mm);
 
 	return retval;
 }
@@ -2094,13 +2100,20 @@ SYSCALL_DEFINE2(munmap, unsigned long, addr, size_t, len)
 
 	profile_munmap(addr);
 
+#ifdef CONFIG_KRG_MM
+	if (mm->anon_vma_kddm_set)
+		krg_lock_mm(mm);
+#endif
 	down_write(&mm->mmap_sem);
 	ret = do_munmap(mm, addr, len);
 	up_write(&mm->mmap_sem);
 
 #ifdef CONFIG_KRG_MM
-	if (!ret && mm->anon_vma_kddm_set)
-		krg_do_munmap(mm, addr, len);
+	if (mm->anon_vma_kddm_set) {
+		krg_unlock_mm(mm);
+		if (!ret)
+			krg_do_munmap(mm, addr, len);
+	}
 #endif
 
 	return ret;
