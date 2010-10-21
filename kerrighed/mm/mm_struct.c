@@ -245,7 +245,6 @@ static void create_mm_struct_object(struct mm_struct *mm)
 {
 	struct mm_struct *_mm;
 
-	BUG_ON(atomic_read(&mm->mm_ltasks) > 1);
 	BUG_ON(!mm->mm_id);
 
 	atomic_inc(&mm->mm_users); // Get a reference count for the KDDM.
