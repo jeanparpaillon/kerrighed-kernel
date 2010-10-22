@@ -21,7 +21,14 @@ int handle_do_mmap_region (struct rpc_desc* desc,
 	struct vm_area_struct *vma;
 	struct mm_struct *mm;
 
+	printk ("%d - handle_do_mmap_region [0x%016lx:0x%016lx]\n",	
+		current->pid, msg->start, msg->start + msg->len);
+
 	mm = krg_find_mm(msg->mm_id);
+
+	printk ("%d - handle_do_mmap_region found mm %p (%ld)\n", current->pid,
+		mm, msg->mm_id);
+
 	if (!mm)
 		return 0;
 

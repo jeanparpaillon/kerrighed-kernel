@@ -289,6 +289,8 @@ do_general_protection(struct pt_regs *regs, long error_code)
 		printk("\n");
 	}
 
+	dump_vma(current);
+	BUG();
 	force_sig(SIGSEGV, tsk);
 	return;
 

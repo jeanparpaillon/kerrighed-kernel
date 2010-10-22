@@ -30,6 +30,10 @@ void *_kddm_find_object (struct kddm_set *set,
 
 	obj_entry = __get_kddm_obj_entry(set, objid);
 
+	if (set->id == 28)
+		printk ("%d - _kddm_find_object found (%ld;%ld) = %p\n",
+			current->pid, set->id, objid, obj_entry);
+
 	if (obj_entry == NULL)
 		return NULL;
 

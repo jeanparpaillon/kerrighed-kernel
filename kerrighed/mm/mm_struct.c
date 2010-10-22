@@ -427,6 +427,10 @@ void krg_do_mmap_region(struct vm_area_struct *vma,
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
 
+	printk ("%d - krg_do_mmap_region [0x%016lx:0x%016lx] to nodes "
+		"0X%016lx\n", current->pid, vma->vm_start, vma->vm_end,
+		mm->copyset.bits[0]);
+
 	if (!mm->anon_vma_kddm_set)
 		return;
 
@@ -458,6 +462,10 @@ void krg_do_munmap(struct mm_struct *mm,
 {
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
+
+	printk ("%d - krg_do_munmap [0x%016lx:0x%016lx] to nodes "
+		"0X%016lx\n", current->pid, start, start + len,
+		mm->copyset.bits[0]);
 
 	BUG_ON(!!(!krgnodes_empty(mm->copyset)) ^ !!mm->anon_vma_kddm_set);
 	if (!mm->anon_vma_kddm_set)
@@ -513,6 +521,9 @@ void krg_do_brk(struct mm_struct *mm,
 {
 	struct mm_mmap_msg msg;
 	krgnodemask_t copyset;
+
+	printk ("%d - krg_do_brk 0x%016lx to nodes 0X%016lx\n", current->pid,
+		brk, mm->copyset.bits[0]);
 
 	if (krgnode_is_unique(kerrighed_node_id, mm->copyset))
 		return;

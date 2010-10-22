@@ -766,6 +766,12 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 		tsk->thread.error_code	= error_code | (address >= TASK_SIZE);
 		tsk->thread.trap_no	= 14;
 
+		printk ("%d - __bad_area_nosemaphore at 0x%016lx\n",
+			current->pid, address);
+
+		dump_vma(current);
+		BUG();
+
 		force_sig_info_fault(SIGSEGV, si_code, address, tsk);
 
 		return;
@@ -845,6 +851,11 @@ do_sigbus(struct pt_regs *regs, unsigned long error_code, unsigned long address)
 	tsk->thread.cr2		= address;
 	tsk->thread.error_code	= error_code;
 	tsk->thread.trap_no	= 14;
+
+	printk ("%d - do_sigbus at 0x%016lx\n", current->pid, address);
+
+	dump_vma(current);
+	BUG();
 
 	force_sig_info_fault(SIGBUS, BUS_ADRERR, address, tsk);
 }

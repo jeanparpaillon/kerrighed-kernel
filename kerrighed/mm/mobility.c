@@ -520,6 +520,10 @@ int export_vmas (struct epm_action *action,
 	BUG_ON (tsk == NULL);
 	BUG_ON (tsk->mm == NULL);
 
+	printk ("%d - export_vmas for mm %p (%ld)\n", tsk->pid, tsk->mm,
+		tsk->mm->mm_id);
+	dump_vma(tsk);
+
 	file_table = hashtable_new (FILE_TABLE_SIZE);
 	if (!file_table)
 		return -ENOMEM;
@@ -737,6 +741,9 @@ int export_mm_struct(struct epm_action *action,
 		  /* else fall through */
 
 	  case EPM_MIGRATE:
+		  printk ("%d - export_mm_struct: mm %p (%ld) %p\n",
+			  current->pid, mm, mm->mm_id, mm->anon_vma_kddm_set);
+
 		  if (mm->anon_vma_kddm_set == NULL) {
 			  r = init_anon_vma_kddm_set(tsk, mm);
 			  if (r)
@@ -1439,6 +1446,10 @@ int import_mm_struct (struct epm_action *action,
 	set = mm->anon_vma_kddm_set;
 
 	krg_put_mm (mm->mm_id);
+
+	printk ("%d - import_mm_struct: mm imported %p (%ld) - copyset "
+		"0x%016lx\n", tsk->pid, mm, mm->mm_id, mm->copyset.bits[0]);
+	dump_vma(tsk);
 
 	return 0;
 
