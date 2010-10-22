@@ -56,12 +56,20 @@
 #include <linux/pid.h>
 #include <linux/nsproxy.h>
 #ifdef CONFIG_KRG_EPM
+#include <linux/pid_namespace.h>
+#include <kddm/kddm.h>
+#include <kerrighed/pid.h>
 #include <kerrighed/krgsyms.h>
+#include <net/krgrpc/rpc.h>
 #endif
 
 #include <asm/futex.h>
 
 #include "rtmutex_common.h"
+
+#ifdef CONFIG_KRG_EPM
+static struct kddm_set *futex_kddm_set;
+#endif
 
 int __read_mostly futex_cmpxchg_enabled;
 
@@ -114,6 +122,12 @@ struct futex_q {
 
 	/* Bitset for the optional bitmasked wakeup */
 	u32 bitset;
+
+#ifdef CONFIG_KRG_EPM
+	pid_t waiter_pid;
+	kerrighed_node_t hosting_node;
+	struct list_head local_list;
+#endif
 };
 
 /*
@@ -124,14 +138,45 @@ struct futex_q {
 struct futex_hash_bucket {
 	spinlock_t lock;
 	struct plist_head chain;
+#ifdef CONFIG_KRG_EPM
+	long id;
+#endif
 };
 
 static struct futex_hash_bucket futex_queues[1<<FUTEX_HASHBITS];
+#ifdef CONFIG_KRG_EPM
+static struct list_head local_futex_queues;
+spinlock_t local_futex_lock;
+#endif
 
 /*
  * We hash on the keys returned from get_futex_key (see below).
  */
+#ifdef CONFIG_KRG_EPM
+static u32 compute_futex_hash(union futex_key *key)
+{
+	u32 hash;
+
+	if (key->both.krg_id)
+		hash = jhash2((u32*)&key->both.word,
+			      (sizeof(key->both.word)+sizeof(key->both.krg_id))/4,
+			      key->both.offset);
+	else
+		hash = jhash2((u32*)&key->both.word,
+			      (sizeof(key->both.word)+sizeof(key->both.ptr))/4,
+			      key->both.offset);
+	return hash;
+}
+
+static struct futex_hash_bucket *__vanilla_hash_futex(u32 hash)
+{
+	return &futex_queues[hash & ((1 << FUTEX_HASHBITS)-1)];
+}
+
+static struct futex_hash_bucket *vanilla_hash_futex(union futex_key *key)
+#else
 static struct futex_hash_bucket *hash_futex(union futex_key *key)
+#endif
 {
 	u32 hash = jhash2((u32*)&key->both.word,
 			  (sizeof(key->both.word)+sizeof(key->both.ptr))/4,
@@ -139,11 +184,46 @@ static struct futex_hash_bucket *hash_futex(union futex_key *key)
 	return &futex_queues[hash & ((1 << FUTEX_HASHBITS)-1)];
 }
 
+#ifdef CONFIG_KRG_EPM
+static struct futex_hash_bucket *krg_grab_futex(union futex_key *key)
+{
+	struct futex_hash_bucket *hb;
+	u32 hash;
+
+	BUG_ON(!key->both.krg_id);
+	hash = compute_futex_hash(key);
+
+	hb = _kddm_grab_object(futex_kddm_set, hash);
+	if (!hb)
+		hb = ERR_PTR(-ENOMEM);
+	return hb;
+}
+
+static struct futex_hash_bucket *hash_futex(union futex_key *key)
+{
+	if (!key->both.krg_id)
+		return vanilla_hash_futex(key);
+
+	return krg_grab_futex(key);
+}
+
+static void krg_put_futex(struct futex_hash_bucket *hb)
+{
+	_kddm_put_object(futex_kddm_set, hb->id);
+}
+#endif
+
 /*
  * Return 1 if two futex_keys are equal, 0 otherwise.
  */
 static inline int match_futex(union futex_key *key1, union futex_key *key2)
 {
+#ifdef CONFIG_KRG_EPM
+	if (key1->both.krg_id)
+		return (key1->both.word == key2->both.word
+			&& key1->both.krg_id == key2->both.krg_id
+			&& key1->both.offset == key2->both.offset);
+#endif
 	return (key1->both.word == key2->both.word
 		&& key1->both.ptr == key2->both.ptr
 		&& key1->both.offset == key2->both.offset);
@@ -176,8 +256,10 @@ static void get_futex_key_refs(union futex_key *key)
 static void drop_futex_key_refs(union futex_key *key)
 {
 	if (!key->both.ptr) {
+#ifndef CONFIG_KRG_EPM
 		/* If we're here then we tried to put a key we failed to get */
 		WARN_ON_ONCE(1);
+#endif
 		return;
 	}
 
@@ -235,6 +317,12 @@ get_futex_key(u32 __user *uaddr, int fshared, union futex_key *key, int rw)
 			return -EFAULT;
 		key->private.mm = mm;
 		key->private.address = address;
+#ifdef CONFIG_KRG_EPM
+		if (mm->mm_id)
+			key->private.mm_id = mm->mm_id;
+		else
+			key->private.mm_id = 0;
+#endif
 		get_futex_key_refs(key);
 		return 0;
 	}
@@ -262,10 +350,22 @@ again:
 		key->both.offset |= FUT_OFF_MMSHARED; /* ref taken on mm */
 		key->private.mm = mm;
 		key->private.address = address;
+#ifdef CONFIG_KRG_EPM
+		if (mm->mm_id)
+			key->private.mm_id = mm->mm_id;
+		else
+			key->private.mm_id = 0;
+#endif
 	} else {
 		key->both.offset |= FUT_OFF_INODE; /* inode-based key */
 		key->shared.inode = page->mapping->host;
 		key->shared.pgoff = page->index;
+#ifdef CONFIG_KRG_EPM
+		if (page->mapping->kddm_set)
+			key->shared.mapping_id = page->mapping->kddm_set->id;
+		else
+			key->shared.mapping_id = 0;
+#endif
 	}
 
 	get_futex_key_refs(key);
@@ -280,6 +380,215 @@ void put_futex_key(int fshared, union futex_key *key)
 {
 	drop_futex_key_refs(key);
 }
+
+#ifdef CONFIG_KRG_EPM
+/*
+ * local_futex_lock must be held by the caller
+ */
+static struct futex_q *find_local_futex_q(pid_t waiter_pid)
+{
+	struct list_head *tmp, *element;
+	struct futex_q *this, *q = NULL;
+
+	list_for_each_safe(element, tmp, &local_futex_queues) {
+		this = list_entry(element, struct futex_q, local_list);
+		if (this->waiter_pid == waiter_pid) {
+			q = this;
+			goto found;
+		}
+	}
+found:
+	return q;
+}
+
+static int futex_hb_alloc_object(struct kddm_obj *obj_entry,
+				 struct kddm_set *kddm, objid_t objid)
+{
+	struct futex_hash_bucket *hb;
+	hb = kmalloc(sizeof(*hb), GFP_KERNEL);
+	if (!hb)
+		return -ENOMEM;
+
+	hb->id = objid;
+	plist_head_init(&hb->chain, &hb->lock);
+	spin_lock_init(&hb->lock);
+
+	obj_entry->object = hb;
+	return 0;
+}
+
+static int export_one_futex_q(struct rpc_desc *desc,
+			      struct futex_q *q)
+{
+	int r;
+
+	r = rpc_pack_type(desc, *q);
+
+	return r;
+}
+
+static int futex_hb_export_object(struct rpc_desc *desc,
+				  struct kddm_set *set,
+				  struct kddm_obj *obj_entry,
+				  objid_t objid,
+				  int flags)
+{
+	long nb_futex_q;
+	struct futex_hash_bucket *hb;
+	struct futex_q *this, *next;
+	struct plist_head *head;
+	int r;
+
+	hb = obj_entry->object;
+	nb_futex_q = 0;
+	head = &hb->chain;
+
+	plist_for_each_entry_safe(this, next, head, list) {
+		nb_futex_q++;
+	}
+
+	r = rpc_pack_type(desc, nb_futex_q);
+	if (r)
+		goto err;
+
+	plist_for_each_entry_safe(this, next, head, list) {
+		r = export_one_futex_q(desc, this);
+		if (r)
+			goto err;
+	}
+
+err:
+	return r;
+}
+
+static int import_one_futex_q(struct rpc_desc *desc,
+			      struct futex_hash_bucket *hb)
+{
+	struct futex_q *q, *old_q;
+	int r;
+
+	q = kmalloc(sizeof(struct futex_q), GFP_KERNEL);
+	if (!q) {
+		r = -ENOMEM;
+		goto err;
+	}
+
+	r = rpc_unpack_type(desc, *q);
+	if (r)
+		goto err;
+
+	q->key.both.ptr = NULL;
+
+	if (q->hosting_node != kerrighed_node_id) {
+		q->pi_state = NULL;
+		q->task = NULL;
+	} else {
+		/* futex queue is on local_queues */
+		spin_lock(&local_futex_lock);
+		old_q = find_local_futex_q(q->waiter_pid);
+		BUG_ON(!old_q);
+
+		if (!plist_node_empty(&old_q->list)) {
+			/*
+			 * process has been requeued remotely but is
+			 * still queued to the wrong futex locally
+			 */
+			BUG_ON(match_futex(&q->key, &old_q->key));
+			spin_lock(old_q->lock_ptr);
+			plist_del(&old_q->list, &old_q->list.plist);
+			spin_unlock(old_q->lock_ptr);
+		}
+
+		if (!match_futex(&q->key, &old_q->key)) {
+			drop_futex_key_refs(&old_q->key);
+			/*
+			 * it would be better to take a local reference to
+			 * the key but how ?
+			 */
+			old_q->key = q->key;
+		}
+
+		kfree(q);
+		q = old_q;
+		spin_unlock(&local_futex_lock);
+	}
+	q->lock_ptr = &hb->lock;
+
+	spin_lock(&hb->lock);
+	plist_head_init(&(q->list.plist), &hb->lock);
+	BUG_ON(!plist_node_empty(&q->list));
+	plist_add(&q->list, &hb->chain);
+	spin_unlock(&hb->lock);
+err:
+	return r;
+}
+
+static void clean_local_futex_q_list(struct futex_hash_bucket *hb)
+{
+	struct plist_head *head;
+	struct futex_q *this, *next;
+
+	spin_lock(&hb->lock);
+	head = &hb->chain;
+
+	plist_for_each_entry_safe(this, next, head, list) {
+		plist_del(&this->list, &hb->chain);
+
+		if (this->hosting_node != kerrighed_node_id)
+			kfree(this);
+	}
+
+	BUG_ON(!plist_head_empty(&hb->chain));
+	spin_unlock(&hb->lock);
+}
+
+static int futex_hb_import_object(struct rpc_desc *desc,
+				  struct kddm_set *set,
+				  struct kddm_obj *obj_entry,
+				  objid_t objid,
+				  int flags)
+{
+	long nb_futex_q, i;
+	struct futex_hash_bucket *hb;
+	int r;
+
+	r = rpc_unpack_type(desc, nb_futex_q);
+	if (r)
+		goto err;
+
+	hb = obj_entry->object;
+
+	clean_local_futex_q_list(hb);
+
+	for (i = 0; i < nb_futex_q ; i++) {
+		r = import_one_futex_q(desc, hb);
+		if (r)
+			goto err;
+	}
+
+err:
+	BUG_ON(r);
+	return r;
+}
+
+static int futex_hb_remove_object(void *obj, struct kddm_set *kddm,
+				  objid_t objid)
+{
+	struct futex_hash_bucket *hb = obj;
+	BUG_ON(!plist_head_empty(&hb->chain));
+	kfree(hb);
+	return 0;
+}
+
+static struct iolinker_struct futex_io_linker = {
+	.linker_name = "futex",
+	.linker_id = FUTEX_LINKER,
+	.alloc_object = futex_hb_alloc_object,
+	.remove_object = futex_hb_remove_object,
+	.import_object = futex_hb_import_object,
+	.export_object = futex_hb_export_object,
+};
+#endif
 
 static u32 cmpxchg_futex_value_locked(u32 __user *uaddr, u32 uval, u32 newval)
 {
@@ -423,7 +732,17 @@ void exit_pi_state_list(struct task_struct *curr)
 		next = head->next;
 		pi_state = list_entry(next, struct futex_pi_state, list);
 		key = pi_state->key;
+
+#ifdef CONFIG_KRG_EPM
+		/*
+		 * Calling kddm function is bad when holding spinlock.
+		 * Anyway, I (mfertre) do not see any other solution here.
+		 */
+#endif
 		hb = hash_futex(&key);
+#ifdef CONFIG_KRG_EPM
+		BUG_ON(IS_ERR(hb));
+#endif
 		spin_unlock_irq(&curr->pi_lock);
 
 		spin_lock(&hb->lock);
@@ -435,6 +754,10 @@ void exit_pi_state_list(struct task_struct *curr)
 		 */
 		if (head->next != next) {
 			spin_unlock(&hb->lock);
+#ifdef CONFIG_KRG_EPM
+			if (key.both.krg_id)
+				krg_put_futex(hb);
+#endif
 			continue;
 		}
 
@@ -447,6 +770,10 @@ void exit_pi_state_list(struct task_struct *curr)
 		rt_mutex_unlock(&pi_state->pi_mutex);
 
 		spin_unlock(&hb->lock);
+#ifdef CONFIG_KRG_EPM
+		if (key.both.krg_id)
+			krg_put_futex(hb);
+#endif
 
 		spin_lock_irq(&curr->pi_lock);
 	}
@@ -479,8 +806,25 @@ lookup_pi_state(u32 uval, struct futex_hash_bucket *hb,
 				return -EINVAL;
 
 			WARN_ON(!atomic_read(&pi_state->refcount));
-			WARN_ON(pid && pi_state->owner &&
-				pi_state->owner->pid != pid);
+
+			/*
+			 * When pi_state->owner is NULL then the owner died
+			 * and another waiter is on the fly. pi_state->owner
+			 * is fixed up by the task which acquires
+			 * pi_state->rt_mutex.
+			 *
+			 * We do not check for pid == 0 which can happen when
+			 * the owner died and robust_list_exit() cleared the
+			 * TID.
+			 */
+			if (pid && pi_state->owner) {
+				/*
+				 * Bail out if user space manipulated the
+				 * futex value.
+				 */
+				if (pid != task_pid_vnr(pi_state->owner))
+					return -EINVAL;
+			}
 
 			atomic_inc(&pi_state->refcount);
 			*ps = pi_state;
@@ -542,13 +886,141 @@ lookup_pi_state(u32 uval, struct futex_hash_bucket *hb,
 	return 0;
 }
 
+#ifdef CONFIG_KRG_EPM
+struct futex_wake_up_msg {
+	union futex_key key;
+	pid_t waiter_pid;
+};
+
+static void wake_futex(struct futex_q *q);
+
+static int handle_krg_futex_wake_up(struct rpc_desc *desc, void *_msg,
+				    size_t size)
+{
+	struct futex_wake_up_msg *msg = _msg;
+	struct futex_hash_bucket *hb;
+	struct plist_head *head;
+	struct futex_q *this, *next;
+	spinlock_t *lock_ptr;
+	u32 hash;
+	int ret = 0;
+
+	hash = compute_futex_hash(&msg->key);
+
+	/*
+	 * using _kddm_find_object_raw is dangerous, we must ensure that the RPC
+	 * call is done in a synchronous way while still grabbing the object.
+	 */
+	hb = _kddm_find_object_raw(futex_kddm_set, hash);
+	if (!hb) {
+		ret = -ENOMEM;
+		goto requeued;
+	}
+
+	lock_ptr = &hb->lock;
+	spin_lock(lock_ptr);
+
+	head = &hb->chain;
+	plist_for_each_entry_safe(this, next, head, list) {
+		if (msg->waiter_pid == this->waiter_pid) {
+			BUG_ON(this->hosting_node != kerrighed_node_id);
+
+			/*
+			 * No need to check the key: one process can wait on
+			 * only one futex at the same time.
+			 * Moreover, the key may be wrong if process has been
+			 * remotely requeued but there is a hash collision
+			 * and thus still linked to the same hash bucket.
+			 */
+			wake_futex(this);
+			goto unlock;
+		}
+	}
+
+	spin_unlock(lock_ptr);
+	lock_ptr = NULL;
+
+requeued:
+	/*
+	 * process has been requeued on another futex,
+	 * check in local list
+	 */
+	spin_lock(&local_futex_lock);
+	this = find_local_futex_q(msg->waiter_pid);
+	BUG_ON(!this);
+	/* process has been requeued, key can't be the right one */
+	BUG_ON(match_futex(&msg->key, &this->key));
+
+	lock_ptr = this->lock_ptr;
+	spin_unlock(&local_futex_lock);
+
+	spin_lock(lock_ptr);
+	wake_futex(this);
+
+unlock:
+	if (lock_ptr)
+		spin_unlock(lock_ptr);
+	return ret;
+}
+
+static void krg_futex_wake_up(struct futex_q *q, spinlock_t *hb1_lock, spinlock_t *hb2_lock)
+{
+	int ret;
+	struct futex_wake_up_msg msg;
+	msg.key = q->key;
+	msg.waiter_pid = q->waiter_pid;
+
+	BUG_ON(!hb1_lock);
+	BUG_ON(q->lock_ptr != hb1_lock && q->lock_ptr != hb2_lock);
+	/*
+	 * Unlock hb lock to please lockdep. Since we are still
+	 * grabbing the kddm object, there is no consequence.
+	 */
+	if (hb2_lock)
+		spin_unlock(hb2_lock);
+	spin_unlock(hb1_lock);
+
+	ret = rpc_sync(RPC_FUTEX_WAKE, q->hosting_node, &msg, sizeof(msg));
+
+	spin_lock(hb1_lock);
+	if (hb2_lock)
+		spin_lock(hb2_lock);
+
+	kfree(q);
+}
+#endif
+
 /*
  * The hash bucket lock must be held when this is called.
  * Afterwards, the futex_q must not be accessed.
  */
+
+
+#ifdef CONFIG_KRG_EPM
+static void __wake_futex(struct futex_q *q,
+			 spinlock_t *hb1_lock, spinlock_t *hb2_lock)
+#else
 static void wake_futex(struct futex_q *q)
+#endif
 {
+#ifdef CONFIG_KRG_EPM
+	if (!plist_node_empty(&q->list))
+#endif
 	plist_del(&q->list, &q->list.plist);
+
+#ifdef CONFIG_KRG_EPM
+	else
+		/* it may happen if q has been requeued remotely */
+		BUG_ON(q->hosting_node != KERRIGHED_NODE_ID_NONE
+		       && q->hosting_node != kerrighed_node_id);
+
+	if (q->hosting_node != KERRIGHED_NODE_ID_NONE
+	    && q->hosting_node != kerrighed_node_id) {
+		krg_futex_wake_up(q, hb1_lock, hb2_lock);
+		return;
+	}
+#endif
+
 	/*
 	 * The lock in wake_up_all() is a crucial memory barrier after the
 	 * plist_del() and also before assigning to q->lock_ptr.
@@ -564,7 +1036,16 @@ static void wake_futex(struct futex_q *q)
 	 */
 	smp_wmb();
 	q->lock_ptr = NULL;
+
+	return;
 }
+
+#ifdef CONFIG_KRG_EPM
+static void wake_futex(struct futex_q *q)
+{
+	__wake_futex(q, q->lock_ptr, NULL);
+}
+#endif
 
 static int wake_futex_pi(u32 __user *uaddr, u32 uval, struct futex_q *this)
 {
@@ -661,12 +1142,121 @@ double_lock_hb(struct futex_hash_bucket *hb1, struct futex_hash_bucket *hb2)
 }
 
 static inline void
+#ifdef CONFIG_KRG_EPM
+vanilla_double_unlock_hb(struct futex_hash_bucket *hb1, struct futex_hash_bucket *hb2)
+#else
 double_unlock_hb(struct futex_hash_bucket *hb1, struct futex_hash_bucket *hb2)
+#endif
 {
 	spin_unlock(&hb1->lock);
 	if (hb1 != hb2)
 		spin_unlock(&hb2->lock);
 }
+
+#ifdef CONFIG_KRG_EPM
+static int krg_double_grab_futex(union futex_key *key1,
+				 struct futex_hash_bucket **hb1,
+				 union futex_key *key2,
+				 struct futex_hash_bucket **hb2)
+{
+	u32 hash1, hash2;
+	int ret = 0;
+
+	hash1 = compute_futex_hash(key1);
+	hash2 = compute_futex_hash(key2);
+
+	if (hash1 < hash2) {
+		if (!key1->both.krg_id)
+			*hb1 = __vanilla_hash_futex(hash1);
+		else {
+			*hb1 = _kddm_grab_object(futex_kddm_set, hash1);
+			if (!*hb1) {
+				ret = -ENOMEM;
+				goto out;
+			}
+		}
+
+		if (!key2->both.krg_id)
+			*hb2 = __vanilla_hash_futex(hash2);
+		else {
+			*hb2 = _kddm_grab_object(futex_kddm_set, hash2);
+			if (!*hb2) {
+				ret = -ENOMEM;
+				goto err_put_hb1;
+			}
+		}
+
+	} else if (hash1 > hash2) {
+
+		if (!key2->both.krg_id)
+			*hb2 = __vanilla_hash_futex(hash2);
+		else {
+			*hb2 = _kddm_grab_object(futex_kddm_set, hash2);
+			if (!*hb2) {
+				ret = -ENOMEM;
+				goto out;
+			}
+		}
+
+		if (!key1->both.krg_id)
+			*hb1 = __vanilla_hash_futex(hash1);
+		else {
+			*hb1 = _kddm_grab_object(futex_kddm_set, hash1);
+			if (!*hb1) {
+				ret = -ENOMEM;
+				goto err_put_hb2;
+			}
+		}
+
+	} else { /* hash1 == hash2 */
+
+		if (!key1->both.krg_id)
+			*hb1 = __vanilla_hash_futex(hash1);
+		else {
+			*hb1 = _kddm_grab_object(futex_kddm_set, hash1);
+			if (!*hb1) {
+				ret = -ENOMEM;
+				goto out;
+			}
+		}
+
+		*hb2 = *hb1;
+	}
+
+	double_lock_hb(*hb1, *hb2);
+	return ret;
+
+out:
+	return ret;
+err_put_hb1:
+	_kddm_put_object(futex_kddm_set, hash1);
+	hb1 = NULL;
+	goto out;
+err_put_hb2:
+	_kddm_put_object(futex_kddm_set, hash2);
+	hb2 = NULL;
+	goto out;
+}
+
+void double_unlock_hb(struct futex_hash_bucket *hb1,
+		      struct futex_hash_bucket *hb2)
+{
+	vanilla_double_unlock_hb(hb1, hb2);
+
+	if (hb1->id < hb2->id) {
+		if (hb1->id)
+			_kddm_put_object(futex_kddm_set, hb1->id);
+		_kddm_put_object(futex_kddm_set, hb2->id);
+	} else if (hb2->id < hb1->id) {
+		if (hb2->id)
+			_kddm_put_object(futex_kddm_set, hb2->id);
+		_kddm_put_object(futex_kddm_set, hb1->id);
+	} else { /* hb1->id == hb2-> id */
+		if (hb1->id)
+			_kddm_put_object(futex_kddm_set, hb1->id);
+	}
+}
+#endif
 
 /*
  * Wake up waiters matching bitset queued on this futex (uaddr).
@@ -687,6 +1277,12 @@ static int futex_wake(u32 __user *uaddr, int fshared, int nr_wake, u32 bitset)
 		goto out;
 
 	hb = hash_futex(&key);
+#ifdef CONFIG_KRG_EPM
+	if (IS_ERR(hb)) {
+		ret = PTR_ERR(hb);
+		goto out_put_key;
+	}
+#endif
 	spin_lock(&hb->lock);
 	head = &hb->chain;
 
@@ -708,6 +1304,11 @@ static int futex_wake(u32 __user *uaddr, int fshared, int nr_wake, u32 bitset)
 	}
 
 	spin_unlock(&hb->lock);
+#ifdef CONFIG_KRG_EPM
+	if (key.both.krg_id)
+		krg_put_futex(hb);
+out_put_key:
+#endif
 	put_futex_key(fshared, &key);
 out:
 	return ret;
@@ -735,11 +1336,18 @@ retry:
 	if (unlikely(ret != 0))
 		goto out_put_key1;
 
+#ifdef CONFIG_KRG_EPM
+retry_private:
+	ret = krg_double_grab_futex(&key1, &hb1, &key2, &hb2);
+	if (ret)
+		goto out_put_keys;
+#else
 	hb1 = hash_futex(&key1);
 	hb2 = hash_futex(&key2);
 
-	double_lock_hb(hb1, hb2);
 retry_private:
+	double_lock_hb(hb1, hb2);
+#endif
 	op_ret = futex_atomic_op_inuser(op, uaddr2);
 	if (unlikely(op_ret < 0)) {
 		u32 dummy;
@@ -776,7 +1384,11 @@ retry_private:
 
 	plist_for_each_entry_safe(this, next, head, list) {
 		if (match_futex (&this->key, &key1)) {
+#ifdef CONFIG_KRG_EPM
+			__wake_futex(this, &hb1->lock, &hb2->lock);
+#else
 			wake_futex(this);
+#endif
 			if (++ret >= nr_wake)
 				break;
 		}
@@ -788,7 +1400,11 @@ retry_private:
 		op_ret = 0;
 		plist_for_each_entry_safe(this, next, head, list) {
 			if (match_futex (&this->key, &key2)) {
+#ifdef CONFIG_KRG_EPM
+				__wake_futex(this, &hb1->lock, &hb2->lock);
+#else
 				wake_futex(this);
+#endif
 				if (++op_ret >= nr_wake2)
 					break;
 			}
@@ -826,12 +1442,18 @@ retry:
 	if (unlikely(ret != 0))
 		goto out_put_key1;
 
+#ifdef CONFIG_KRG_EPM
+retry_private:
+	ret = krg_double_grab_futex(&key1, &hb1, &key2, &hb2);
+	if (ret)
+		goto out_put_keys;
+#else
 	hb1 = hash_futex(&key1);
 	hb2 = hash_futex(&key2);
 
 retry_private:
 	double_lock_hb(hb1, hb2);
-
+#endif
 	if (likely(cmpval != NULL)) {
 		u32 curval;
 
@@ -862,7 +1484,11 @@ retry_private:
 		if (!match_futex (&this->key, &key1))
 			continue;
 		if (++ret <= nr_wake) {
+#ifdef CONFIG_KRG_EPM
+			__wake_futex(this, &hb1->lock, &hb2->lock);
+#else
 			wake_futex(this);
+#endif
 		} else {
 			/*
 			 * If key1 and key2 hash to the same bucket, no need to
@@ -876,9 +1502,24 @@ retry_private:
 				this->list.plist.lock = &hb2->lock;
 #endif
 			}
+#ifdef CONFIG_KRG_EPM
+			/*
+			 * there are several cases in which we have no reference
+			 * on key1:
+			 *  1) process is remote,
+			 *  2) process is local but it has been remotely
+			 *     requeued from a key X to key key1.
+			 *
+			 * check we are not in these cases.
+			 */
+			if (this->key.both.ptr)
+				drop_count++;
+#else
+			drop_count++;
+#endif
+
 			this->key = key2;
 			get_futex_key_refs(&key2);
-			drop_count++;
 
 			if (ret - nr_wake >= nr_requeue)
 				break;
@@ -914,9 +1555,18 @@ static inline struct futex_hash_bucket *queue_lock(struct futex_q *q)
 
 	get_futex_key_refs(&q->key);
 	hb = hash_futex(&q->key);
+#ifdef CONFIG_KRG_EPM
+	if (IS_ERR(hb)) {
+		drop_futex_key_refs(&q->key);
+		goto out;
+	}
+#endif
 	q->lock_ptr = &hb->lock;
 
 	spin_lock(&hb->lock);
+#ifdef CONFIG_KRG_EPM
+out:
+#endif
 	return hb;
 }
 
@@ -940,13 +1590,38 @@ static inline void queue_me(struct futex_q *q, struct futex_hash_bucket *hb)
 #endif
 	plist_add(&q->list, &hb->chain);
 	q->task = current;
+#ifdef CONFIG_KRG_EPM
+	INIT_LIST_HEAD(&q->local_list);
+	if (q->key.both.krg_id) {
+		q->waiter_pid = task_pid_knr(current);
+		q->hosting_node = kerrighed_node_id;
+	} else {
+		q->waiter_pid = 0;
+		q->hosting_node = KERRIGHED_NODE_ID_NONE;
+	}
+#endif
 	spin_unlock(&hb->lock);
+
+#ifdef CONFIG_KRG_EPM
+	if (q->key.both.krg_id) {
+		spin_lock(&local_futex_lock);
+		list_add_tail(&q->local_list, &local_futex_queues);
+		spin_unlock(&local_futex_lock);
+
+		krg_put_futex(hb);
+	}
+#endif
 }
 
 static inline void
 queue_unlock(struct futex_q *q, struct futex_hash_bucket *hb)
 {
 	spin_unlock(&hb->lock);
+#ifdef CONFIG_KRG_EPM
+	if (q->key.both.krg_id)
+		krg_put_futex(hb);
+#endif
+
 	drop_futex_key_refs(&q->key);
 }
 
@@ -966,6 +1641,13 @@ retry:
 	lock_ptr = q->lock_ptr;
 	barrier();
 	if (lock_ptr != NULL) {
+#ifdef CONFIG_KRG_EPM
+		struct futex_hash_bucket *hb;
+		if (q->key.both.krg_id) {
+			hb = krg_grab_futex(&q->key);
+			BUG_ON(IS_ERR(hb));
+		}
+#endif
 		spin_lock(lock_ptr);
 		/*
 		 * q->lock_ptr can change between reading it and
@@ -982,16 +1664,41 @@ retry:
 		 */
 		if (unlikely(lock_ptr != q->lock_ptr)) {
 			spin_unlock(lock_ptr);
+#ifdef CONFIG_KRG_EPM
+			if (q->key.both.krg_id)
+				krg_put_futex(hb);
+#endif
 			goto retry;
 		}
+
+#ifdef CONFIG_KRG_EPM
+		if (plist_node_empty(&q->list))
+			/* happens only for local futex_q requeued remotely */
+			BUG_ON(q->hosting_node == KERRIGHED_NODE_ID_NONE);
+		else
+#else
 		WARN_ON(plist_node_empty(&q->list));
+#endif
 		plist_del(&q->list, &q->list.plist);
 
 		BUG_ON(q->pi_state);
 
 		spin_unlock(lock_ptr);
+#ifdef CONFIG_KRG_EPM
+		if (q->key.both.krg_id)
+			krg_put_futex(hb);
+#endif
 		ret = 1;
 	}
+
+#ifdef CONFIG_KRG_EPM
+	if (q->hosting_node != KERRIGHED_NODE_ID_NONE) {
+		BUG_ON(q->hosting_node != kerrighed_node_id);
+		spin_lock(&local_futex_lock);
+		list_del(&q->local_list);
+		spin_unlock(&local_futex_lock);
+	}
+#endif
 
 	drop_futex_key_refs(&q->key);
 	return ret;
@@ -1133,6 +1840,7 @@ static int futex_wait(u32 __user *uaddr, int fshared,
 	DECLARE_WAITQUEUE(wait, curr);
 	struct futex_hash_bucket *hb;
 	struct futex_q q;
+	union futex_key key;
 	u32 uval;
 	int ret;
 	struct hrtimer_sleeper t;
@@ -1149,9 +1857,20 @@ retry:
 	if (unlikely(ret != 0))
 		goto out;
 
+	/*
+	 * The key must be saved in case it is overwritten by a requeue
+	 */
+	key = q.key;
+
 retry_private:
 	hb = queue_lock(&q);
 
+#ifdef CONFIG_KRG_EPM
+	if (IS_ERR(hb)) {
+		ret = PTR_ERR(hb);
+		goto out_put_key;
+	}
+#endif
 	/*
 	 * Access the page AFTER the hash-bucket is locked.
 	 * Order is important:
@@ -1184,7 +1903,7 @@ retry_private:
 		if (!fshared)
 			goto retry_private;
 
-		put_futex_key(fshared, &q.key);
+		put_futex_key(fshared, &key);
 		goto retry;
 	}
 	ret = -EWOULDBLOCK;
@@ -1283,7 +2002,7 @@ retry_private:
 	ret = -ERESTART_RESTARTBLOCK;
 
 out_put_key:
-	put_futex_key(fshared, &q.key);
+	put_futex_key(fshared, &key);
 out:
 	return ret;
 }
@@ -1604,6 +2323,12 @@ retry:
 		goto out;
 
 	hb = hash_futex(&key);
+#ifdef CONFIG_KRG_EPM
+	if (IS_ERR(hb)) {
+		ret = PTR_ERR(hb);
+		goto out_put_key;
+	}
+#endif
 	spin_lock(&hb->lock);
 
 	/*
@@ -1654,6 +2379,11 @@ retry:
 
 out_unlock:
 	spin_unlock(&hb->lock);
+#ifdef CONFIG_KRG_EPM
+	if (key.both.krg_id)
+		krg_put_futex(hb);
+out_put_key:
+#endif
 	put_futex_key(fshared, &key);
 
 out:
@@ -1668,6 +2398,10 @@ pi_faulted:
 	 * we have to drop the mmap_sem in order to call get_user().
 	 */
 	spin_unlock(&hb->lock);
+#ifdef CONFIG_KRG_EPM
+	if (key.both.krg_id)
+		krg_put_futex(hb);
+#endif
 	put_futex_key(fshared, &key);
 
 	ret = get_user(uval, uaddr);
@@ -2012,3 +2746,25 @@ static int __init futex_init(void)
 	return 0;
 }
 __initcall(futex_init);
+
+#ifdef CONFIG_KRG_EPM
+int krg_futex_init(void)
+{
+	int ret = 0;
+
+	register_io_linker(FUTEX_LINKER, &futex_io_linker);
+
+	futex_kddm_set = create_new_kddm_set(kddm_def_ns, FUTEX_KDDM_ID,
+					     FUTEX_LINKER, KDDM_RR_DEF_OWNER,
+					     0, 0);
+	if (IS_ERR(futex_kddm_set))
+		BUG();
+
+	rpc_register_int(RPC_FUTEX_WAKE, handle_krg_futex_wake_up, 0);
+
+	INIT_LIST_HEAD(&local_futex_queues);
+	spin_lock_init(&local_futex_lock);
+
+	return ret;
+}
+#endif
