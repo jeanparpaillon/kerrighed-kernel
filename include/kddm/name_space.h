@@ -24,12 +24,18 @@
 
 struct kddm_ns;
 
+enum {
+	KDDM_NS_READY,
+	KDDM_NS_FROZEN,
+};
+
 typedef struct kddm_ns_ops {
 	struct kddm_set *(*kddm_set_lookup)(struct kddm_ns *ns,
 					    kddm_set_id_t set_id);
 } kddm_ns_ops_t;
 
 typedef struct kddm_ns {
+	int state;
 	atomic_t count;
 	struct rw_semaphore table_sem;
 	hashtable_t *kddm_set_table;

@@ -136,6 +136,12 @@ typedef struct {
 	kddm_set_id_t set_id;        /**< KDDM set identifier */
 } kddm_id_msg_t;
 
+struct kddm_lookup_msg {
+	int lock_free;
+	int ns_id;
+	kddm_set_id_t set_id;
+};
+
 
 
 /*--------------------------------------------------------------------------*

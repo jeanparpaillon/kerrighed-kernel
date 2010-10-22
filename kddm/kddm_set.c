@@ -275,7 +275,7 @@ struct kddm_set *generic_local_get_kddm_set(int ns_id,
 int find_kddm_set_remotely(struct kddm_set *kddm_set)
 {
 	kerrighed_node_t kddm_set_mgr_node_id ;
-	kddm_id_msg_t kddm_id;
+	struct kddm_lookup_msg req;
 	msg_kddm_set_t *msg;
 	int msg_size;
 	int err = -ENOMEM;
@@ -286,11 +286,12 @@ int find_kddm_set_remotely(struct kddm_set *kddm_set)
 
 	kddm_set_mgr_node_id = KDDM_SET_MGR(kddm_set);
 
-	kddm_id.set_id = kddm_set->id;
-	kddm_id.ns_id = kddm_set->ns->id;
+	req.lock_free = (kddm_set->ns->state == KDDM_NS_FROZEN);
+	req.set_id = kddm_set->id;
+	req.ns_id = kddm_set->ns->id;
 
 	desc = rpc_begin(REQ_KDDM_SET_LOOKUP, kddm_set_mgr_node_id);
-	rpc_pack_type(desc, kddm_id);
+	rpc_pack_type(desc, req);
 
 	msg_size = sizeof(msg_kddm_set_t) + MAX_PRIVATE_DATA_SIZE;
 
@@ -331,9 +332,11 @@ check_err:
 
 	spin_lock(&kddm_set->lock);
 
-	if (err == 0)
+	if (err == 0) {
 		kddm_set->state = KDDM_SET_READY;
-	else
+		if (kddm_set->ns->state == KDDM_NS_FROZEN)
+			set_kddm_frozen(kddm_set);
+	} else
 		kddm_set->state = KDDM_SET_INVALID;
 
 	wake_up(&kddm_set->create_wq);
@@ -379,12 +382,12 @@ check_no_lock:
 		wait_event (kddm_set->frozen_wq, (!kddm_frozen(kddm_set)));
 		goto recheck_state;
 	}
-	/* Make sure we only use bypass_frozen when KDDM are frozen (i.e.
-	   hotplug cases) */
-	BUG_ON ((flags & KDDM_LOCK_FREE) && !kddm_frozen(kddm_set));
 
 	switch (kddm_set->state) {
 	  case KDDM_SET_READY:
+		  /* Make sure we only use bypass_frozen when KDDM are frozen (i.e.
+		     hotplug cases) */
+		  BUG_ON ((flags & KDDM_LOCK_FREE) && !kddm_frozen(kddm_set));
 		  spin_unlock(&kddm_set->lock);
 		  break;
 
@@ -539,10 +542,12 @@ void freeze_kddm(void)
 	down_read (&kddm_def_ns->table_sem);
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
 				 do_freeze_kddm_set, NULL);
+	kddm_def_ns->state = KDDM_NS_FROZEN;
 }
 
 void unfreeze_kddm(void)
 {
+	kddm_def_ns->state = KDDM_NS_READY;
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
 				 do_unfreeze_kddm_set, NULL);
 	up_read (&kddm_def_ns->table_sem);
@@ -564,14 +569,15 @@ void unfreeze_kddm(void)
 int handle_req_kddm_set_lookup(struct rpc_desc* desc,
 			       void *_msg, size_t size)
 {
-	kddm_id_msg_t kddm_id = *((kddm_id_msg_t *) _msg);
+	struct kddm_lookup_msg req = *((struct kddm_lookup_msg *) _msg);
 	struct kddm_set *kddm_set;
 	msg_kddm_set_t *msg;
 	int msg_size = sizeof(msg_kddm_set_t);
 
 	BUG_ON(!krgnode_online(rpc_desc_get_client(desc)));
 
-	kddm_set = local_get_kddm_set(kddm_id.ns_id, kddm_id.set_id);
+	kddm_set = generic_local_get_kddm_set(req.ns_id, req.set_id,
+					      0, req.lock_free ? KDDM_LOCK_FREE : 0);
 
 	if (kddm_set)
 		msg_size += kddm_set->private_data_size;
@@ -587,7 +593,7 @@ int handle_req_kddm_set_lookup(struct rpc_desc* desc,
 		goto done;
 	}
 
-	msg->kddm_set_id = kddm_id.set_id;
+	msg->kddm_set_id = req.set_id;
 	msg->linker_id = kddm_set->iolinker->linker_id;
 	msg->flags = kddm_set->flags;
 	msg->link = kddm_set->def_owner;
