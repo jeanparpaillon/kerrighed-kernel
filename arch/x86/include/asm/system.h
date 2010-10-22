@@ -124,7 +124,10 @@ do {									\
 
 /* Save restore flags to clear handle leaking NT */
 #define switch_to(prev, next, last) \
-	asm volatile(SAVE_CONTEXT					  \
+	asm volatile(							  \
+	     ".globl thread_switch\n"					  \
+	     "thread_switch:\n\t"					  \
+	     SAVE_CONTEXT						  \
 	     "movq %%rsp,%P[threadrsp](%[prev])\n\t" /* save RSP */	  \
 	     "movq %P[threadrsp](%[next]),%%rsp\n\t" /* restore RSP */	  \
 	     "call __switch_to\n\t"					  \

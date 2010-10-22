@@ -105,6 +105,10 @@ void pt_regs_to_gdb_regs(unsigned long *gdb_regs, struct pt_regs *regs)
 #endif
 }
 
+#ifndef CONFIG_X86_32
+extern void thread_switch(void);
+#endif
+
 /**
  *	sleeping_thread_to_gdb_regs - Convert ptrace regs to GDB regs
  *	@gdb_regs: A pointer to hold the registers in the order GDB wants.
@@ -138,11 +142,12 @@ void sleeping_thread_to_gdb_regs(unsigned long *gdb_regs, struct task_struct *p)
 	gdb_regs[GDB_SS]	= __KERNEL_DS;
 	gdb_regs[GDB_FS]	= 0xFFFF;
 	gdb_regs[GDB_GS]	= 0xFFFF;
+	gdb_regs[GDB_SP]	= p->thread.sp;
 #else
 	gdb_regs32[GDB_PS]	= *(unsigned long *)(p->thread.sp + 8);
 	gdb_regs32[GDB_CS]	= __KERNEL_CS;
 	gdb_regs32[GDB_SS]	= __KERNEL_DS;
-	gdb_regs[GDB_PC]	= p->thread.ip;
+	gdb_regs[GDB_PC]	= (unsigned long)thread_switch;
 	gdb_regs[GDB_R8]	= 0;
 	gdb_regs[GDB_R9]	= 0;
 	gdb_regs[GDB_R10]	= 0;
@@ -151,8 +156,8 @@ void sleeping_thread_to_gdb_regs(unsigned long *gdb_regs, struct task_struct *p)
 	gdb_regs[GDB_R13]	= 0;
 	gdb_regs[GDB_R14]	= 0;
 	gdb_regs[GDB_R15]	= 0;
+	gdb_regs[GDB_SP]	= p->thread.sp + 16;
 #endif
-	gdb_regs[GDB_SP]	= p->thread.sp;
 }
 
 /**

@@ -123,6 +123,7 @@ atomic_t			kgdb_active = ATOMIC_INIT(-1);
  */
 static atomic_t			passive_cpu_wait[NR_CPUS];
 static atomic_t			cpu_in_kgdb[NR_CPUS];
+static atomic_t			kgdb_break_tasklet_var;
 atomic_t			kgdb_setting_breakpoint;
 
 struct task_struct		*kgdb_usethread;
@@ -828,6 +829,12 @@ static int kgdb_io_ready(int print_wait)
  * where KGDB is communicating with an external debugger
  */
 
+/* Handle the '!' extended mode request */
+static void gdb_cmd_extended(struct kgdb_state *ks)
+{
+	strcpy(remcom_out_buffer, "OK");
+}
+
 /* Handle the '?' status packets */
 static void gdb_cmd_status(struct kgdb_state *ks)
 {
@@ -1251,6 +1258,9 @@ static int gdb_serial_stub(struct kgdb_state *ks)
 		get_packet(remcom_in_buffer);
 
 		switch (remcom_in_buffer[0]) {
+		case '!': /* extended mode */
+			gdb_cmd_extended(ks);
+			break;
 		case '?': /* gdbserial status */
 			gdb_cmd_status(ks);
 			break;
@@ -1588,11 +1598,49 @@ static struct sysrq_key_op sysrq_gdb_op = {
 };
 #endif
 
+static int
+kgdb_notify_reboot(struct notifier_block *this, unsigned long code, void *x)
+{
+	unsigned long flags;
+
+	if (!kgdb_connected)
+		return 0;
+
+	if (code == SYS_RESTART || code == SYS_HALT || code == SYS_POWER_OFF) {
+		local_irq_save(flags);
+		if (kgdb_io_ops->write_char) {
+			/* Do not use put_packet to avoid hanging
+			 * in case the attached debugger disappeared
+			 * or does not respond timely.
+			 */
+			kgdb_io_ops->write_char('$');
+			kgdb_io_ops->write_char('X');
+			kgdb_io_ops->write_char('0');
+			kgdb_io_ops->write_char('0');
+			kgdb_io_ops->write_char('#');
+			kgdb_io_ops->write_char('b');
+			kgdb_io_ops->write_char('8');
+			if (kgdb_io_ops->flush)
+				kgdb_io_ops->flush();
+		}
+		kgdb_connected = 0;
+		local_irq_restore(flags);
+	}
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block kgdb_reboot_notifier = {
+	.notifier_call		= kgdb_notify_reboot,
+	.next			= NULL,
+	.priority		= INT_MAX,
+};
+
 static void kgdb_register_callbacks(void)
 {
 	if (!kgdb_io_module_registered) {
 		kgdb_io_module_registered = 1;
 		kgdb_arch_init();
+		register_reboot_notifier(&kgdb_reboot_notifier);
 #ifdef CONFIG_MAGIC_SYSRQ
 		register_sysrq_key('g', &sysrq_gdb_op);
 #endif
@@ -1611,6 +1659,7 @@ static void kgdb_unregister_callbacks(void)
 	 * break exceptions at the time.
 	 */
 	if (kgdb_io_module_registered) {
+		unregister_reboot_notifier(&kgdb_reboot_notifier);
 		kgdb_io_module_registered = 0;
 		kgdb_arch_exit();
 #ifdef CONFIG_MAGIC_SYSRQ
@@ -1622,6 +1671,31 @@ static void kgdb_unregister_callbacks(void)
 		}
 	}
 }
+
+/*
+ * There are times a tasklet needs to be used vs a compiled in in
+ * break point so as to cause an exception outside a kgdb I/O module,
+ * such as is the case with kgdboe, where calling a breakpoint in the
+ * I/O driver itself would be fatal.
+ */
+static void kgdb_tasklet_bpt(unsigned long ing)
+{
+	kgdb_breakpoint();
+	atomic_set(&kgdb_break_tasklet_var, 0);
+}
+
+static DECLARE_TASKLET(kgdb_tasklet_breakpoint, kgdb_tasklet_bpt, 0);
+
+void kgdb_schedule_breakpoint(void)
+{
+	if (atomic_read(&kgdb_break_tasklet_var) ||
+		atomic_read(&kgdb_active) != -1 ||
+		atomic_read(&kgdb_setting_breakpoint))
+		return;
+	atomic_inc(&kgdb_break_tasklet_var);
+	tasklet_schedule(&kgdb_tasklet_breakpoint);
+}
+EXPORT_SYMBOL_GPL(kgdb_schedule_breakpoint);
 
 static void kgdb_initial_breakpoint(void)
 {

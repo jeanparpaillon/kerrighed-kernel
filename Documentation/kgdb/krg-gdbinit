@@ -1,0 +1,394 @@
+define __offset_of
+	print &(($arg0 *) 0)->$arg1
+end
+
+define offset_of
+	print &((struct $arg0 *) 0)->$arg1
+end
+
+define __container_of
+	print ($arg1 *)(((char *)$arg0) - (char *)&(($arg1 *) 0)->$arg2)
+end
+
+define container_of
+	print (struct $arg1 *)(((char *)$arg0) - (char *)&((struct $arg1 *) 0)->$arg2)
+end
+
+define listhead_next
+	set $nextlisth = ((struct $arg1*)$arg0)->$arg2.next
+	container_of $nextlisth $arg1 $arg2
+end
+
+define __attach
+	target extended-remote udp:$arg0:6443
+end
+
+define attach
+	__attach 10.4.7.$arg0
+end
+
+define reboot
+	run
+end
+
+define ps
+	set $inittask = &init_task
+	set $mthread = &init_task
+	set $tasks_off = (size_t)&((struct task_struct*) 0)->tasks
+	set $thread_group_off = (size_t)&((struct task_struct*) 0)->thread_group
+	set $cont = 1
+	while $cont == 1
+		set $athread = $mthread
+		set $subcont = 1
+		while $subcont == 1
+			printf "%d %s\n", $athread->pid, (char*)$athread->comm
+			if (int)$athread->thread_group.next == 0
+				set $subcont = 0
+			else
+				set $athread = (struct task_struct*)((char*)$athread->thread_group.next-$thread_group_off)
+				if $athread == $mthread
+					set $subcont = 0
+				end
+			end
+		end
+		set $mthread = (struct task_struct*)((char*)$mthread->tasks.next-$tasks_off)
+		if $mthread == $inittask
+			set $cont = 0
+		end
+	end
+end
+document ps
+	list all threads and processes in the system
+end
+
+define dmesg
+	set $i = 0
+	set $end_idx = (log_end - 1) & (log_buf_len - 1)
+
+	while ($i < logged_chars)
+		set $idx = (log_end - 1 - logged_chars + $i) & (log_buf_len - 1)
+
+		if ($idx + 100 <= $end_idx) || \
+		   ($end_idx <= $idx && $idx + 100 < log_buf_len)
+			printf "%.100s", &log_buf[$idx]
+			set $i = $i + 100
+		else
+			printf "%c", log_buf[$idx]
+			set $i = $i + 1
+		end
+	end
+end
+document dmesg
+	print the kernel ring buffer
+end
+
+define __task_pids
+	set $pid = $arg1->pids[PIDTYPE_PID].pid
+	set $max_level = $pid->level
+	set $level = 0
+
+	while $level <= $max_level
+		printf "level %d:\t", $level
+		p $pid->numbers[$level].nr
+		set $level = $level + 1
+	end
+end
+
+define task_pids
+	__task_pids "" $arg0
+end
+document task_pids
+	print pids in all namespaces (starting from init_pid_ns) of a task given its address
+end
+
+define task
+	set $t = (struct task_struct *) $arg0
+
+	printf "Task "
+	p $t->pid
+
+	printf "  comm:\t"
+	p $t->comm
+
+	printf "  pids:\n"
+	__task_pids "    " $t
+
+	printf "  task_struct:\t"
+	p $t
+
+	printf "  stack:\t"
+	p $t->stack
+
+	printf "  signal:\t"
+	p $t->signal
+
+	printf "  sighand:\t"
+	p $t->sighand
+
+	printf "  mm:\t\t"
+	p $t->mm
+
+	printf "  files:\t"
+	p $t->files
+
+	printf "  fs:\t\t"
+	p $t->fs
+
+	printf "  state:\t"
+	p /x $t->state
+
+	printf "  flags:\t"
+	p /x $t->flags
+end
+document task
+	print informations on a task given its task_struct address
+end
+
+define __taskpid
+	set $nr = $arg0
+	set $ns = $arg1
+	set $level = $ns->level
+	set $s = pidhash_shift
+	set $hash = (unsigned long)$nr + (unsigned long)$ns
+	set $n = $hash
+
+	set $n <<= 18
+	set $hash -= $n
+	set $n <<= 33
+	set $hash -= $n
+	set $n <<= 3
+	set $hash += $n
+	set $n <<= 3
+	set $hash -= $n
+	set $n <<= 4
+	set $hash += $n
+	set $n <<= 2
+	set $hash += $n
+
+	set $hash >>= (64 - $s)
+
+	set $pos = pid_hash[$hash].first
+	while $pos != 0
+		set $upid = (struct upid *)((char *)$pos - (char *)&((struct upid *)0)->pid_chain)
+		if $upid->nr == $nr && $upid->ns == $ns
+			set $pid = (struct pid *)((char *)$upid - (char *)&(((struct pid *)0)->numbers[$level]))
+			loop_break
+		end
+
+		set $pos = $pos->next
+	end
+
+	set $t = 0
+	if $pos != 0
+		set $t = $pid->tasks[0].first
+		if $t != 0
+			set $t = (struct task_struct *)((char *)$t - (char *)&((struct task_struct *)0)->pids[0].node)
+		end
+	end
+
+	if $t == 0
+		printf "no such task\n"
+	else
+		task $t
+	end
+end
+document __taskpid
+	print informations on a task given its pid and a pid namespace
+end
+
+define taskpid
+	__taskpid $arg0 &init_pid_ns
+end
+document taskpid
+	print informations on a task given its pid
+end
+
+define taskkpid
+	if krg_ns == 0
+		printf "no Kerrighed namespace\n"
+	else
+		__taskpid $arg0 krg_ns->root_pid_ns
+	end
+end
+document taskkpid
+	print informations on a task given its Kerrighed pid
+end
+
+
+set $O_FAF_CLT = (1<<22)
+set $O_FAF_SRV = (1<<23)
+set $O_DVFS = (1<<24)
+set $O_FAF_TTY = (1<<25)
+
+# in octal
+set $S_IFMT = 00170000
+set $S_IFSOCK = 0140000
+set $S_IFLNK = 0120000
+set $S_IFREG = 0100000
+set $S_IFBLK = 0060000
+set $S_IFDIR = 0040000
+set $S_IFCHR = 0020000
+set $S_IFIFO = 0010000
+set $S_ISUID = 0004000
+set $S_ISGID = 0002000
+set $S_ISVTX = 0001000
+
+set $O_ACCMODE   = 00000003
+set $O_RDONLY    = 00000000
+set $O_WRONLY    = 00000001
+set $O_RDWR      = 00000002
+set $O_CREAT     = 00000100
+set $O_EXCL      = 00000200
+set $O_NOCTTY    = 00000400
+set $O_TRUNC     = 00001000
+set $O_APPEND    = 00002000
+set $O_NONBLOCK  = 00004000
+set $O_SYNC      = 00010000
+set $FASYNC      = 00020000
+set $O_DIRECT    = 00040000
+set $O_LARGEFILE = 00100000
+set $O_DIRECTORY = 00200000
+set $O_NOFOLLOW	 = 00400000
+set $O_NOATIME	 = 01000000
+set $O_CLOEXEC	 = 02000000
+set $O_NDELAY	 = $O_NONBLOCK
+
+define get_inode_mode
+  set $file = (struct file *)$arg0
+  if ($file->f_flags & $O_FAF_CLT)
+    set $imode = ((struct faf_client_data*)$file->private_data)->i_mode
+  else if ($file->f_path.dentry)
+    set $imode = $file->f_path.dentry->d_inode->i_mode
+  else
+    set $imode = 0
+  end
+  print $imode
+end
+
+define is_pipe
+  set $imode = $arg0
+  if (($imode & $S_IFMT) == $S_IFIFO)
+    printf "PIPE "
+  end
+end
+
+define is_socket
+  set $imode = $arg0
+  if (($imode & $S_IFMT) == $S_IFSOCK)
+    printf "SOCKET "
+  end
+end
+
+define is_char_device
+  set $imode = $arg0
+  if (($imode & $S_IFMT) == $S_IFCHR)
+    printf "CHAR "
+  end
+end
+
+define is_block_device
+  set $imode = $arg0
+  if (($imode & $S_IFMT) == $S_IFBLK)
+    printf "CHAR "
+  end
+end
+
+define is_directory
+  set $imode = $arg0
+  if (($imode & $S_IFMT) == $S_IFDIR)
+    printf "CHAR "
+  end
+end
+
+define is_link
+  set $imode = $arg0
+  if (($imode & $S_IFMT) == $S_IFLNK)
+    printf "CHAR "
+  end
+end
+
+define fileinfo
+  set $file = (struct file *)$arg0
+  if ($file->f_path.dentry)
+    printf "%s\n", $file->f_path.dentry->d_name.name
+  end
+
+  printf "flags: 0x%x ", $file->f_flags
+  if ($file->f_flags & $O_ACCMODE)
+    printf "ACCMODE "
+  end
+  if ($file->f_flags & $O_WRONLY)
+    printf "WRONLY "
+  end
+  if ($file->f_flags & $O_RDWR)
+    printf "RDWR "
+  end
+  if ($file->f_flags & $O_CREAT)
+    printf "CREAT "
+  end
+  if ($file->f_flags & $O_EXCL)
+    printf "EXCL "
+  end
+  if ($file->f_flags & $O_NOCTTY)
+    printf "NOCTTY "
+  end
+  if ($file->f_flags & $O_TRUNC)
+    printf "TRUNC "
+  end
+  if ($file->f_flags & $O_APPEND)
+    printf "APPEND "
+  end
+  if ($file->f_flags & $O_NONBLOCK)
+    printf "NONBLOCK "
+  end
+  if ($file->f_flags & $O_SYNC)
+    printf "SYNC "
+  end
+  if ($file->f_flags & $O_LARGEFILE)
+    printf "LARGEFILE "
+  end
+  if ($file->f_flags & $O_DIRECTORY)
+    printf "DIRECTORY "
+  end
+  if ($file->f_flags & $O_NOFOLLOW)
+    printf "NOFOLLOW "
+  end
+  if ($file->f_flags & $O_NOATIME)
+    printf "NOATIME "
+  end
+  if ($file->f_flags & $O_CLOEXEC)
+    printf "CLOEXEC "
+  end
+
+  if ($file->f_flags & $O_FAF_CLT)
+    printf "FAF_CLT "
+  end
+  if ($file->f_flags & $O_FAF_SRV)
+    printf "FAF_SRV "
+  end
+  if ($file->f_flags & $O_DVFS)
+    printf "DVFS "
+  end
+  if ($file->f_flags & $O_FAF_TTY)
+    printf "FAF_TTY "
+  end
+  printf "\n"
+
+  get_inode_mode $file
+
+  is_pipe $imode
+  is_socket $imode
+  is_char_device $imode
+  is_block_device $imode
+  is_directory $imode
+  is_link $imode
+
+  printf "\n"
+
+  printf "count: %d\n", $file->f_count.counter
+
+  print /a  $file->f_op
+end
+document fileinfo
+print various information about a given struct file
+end

@@ -279,5 +279,6 @@ extern int kgdb_nmicallback(int cpu, void *regs);
 
 extern int			kgdb_single_step;
 extern atomic_t			kgdb_active;
+extern void kgdb_schedule_breakpoint(void);
 
 #endif /* _KGDB_H_ */
