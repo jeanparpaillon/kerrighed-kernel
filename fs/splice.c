@@ -31,6 +31,9 @@
 #include <linux/uio.h>
 #include <linux/security.h>
 
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/file_stat.h>
+#endif
 /*
  * Attempt to steal a page from a pipe buffer. This should perhaps go into
  * a vm helper function, it's already simplified quite a bit by the
@@ -1131,6 +1134,18 @@ static inline struct pipe_inode_info *pipe_info(struct inode *inode)
 	return NULL;
 }
 
+#ifdef CONFIG_KRG_EPM
+long krg_do_splice(struct file *in, struct file *out,
+		   loff_t *offset, size_t len, unsigned int flags)
+{
+	/*
+	 * returns -EINVAL as for file that does not have
+	 * splice_write() / splice_read()
+	 */
+	return -EINVAL;
+}
+#endif
+
 /*
  * Determine where to splice to/from.
  */
@@ -1142,8 +1157,16 @@ static long do_splice(struct file *in, loff_t __user *off_in,
 	loff_t offset, *off;
 	long ret;
 
+#ifdef CONFIG_KRG_EPM
+	if (is_pipe(in)) {
+		if (!(in->f_flags & O_FAF_CLT))
+			pipe = pipe_info(in->f_path.dentry->d_inode);
+		else
+			pipe = NULL;
+#else
 	pipe = pipe_info(in->f_path.dentry->d_inode);
 	if (pipe) {
+#endif
 		if (off_in)
 			return -ESPIPE;
 		if (off_out) {
@@ -1155,6 +1178,11 @@ static long do_splice(struct file *in, loff_t __user *off_in,
 		} else
 			off = &out->f_pos;
 
+#ifdef CONFIG_KRG_EPM
+		if (!pipe)
+			ret = krg_do_splice(in, out, off, len, flags);
+		else
+#endif
 		ret = do_splice_from(pipe, out, off, len, flags);
 
 		if (off_out && copy_to_user(off_out, off, sizeof(loff_t)))
@@ -1163,8 +1191,16 @@ static long do_splice(struct file *in, loff_t __user *off_in,
 		return ret;
 	}
 
+#ifdef CONFIG_KRG_EPM
+	if (is_pipe(out)) {
+		if (!(out->f_flags & O_FAF_CLT))
+			pipe = pipe_info(out->f_path.dentry->d_inode);
+		else
+			pipe = NULL;
+#else
 	pipe = pipe_info(out->f_path.dentry->d_inode);
 	if (pipe) {
+#endif
 		if (off_out)
 			return -ESPIPE;
 		if (off_in) {
@@ -1176,6 +1212,11 @@ static long do_splice(struct file *in, loff_t __user *off_in,
 		} else
 			off = &in->f_pos;
 
+#ifdef CONFIG_KRG_EPM
+		if (!pipe)
+			ret = krg_do_splice(in, out, off, len, flags);
+		else
+#endif
 		ret = do_splice_to(in, off, pipe, len, flags);
 
 		if (off_in && copy_to_user(off_in, off, sizeof(loff_t)))
