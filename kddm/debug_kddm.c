@@ -722,7 +722,7 @@ void init_kddm_debug(void)
 						 kddm_debug_dentry,
 						 0, &fops_filter);
 
-	init_and_set_unique_id_root(&kddm_req_id_root, 1);
+	init_and_set_unique_id_root(UNIQUE_ID_KDDM_REQ, &kddm_req_id_root, 1);
 
 	kh_kddm_print_log = kddm_print_log;
 	kh_print_proc_kddm_info = print_proc_kddm_info;
