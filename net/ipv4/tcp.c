@@ -1804,6 +1804,9 @@ void tcp_close(struct sock *sk, long timeout)
 	int data_was_unread = 0;
 	int state;
 #ifdef CONFIG_KRG_CLUSTERIP
+	struct inet_sock *inet = inet_sk(sk);
+	struct krgip_local_ports *krg_ports = NULL;
+	struct netns_krgip *krgip = &sock_net(sk)->krgip;
 	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
 	struct krgip_cluster_port_kddm_object *port_obj = NULL;
 #endif
@@ -1811,7 +1814,18 @@ void tcp_close(struct sock *sk, long timeout)
 	lock_sock(sk);
 	sk->sk_shutdown = SHUTDOWN_MASK;
 #ifdef CONFIG_KRG_CLUSTERIP
-	krgip_cluster_ip_tcp_unhash_prepare(sk, &ip_obj, &port_obj);
+	/* Is there a clean way to do that ? */
+	if (krgip && krgip->local_ports_ip_table) {
+		krg_ports = krgip_local_ports_find(krgip, inet->saddr);
+		if (krg_ports) {
+			if (krgip_established_find(&krg_ports->established_tcp, inet->sport,
+						   inet->daddr, inet->dport))
+				krgip_established_del(krg_ports, inet->sport,
+						      inet->daddr,inet->dport);
+			else
+				krgip_cluster_ip_tcp_unhash_prepare(sk, &ip_obj, &port_obj);
+		}
+	}
 #endif
 
 	if (sk->sk_state == TCP_LISTEN) {

@@ -150,7 +150,10 @@ krgip_cluster_ip_udp_get_port_prepare(struct sock *sk,
 		return 0;
 
 	bindaddr = 0;
-	if (sk->sk_userlocks & SOCK_BINDADDR_LOCK) {
+/*	if (sk->sk_userlocks & SOCK_BINDADDR_LOCK) {
+	FIXED BUG : SOCK_BINDADDR_LOCK isn't set yet, let's use an equivalent
+*/
+	if (inet->saddr != 0) {
 		bindaddr = inet->rcv_saddr;
 
 		ip_obj = _kddm_get_object(ip_set, bindaddr);

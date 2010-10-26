@@ -57,6 +57,41 @@ static void krgip_local_port_free_rcu(struct krgip_local_port *port)
 	call_rcu(&port->rcu, krgip_local_port_delayed_free);
 }
 
+struct krgip_established *krgip_established_alloc(__be16 lport, __be32 addr, __be16 port)
+{
+	struct krgip_established *established;
+
+	established = kmalloc(sizeof(*established), GFP_KERNEL);
+	if (!established)
+		return NULL;
+
+	/* It would be really worrying if it happened */
+	BUG_ON(!lport);
+	BUG_ON(!addr);
+	BUG_ON(!port);
+
+	established->lport = lport;
+	established->daddr = addr;
+	established->dport = port;
+
+	return established;
+}
+
+void krgip_established_free(struct krgip_established *established)
+{
+	kfree(established);
+}
+
+static void krgip_established_delayed_free(struct rcu_head *rcu)
+{
+	krgip_established_free(container_of(rcu, struct krgip_established, rcu));
+}
+
+static void krgip_established_free_rcu(struct krgip_established *established)
+{
+	call_rcu(&established->rcu, krgip_established_delayed_free);
+}
+
 void krgip_local_ports_add(struct krgip_local_ports *ports,
 			   struct krgip_local_port *port,
 			   struct list_head *head)
@@ -64,12 +99,15 @@ void krgip_local_ports_add(struct krgip_local_ports *ports,
 	spin_lock(&ports->lock);
 	list_add_rcu(&port->list, head);
 	spin_unlock(&ports->lock);
+
+	pr_debug("added port %d\n", ntohs(port->port));
 }
 
 void krgip_local_ports_del(struct krgip_local_ports *ports,
 			   __be16 snum,
 			   struct list_head *head)
 {
+	bool deleted = 0;
 	struct krgip_local_port *port;
 
 	spin_lock(&ports->lock);
@@ -77,6 +115,57 @@ void krgip_local_ports_del(struct krgip_local_ports *ports,
 		if (port->port == snum) {
 			list_del_rcu(&port->list);
 			krgip_local_port_free_rcu(port);
+			pr_debug("deleted port %d\n", ntohs(snum));
+			deleted = 1;
+			break;
+		} else {
+			pr_debug("port %d (untranslated) doesn't match with port %d (untranslated)\n", port->port, snum);
+		}
+	spin_unlock(&ports->lock);
+
+	if(!deleted)
+		pr_debug("can't find port %d for deletion\n", ntohs(snum));
+}
+
+void krgip_established_add(struct krgip_local_ports *ports,
+			   struct krgip_established *new_established)
+{
+/*	struct krgip_established *established = (struct krgip_established *) &ports->established_tcp;*/
+
+	spin_lock(&ports->lock);
+	list_add_rcu(&new_established->list, &ports->established_tcp);
+	spin_unlock(&ports->lock);
+
+	pr_debug("added established connection : me:%u <=> %u.%u.%u.%u:%u\n",
+		 ntohs(new_established->lport),
+		 new_established->daddr & 0x000000ff,
+		 (new_established->daddr & 0x0000ff00) >> 8,
+		 (new_established->daddr & 0x00ff0000) >> 16,
+		 (new_established->daddr & 0xff000000) >> 24,
+		 ntohs(new_established->dport));
+}
+
+void krgip_established_del(struct krgip_local_ports *ports,
+			   __be16 lport,
+			   __be32 addr,
+			   __be16 port) {
+	struct krgip_established *established;
+
+	spin_lock(&ports->lock);
+	list_for_each_entry_rcu(established, &ports->established_tcp, list)
+		if (established->lport == lport && established->daddr == addr
+		    && established->dport == port) {
+
+			pr_debug("deleted established connection : me:%u <=> %u.%u.%u.%u:%u\n",
+				 ntohs(established->lport),
+				 established->daddr & 0x000000ff,
+				 (established->daddr & 0x0000ff00) >> 8,
+				 (established->daddr & 0x00ff0000) >> 16,
+				 (established->daddr & 0xff000000) >> 24,
+				 ntohs(established->dport));
+
+			list_del_rcu(&established->list);
+			krgip_established_free_rcu(established);
 			break;
 		}
 	spin_unlock(&ports->lock);
@@ -91,10 +180,10 @@ static void krgip_local_ports_init(struct krgip_local_ports *ports)
 {
 	spin_lock_init(&ports->lock);
 	INIT_LIST_HEAD(&ports->udp);
+	INIT_LIST_HEAD(&ports->established_tcp);
 	INIT_LIST_HEAD(&ports->tcp);
 }
 
-static
 struct krgip_local_ports *krgip_local_ports_find(struct netns_krgip *krgip,
 						 __be32 addr)
 {
@@ -476,6 +565,96 @@ krgip_cluster_port_put_or_remove(struct kddm_set *set,
 		_kddm_remove_frozen_object(set, obj->num);
 }
 
+#if 0
+int
+krgip_cluster_ip_tcp_get_established_prepare(struct sock *sk,
+					     unsigned short snum,
+					     struct krgip_cluster_ip_kddm_object **ip_obj_p,
+					     struct krgip_addr **addr,
+					     struct krgip_established **established)
+{
+	struct inet_sock *inet = inet_sk(sk);
+	struct netns_krgip *krgip = &sock_net(sk)->krgip;
+	struct kddm_set *ip_set = krgip->cluster_ips;
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+	int err;
+
+	if (!ip_set || sk->sk_family != AF_INET || sk->sk_protocol != IPPROTO_TCP)
+		return 0;
+
+	if (inet->saddr == 0)
+		return 0;
+
+	ip_obj = _kddm_get_object(ip_set, inet->saddr);
+	if (IS_ERR(ip_obj))
+		return PTR_ERR(ip_obj);
+	BUG_ON(!ip_obj);
+
+	snum = htons(snum);
+	port_obj = _kddm_grab_object(port_set, snum);
+	if (IS_ERR(port_obj)) {
+		err = PTR_ERR(port_obj);
+		goto err_put;
+	}
+	BUG_ON(!port_obj);
+
+	err = -EADDRINUSE;
+
+	if (ip_obj->nr_nodes && krgip_established_find(ip_obj->krgip_local_ports->established_tcp,
+						       inet->daddr, inet->dport) {
+		goto err_put;
+	}
+
+	err = -ENOMEM;
+	*established = krgip_established_alloc(inet->saddr, snum);
+	if (!*established)
+		goto err_put;
+
+	*addr = krgip_addr_alloc(bindaddr);
+	if (!*addr) {
+		krgip_established_free(*established);
+		*established = NULL;
+		goto err_put;
+	}
+
+	*ip_obj_p = ip_obj;
+
+	return 0;
+
+err_put:
+	krgip_cluster_ip_put_or_remove(ip_set, ip_obj);
+
+	return err;
+}
+
+void
+krgip_cluster_ip_tcp_get_established_finish(struct sock *sk,
+					    struct krgip_cluster_ip_kddm_object *ip_obj,
+					    struct krgip_addr *addr,
+					    struct krgip_established **established,
+					    int error)
+{
+	struct netns_krgip *krgip = &sock_net(sk)->krgip;
+	struct kddm_set *ip_set = krgip->cluster_ips;
+
+	if (!ip_obj)
+		return;
+
+	if (error) {
+		krgip_cluster_ip_put_or_remove(ip_set, ip_obj);
+		krgip_established_free(port);
+		krgip_addr_free(addr);
+		return;
+	}
+
+	inet_sk(sk)->is_krgip = 1;
+
+	krgip_established_add(ip_obj->local_ports, established);
+
+	_kddm_put_object(ip_set, ip_obj->addr);
+}
+#endif
+
 int
 krgip_cluster_ip_tcp_get_port_prepare(struct sock *sk,
 				      unsigned short snum,
@@ -498,7 +677,8 @@ krgip_cluster_ip_tcp_get_port_prepare(struct sock *sk,
 		return 0;
 
 	bindaddr = 0;
-	if (sk->sk_userlocks & SOCK_BINDADDR_LOCK) {
+/*	if (sk->sk_userlocks & SOCK_BINDADDR_LOCK) { */
+	if (inet->saddr != 0) {
 		bindaddr = inet->rcv_saddr;
 
 		ip_obj = _kddm_get_object(ip_set, bindaddr);
@@ -516,11 +696,11 @@ krgip_cluster_ip_tcp_get_port_prepare(struct sock *sk,
 	BUG_ON(!port_obj);
 
 	err = -EADDRINUSE;
+
 	if (port_obj->node != KERRIGHED_NODE_ID_NONE
 	    || (!ip_obj && !list_empty(&port_obj->ips))
-	    || (ip_obj && ip_obj->nr_nodes
-		&& krgip_addr_find(&port_obj->ips, bindaddr)))
-			goto err_put_port;
+	    || (ip_obj && ip_obj->nr_nodes && krgip_addr_find(&port_obj->ips, bindaddr)))
+		goto err_put_port;
 
 	err = -ENOMEM;
 	*port = krgip_local_port_alloc(snum);
@@ -589,6 +769,7 @@ krgip_cluster_ip_tcp_get_port_finish(struct sock *sk,
 		_kddm_put_object(ip_set, ip_obj->addr);
 }
 
+
 void
 krgip_cluster_ip_tcp_unhash_prepare(struct sock *sk,
 				    struct krgip_cluster_ip_kddm_object **ip_obj_p,
@@ -610,7 +791,8 @@ krgip_cluster_ip_tcp_unhash_prepare(struct sock *sk,
 		return;
 
 	bindaddr = 0;
-	if (sk->sk_userlocks & SOCK_BINDADDR_LOCK) {
+/*	if (sk->sk_userlocks & SOCK_BINDADDR_LOCK) {*/
+	if (inet->saddr != 0) {
 		bindaddr = inet->rcv_saddr;
 
 		ip_obj = _kddm_get_object(ip_set, bindaddr);
@@ -740,6 +922,7 @@ int krgip_cluster_ip_start(void)
 
 	register_io_linker(CLUSTER_IP_LINKER, &krgip_cluster_ip_io_linker);
 	register_io_linker(CLUSTER_PORT_LINKER, &krgip_cluster_port_io_linker);
+	register_io_linker(CLUSTER_ESTABLISHED_LINKER, &krgip_cluster_established_io_linker);
 
 	err = rpc_register_int(CLUSTER_IP_UNUSED, handle_cluster_ip_unused, 0);
 	if (err)

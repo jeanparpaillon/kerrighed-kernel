@@ -146,10 +146,13 @@ static void krgip_cluster_ip_finish(struct clusterip_config *c)
 
 static
 u_int32_t
-krgip_cluster_ip_hashfn(const struct clusterip_config *c, int proto, int dport)
+krgip_cluster_ip_hashfn(const struct sk_buff *skb, const struct clusterip_config *c,
+			int proto, int sourceip, int sport, int destip, int dport)
 {
-	struct list_head *ip_head, *any_head;
+	struct list_head *ip_head, *any_head, *established_head;
+	struct krgip_local_ports *ports_table = NULL;
 	bool responsible;
+ 	enum ip_conntrack_info ctinfo;
 
 	switch (proto) {
 	case IPPROTO_UDP:
@@ -157,6 +160,9 @@ krgip_cluster_ip_hashfn(const struct clusterip_config *c, int proto, int dport)
 		any_head = &c->ns->krgip.local_ports_any.udp;
 		break;
 	case IPPROTO_TCP:
+		ports_table = krgip_local_ports_find(&c->ns->krgip, c->clusterip);
+		if (ports_table)
+			established_head = &ports_table->established_tcp;
 		ip_head = &c->kddm_obj->local_ports->tcp;
 		any_head = &c->ns->krgip.local_ports_any.tcp;
 		break;
@@ -164,9 +170,13 @@ krgip_cluster_ip_hashfn(const struct clusterip_config *c, int proto, int dport)
 		return 1;
 	}
 
+	nf_ct_get(skb, &ctinfo);
 	rcu_read_lock();
-	responsible = krgip_local_port_find(ip_head, dport)
-		      || krgip_local_port_find(any_head, dport);
+
+	responsible = krgip_local_port_find(ip_head, dport) || krgip_local_port_find(any_head, dport);
+	/* Should be a kddm set on established tcp to synchronize all nodes */
+	if (!responsible && proto == IPPROTO_TCP && ctinfo == IP_CT_ESTABLISHED)
+		responsible = krgip_established_find(established_head, dport, sourceip, sport);
 	rcu_read_unlock();
 
 	if (responsible) {
@@ -388,7 +398,7 @@ clusterip_hashfn(const struct sk_buff *skb,
 
 #ifdef CONFIG_KRG_CLUSTERIP
 	if (config->kddm_obj)
-		return krgip_cluster_ip_hashfn(config, iph->protocol, dport);
+		return krgip_cluster_ip_hashfn(skb, config, iph->protocol, iph->saddr, sport, iph->daddr, dport);
 #endif
 
 	switch (config->hash_mode) {
