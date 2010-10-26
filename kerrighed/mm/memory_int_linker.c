@@ -200,8 +200,10 @@ int anon_memory_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 	objid = address / PAGE_SIZE;
 
-	if (thread_group_empty(current)) {
-		write_access = 1;
+	if (atomic_read(&vma->vm_mm->mm_tasks) == 1) {
+		// DEBUG : following line commented to make sure we never
+		// switch a read fault into a write one in a thread context.
+//		write_access = 1;
 		if (set->def_owner != kerrighed_node_id)
 			memory_kddm_readahead (set, objid,
 					       vma->vm_start / PAGE_SIZE);
