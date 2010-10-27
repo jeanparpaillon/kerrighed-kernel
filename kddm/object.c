@@ -374,11 +374,14 @@ struct kddm_obj *___get_alloc_kddm_obj_entry (struct kddm_set *set,
 	 */
 retry:
 	new_obj = alloc_kddm_obj_entry(set, objid);
+	BUG_ON(!new_obj);
 
 	if (!lock_free)
 		kddm_lock_obj_table(set);
 
 	obj_entry = set->ops->get_obj_entry(set, objid, new_obj);
+	BUG_ON(!obj_entry);
+	BUG_ON(IS_ERR(obj_entry));
 	if (obj_entry != new_obj)
 		free_obj_entry_struct (new_obj);
 	else
