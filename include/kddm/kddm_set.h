@@ -216,6 +216,9 @@ static inline struct kddm_set *_find_get_kddm_set(struct kddm_ns *ns,
 struct kddm_set *find_get_kddm_set(int ns_id,
 				   kddm_set_id_t set_id);
 
+struct kddm_set *find_get_kddm_set_lock_free(int ns_id,
+					     kddm_set_id_t set_id);
+
 struct kddm_set *generic_local_get_kddm_set(int ns_id,
 					     kddm_set_id_t set_id,
 					     int init_state,

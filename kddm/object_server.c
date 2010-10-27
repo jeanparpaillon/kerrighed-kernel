@@ -22,11 +22,8 @@ static inline struct kddm_obj *get_alloc_kddm_obj_entry_lock_free (int ns_id,
                                                    struct kddm_set **kddm_set)
 {
 	struct kddm_obj *obj = NULL;
-	struct kddm_ns *ns;
 
-	ns = kddm_ns_get (ns_id);
-	*kddm_set = __find_get_kddm_set(ns, set_id, KDDM_LOCK_FREE);
-	kddm_ns_put(ns);
+	*kddm_set = find_get_kddm_set_lock_free(ns_id, set_id);
 
 	if (*kddm_set) {
 		BUG_ON(!kddm_frozen(*kddm_set));
