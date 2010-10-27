@@ -638,7 +638,7 @@ int handle_req_kddm_set_change_mgr(struct rpc_desc* desc,
 	kddm_id_msg_t *kddm_id = (kddm_id_msg_t *) _msg;
 	struct kddm_set *kddm_set;
 
-	kddm_set = find_get_kddm_set(kddm_id->ns_id, kddm_id->set_id);
+	kddm_set = find_get_kddm_set_lock_free(kddm_id->ns_id, kddm_id->set_id);
 	put_kddm_set(kddm_set);
 
 	return 0;
