@@ -537,6 +537,9 @@ static int remove_browse_objects_on_remaining_nodes2(objid_t objid,
 	struct browse_data *param = _data;
 	struct kddm_set *set = param->set;
 
+	DEBUG("hotplug", 2, 0, 0, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
+
 	switch (OBJ_STATE(obj_entry)) {
 	case READ_OWNER:
 	case WRITE_OWNER:
@@ -567,6 +570,9 @@ static int remove_browse_objects_on_remaining_nodes2(objid_t objid,
 		break;
 	}
 
+	DEBUG("hotplug", 2, 0, 0, set->id, objid, KDDM_LOG_API_EXIT, obj_entry,
+	      0, 0);
+
 	return 0;
 }
 
@@ -578,10 +584,14 @@ static void remove_browse_sets2(void *_set, void *_data)
 	if (set->state != KDDM_SET_READY)
 		return;
 
+	SDEBUG("hotplug", 2, 0, set->id, -1L, KDDM_LOG_ENTER);
+
 	param->set = set;
 	___for_each_kddm_object(set,
 				remove_browse_objects_on_remaining_nodes2,
 				_data);
+
+	SDEBUG("hotplug", 2, 0, set->id, -1L, KDDM_LOG_EXIT);
 }
 
 static noinline void set_remove(krgnodemask_t * vector)
