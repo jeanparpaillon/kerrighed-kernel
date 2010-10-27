@@ -367,6 +367,61 @@ static void remove_browse_sets(void *_set, void *_data)
 	}
 }
 
+static int remove_browse_objects_on_remaining_nodes2(unsigned long objid,
+						     void *_obj_entry,
+						     void *_data)
+{
+	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
+	struct browse_data *param = _data;
+	struct kddm_set *set = param->set;
+
+	switch (OBJ_STATE(obj_entry)) {
+	case READ_OWNER:
+	case WRITE_OWNER:
+	case WRITE_GHOST:
+	case INV_OWNER:
+		BUG_ON(get_prob_owner(obj_entry) != kerrighed_node_id);
+		break;
+
+	case WAIT_OBJ_RM_ACK:
+	case WAIT_OBJ_RM_ACK2:
+	case WAIT_OBJ_RM_DONE:
+	case WAIT_OBJ_WRITE:
+	case WAIT_OBJ_READ:
+	case INV_FILLING:
+		BUG();
+		break;
+
+	case READ_COPY:
+		break;
+
+	case INV_COPY:
+		if (get_prob_owner(obj_entry) == kerrighed_node_id)
+			kddm_change_obj_state(set, obj_entry, objid, INV_OWNER);
+		break;
+
+	default:
+		STATE_MACHINE_ERROR(set->id, objid, obj_entry);
+		break;
+	}
+
+	return 0;
+}
+
+static void remove_browse_sets2(void *_set, void *_data)
+{
+	struct browse_data *param = _data;
+	struct kddm_set *set = _set;
+
+	if (set->state != KDDM_SET_READY)
+		return;
+
+	param->set = set;
+	___for_each_kddm_object(set,
+				remove_browse_objects_on_remaining_nodes2,
+				_data);
+}
+
 static void set_remove(krgnodemask_t * vector)
 {
 	krgnodemask_t prev_kddm_map;
@@ -394,6 +449,9 @@ static void set_remove(krgnodemask_t * vector)
 			first_krgnode(prev_kddm_map));
 
 	if(krgnode_isset(kerrighed_node_id, param.new_nodes_map)) {
+		__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
+					 remove_browse_sets2, &param);
+
 		kddm_nb_nodes = param.new_nb_nodes;
 		krgnodes_copy(krgnode_kddm_map, param.new_nodes_map);
 	}
