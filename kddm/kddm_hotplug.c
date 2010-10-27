@@ -245,13 +245,10 @@ static int remove_browse_objects_on_leaving_nodes(unsigned long objid,
 		request_force_update_def_owner_prob(set, obj_entry, objid,
 						    new_def_owner);
 
-		do_destroy_kddm_obj_entry(set, obj_entry, objid);
-
-		ret = KDDM_OBJ_REMOVED;
-
-		break;
-
+		/* Fallthrough */
 	case INV_OWNER:
+		do_destroy_kddm_obj_entry(set, obj_entry, objid);
+		ret = KDDM_OBJ_REMOVED;
 		break;
 
 	default:
