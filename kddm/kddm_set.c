@@ -436,7 +436,17 @@ struct kddm_set *find_get_kddm_set(int ns_id,
 }
 EXPORT_SYMBOL(find_get_kddm_set);
 
+struct kddm_set *find_get_kddm_set_lock_free(int ns_id, kddm_set_id_t set_id)
+{
+	struct kddm_ns *ns;
+	struct kddm_set *kddm_set;
 
+	ns = kddm_ns_get(ns_id);
+	kddm_set = __find_get_kddm_set(ns, set_id, KDDM_LOCK_FREE);
+	kddm_ns_put(ns);
+
+	return kddm_set;
+}
 
 /** High level function to create a new kddm set.
  *  @author Renaud Lottiaux
