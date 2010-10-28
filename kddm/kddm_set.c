@@ -40,7 +40,7 @@ kerrighed_node_t __kddm_set_mgr(struct kddm_set * set,
 
 	node = ((kerrighed_node_t)(set->id >> UNIQUE_ID_NODE_SHIFT));
 	if (unlikely(!__krgnode_isset(node, nodes)))
-		node = __nth_krgnode(node, nodes);
+		node = __nth_krgnode((node % nr_nodes), nodes);
 
 	return node;
 }
