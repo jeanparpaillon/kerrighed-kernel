@@ -76,7 +76,7 @@ void free_cluster_barrier(struct cluster_barrier *barrier)
 }
 
 int cluster_barrier(struct cluster_barrier *barrier,
-		    krgnodemask_t *nodes,
+		    const krgnodemask_t *nodes,
 		    kerrighed_node_t master)
 {
 	struct cluster_barrier_core *core_bar;

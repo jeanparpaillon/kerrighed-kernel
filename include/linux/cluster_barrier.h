@@ -38,7 +38,7 @@ struct cluster_barrier {
 
 struct cluster_barrier *alloc_cluster_barrier(unique_id_t key);
 void free_cluster_barrier(struct cluster_barrier *barrier);
-int cluster_barrier(struct cluster_barrier *barrier, krgnodemask_t *nodes,
+int cluster_barrier(struct cluster_barrier *barrier, const krgnodemask_t *nodes,
 		    kerrighed_node_t master);
 void init_cluster_barrier(void);
 
