@@ -725,7 +725,13 @@ void handle_object_receive (struct rpc_desc* desc,
 				       msg->flags);
 
 		lock_obj_entry(obj_entry);
-		object_clear_frozen(obj_entry, set);
+
+		/* Clear frozen without waking up waiting tasks. Otherwise,
+		 * we could wake-up a task on a WAIT_ACK_INV object.
+		 * The wake up will be done later: here in the insert or later
+		 * after the reception of awaited ACKs.
+		 */
+		atomic_dec(&obj_entry->frozen_count);
 
 		if (obj_state == WAIT_ACK_INV) {
 			if (OBJ_EXCLUSIVE (obj_entry))
