@@ -419,6 +419,8 @@ static int hotplug_add(struct hotplug_context *ctx)
 {
 	krgnodemask_t new_map;
 
+	rpc_enable(HOTPLUG_COORDINATOR_MOVE);
+
 	krgnodes_or(new_map, krgnode_online_map, ctx->node_set.v);
 	return hotplug_coordinator_reconfigure(ctx, &new_map, &new_map);
 }
