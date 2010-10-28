@@ -146,17 +146,21 @@ static void add_browse_sets(void *_set, void *_data)
 	BUG_ON(set->def_owner > KDDM_MAX_DEF_OWNER);
 
 	switch (set->def_owner) {
+	default:
+		if (krgnode_online(set->def_owner))
+			/*
+			 * The default owner is hard coded to an already online
+			 * node. Adding a node doesn't change anything for
+			 * this case.
+			 */
+			break;
+		/* Fallthrough */
+
 	case KDDM_RR_DEF_OWNER:
 	case KDDM_CUSTOM_DEF_OWNER:
 	case KDDM_UNIQUE_ID_DEF_OWNER:
 		param->set = set;
 		__for_each_kddm_object(set, add_browse_objects, _data);
-		break;
-
-	default:
-		/* The default owner is hard coded to a given node.
-		 * Adding a node doesn't change anything for these cases.
-		 */
 		break;
 	};
 
