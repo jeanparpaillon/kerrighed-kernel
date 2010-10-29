@@ -581,7 +581,8 @@ SYSCALL_DEFINE3(ioctl, unsigned int, fd, unsigned int, cmd, unsigned long, arg)
 		goto out;
 
 #ifdef CONFIG_KRG_FAF
-	if (filp->f_flags & O_FAF_CLT) {
+	if ((filp->f_flags & O_FAF_CLT)
+	    && (cmd != FIOCLEX) && (cmd != FIONCLEX)) {
 		error = krg_faf_ioctl(filp, cmd, arg);
 		goto out_fput;
 	}
