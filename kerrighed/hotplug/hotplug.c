@@ -134,6 +134,7 @@ hotplug_run_request(struct rpc_communicator *comm, struct hotplug_request *req)
 {
 	struct hotplug_run_req_msg msg;
 
+	printk("%s: node=%d id=%d\n", __PRETTY_FUNCTION__, req->node, req->id);
 	msg.req_id = req->id;
 	return rpc_async(HOTPLUG_RUN_REQ, comm, req->node, &msg, sizeof(msg));
 }
@@ -148,6 +149,8 @@ int handle_hotplug_start_req(struct rpc_desc *desc, void *_msg, size_t size)
 	struct hotplug_start_req_msg *msg = _msg;
 	struct hotplug_request *req;
 	int err;
+
+	printk("%s: node=%d id=%d\n", __PRETTY_FUNCTION__, rpc_desc_get_client(desc), msg->req_id);
 
 	err = -ENOMEM;
 	req = kmalloc(sizeof(*req), GFP_KERNEL);
@@ -169,6 +172,7 @@ int handle_hotplug_start_req(struct rpc_desc *desc, void *_msg, size_t size)
 		kfree(req);
 
 out:
+	printk("%s: node=%d id=%d err=%d\n", __PRETTY_FUNCTION__, rpc_desc_get_client(desc), msg->req_id, err);
 	return err;
 }
 
@@ -217,10 +221,13 @@ unlock:
 	mutex_unlock(&hotplug_coordinator_mutex);
 
 	if (!err) {
+		printk("%s %d(%s): id=%d\n", __PRETTY_FUNCTION__, current->pid, current->comm, ctx->id);
+
 		wait_for_completion(&ctx->ready);
 		err = ctx->ret;
 	}
 
+	printk("%s %d(%s): id=%d err=%d\n", __PRETTY_FUNCTION__, current->pid, current->comm, ctx->id, err);
 	return err;
 }
 
@@ -233,7 +240,9 @@ int handle_hotplug_finish_req(struct rpc_desc *desc, void *_msg, size_t size)
 {
 	struct hotplug_finish_req_msg *msg = _msg;
 	struct hotplug_request *req, *tmp;
-	int err;
+	int err = 0;
+
+	printk("%s: node=%d id=%d\n", __PRETTY_FUNCTION__, rpc_desc_get_client(desc), msg->req_id);
 
 	mutex_lock(&global_hotplug_req_list_mutex);
 
@@ -246,6 +255,7 @@ int handle_hotplug_finish_req(struct rpc_desc *desc, void *_msg, size_t size)
 
 	list_for_each_entry_safe(req, tmp, &global_hotplug_req_list, list) {
 		if (!krgnode_online(req->node)) {
+			printk("%s: dropping node=%d id=%d\n", __PRETTY_FUNCTION__, req->node, req->id);
 			list_del(&req->list);
 			kfree(req);
 			continue;
@@ -261,6 +271,8 @@ int handle_hotplug_finish_req(struct rpc_desc *desc, void *_msg, size_t size)
 
 	mutex_unlock(&global_hotplug_req_list_mutex);
 
+	printk("%s: node=%d id=%d err=%d\n", __PRETTY_FUNCTION__, rpc_desc_get_client(desc), msg->req_id, err);
+
 	return 0;
 }
 
@@ -269,6 +281,8 @@ void hotplug_finish_request(struct hotplug_context *ctx)
 	struct hotplug_finish_req_msg msg;
 	struct rpc_desc *desc;
 	int err, ret;
+
+	printk("%s %d(%s): id=%d\n", __PRETTY_FUNCTION__, current->pid, current->comm, ctx->id);
 
 	mutex_lock(&hotplug_coordinator_mutex);
 
@@ -290,6 +304,7 @@ out_end:
 unlock:
 	mutex_unlock(&hotplug_coordinator_mutex);
 
+	printk("%s %d(%s): id=%d err=%d\n", __PRETTY_FUNCTION__, current->pid, current->comm, ctx->id, err);
 	if (err) {
 		printk(KERN_WARNING "kerrighed: Could not notify hotplug coordinator: err = %d\n", err);
 		printk(KERN_WARNING "kerrighed: Hotplug coordinator will probably hang!\n");
@@ -301,6 +316,7 @@ static void handle_hotplug_coordinator_move(struct rpc_desc *desc)
 	struct hotplug_request *req, tmp, *safe;
 	int err;
 
+	printk("%s: old coordinator=%d\n", __PRETTY_FUNCTION__, rpc_desc_get_client(desc));
 	/*
 	 * No need to lock the list, since all nodes have coordinator mutex
 	 * locked, and thus none try to start/finish requests.
@@ -310,6 +326,7 @@ static void handle_hotplug_coordinator_move(struct rpc_desc *desc)
 		err = rpc_unpack_type(desc, tmp);
 		if (err)
 			goto cancel;
+		printk("%s: node=%d id=%d\n", __PRETTY_FUNCTION__, tmp.node, tmp.id);
 		if (tmp.node == KERRIGHED_NODE_ID_NONE)
 			break;
 
@@ -324,6 +341,7 @@ static void handle_hotplug_coordinator_move(struct rpc_desc *desc)
 	if (rpc_pack_type(desc, err))
 		goto cancel;
 out:
+	printk("%s: err=%d\n", __PRETTY_FUNCTION__, err);
 	return;
 
 cancel:
@@ -347,15 +365,20 @@ hotplug_coordinator_move(struct rpc_communicator *comm, kerrighed_node_t target)
 	struct hotplug_request null_req;
 	int err, ret;
 
+	printk("%s: new coordinator=%d\n", __PRETTY_FUNCTION__, target);
+
 	desc = rpc_begin(HOTPLUG_COORDINATOR_MOVE, comm, target);
-	if (!desc)
-		return -ENOMEM;
+	if (!desc) {
+		err = -ENOMEM;
+		goto out;
+	}
 
 	/*
 	 * No need to lock the list, since all nodes have coordinator mutex
 	 * locked, and thus none try to start/finish requests.
 	 */
 	list_for_each_entry(req, &global_hotplug_req_list, list) {
+		printk("%s: node=%d id=%d\n", __PRETTY_FUNCTION__, req->node, req->id);
 		err = rpc_pack_type(desc, *req);
 		if (err)
 			goto cancel;
@@ -383,6 +406,7 @@ hotplug_coordinator_move(struct rpc_communicator *comm, kerrighed_node_t target)
 	}
 
 out:
+	printk("%s: err=%d\n", __PRETTY_FUNCTION__, err);
 	return err;
 
 cancel:
