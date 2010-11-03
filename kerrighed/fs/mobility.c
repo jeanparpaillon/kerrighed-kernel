@@ -761,6 +761,10 @@ int export_fs_struct (struct epm_action *action,
 		return r;
 	}
 
+	if (action->type == EPM_MIGRATION &&
+	    !thread_group_leader(tsk))
+		return 0;
+
 	r = -ENOMEM;
 	tmp = (char *) __get_free_page (GFP_KERNEL);
 	if (!tmp)
@@ -1376,6 +1380,19 @@ err:
 	return r;
 }
 
+static int migr_link_to_fs_struct(struct epm_action *action,
+				  ghost_t *ghost,
+				  struct task_struct *tsk)
+{
+	struct task_struct *leader;
+
+	leader = find_task_by_kpid(action->migrate.leader);
+	leader->fs++; /* needed ? */
+	tsk->fs = leader-> fs;
+
+	return 0;
+}
+
 /** Import the fs_struct of a process
  *  @author Renaud Lottiaux
  *
@@ -1396,6 +1413,11 @@ int import_fs_struct (struct epm_action *action,
 	if (action->type == EPM_RESTART
 	    && action->restart.shared == CR_LINK_ONLY) {
 		r = cr_link_to_fs_struct(action, ghost, tsk);
+		return r;
+	}
+	if (action->type == EPM_MIGRATION
+	    && action->migrate.leader) {
+		r = migr_link_to_fs_struct(action, ghost, tsk);
 		return r;
 	}
 
