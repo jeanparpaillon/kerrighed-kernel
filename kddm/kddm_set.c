@@ -584,8 +584,6 @@ int handle_req_kddm_set_lookup(struct rpc_desc* desc,
 	msg_kddm_set_t *msg;
 	int msg_size = sizeof(msg_kddm_set_t);
 
-	BUG_ON(!krgnode_online(rpc_desc_get_client(desc)));
-
 	kddm_set = generic_local_get_kddm_set(req.ns_id, req.set_id,
 					      0, req.lock_free ? KDDM_LOCK_FREE : 0);
 
@@ -637,9 +635,22 @@ int handle_req_kddm_set_change_mgr(struct rpc_desc* desc,
 {
 	kddm_id_msg_t *kddm_id = (kddm_id_msg_t *) _msg;
 	struct kddm_set *kddm_set;
+	bool tweak_map = !krgnode_online(kerrighed_node_id);
+
+	if (tweak_map) {
+		/*
+		 * This node is being added and should recover the management of
+		 * a KDDM set.
+		 */
+		BUG_ON(kddm_nb_nodes != 1);
+		krgnode_kddm_map = krgnodemask_of_node(desc->client);
+	}
 
 	kddm_set = find_get_kddm_set_lock_free(kddm_id->ns_id, kddm_id->set_id);
 	put_kddm_set(kddm_set);
+
+	if (tweak_map)
+		krgnode_kddm_map = krgnodemask_of_node(kerrighed_node_id);
 
 	return 0;
 }
