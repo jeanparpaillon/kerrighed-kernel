@@ -9,6 +9,10 @@
 
 #include <kddm/kddm.h>
 #include <kddm/object_server.h>
+#include <kerrighed/debug.h>
+
+#include "debug_kddm.h"
+
 #include "protocol_action.h"
 
 
@@ -23,6 +27,9 @@ sleep_again:
 	/* We can be woken up by a put  */
 	if (!SET_IS_EMPTY(RMSET(obj_entry)))
 		goto sleep_again;
+
+	DEBUG("remove", 2, 0, set->ns->id, set->id, objid, KDDM_LOG_EXIT_SETS,
+	      obj_entry, 0, 0);
 }
 
 
@@ -57,6 +64,8 @@ int generic_kddm_remove_object(struct kddm_set *set,
 	BUG_ON(remove_frozen);
 
 	obj_entry = __get_alloc_kddm_obj_entry(set, objid);
+	DEBUG("remove", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
 
 try_again:
 	switch (OBJ_STATE(obj_entry)) {
@@ -120,6 +129,9 @@ try_again:
 		STATE_MACHINE_ERROR(set->id, objid, obj_entry);
 		break;
 	}
+
+	DEBUG("remove", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_EXIT,
+	      obj_entry, 0, 0);
 
 	put_kddm_obj_entry(set, obj_entry, objid);
 exit_no_unlock:

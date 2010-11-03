@@ -12,4 +12,7 @@ obj-$(CONFIG_KRG_KDDM) := kddm.o object.o procfs.o \
 
 obj-$(CONFIG_KRG_EPM) += mobility.o
 
+obj-$(CONFIG_KRG_KDDM_DEBUG) += debug_kddm.o
+
+
 EXTRA_CFLAGS += -Wall -Werror

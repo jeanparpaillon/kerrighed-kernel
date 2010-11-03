@@ -15,6 +15,9 @@
 #include <kddm/object_server.h>
 #include "protocol_action.h"
 
+#include <kerrighed/debug.h>
+#include "debug_kddm.h"
+
 struct rpc_synchro *object_server;
 struct rpc_synchro *object_server_may_block;
 
@@ -45,6 +48,7 @@ static inline void forward_object_server_msg (struct kddm_obj * obj_entry,
 					      void *_msg)
 {
 	msg_server_t *msg = (msg_server_t *)_msg;
+	long req_id = get_kddm_req_id();
 	kerrighed_node_t prob_owner;
 
 	if (obj_entry == NULL)
@@ -52,11 +56,22 @@ static inline void forward_object_server_msg (struct kddm_obj * obj_entry,
 	else
 		prob_owner = get_prob_owner(obj_entry);
 
+	DEBUG("getgrab", 2, req_id, msg->ns_id, msg->set_id, msg->objid,
+	      KDDM_LOG_FORWARD, 0, prob_owner, 0);
+
 	BUG_ON(prob_owner == kerrighed_node_id);
 
-	msg->req_id = 0;
-	rpc_async(msg_type, set->ns->rpc_comm, prob_owner,
-		  _msg, sizeof(msg_server_t));
+	msg->ttl--;
+	if (msg->ttl == 0) {
+		printk ("KDDM protocol loop detected\n");
+		BUG();
+	}
+
+	msg->req_id = req_id;
+	rpc_async(msg_type, set->ns->rpc_comm, prob_owner, _msg, sizeof(msg_server_t));
+
+	DEBUG("getgrab", 2, msg->req_id, msg->ns_id, msg->set_id, msg->objid,
+	      KDDM_LOG_EXIT, 0, 0, 0);
 }
 
 
@@ -87,11 +102,16 @@ static inline int __handle_invalidation_ack (kerrighed_node_t sender,
 	obj_entry = get_kddm_obj_entry (msg->ns_id, msg->set_id, msg->objid,
 					&set);
 
+	DEBUG("invalidation", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	/* Managing this message on a frozen object could lead to some bad
 	 * behaviors. For instance, sending a write copy since we actually
 	 * cannot do it because of the frozen state.
 	 */
 	if (object_frozen_or_pinned (obj_entry)) {
+		DEBUG("invalidation", 2, msg->req_id, 0,
+		      msg->set_id, msg->objid, KDDM_LOG_DELAY, 0, 0, 0);
 		queue_event (__handle_invalidation_ack, sender, set, obj_entry,
 			     msg->objid, msg, sizeof (msg_server_t));
 
@@ -195,9 +215,12 @@ handle_ack:
 	}
 
 exit:
-	put_kddm_obj_entry(set, obj_entry, msg->objid);
+	put_kddm_obj_entry (set, obj_entry, msg->objid);
 
 exit_no_unlock:
+	DEBUG("invalidation", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_EXIT, 0, 0, 0);
+
 	return 0;
 }
 
@@ -224,6 +247,9 @@ void handle_remove_ack (struct rpc_desc* desc,
 
 	obj_entry = get_kddm_obj_entry (msg->ns_id, msg->set_id, msg->objid,
 					&set);
+
+	DEBUG("remove", 2, msg->req_id, 0, msg->set_id, msg->objid,
+	      KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
 
 	switch (OBJ_STATE(obj_entry)) {
 	  case WAIT_OBJ_RM_DONE:
@@ -257,7 +283,8 @@ void handle_remove_ack (struct rpc_desc* desc,
 	}
 
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
-
+	DEBUG("remove", 2, msg->req_id, 0, msg->set_id, msg->objid,
+	      KDDM_LOG_EXIT_SETS, obj_entry, 0, 0);
 	return;
 }
 
@@ -279,6 +306,9 @@ void handle_remove_ack2 (struct rpc_desc* desc,
 	obj_entry = get_kddm_obj_entry (msg->ns_id, msg->set_id, msg->objid,
 					&set);
 
+	DEBUG("remove", 2, msg->req_id, 0, msg->set_id, msg->objid,
+	      KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	switch (OBJ_STATE(obj_entry)) {
 	  case WAIT_OBJ_WRITE:
 	  case WAIT_OBJ_READ:
@@ -299,7 +329,11 @@ void handle_remove_ack2 (struct rpc_desc* desc,
 		  break;
 	}
 
+	DEBUG("remove", 2, msg->req_id, 0, msg->set_id, msg->objid,
+	      KDDM_LOG_HANDLE_EXIT, 0, 0, 0);
+
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
+
 exit_no_unlock:
 	return;
 }
@@ -323,6 +357,9 @@ void handle_remove_done (struct rpc_desc* desc,
 	obj_entry = get_kddm_obj_entry (msg->ns_id, msg->set_id, msg->objid,
 					&set);
 
+	DEBUG("remove", 2, msg->req_id, 0, msg->set_id, msg->objid,
+	      KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	switch (OBJ_STATE(obj_entry)) {
 	  case WAIT_OBJ_RM_DONE:
 		  merge_ack_set(RMSET(obj_entry), &msg->rmset);
@@ -337,6 +374,9 @@ void handle_remove_done (struct rpc_desc* desc,
 		  STATE_MACHINE_ERROR (msg->set_id, msg->objid, obj_entry);
 		  break;
 	}
+
+	DEBUG("remove", 2, msg->req_id, 0, msg->set_id, msg->objid,
+	      KDDM_LOG_HANDLE_EXIT, 0, 0, 0);
 
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
@@ -363,7 +403,13 @@ int __handle_object_invalidation (kerrighed_node_t sender,
 	obj_entry = get_kddm_obj_entry (msg->ns_id, msg->set_id, msg->objid,
 					&set);
 
+	DEBUG("invalidation", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	if (object_frozen_or_pinned (obj_entry)) {
+		DEBUG("invalidation", 2, msg->req_id, 0, msg->set_id,
+		      msg->objid, KDDM_LOG_DELAY, 0, 0, 0);
+
 		queue_event (__handle_object_invalidation, sender, set,
 			     obj_entry, msg->objid, msg,
 			     sizeof (msg_server_t));
@@ -407,9 +453,11 @@ int __handle_object_invalidation (kerrighed_node_t sender,
 	}
 
 exit:
+	DEBUG("invalidation", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_EXIT, 0, 0, 0);
+
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
 exit_no_unlock:
-
 	return 0;
 }
 
@@ -439,12 +487,17 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 	obj_entry = get_kddm_obj_entry (msg->ns_id, msg->set_id, msg->objid,
 					&set);
 
+	DEBUG("remove", 2, msg->req_id, 0, msg->set_id, msg->objid,
+	      KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	if (obj_entry == NULL) {
 		send_remove_ack (set, msg->objid, msg->reply_node, 0);
 		goto exit_no_unlock;
 	}
 
 	if (object_frozen_or_pinned (obj_entry)) {
+		DEBUG("remove", 2, msg->req_id, 0, msg->set_id,
+		      msg->objid, KDDM_LOG_DELAY, 0, 0, 0);
 
 		queue_event (__handle_object_remove_req, sender, set,
 			     obj_entry, msg->objid, msg,
@@ -498,9 +551,11 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 	}
 
 exit:
+	DEBUG("remove", 2, msg->req_id, 0, msg->set_id, msg->objid,
+	      KDDM_LOG_HANDLE_EXIT, 0, 0, 0);
+
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
 exit_no_unlock:
-
 	return 0;
 }
 
@@ -530,6 +585,9 @@ static inline int __handle_send_ownership_req (kerrighed_node_t sender,
 	obj_entry = get_kddm_obj_entry (msg->ns_id, msg->set_id, msg->objid,
 					&set);
 
+	DEBUG("flush", 2, msg->req_id, 0, msg->set_id, msg->objid,
+	      KDDM_LOG_STATE, obj_entry, 0, 0);
+
 	switch (OBJ_STATE(obj_entry)) {
 	  case INV_COPY:
 		  /* Nothing to do */
@@ -555,6 +613,9 @@ static inline int __handle_send_ownership_req (kerrighed_node_t sender,
 		  STATE_MACHINE_ERROR (msg->set_id, msg->objid, obj_entry);
 		  break;
 	}
+
+	DEBUG("flush", 2, msg->req_id, 0, msg->set_id, msg->objid,
+	      KDDM_LOG_HANDLE_EXIT, 0, 0, 0);
 
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
@@ -585,6 +646,9 @@ void handle_change_ownership_ack (struct rpc_desc* desc,
 	obj_entry = get_kddm_obj_entry (msg->ns_id, msg->set_id, msg->objid,
 					&set);
 
+	DEBUG("flush", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	if (OBJ_STATE(obj_entry) == WAIT_CHG_OWN_ACK)
 	{
 		change_prob_owner(obj_entry, msg->new_owner);
@@ -600,6 +664,9 @@ void handle_change_ownership_ack (struct rpc_desc* desc,
 	}
 	else
 		STATE_MACHINE_ERROR (msg->set_id, msg->objid, obj_entry);
+
+	DEBUG("flush", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_EXIT, 0, 0, 0);
 
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
@@ -643,11 +710,17 @@ void handle_object_receive (struct rpc_desc* desc,
 		return;
 	}
 
+	DEBUG("object", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	if (msg->object_state & KDDM_OWNER_OBJ) {
 		DUP2_SET(&master_info.rmset, &obj_entry->master_obj.rmset);
 		ADD_TO_SET(RMSET(obj_entry), desc->client);
 		ADD_TO_SET(RMSET(obj_entry), kerrighed_node_id);
 	}
+
+	DEBUG("object", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_STATE, obj_entry, 0, 0);
 
 	switch (OBJ_STATE(obj_entry)) {
 	  case INV_COPY:
@@ -737,6 +810,9 @@ void handle_object_receive (struct rpc_desc* desc,
 		rpc_pack_type(desc, res);
 	}
 
+	DEBUG("object", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_EXIT, 0, 0, 0);
+
 	return;
 }
 
@@ -760,12 +836,20 @@ int __handle_no_object (kerrighed_node_t sender,
 	obj_entry = get_alloc_kddm_obj_entry (msg->ns_id, msg->set_id,
 					      msg->objid, &set);
 
+	DEBUG("getgrab", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	if (object_frozen (obj_entry)) {
+		DEBUG("getgrab", 2, msg->req_id, 0, msg->set_id,
+		      msg->objid, KDDM_LOG_DELAY, 0, 0, 0);
 		queue_event (__handle_no_object, sender, set, obj_entry,
 			     msg->objid, msg, sizeof (msg_server_t));
 
 		goto exit;
 	}
+
+	DEBUG("getgrab", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_STATE, obj_entry, 0, 0);
 
 	ADD_TO_SET(RMSET(obj_entry), sender);
 
@@ -800,6 +884,8 @@ exit:
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 exit_no_unlock:
+	DEBUG("getgrab", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_EXIT, 0, 0, 0);
 	return 0;
 }
 
@@ -827,8 +913,13 @@ void handle_receive_write_access (struct rpc_desc* desc,
 	obj_entry = get_alloc_kddm_obj_entry (msg->ns_id, msg->set_id,
 					      msg->objid, &set);
 
+	DEBUG("getgrab", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	krgnodes_copy(obj_entry->master_obj.rmset, msg->owner_info.rmset);
 
+	DEBUG("getgrab", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_STATE, obj_entry, 0, 0);
 	switch (OBJ_STATE(obj_entry)) {
 	  case WAIT_OBJ_WRITE:
 		  BUG_ON (obj_entry->object == NULL);
@@ -849,6 +940,9 @@ void handle_receive_write_access (struct rpc_desc* desc,
 		  STATE_MACHINE_ERROR (msg->set_id, msg->objid, obj_entry);
 		  break;
 	}
+
+	DEBUG("getgrab", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_EXIT, 0, 0, 0);
 
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
@@ -878,6 +972,9 @@ static inline int __handle_object_copy_req (kerrighed_node_t sender,
 	obj_entry = get_kddm_obj_entry (msg->ns_id, msg->set_id,
 					msg->objid, &set);
 
+	DEBUG("getgrab", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	/* First, check for NULL obj_entry case */
 	if (obj_entry == NULL) {
 		if (!I_AM_DEFAULT_OWNER(set, msg->objid)) {
@@ -900,10 +997,13 @@ static inline int __handle_object_copy_req (kerrighed_node_t sender,
 		if (msg->flags & KDDM_TRY_GRAB)
 			send_no_object (set, obj_entry, msg->objid,
 					msg->reply_node, send_ownership);
-		else
+		else {
+			DEBUG("getgrab", 2, msg->req_id, 0, msg->set_id,
+			      msg->objid, KDDM_LOG_DELAY, 0, 0, 0);
 			queue_event (__handle_object_copy_req, sender, set,
 				     obj_entry, msg->objid, msg,
 				     sizeof (msg_server_t));
+		}
 		goto exit;
 	}
 
@@ -1075,6 +1175,8 @@ send_copy:
 	  case WAIT_OBJ_WRITE:
 	  case WAIT_ACK_INV:
 	  case INV_FILLING:
+		  DEBUG("getgrab", 2, msg->req_id, 0, msg->set_id,
+			msg->objid, KDDM_LOG_QUEUE_REQ, obj_entry, 0, 0);
 		  queue_event (__handle_object_copy_req, sender, set,
 			       obj_entry, msg->objid, msg,
 			       sizeof (msg_server_t));
@@ -1089,6 +1191,8 @@ exit:
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 exit_no_unlock:
+	DEBUG("getgrab", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_EXIT, 0, 0, 0);
 	return 0;
 
 first_touch_error:
@@ -1123,6 +1227,9 @@ int __handle_object_remove_to_mgr_req (kerrighed_node_t sender,
 	obj_entry = get_alloc_kddm_obj_entry (msg->ns_id, msg->set_id,
 					      msg->objid, &set);
 
+	DEBUG("remove", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	if (object_frozen_or_pinned(obj_entry)) {
 		queue_event (__handle_object_remove_to_mgr_req, sender, set,
 			     obj_entry, msg->objid, msg,
@@ -1130,6 +1237,8 @@ int __handle_object_remove_to_mgr_req (kerrighed_node_t sender,
 		goto exit;
 	}
 
+	DEBUG("remove", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_STATE, obj_entry, 0, 0);
 	switch (OBJ_STATE(obj_entry)) {
 	  case INV_COPY:
 	  case READ_COPY:
@@ -1149,6 +1258,8 @@ int __handle_object_remove_to_mgr_req (kerrighed_node_t sender,
 	  case WAIT_CHG_OWN_ACK:
 	  case WAIT_ACK_INV:
 	  case INV_FILLING:
+		  DEBUG("remove", 2, msg->req_id, 0, msg->set_id,
+			msg->objid, KDDM_LOG_QUEUE_REQ, obj_entry, 0, 0);
 		  queue_event (__handle_object_remove_to_mgr_req, sender, set,
 			       obj_entry, msg->objid, msg,
 			       sizeof (msg_server_t));
@@ -1177,6 +1288,8 @@ exit:
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 exit_no_unlock:
+	DEBUG("remove", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_EXIT, 0, 0, 0);
 	return err;
 }
 
@@ -1203,6 +1316,9 @@ void handle_send_back_first_touch_req (struct rpc_desc* desc,
 	obj_entry = get_kddm_obj_entry (msg->ns_id, msg->set_id,
 					msg->objid, &set);
 
+	DEBUG("getgrab", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	switch (OBJ_STATE(obj_entry)) {
 	  case WAIT_OBJ_READ:
 	  case WAIT_OBJ_WRITE:
@@ -1218,6 +1334,10 @@ void handle_send_back_first_touch_req (struct rpc_desc* desc,
 		  STATE_MACHINE_ERROR (msg->set_id, msg->objid, obj_entry);
 		  break;
 	}
+
+	DEBUG("getgrab", 2, 0, 0, msg->set_id, msg->objid,
+	      KDDM_LOG_HANDLE_EXIT, obj_entry, 0, 0);
+
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
 
 	return;
@@ -1242,12 +1362,18 @@ static int handle_change_prob_owner_req(struct rpc_desc* desc,
 							msg->set_id,
 							msg->objid, &set);
 
+	DEBUG("hotplug", 2, msg->req_id, 0, msg->set_id,
+	      msg->objid, KDDM_LOG_HANDLE_ENTER, obj_entry, 0, 0);
+
 	change_prob_owner(obj_entry, msg->new_owner);
 
 	if (OBJ_STATE(obj_entry) == INV_OWNER)
 		kddm_change_obj_state(set, obj_entry, msg->objid, INV_COPY);
 
 	put_kddm_obj_entry(set, obj_entry, msg->objid);
+
+	DEBUG("hotplug", 2, 0, 0, msg->set_id, msg->objid,
+	      KDDM_LOG_HANDLE_EXIT, obj_entry, 0, 0);
 
 	return 0;
 };

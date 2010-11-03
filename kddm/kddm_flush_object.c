@@ -10,6 +10,10 @@
 
 #include <kddm/kddm.h>
 #include <kddm/object_server.h>
+#include <kerrighed/debug.h>
+
+#include "debug_kddm.h"
+
 #include "protocol_action.h"
 
 
@@ -40,6 +44,8 @@ int _kddm_flush_object(struct kddm_set *set,
 	obj_entry = __get_kddm_obj_entry(set, objid);
 	if (obj_entry == NULL)
 		return res;
+	DEBUG("flush", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
 
 try_again:
 	switch (OBJ_STATE(obj_entry)) {
@@ -66,6 +72,8 @@ try_again:
 		if (SET_IS_EMPTY(COPYSET(obj_entry))) {
 			/* I'm owner of the only existing object in the
 			 * cluster. Let's inject it ! */
+			SDEBUG("flush", 1, set->ns->id, set->id, objid,
+			      KDDM_LOG_LAST_COPY);
 			goto send_copy;
 		}
 		/* There exist at least another copy. Send ownership */
@@ -123,9 +131,12 @@ send_copy:
 		STATE_MACHINE_ERROR(set->id, objid, obj_entry);
 		break;
 	}
+
 	put_kddm_obj_entry(set, obj_entry, objid);
 
 exit_no_unlock:
+	DEBUG("flush", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_EXIT,
+	      obj_entry, 0, 0);
 
 	return res;
 }
@@ -162,6 +173,9 @@ static int __kddm_flush_object(objid_t objid,
 	kerrighed_node_t dest, new_owner;
 	struct kddm_set *set = param->set;
 
+	DEBUG("flush", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
+
 	/* No pending get or grab allowed */
 	BUG_ON(object_frozen_or_pinned(obj_entry));
 
@@ -197,7 +211,7 @@ static int __kddm_flush_object(objid_t objid,
 		 * FIXME: Must be handled in
 		 * remove_browse_objects_on_leaving_nodes()
 		 */
-		return 0;
+		goto out_nodestroy;
 
 	case WRITE_GHOST:
 	case WRITE_OWNER:
@@ -218,7 +232,7 @@ send_copy:
 		 */
 		/* Fallthrough */
 	case INV_OWNER:
-		return 0;
+		goto out_nodestroy;
 
 	case WAIT_OBJ_RM_DONE:
 	case WAIT_OBJ_RM_ACK:
@@ -231,8 +245,17 @@ send_copy:
 		return 0;
 	}
 
+	DEBUG("flush", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_EXIT,
+	      obj_entry, 0, KDDM_OBJ_CLEARED);
+
 	destroy_kddm_obj_entry_inatomic(set, obj_entry, objid, dead_list);
 	return KDDM_OBJ_CLEARED;
+
+out_nodestroy:
+	DEBUG("flush", 1, 0, set->ns->id, set->id, objid, KDDM_LOG_API_EXIT,
+	      obj_entry, 0, 0);
+
+	return 0;
 }
 
 void _kddm_flush_set(struct kddm_set *set,
@@ -242,10 +265,14 @@ void _kddm_flush_set(struct kddm_set *set,
 {
 	struct flush_set_data param;
 
+	SDEBUG("flush", 2, 0, set->id, -1L, KDDM_LOG_ENTER);
+
 	param.f = f;
 	param.set = set;
 	param.data = data;
 	__for_each_kddm_object_safe(set, __kddm_flush_object, &param);
+
+	SDEBUG("flush", 2, 0, set->id, -1L, KDDM_LOG_EXIT);
 }
 
 EXPORT_SYMBOL(_kddm_flush_set);
@@ -259,8 +286,12 @@ void kddm_flush_set(struct kddm_ns *ns,
 {
 	struct kddm_set *set;
 
+	SDEBUG("flush", 2, ns->id, set_id, -1L, KDDM_LOG_ENTER);
+
 	set = _find_get_kddm_set (ns, set_id);
 	_kddm_flush_set(set, f, data);
 	put_kddm_set(set);
+
+	SDEBUG("flush", 2, ns->id, set_id, -1L, KDDM_LOG_EXIT);
 }
 EXPORT_SYMBOL(kddm_flush_set);

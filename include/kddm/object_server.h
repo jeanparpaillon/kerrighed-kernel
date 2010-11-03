@@ -53,6 +53,7 @@
 	kddm_set_id_t set_id;        /**< Set identifier. */ \
 	int ns_id;                   /**< Name space identifier */ \
 	objid_t objid;               /**< Object id */ \
+	int ttl;                     /**< USED FOR DEBUGGING */ \
 	long req_id;                 /**< USED FOR DEBUGGING */
 
 

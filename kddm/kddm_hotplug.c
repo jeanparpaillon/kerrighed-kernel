@@ -18,6 +18,11 @@
 #include <kddm/kddm.h>
 #include "protocol_action.h"
 #include "internal.h"
+#include <kerrighed/debug.h>
+#include "debug_kddm.h"
+
+#include <kerrighed/debug.h>
+#include "debug_kddm.h"
 
 struct cluster_barrier *kddm_barrier;
 
@@ -74,6 +79,9 @@ static int add_browse_objects(objid_t objid,
 	kerrighed_node_t old_def_owner, new_def_owner;
 	struct browse_data *param = _data;
 	struct kddm_set *set = param->set;
+
+	DEBUG("hotplug", 2, 0, 0, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
 
 	old_def_owner = kddm_io_default_owner (set, objid);
 	new_def_owner = __kddm_io_default_owner(set, objid,
@@ -133,6 +141,9 @@ static int add_browse_objects(objid_t objid,
 	}
 
 done:
+	DEBUG("hotplug", 2, 0, 0, set->id, objid, KDDM_LOG_API_EXIT, obj_entry,
+	      0, 0);
+
 	return 0;
 };
 
@@ -144,6 +155,8 @@ static void add_browse_sets(void *_set, void *_data)
 	BUG_ON(set->state == KDDM_SET_LOCKED);
 	if (set->state != KDDM_SET_READY)
 		return;
+
+	SDEBUG("hotplug", 2, 0, set->id, -1L, KDDM_LOG_ENTER);
 
 	BUG_ON(set->def_owner < 0);
 	BUG_ON(set->def_owner > KDDM_MAX_DEF_OWNER);
@@ -167,13 +180,16 @@ static void add_browse_sets(void *_set, void *_data)
 		break;
 	};
 
+	SDEBUG("hotplug", 2, 0, set->id, -1L, KDDM_LOG_EXIT);
 };
 
-static void set_add(struct hotplug_context *ctx)
+static noinline void set_add(struct hotplug_context *ctx)
 {
 	krgnodemask_t *vector = &ctx->node_set.v;
 	struct browse_data param;
         kerrighed_node_t node;
+
+	SDEBUG("hotplug", 2, 0, 0, -1L, KDDM_LOG_ENTER);
 
 	if (__krgnode_isset(kerrighed_node_id, vector)) {
 		BUG_ON(kddm_def_ns->rpc_comm);
@@ -226,6 +242,8 @@ static void set_add(struct hotplug_context *ctx)
 	krgnodes_copy(krgnode_kddm_map, param.new_nodes_map);
 
 	unfreeze_kddm();
+
+	SDEBUG("hotplug", 2, 0, 0, -1L, KDDM_LOG_EXIT);
 
 	if(!__krgnode_isset(kerrighed_node_id, vector))
 		return;
@@ -370,6 +388,9 @@ static int remove_browse_objects_on_leaving_nodes(objid_t objid,
 	struct kddm_set *set = param->set;
 	int ret = 0;
 
+	DEBUG("hotplug", 2, 0, 0, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
+
 	switch (OBJ_STATE(obj_entry)) {
 	case READ_COPY:
 	case READ_OWNER:
@@ -400,6 +421,9 @@ static int remove_browse_objects_on_leaving_nodes(objid_t objid,
 		break;
 	}
 
+	DEBUG("hotplug", 2, 0, 0, set->id, objid, KDDM_LOG_API_EXIT,
+	      obj_entry, 0, 0);
+
 	return ret;
 };
 
@@ -412,6 +436,9 @@ static int remove_browse_objects_on_remaining_nodes(objid_t objid,
 	struct browse_data *param = _data;
 	struct kddm_set *set = param->set;
 	kerrighed_node_t old_def_owner, new_def_owner;
+
+	DEBUG("hotplug", 2, 0, 0, set->id, objid, KDDM_LOG_API_ENTER,
+	      obj_entry, 0, 0);
 
 	old_def_owner = kddm_io_default_owner (set, objid);
 	new_def_owner = __kddm_io_default_owner(set, objid,
@@ -469,6 +496,9 @@ static int remove_browse_objects_on_remaining_nodes(objid_t objid,
 		break;
 	}
 
+	DEBUG("hotplug", 2, 0, 0, set->id, objid, KDDM_LOG_API_EXIT, obj_entry,
+	      0, 0);
+
 	return 0;
 };
 
@@ -480,6 +510,8 @@ static void remove_browse_sets(void *_set, void *_data)
 
 	if (set->state != KDDM_SET_READY)
 		return;
+
+	SDEBUG("hotplug", 2, 0, set->id, -1L, KDDM_LOG_ENTER);
 
 	param->set = set;
 	if (__krgnode_isset(kerrighed_node_id, &param->new_nodes_map))
@@ -493,6 +525,8 @@ static void remove_browse_sets(void *_set, void *_data)
 
 	if (param->new_nb_nodes)
 		fix_set_manager(set, param);
+
+	SDEBUG("hotplug", 2, 0, set->id, -1L, KDDM_LOG_EXIT);
 }
 
 static int remove_browse_objects_on_remaining_nodes2(objid_t objid,
@@ -550,10 +584,12 @@ static void remove_browse_sets2(void *_set, void *_data)
 				_data);
 }
 
-static void set_remove(krgnodemask_t * vector)
+static noinline void set_remove(krgnodemask_t * vector)
 {
 	krgnodemask_t prev_kddm_map;
 	struct browse_data param;
+
+	SDEBUG("hotplug", 2, 0, 0, -1L, KDDM_LOG_ENTER);
 
 	/* Compute new node map */
 
@@ -600,6 +636,8 @@ static void set_remove(krgnodemask_t * vector)
 			first_krgnode(prev_kddm_map));
 
 	unfreeze_kddm();
+
+	SDEBUG("hotplug", 2, 0, 0, -1L, KDDM_LOG_EXIT);
 };
 
 static void set_remove_distant(struct hotplug_context *ctx)
@@ -1074,6 +1112,8 @@ static int kddm_notification(struct notifier_block *nb, hotplug_event_t event,
 
 	ctx = data;
 
+	SDEBUG("hotplug", 2, 0, 0, -1L, KDDM_LOG_ENTER);
+
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:
 		set_add(ctx);
@@ -1096,6 +1136,8 @@ static int kddm_notification(struct notifier_block *nb, hotplug_event_t event,
 	default:
 		break;
 	}
+
+	SDEBUG("hotplug", 2, 0, 0, -1L, KDDM_LOG_EXIT);
 
 	return NOTIFY_OK;
 };

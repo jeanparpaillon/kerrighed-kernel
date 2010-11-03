@@ -20,13 +20,16 @@
 #include <kddm/object.h>
 #include <kddm/io_linker.h>
 
+#include <kerrighed/debug.h>
+#include "debug_kddm.h"
+
 atomic_t nr_master_objects = ATOMIC_INIT(0);
 atomic_t nr_copy_objects = ATOMIC_INIT(0);
 atomic_t nr_OBJ_STATE[NB_OBJ_STATE];
 
 #define STATE_DEF(state) [OBJ_STATE_INDEX(state)] = #state
 
-const char *state_name[NB_OBJ_STATE] = {
+const char *state_name[NB_OBJ_STATE + 1] = {
 	STATE_DEF(INV_COPY),
 	STATE_DEF(READ_COPY),
 	STATE_DEF(INV_OWNER),
@@ -98,6 +101,9 @@ static void change_object_state (struct kddm_set *set,
 		atomic_dec(&set->nr_copies);
 	}
 
+	DEBUG("object", 1, 0, set->ns->id, set->id, objid,
+	      KDDM_LOG_STATE_CHANGED, new_state, 0, 0);
+
 	obj_entry->flags = new_state |
 		(obj_entry->flags & ~OBJECT_STATE_MASK);
 
@@ -129,6 +135,9 @@ void kddm_change_obj_state(struct kddm_set * set,
 			   objid_t objid,
 			   kddm_obj_state_t newState)
 {
+	DEBUG("object", 3, 0, set->ns->id, set->id, objid,
+	      KDDM_LOG_ENTER_COUNT, obj_entry, 0, 0);
+
 	if (!obj_entry)
 		return;
 
@@ -137,6 +146,9 @@ void kddm_change_obj_state(struct kddm_set * set,
 
 		kddm_io_change_state(obj_entry, set, objid, newState);
 	}
+
+	DEBUG("object", 4, 0, set->ns->id, set->id, objid, KDDM_LOG_EXIT,
+	      obj_entry, 0, 0);
 }
 
 
@@ -161,6 +173,7 @@ struct kddm_obj *alloc_kddm_obj_entry(struct kddm_set *set,
 	}
 
 	obj_entry->flags = 0;
+	obj_entry->objid = objid;
 	obj_entry->object = NULL;
 	atomic_set(&obj_entry->mapcount, 0);
 	atomic_set(&obj_entry->refcount, 0);
@@ -182,6 +195,9 @@ struct kddm_obj *alloc_kddm_obj_entry(struct kddm_set *set,
 
 	CLEAR_SET(COPYSET(obj_entry));
 	CLEAR_SET(RMSET(obj_entry));
+
+	DEBUG("object", 4, 0, set->ns->id, set->id, objid,
+	      KDDM_LOG_OBJ_CREATED, obj_entry, 0, 0);
 
 	init_waitqueue_head(&obj_entry->waiting_tsk);
 
@@ -226,6 +242,9 @@ void free_kddm_obj_entry(struct kddm_set *set,
 			 struct kddm_obj *obj_entry,
 			 objid_t objid)
 {
+	DEBUG("object", 4, 0, set->ns->id, set->id, objid,
+	      KDDM_LOG_ENTER_COUNT, obj_entry, 0, 0);
+
 	BUG_ON(is_locked_obj_entry(obj_entry));
 	BUG_ON(object_frozen(obj_entry));
 	BUG_ON(obj_entry_mapcount(obj_entry) != 0);
@@ -240,6 +259,8 @@ void free_kddm_obj_entry(struct kddm_set *set,
 	atomic_dec(&set->nr_entries);
 
 	free_obj_entry_struct(obj_entry);
+
+	SDEBUG("object", 4, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 }
 
 int do_destroy_kddm_obj_entry(struct kddm_set *set,
@@ -274,6 +295,9 @@ int __destroy_kddm_obj_entry(struct kddm_set *set,
 	kerrighed_node_t default_owner = kddm_io_default_owner(set, objid);
 
 	BUG_ON (object_frozen(obj_entry));
+	DEBUG("remove", 3, 0, set->ns->id, set->id, objid,
+	      KDDM_LOG_ENTER_COUNT, obj_entry, 0, 0);
+
 	/* Check if we are in a flush case i.e. cluster_wide_remove == 0
 	 * or if we have a pending request on the object. In both cases, we
 	 * cannot destroy the object entry.
@@ -289,6 +313,8 @@ int __destroy_kddm_obj_entry(struct kddm_set *set,
 				change_prob_owner(obj_entry, default_owner);
 		}
 
+		DEBUG("object", 4, 0, set->ns->id, set->id, objid,
+		      KDDM_LOG_WAKE_UP, &obj_entry->waiting_tsk, 0, 0);
 		wake_up (&obj_entry->waiting_tsk);
 		kddm_io_remove_object_and_unlock (obj_entry, set, objid, dead_list);
 	}
@@ -299,6 +325,8 @@ int __destroy_kddm_obj_entry(struct kddm_set *set,
 
 		do_destroy_kddm_obj_entry (set, obj_entry, objid);
 	}
+
+	SDEBUG("remove", 3, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 
 	return 0;
 }
@@ -396,6 +424,8 @@ void kddm_insert_object(struct kddm_set * set,
 		CLEAR_SET(COPYSET(obj_entry));
 		ADD_TO_SET(COPYSET(obj_entry), kerrighed_node_id);
 		ADD_TO_SET(RMSET(obj_entry), kerrighed_node_id);
+		DEBUG("getgrab", 2, 0, set->ns->id, set->id, objid,
+		      KDDM_LOG_INSERT, obj_entry, 0, 0);
 	}
 	if (OBJ_STATE(obj_entry) != WAIT_ACK_INV)
 		wake_up_on_wait_object(obj_entry, set);
@@ -410,6 +440,9 @@ void kddm_invalidate_local_object_and_unlock(struct kddm_obj * obj_entry,
 					     objid_t objid,
 					     kddm_obj_state_t state)
 {
+	DEBUG("object", 2, 0, set->ns->id, set->id, objid,
+	      KDDM_LOG_ENTER_COUNT, obj_entry, 0, 0);
+
 	BUG_ON(obj_entry->object == NULL);
 
 	kddm_lock_obj_table(set);
@@ -432,6 +465,8 @@ void kddm_invalidate_local_object_and_unlock(struct kddm_obj * obj_entry,
 
 done:
 	put_kddm_obj_entry(set, obj_entry, objid);
+
+	SDEBUG("object", 2, set->ns->id, set->id, objid, KDDM_LOG_EXIT);
 }
 
 /* Unlock, and make a process sleep until the corresponding
@@ -445,6 +480,8 @@ void __sleep_on_kddm_obj(struct kddm_set * set,
 	struct kddm_info_struct *kddm_info = current->kddm_info;
 	wait_queue_t wait;
 
+	DEBUG("getgrab", 2, 0, set->ns->id, set->id, objid,
+	      KDDM_LOG_SLEEP, obj_entry, 0, 0);
 	BUG_ON(!is_locked_obj_entry (obj_entry));
 
 	/* Increase sleeper count and enqueue the task in the obj wait queue */
@@ -489,8 +526,21 @@ void __sleep_on_kddm_obj(struct kddm_set * set,
 	   release the object */
 	if (atomic_dec_and_test(&obj_entry->sleeper_count))
 		CLEAR_OBJECT_PINNED(obj_entry);
+	DEBUG("object", 2, 0, set->ns->id, set->id, objid, KDDM_LOG_WOKEN_UP,
+	      obj_entry, 0, 0);
 }
 
+
+void wake_up_on_wait_object (struct kddm_obj *obj_entry,
+			     struct kddm_set *set)
+{
+	DEBUG("object", 2, 0, set->ns->id, set->id, obj_entry->objid,
+	      KDDM_LOG_WAKE_UP, &obj_entry->waiting_tsk, 0, 0);
+
+	if (atomic_read (&obj_entry->sleeper_count))
+		SET_OBJECT_PINNED (obj_entry);
+	wake_up (&obj_entry->waiting_tsk);
+}
 
 
 /* Check if we need to sleep on a local exclusive set.
@@ -554,9 +604,12 @@ void set_object_frozen(struct kddm_obj * obj_entry)
  *
  *  @param obj_entry  Entry of the object to warm.
  */
-void object_clear_frozen(struct kddm_obj * obj_entry,
-			 struct kddm_set * set)
+noinline void object_clear_frozen(struct kddm_obj * obj_entry,
+				  struct kddm_set * set)
 {
+	DEBUG("object", 4, 0, set->ns->id, set->id, obj_entry->objid,
+	      KDDM_LOG_ENTER_COUNT, obj_entry, 0, 0);
+
 	atomic_dec(&obj_entry->frozen_count);
 
 	BUG_ON(atomic_read(&obj_entry->frozen_count) < 0);
