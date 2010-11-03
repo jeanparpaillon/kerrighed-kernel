@@ -39,6 +39,30 @@ struct browse_data {
 	kerrighed_node_t new_nb_nodes;
 };
 
+static void fix_set_manager(void *_set, void *_data)
+{
+	struct browse_data *param = _data;
+	struct kddm_set *set = _set;
+	kerrighed_node_t new_kddm_mgr;
+	kddm_id_msg_t kddm_id;
+
+	/*
+	 * If another node has to become manager for a KDDM managed by this
+	 * node, force the new manager to fetch KDDM data structure.
+	 */
+
+	if (KDDM_SET_MGR(set) != kerrighed_node_id)
+		return;
+
+	new_kddm_mgr = __kddm_set_mgr(set, &param->new_nodes_map, param->new_nb_nodes);
+	if (new_kddm_mgr == kerrighed_node_id)
+		return;
+
+	kddm_id.set_id = set->id;
+	kddm_id.ns_id = set->ns->id;
+	rpc_sync(REQ_KDDM_CHANGE_MGR, new_kddm_mgr, &kddm_id, sizeof(kddm_id));
+}
+
 static int add_browse_objects(unsigned long objid,
 			      void *_obj_entry,
 			      void *_data)
@@ -333,8 +357,6 @@ static void remove_browse_sets(void *_set, void *_data)
 {
 	struct browse_data *param = _data;
 	struct kddm_set *set = _set;
-	kerrighed_node_t new_kddm_mgr;
-	kddm_id_msg_t kddm_id;
 
 	if (set->state != KDDM_SET_READY)
 		return;
@@ -344,24 +366,13 @@ static void remove_browse_sets(void *_set, void *_data)
 		___for_each_kddm_object(set,
 			       remove_browse_objects_on_remaining_nodes,
 			       _data);
-	else {
+	else
 		___for_each_kddm_object(set,
 					remove_browse_objects_on_leaving_nodes,
 					_data);
 
-		/* If the old KDDM manager is located on a removed node, force
-		 * the new manager to fetch KDDM data structure.
-		 */
-		if (KDDM_SET_MGR(set) == kerrighed_node_id) {
-			new_kddm_mgr = __kddm_set_mgr(set,&param->new_nodes_map,
-						      param->new_nb_nodes);
-
-			kddm_id.set_id = set->id;
-			kddm_id.ns_id = set->ns->id;
-			rpc_sync(REQ_KDDM_CHANGE_MGR, new_kddm_mgr, &kddm_id,
-				 sizeof(kddm_id_msg_t));
-		}
-	}
+	if (param->new_nb_nodes)
+		fix_set_manager(set, param);
 }
 
 static int remove_browse_objects_on_remaining_nodes2(unsigned long objid,
