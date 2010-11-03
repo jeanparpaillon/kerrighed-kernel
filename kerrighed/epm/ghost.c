@@ -443,6 +443,7 @@ static int export_krg_structs(struct epm_action *action,
  *  @param ghost	Ghost where file data should be stored.
  *  @param task		Task to export file data from.
  *  @param l_regs	Registers of the task to export.
+ *  @param shared	Send shared structs (mm, fs, files, ...)
  *
  *  @return		0 if everything ok.
  *			Negative value otherwise.
@@ -450,7 +451,8 @@ static int export_krg_structs(struct epm_action *action,
 static int export_task(struct epm_action *action,
 		       ghost_t *ghost,
 		       struct task_struct *task,
-		       struct pt_regs *l_regs)
+		       struct pt_regs *l_regs,
+		       bool shared)
 {
 	int r;
 
@@ -516,9 +518,11 @@ static int export_task(struct epm_action *action,
 	if (r)
 		GOTO_ERROR;
 #ifdef CONFIG_KRG_MM
-	r = export_mm_struct(action, ghost, task);
-	if (r)
-		GOTO_ERROR;
+	if (shared) {
+		r = export_mm_struct(action, ghost, task);
+		if (r)
+			GOTO_ERROR;
+	}
 #endif
 
 	r = export_binfmt(action, ghost, task);
@@ -542,12 +546,14 @@ static int export_task(struct epm_action *action,
 		GOTO_ERROR;
 
 #ifdef CONFIG_KRG_DVFS
-	r = export_fs_struct(action, ghost, task);
-	if (r)
-		GOTO_ERROR;
-	r = export_files_struct(action, ghost, task);
-	if (r)
-		GOTO_ERROR;
+	if (shared) {
+		r = export_fs_struct(action, ghost, task);
+		if (r)
+			GOTO_ERROR;
+		r = export_files_struct(action, ghost, task);
+		if (r)
+			GOTO_ERROR;
+	}
 #endif
 
 	r = export_cgroups(action, ghost, task);
@@ -571,12 +577,16 @@ static int export_task(struct epm_action *action,
 	r = export_private_signals(action, ghost, task);
 	if (r)
 		GOTO_ERROR;
-	r = export_signal_struct(action, ghost, task);
-	if (r)
-		GOTO_ERROR;
-	r = export_sighand_struct(action, ghost, task);
-	if (r)
-		GOTO_ERROR;
+
+	if (shared) {
+		r = export_signal_struct(action, ghost, task);
+		if (r)
+			GOTO_ERROR;
+
+		r = export_sighand_struct(action, ghost, task);
+		if (r)
+			GOTO_ERROR;
+	}
 
 #ifdef CONFIG_KRG_IPC
 	r = export_sysv_sem(action, ghost, task);
