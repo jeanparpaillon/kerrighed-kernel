@@ -167,8 +167,10 @@ static void set_add(krgnodemask_t * vector)
 	struct browse_data param;
         kerrighed_node_t node;
 
-	if(__krgnode_isset(kerrighed_node_id, vector))
+	if (__krgnode_isset(kerrighed_node_id, vector)) {
+		rpc_enable(REQ_KDDM_CHANGE_MGR);
 		rpc_enable(KDDM_CHANGE_PROB_OWNER);
+	}
 
 	krgnodes_copy(param.new_nodes_map, krgnode_online_map);
 
@@ -181,6 +183,23 @@ static void set_add(krgnodemask_t * vector)
 	};
 
 	freeze_kddm();
+
+	cluster_barrier(kddm_barrier, &param.new_nodes_map,
+			__first_krgnode(&param.new_nodes_map));
+
+	/* Nodes being added are supposed to only have system KDDM sets. */
+	/*
+	 * WARNING: Fix map handling in
+	 * kddm_set.c:handle_req_kddm_set_change_mgr() whenever nodes being
+	 * added should also fix their KDDM sets
+	 */
+	if (krgnode_online(kerrighed_node_id))
+		__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
+					 fix_set_manager, &param);
+
+	/* Only required to keep an even number of invocations */
+	cluster_barrier(kddm_barrier, &param.new_nodes_map,
+			__first_krgnode(&param.new_nodes_map));
 
 	cluster_barrier(kddm_barrier, &param.new_nodes_map,
 			__first_krgnode(&param.new_nodes_map));
@@ -198,6 +217,9 @@ static void set_add(krgnodemask_t * vector)
 
 	if(!__krgnode_isset(kerrighed_node_id, vector))
 		return;
+
+	rpc_enable(REQ_KDDM_SET_LOOKUP);
+	rpc_enable(REQ_KDDM_SET_DESTROY);
 
 	rpc_enable(REQ_OBJECT_COPY);
 	rpc_enable(REQ_OBJECT_REMOVE);
