@@ -146,31 +146,38 @@ void migration_aborted(struct task_struct *tsk)
 	krg_action_stop(tsk, EPM_MIGRATE);
 }
 
-static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
-			   kerrighed_node_t target)
+static void undo_task_migrate(struct task_struct *tsk)
+{
+	struct task_kddm_object *obj;
+
+	mm_struct_unpin(tsk->mm);
+
+	krg_signal_writelock(tsk->signal);
+	krg_signal_unlock(tsk->signal);
+	krg_signal_unpin(tsk->signal);
+
+	krg_sighand_writelock(tsk->sighand->krg_objid);
+	krg_sighand_unlock(tsk->sighand->krg_objid);
+	krg_sighand_unpin(tsk->sighand);
+
+	obj = __krg_task_writelock(tsk);
+	BUG_ON(!obj);
+	write_lock_irq(&tasklist_lock);
+	obj->task = tsk;
+	tsk->task_obj = obj;
+	write_unlock_irq(&tasklist_lock);
+	__krg_task_unlock(tsk);
+
+	join_local_relatives(tsk);
+
+	krg_set_pid_location(tsk);
+}
+
+static pid_t __do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
+			       struct rpc_desc *desc, kerrighe_node_t target)
 {
 	struct epm_action migration;
-	struct rpc_desc *desc;
 	pid_t remote_pid;
-
-	BUG_ON(tsk == NULL);
-	BUG_ON(regs == NULL);
-
-	/*
-	 * Check again that we actually are able to migrate tsk
-	 * For instance fork() may have created a thread right after the
-	 * migration request.
-	 */
-#ifdef CONFIG_KRG_CAP
-	if (!can_use_krg_cap(tsk, CAP_CAN_MIGRATE))
-		return -ENOSYS;
-#endif
-	if (!migration_implemented(tsk))
-		return -ENOSYS;
-
-	desc = rpc_begin(RPC_EPM_MIGRATE, target);
-	if (!desc)
-		return -ENOMEM;
 
 	migration.type = EPM_MIGRATE;
 	migration.migrate.pid = task_pid_knr(tsk);
@@ -194,34 +201,42 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 
 	remote_pid = send_task(desc, tsk, regs, &migration);
 
+	return remote_pid;
+}
+
+static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
+			   kerrighed_node_t target)
+{
+	struct rpc_desc *desc;
+	pid_t remote_pid;
+
+	BUG_ON(tsk == NULL);
+	BUG_ON(regs == NULL);
+
+	/*
+	 * Check again that we actually are able to migrate tsk
+	 * For instance fork() may have created a thread right after the
+	 * migration request.
+	 */
+#ifdef CONFIG_KRG_CAP
+	if (!can_use_krg_cap(tsk, CAP_CAN_MIGRATE))
+		return -ENOSYS;
+#endif
+	if (!migration_implemented(tsk))
+		return -ENOSYS;
+
+	desc = rpc_begin(RPC_EPM_MIGRATE, target);
+	if (!desc)
+		return -ENOMEM;
+
+	remote_pid = __do_task_migrate(tsk, regs, desc, target);
+
 	if (remote_pid < 0)
 		rpc_cancel(desc);
 	rpc_end(desc, 0);
 
 	if (remote_pid < 0) {
-		struct task_kddm_object *obj;
-
-		mm_struct_unpin(tsk->mm);
-
-		krg_signal_writelock(tsk->signal);
-		krg_signal_unlock(tsk->signal);
-		krg_signal_unpin(tsk->signal);
-
-		krg_sighand_writelock(tsk->sighand->krg_objid);
-		krg_sighand_unlock(tsk->sighand->krg_objid);
-		krg_sighand_unpin(tsk->sighand);
-
-		obj = __krg_task_writelock(tsk);
-		BUG_ON(!obj);
-		write_lock_irq(&tasklist_lock);
-		obj->task = tsk;
-		tsk->task_obj = obj;
-		write_unlock_irq(&tasklist_lock);
-		__krg_task_unlock(tsk);
-
-		join_local_relatives(tsk);
-
-		krg_set_pid_location(tsk);
+		undo_task_migrate(tsk);
 	} else {
 		BUG_ON(remote_pid != task_pid_knr(tsk));
 		/* Do not notify a task having done vfork() */
@@ -229,6 +244,114 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	}
 
 	return remote_pid > 0 ? 0 : remote_pid;
+}
+
+static bool can_migrate_threaded_task(struct task_struct *task)
+{
+	bool ret = false;
+	int nbthreads = 1;
+
+	if (!thread_group_leader(task))
+		goto exit;
+
+#ifdef CONFIG_KRG_CAP
+	if (!can_use_krg_cap(task, CAP_CAN_MIGRATE))
+		goto exit;
+#endif
+
+	t = task;
+	while_each_thread(task, t) {
+
+#ifdef CONFIG_KRG_CAP
+		if (!can_use_krg_cap(t, CAP_CAN_MIGRATE))
+			goto exit;
+#endif
+
+		/* check shared structs are the same */
+		if (task->files != t->files)
+			goto exit;
+
+		if (task->fs != t->fs)
+			goto exit;
+
+		if (task->mm != t->mm)
+			goto exit;
+
+		if (task->signal != t->signal)
+			goto exit;
+
+		if (task->sighand != t->sighand)
+			goto exit;
+
+		nbthreads++;
+	}
+
+	/* check there is no leak */
+	if (atomic_read(&task->files->count) != nbthreads)
+		goto exit;
+
+	/* fs is generally shared even without threads */
+
+	if (atomic_read(&task->mm->mm_ltasks) != nbthreads)
+		goto exit;
+
+	if (atomic_read(&task->signal->count) != nbthreads)
+		goto exit;
+
+	if (atomic_read(&task->sighand->count) != nbthreads)
+		goto exit;
+
+	ret = true;
+
+exit:
+	return ret;
+}
+
+static int do_threaded_task_migrate(struct task_struct *tsk,
+				    struct pt_regs *regs,
+				    kerrighed_node_t target)
+{
+	struct rpc_desc *desc;
+	struct task_struct *t;
+	pid_t remote_pid;
+
+	BUG_ON(tsk == NULL);
+	BUG_ON(regs == NULL);
+
+	if (can_migrate_threaded_task(tsk))
+		return -ENOSYS;
+
+	desc = rpc_begin(RPC_EPM_MIGRATE, target);
+	if (!desc)
+		return -ENOMEM;
+
+	t = tsk;
+	do {
+		/* TODO: get the right "regs" */
+
+		remote_pid = __do_task_migrate(t, regs, desc, target);
+		if (remote_pid < 0)
+			goto cancel;
+
+		BUG_ON(remote_pid != task_pid_knr(tsk));
+		/* Do not notify a task having done vfork() */
+		cleanup_vfork_done(tsk);
+
+	} while_each_thread(task, t);
+
+out:
+	rpc_end(desc, 0);
+
+	return remote_pid > 0 ? 0 : remote_pid;
+
+cancel:
+	rpc_cancel(desc);
+	undo_task_migrate(tsk);
+
+	/* TODO: rollback migration for all threads that have already
+	   migrated */
+
+	goto out;
 }
 
 static void krg_task_migrate(int sig, struct siginfo *info,
@@ -249,6 +372,26 @@ static void krg_task_migrate(int sig, struct siginfo *info,
 	/* Migration failed */
 	migration_aborted(tsk);
 }
+
+static void krg_threaded_task_migrate(int sig, struct siginfo *info,
+				      struct pt_regs *regs)
+{
+	struct task_struct *tsk = current;
+	int r = 0;
+
+	r = do_task_migrate(tsk, regs, si_node(*info));
+
+	if (!r) {
+#ifdef CONFIG_KRG_SCHED
+		atomic_notifier_call_chain(&kmh_migration_send_end, 0, NULL);
+#endif
+		do_exit_wo_notify(0); /* Won't return */
+	}
+
+	/* Migration failed */
+	migration_aborted(tsk);
+}
+
 
 /**
  *  Process migration handler.
@@ -332,6 +475,35 @@ static int do_migrate_process(struct task_struct *task,
 
 	return retval;
 }
+
+int migrate_multithreaded_process(struct task_struct *task,
+				  kerrighed_node_t dest_node)
+{
+	int r = -EPERM;
+	int nbthreads = 1;
+	struct task_struct *t;
+
+	if (!can_migrate_threaded_task(task))
+		goto exit;
+
+	/* migrate the thread leader */
+	r = do_migrate_process(task, dest_node);
+	if (r)
+		goto exit;
+
+	t = task;
+	while_each_thread(task, t) {
+		r = do_migrate_process(t, dest_node);
+
+		/* to late to cancel !*/
+		if (r)
+			BUG();
+	}
+
+exit:
+	return r;
+}
+
 
 /* Kernel-level API */
 
