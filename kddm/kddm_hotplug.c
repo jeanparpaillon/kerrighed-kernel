@@ -65,7 +65,8 @@ static void fix_set_manager(void *_set, void *_data)
 
 static int add_browse_objects(unsigned long objid,
 			      void *_obj_entry,
-			      void *_data)
+			      void *_data,
+			      struct kddm_obj_list **dead_list)
 {
 	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
 	kerrighed_node_t old_def_owner, new_def_owner;
@@ -251,7 +252,8 @@ static void set_add(krgnodemask_t * vector)
 
 static int remove_browse_objects_on_leaving_nodes(unsigned long objid,
 						  void *_obj_entry,
-						  void *_data)
+						  void *_data,
+						  struct kddm_obj_list **dead_list)
 {
 	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
 	struct browse_data *param = _data;
@@ -312,7 +314,8 @@ static int remove_browse_objects_on_leaving_nodes(unsigned long objid,
 
 static int remove_browse_objects_on_remaining_nodes(unsigned long objid,
 						    void *_obj_entry,
-						    void *_data)
+						    void *_data,
+						    struct kddm_obj_list **dead_list)
 {
 	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
 	struct browse_data *param = _data;
@@ -403,7 +406,8 @@ static void remove_browse_sets(void *_set, void *_data)
 
 static int remove_browse_objects_on_remaining_nodes2(unsigned long objid,
 						     void *_obj_entry,
-						     void *_data)
+						     void *_data,
+						     struct kddm_obj_list **dead_list)
 {
 	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
 	struct browse_data *param = _data;
@@ -736,7 +740,8 @@ static void handle_select_owner(struct rpc_desc *desc)
  **
  **/
 static int browse_clean_failure(unsigned long objid, void *_obj_entry,
-				void *_data)
+				void *_data,
+				struct kddm_obj_list **dead_list)
 {
 	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
 	BUG_ON(!obj_entry);
@@ -752,7 +757,8 @@ static void kddm_set_clean_failure_cb(void *_set, void *_data)
 };
 
 static int browse_failure(unsigned long objid, void *_obj_entry,
-			  void *_data)
+			  void *_data,
+			  struct kddm_obj_list **dead_list)
 {
 	int correct_prob_owner = 0;
 	struct kddm_set * set = (struct kddm_set *)_data;
@@ -885,7 +891,8 @@ static void kddm_set_failure_cb(void *_set, void *_data)
 };
 
 static int browse_select_owner(objid_t objid, void *_obj_entry,
-			       void *_data)
+			       void *_data,
+			       struct kddm_obj_list **dead_list)
 {
 	krgnodemask_t *vector_fail = _data;
 	struct kddm_obj * obj_entry = (struct kddm_obj *)_obj_entry;

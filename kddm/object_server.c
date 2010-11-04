@@ -482,7 +482,7 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 						 WAIT_OBJ_RM_ACK2);
 
 			  kddm_io_remove_object_and_unlock(obj_entry, set,
-							   msg->objid);
+							   msg->objid, NULL);
 
 			  send_remove_ack (set, msg->objid, msg->reply_node,
 					   flag);
@@ -499,7 +499,7 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 		  BUG_ON(TEST_OBJECT_PINNED(obj_entry));
 
 		  kddm_io_remove_object_and_unlock (obj_entry, set,
-						    msg->objid);
+						    msg->objid, NULL);
 
 		  send_remove_ack (set, msg->objid, msg->reply_node, flag);
 		  goto exit_no_unlock;
@@ -802,7 +802,7 @@ int __handle_no_object (kerrighed_node_t sender,
 		  wake_up_on_wait_object (obj_entry, set);
 
 		  kddm_io_remove_object_and_unlock (obj_entry, set,
-						    msg->objid);
+						    msg->objid, NULL);
 		  goto exit_no_unlock;
 
 	  case INV_OWNER:

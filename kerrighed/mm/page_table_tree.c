@@ -301,7 +301,7 @@ retry:
 
 				pte_unmap_unlock(ptep, ptl);
 
-				ret = iterator->f(objid, obj_entry, iterator->data);
+				ret = iterator->f(objid, obj_entry, iterator->data, iterator->dead_list);
 				if (ret == KDDM_OBJ_REMOVED
 				    || ret == KDDM_OBJ_CLEARED)
 					pte_clear(mm, addr, ptep);
@@ -796,6 +796,7 @@ static void *kddm_pt_alloc (struct kddm_set *set, void *_data)
 	mm->anon_vma_kddm_id = set->id;
 
 	iterator.f = NULL;
+	iterator.dead_list = NULL;
 	for (vma = mm->mmap; vma != NULL; vma = vma->vm_next) {
 		if (anon_vma(vma)) {
 			iterator.data = vma;

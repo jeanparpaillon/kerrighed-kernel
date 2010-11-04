@@ -155,7 +155,8 @@ struct flush_set_data {
 
 static int __kddm_flush_object(unsigned long objid,
 			       void *_obj_entry,
-			       void *_data)
+			       void *_data,
+			       struct kddm_obj_list **dead_list)
 {
 	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
 	struct flush_set_data *param = _data;
@@ -231,7 +232,7 @@ send_copy:
 		return 0;
 	}
 
-	destroy_kddm_obj_entry(set, obj_entry, objid, 0);
+	destroy_kddm_obj_entry_inatomic(set, obj_entry, objid, dead_list);
 	return KDDM_OBJ_CLEARED;
 }
 
@@ -245,7 +246,7 @@ void _kddm_flush_set(struct kddm_set *set,
 	param.f = f;
 	param.set = set;
 	param.data = data;
-	__for_each_kddm_object(set, __kddm_flush_object, &param);
+	__for_each_kddm_object_safe(set, __kddm_flush_object, &param);
 }
 
 EXPORT_SYMBOL(_kddm_flush_set);
