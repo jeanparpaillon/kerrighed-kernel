@@ -569,8 +569,13 @@ void __for_each_kddm_object(struct kddm_set *set,
 			    int(*f)(unsigned long, void *, void*),
 			    void *data)
 {
+	struct kddm_obj_iterator iterator;
+
+	iterator.f = f;
+	iterator.data = data;
+
 	kddm_lock_obj_table(set);
-	set->ops->for_each_obj_entry(set, f, data);
+	set->ops->for_each_obj_entry(set, &iterator);
 	kddm_unlock_obj_table(set);
 }
 
