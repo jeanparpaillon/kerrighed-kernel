@@ -39,7 +39,7 @@ retry:
 	BUG_ON(!object_frozen(obj_entry));
 
 	if (obj_entry->object != NULL) {
-		kddm_io_remove_object_and_unlock(obj_entry, set, objid);
+		kddm_io_remove_object_and_unlock(obj_entry, set, objid, NULL);
 		printk ("Humf.... Can do really better !\n");
 		goto retry;
 	}

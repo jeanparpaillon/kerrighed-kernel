@@ -265,10 +265,11 @@ int do_destroy_kddm_obj_entry(struct kddm_set *set,
 
 /*** Remove an object entry from a kddm set object table. ***/
 
-int destroy_kddm_obj_entry (struct kddm_set *set,
-			    struct kddm_obj *obj_entry,
-			    objid_t objid,
-			    int cluster_wide_remove)
+int __destroy_kddm_obj_entry(struct kddm_set *set,
+			     struct kddm_obj *obj_entry,
+			     objid_t objid,
+			     struct kddm_obj_list **dead_list,
+			     int cluster_wide_remove)
 {
 	kerrighed_node_t default_owner = kddm_io_default_owner(set, objid);
 
@@ -289,7 +290,7 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 		}
 
 		wake_up (&obj_entry->waiting_tsk);
-		kddm_io_remove_object_and_unlock (obj_entry, set, objid);
+		kddm_io_remove_object_and_unlock (obj_entry, set, objid, dead_list);
 	}
 	else {
 		kddm_lock_obj_table(set);
@@ -566,13 +567,14 @@ void object_clear_frozen(struct kddm_obj * obj_entry,
 
 
 void __for_each_kddm_object(struct kddm_set *set,
-			    int(*f)(unsigned long, void *, void*),
+			    int(*f)(unsigned long, void *, void *, struct kddm_obj_list **),
 			    void *data)
 {
 	struct kddm_obj_iterator iterator;
 
 	iterator.f = f;
 	iterator.data = data;
+	iterator.dead_list = NULL;
 
 	kddm_lock_obj_table(set);
 	set->ops->for_each_obj_entry(set, &iterator);
@@ -584,7 +586,7 @@ void __for_each_kddm_object(struct kddm_set *set,
 
 void for_each_kddm_object(int ns_id,
 			  kddm_set_id_t set_id,
-			  int(*f)(unsigned long, void*, void*),
+			  int(*f)(unsigned long, void *, void *, struct kddm_obj_list **),
 			  void *data)
 {
 	struct kddm_set *set;
@@ -598,6 +600,33 @@ void for_each_kddm_object(int ns_id,
 	put_kddm_set(set);
 }
 EXPORT_SYMBOL(for_each_kddm_object);
+
+
+void __for_each_kddm_object_safe(struct kddm_set *set,
+				 int(*f)(unsigned long, void *, void *, struct kddm_obj_list **),
+				 void *data)
+{
+	struct kddm_obj_list *dead_list = NULL;
+	struct kddm_obj_list *next;
+	struct kddm_obj_iterator iterator;
+
+	iterator.f = f;
+	iterator.data = data;
+	iterator.dead_list = kddm_need_safe_walk(set) ? &dead_list : NULL;
+
+	kddm_lock_obj_table(set);
+	set->ops->for_each_obj_entry(set, &iterator);
+	kddm_unlock_obj_table(set);
+
+	while (dead_list) {
+		next = dead_list->next;
+
+		kddm_io_remove_object(dead_list->object, set, dead_list->objid);
+		kfree(dead_list);
+
+		dead_list = next;
+	}
+}
 
 
 int init_kddm_objects (void)

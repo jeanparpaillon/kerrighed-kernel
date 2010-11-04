@@ -163,9 +163,16 @@ typedef struct kddm_obj {
 #endif
 } __attribute__((aligned(8))) kddm_obj_t;
 
+struct kddm_obj_list {
+	struct kddm_obj_list *next;
+	void *object;
+	objid_t objid;
+};
+
 struct kddm_obj_iterator {
-	int (*f)(unsigned long, void *, void *);
+	int (*f)(unsigned long, void *, void *, struct kddm_obj_list **);
 	void *data;
+	struct kddm_obj_list **dead_list;
 };
 
 /*--------------------------------------------------------------------------*
@@ -178,10 +185,12 @@ struct kddm_obj_iterator {
 #define _KDDM_LOCAL_EXCLUSIVE  0
 #define _KDDM_FT_LINKED        1
 #define _KDDM_FROZEN           2
+#define _KDDM_NEED_SAFE_WALK   3
 
 #define KDDM_LOCAL_EXCLUSIVE  (1<<_KDDM_LOCAL_EXCLUSIVE)
 #define KDDM_FT_LINKED        (1<<_KDDM_FT_LINKED)
 #define KDDM_FROZEN           (1<<_KDDM_FROZEN)
+#define KDDM_NEED_SAFE_WALK   (1<<_KDDM_NEED_SAFE_WALK)
 
 #define kddm_local_exclusive(kddm) test_bit(_KDDM_LOCAL_EXCLUSIVE, &kddm->flags)
 #define set_kddm_local_exclusive(kddm) set_bit(_KDDM_LOCAL_EXCLUSIVE, &kddm->flags);
@@ -194,6 +203,10 @@ struct kddm_obj_iterator {
 #define kddm_frozen(kddm) test_bit(_KDDM_FROZEN, &(kddm)->flags)
 #define set_kddm_frozen(kddm) set_bit(_KDDM_FROZEN, &(kddm)->flags);
 #define clear_kddm_frozen(kddm) clear_bit(_KDDM_FROZEN, &(kddm)->flags);
+
+#define kddm_need_safe_walk(kddm) test_bit(_KDDM_NEED_SAFE_WALK, &(kddm)->flags)
+#define set_kddm_need_safe_walk(kddm) set_bit(_KDDM_NEED_SAFE_WALK, &(kddm)->flags);
+#define clear_kddm_need_safe_walk(kddm) clear_bit(_KDDM_NEED_SAFE_WALK, &(kddm)->flags);
 
 #define KDDM_BREAK_COW_COPY 1
 #define KDDM_BREAK_COW_INV 2

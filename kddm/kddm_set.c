@@ -144,7 +144,8 @@ exit:
 
 static int __free_kddm_obj_entry(unsigned long index,
 				 void *data,
-				 void *priv_data)
+				 void *priv_data,
+				 struct kddm_obj_list **dead_list)
 {
 	return KDDM_OBJ_REMOVED;
 }
@@ -166,6 +167,7 @@ void free_kddm_set_struct(struct kddm_set * kddm_set)
 
 	iterator.f = __free_kddm_obj_entry;
 	iterator.data = kddm_set;
+	iterator.dead_list = NULL;
 	kddm_set->ops->obj_set_free(kddm_set, &iterator);
 
 	/*** Get rid of the IO linker ***/

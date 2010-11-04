@@ -369,7 +369,7 @@ static inline int do_func_on_obj_entry (struct kddm_set *set,
 	if (do_get_kddm_obj_entry(NULL, obj_entry, objid) == -EAGAIN)
 		return -EAGAIN;
 
-	r = iterator->f(objid, obj_entry, iterator->data);
+	r = iterator->f(objid, obj_entry, iterator->data, iterator->dead_list);
 
 	/* Called functions are not allowed to return -EAGAIN */
 	BUG_ON (r == -EAGAIN);
@@ -380,29 +380,52 @@ static inline int do_func_on_obj_entry (struct kddm_set *set,
 	return r;
 }
 
-int destroy_kddm_obj_entry (struct kddm_set *kddm_set,
-			    struct kddm_obj *obj_entry,
-			    objid_t objid,
-			    int cluster_wide_remove);
+int __destroy_kddm_obj_entry(struct kddm_set *kddm_set,
+			     struct kddm_obj *obj_entry,
+			     objid_t objid,
+			     struct kddm_obj_list **dead_list,
+			     int cluster_wide_remove);
+
+static inline int destroy_kddm_obj_entry(struct kddm_set *kddm_set,
+					 struct kddm_obj *obj_entry,
+					 objid_t objid,
+					 int cluster_wide_remove)
+{
+	return __destroy_kddm_obj_entry(kddm_set, obj_entry, objid, NULL,
+					cluster_wide_remove);
+}
+
+static inline int destroy_kddm_obj_entry_inatomic(struct kddm_set *kddm_set,
+						  struct kddm_obj *obj_entry,
+						  objid_t objid,
+						  struct kddm_obj_list **dead_list)
+{
+	return __destroy_kddm_obj_entry(kddm_set, obj_entry, objid, dead_list, 0);
+}
 
 static inline void ___for_each_kddm_object(struct kddm_set *set,
-				   int(*f)(unsigned long, void *, void*),
+				   int(*f)(unsigned long, void *, void *, struct kddm_obj_list **),
 				   void *data)
 {
 	struct kddm_obj_iterator iterator;
 
 	iterator.f = f;
 	iterator.data = data;
+	iterator.dead_list = NULL;
 	set->ops->for_each_obj_entry(set, &iterator);
 }
 
 void __for_each_kddm_object(struct kddm_set *kddm_set,
-			    int(*f)(unsigned long, void *, void*),
+			    int(*f)(unsigned long, void *, void *, struct kddm_obj_list **),
 			    void *data);
 
 void for_each_kddm_object(int ns_id, kddm_set_id_t set_id,
-			  int(*f)(unsigned long, void*, void*),
+			  int(*f)(unsigned long, void*, void *, struct kddm_obj_list **),
 			  void *data);
+
+void __for_each_kddm_object_safe(struct kddm_set *kddm_set,
+				 int(*f)(unsigned long, void *, void *, struct kddm_obj_list **),
+				 void *data);
 
 /** Insert a new object frame in a kddm set.
  *  @author Renaud Lottiaux
