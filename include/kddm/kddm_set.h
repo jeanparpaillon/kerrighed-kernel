@@ -105,6 +105,7 @@ enum
     CLUSTER_IP_KDDM_ID,		      // 31
     CLUSTER_PORT_UDP_KDDM_ID,	      // 32
     CLUSTER_PORT_TCP_KDDM_ID,	      // 33
+    CLUSTER_ESTABLISHED_TCP_KDDM_ID,  // 34
     MIN_KDDM_ID,           /* MUST always be the last one */
   };
 

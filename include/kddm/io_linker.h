@@ -68,6 +68,7 @@ enum
     UNIQUE_ID_LINKER,
     CLUSTER_IP_LINKER,
     CLUSTER_PORT_LINKER,
+    CLUSTER_ESTABLISHED_LINKER,
     MAX_IO_LINKER, /* MUST always be the last one */
   } ;
 

@@ -29,6 +29,8 @@
 #include <net/checksum.h>
 #ifdef CONFIG_KRG_CLUSTERIP
 #include <linux/nsproxy.h>
+#include <net/inet_hashtables.h>
+#include <net/tcp.h>
 #include <kerrighed/krg_clusterip.h>
 #include <kddm/kddm.h>
 #endif
@@ -145,24 +147,40 @@ static void krgip_cluster_ip_finish(struct clusterip_config *c)
 }
 
 static
-u_int32_t
-krgip_cluster_ip_hashfn(const struct sk_buff *skb, const struct clusterip_config *c,
-			int proto, int sourceip, int sport, int destip, int dport)
+int krgip_cluster_ip_responsible(const struct sk_buff *skb, const struct clusterip_config *c,
+				 int proto, int sourceip, int sport, int destip, int dport)
 {
-	struct list_head *ip_head, *any_head, *established_head;
-	struct krgip_local_ports *ports_table = NULL;
-	bool responsible;
- 	enum ip_conntrack_info ctinfo;
+	struct list_head *ip_head, *any_head;
+	struct kddm_set *established_set = NULL;
+	struct kddm_obj *established_object_entry = NULL;
+	struct krgip_cluster_established_kddm_object *established_obj = NULL;
+	struct krgip_established_resp *established_resp;
+
+	pr_debug("check connection proto %x, addr %u.%u.%u.%u:%u <=> %u.%u.%u.%u:%u\n",
+		 proto, SPLIT_IP4_ADDR(destip), ntohs(dport), SPLIT_IP4_ADDR(sourceip), ntohs(sport));
+
 
 	switch (proto) {
 	case IPPROTO_UDP:
 		ip_head = &c->kddm_obj->local_ports->udp;
 		any_head = &c->ns->krgip.local_ports_any.udp;
-		break;
+		return  (krgip_local_port_find(ip_head, dport)
+			|| krgip_local_port_find(any_head, dport));
 	case IPPROTO_TCP:
-		ports_table = krgip_local_ports_find(&c->ns->krgip, c->clusterip);
-		if (ports_table)
-			established_head = &ports_table->established_tcp;
+		established_resp = krgip_responsible_find(&c->kddm_obj->local_ports->established_tcp_resp, dport);
+
+		/*
+		established_set = c->ns->krgip.cluster_established_tcp;
+		if (established_set && established_set->state == KDDM_SET_READY) {
+			pr_debug("established_set exists\n");
+			established_object_entry = __get_kddm_obj_entry(established_set, (destip << 16) + dport);
+			if (established_object_entry && I_AM_OWNER(established_object_entry)) {
+				pr_debug("established_obj exists\n");
+				established_obj = established_object_entry->object;
+			}
+		}
+		*/
+
 		ip_head = &c->kddm_obj->local_ports->tcp;
 		any_head = &c->ns->krgip.local_ports_any.tcp;
 		break;
@@ -170,16 +188,47 @@ krgip_cluster_ip_hashfn(const struct sk_buff *skb, const struct clusterip_config
 		return 1;
 	}
 
-	nf_ct_get(skb, &ctinfo);
-	rcu_read_lock();
+	/* If we have the connexion => ACCEPT */
+	if (inet_lookup_established(c->ns, &tcp_hashinfo, sourceip, sport,
+				    destip, dport, inet_iif(skb))) {
+		pr_debug("local connection => ACCEPT\n");
+		return 1;
+	}
 
-	responsible = krgip_local_port_find(ip_head, dport) || krgip_local_port_find(any_head, dport);
-	/* Should be a kddm set on established tcp to synchronize all nodes */
-	if (!responsible && proto == IPPROTO_TCP && ctinfo == IP_CT_ESTABLISHED)
-		responsible = krgip_established_find(established_head, dport, sourceip, sport);
-	rcu_read_unlock();
+	/* If a distant node have the connexion => DROP */
+	if (established_resp && established_resp->responsible &&
+	    krgip_addrport_find(&established_resp->kddm_obj->established, sourceip, sport)) {
+		pr_debug("distant connection => DROP\n"); /* pas détecté */
+		return 0;
+	}
 
-	if (responsible) {
+	/* If we have a listening socket on the port => ACCEPT */
+	if (krgip_local_port_find(ip_head, dport) || krgip_local_port_find(any_head, dport)) {
+		pr_debug("local bind => ACCEPT\n");
+		return 1;
+	}
+
+	/* If we are not responsible of the ip:port => DROP*/
+	if (!established_resp || !established_resp->responsible) {
+		pr_debug("not responsible of the ip:port => DROP\n");
+		return 0;
+	}
+
+	/* If we are responsible of the ip:port, at this case,
+	 * it means no connection/listener is opened on this port
+	 * we must let the kernel RESET the connection. => ACCEPT
+	 */
+	pr_debug("responsible of the ip:port => ACCEPT\n");
+	return 1;
+}
+
+
+static
+u_int32_t
+krgip_cluster_ip_hashfn(const struct sk_buff *skb, const struct clusterip_config *c,
+			int proto, int sourceip, int sport, int destip, int dport)
+{
+	if (krgip_cluster_ip_responsible(skb, c, proto, sourceip, sport, destip, dport)) {
 		return ffs(c->local_nodes);
 	} else {
 		int bit;

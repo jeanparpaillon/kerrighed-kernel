@@ -7,6 +7,9 @@
 #include <linux/rcupdate.h>
 #include <linux/types.h>
 
+#define SPLIT_IP4_ADDR(__addr_tosplit) ((__addr_tosplit) & 0x000000ff), ((__addr_tosplit) & 0x0000ff00) >> 8, ((__addr_tosplit) & 0x00ff0000) >> 16, ((__addr_tosplit) & 0xff000000) >> 24
+
+
 struct kddm_set;
 
 struct krgip_local_port {
@@ -19,7 +22,8 @@ struct krgip_local_ports {
 	spinlock_t lock;
 	struct list_head udp;
 	struct list_head tcp;
-	struct list_head established_tcp;
+	struct list_head established_tcp; /* deprecated */
+	struct list_head established_tcp_resp;
 	struct list_head list;
 	__be32 addr;
 	struct rcu_head rcu;
@@ -36,6 +40,21 @@ struct krgip_addr {
 	__be32 addr;
 };
 
+struct krgip_cluster_port_kddm_object {
+	struct list_head ips;
+	kerrighed_node_t node;
+	__be16 num;
+};
+
+struct krgip_established_resp {
+	struct list_head list;
+	__be16 lport;
+	int responsible;
+	struct krgip_cluster_established_kddm_object *kddm_obj;
+	struct rcu_head rcu;
+};
+
+/* deprecated */
 struct krgip_established {
 	struct list_head list;
 	__be16 lport;
@@ -44,25 +63,31 @@ struct krgip_established {
 	struct rcu_head rcu;
 };
 
-struct krgip_cluster_port_kddm_object {
-	struct list_head ips;
-	kerrighed_node_t node;
-	__be16 num;
+struct krgip_addrport {
+	struct list_head list;
+	__be32 daddr;
+	__be16 dport;
+};
+
+struct krgip_cluster_established_kddm_object {
+	struct list_head established;
+	__be32 laddr;
+	__be16 lport;
+	kerrighed_node_t owner;
+	struct krgip_established_resp *established_resp;
 };
 
 struct netns_krgip {
 	struct kddm_set *cluster_ips;
 	struct kddm_set *cluster_ports_udp;
 	struct kddm_set *cluster_ports_tcp;
+	struct kddm_set *cluster_established_tcp;
 	struct list_head *local_ports_ip_table;
 	struct krgip_local_ports local_ports_any;
 };
 
 struct krgip_local_port *krgip_local_port_alloc(__be16 num);
 void krgip_local_port_free(struct krgip_local_port *port);
-
-struct krgip_established *krgip_established_alloc(__be16 lport, __be32 addr, __be16 port);
-void krgip_established_free(struct krgip_established *established);
 
 void krgip_local_ports_add(struct krgip_local_ports *ports,
 			   struct krgip_local_port *port,
@@ -71,10 +96,24 @@ void krgip_local_ports_del(struct krgip_local_ports *ports,
 			   __be16 snum,
 			   struct list_head *head);
 
+/* deprecated */
+struct krgip_established *krgip_established_alloc(__be16 lport, __be32 addr, __be16 port);
+void krgip_established_free(struct krgip_established *established);
+
 void krgip_established_add(struct krgip_local_ports *ports,
 			   struct krgip_established *new_established);
 void krgip_established_del(struct krgip_local_ports *ports,
 			   __be16 lport, __be32 addr, __be16 port);
+
+
+struct krgip_established_resp *krgip_established_resp_alloc(__be16 lport,
+							    struct krgip_cluster_established_kddm_object *kddm_obj);
+void krgip_established_resp_free(struct krgip_established_resp *established);
+
+void krgip_established_resp_add(struct krgip_local_ports *ports,
+				struct krgip_established_resp *new_established);
+void krgip_established_resp_del(struct krgip_local_ports *ports, __be16 lport);
+
 
 static inline void krgip_local_ports_udp_add(struct krgip_local_ports *ports,
 					     struct krgip_local_port *port)
@@ -141,6 +180,34 @@ inline struct krgip_addr *krgip_addr_find(struct list_head *head, __be32 addr)
 }
 
 static
+inline struct krgip_established_resp *krgip_responsible_find(struct list_head *head, __be16 lport)
+{
+	struct krgip_established_resp *pos;
+
+	list_for_each_entry(pos, head, list)
+		if (pos->lport == lport)
+			return pos;
+	return NULL;
+}
+
+static
+inline struct krgip_addrport *krgip_addrport_find(struct list_head *head, __be32 daddr, __be16 dport)
+{
+	struct krgip_addrport *pos;
+
+	list_for_each_entry(pos, head, list) {
+		pr_debug("testing against address : %u.%u.%u.%u:%u\n",
+			 SPLIT_IP4_ADDR(pos->daddr),
+			 ntohs(pos->dport));
+
+		if (pos->daddr == daddr && pos->dport == dport)
+			return pos;
+	}
+	return NULL;
+}
+
+/* deprecated */
+static
 inline struct krgip_established *krgip_established_find(struct list_head *head,
 							__be16 lport,
 							__be32 addr,
@@ -150,10 +217,7 @@ inline struct krgip_established *krgip_established_find(struct list_head *head,
 
 	pr_debug("searching established connection : me:%u <=> %u.%u.%u.%u:%u\n",
 		 ntohs(lport),
-		 addr & 0x000000ff,
-		 (addr & 0x0000ff00) >> 8,
-		 (addr & 0x00ff0000) >> 16,
-		 (addr & 0xff000000) >> 24,
+		 SPLIT_IP4_ADDR(addr),
 		 ntohs(port));
 
 	list_for_each_entry_rcu(pos, head, list)
@@ -170,6 +234,9 @@ void
 krgip_cluster_port_put_or_remove(struct kddm_set *set,
 				 struct krgip_cluster_port_kddm_object *obj);
 
+
+int krgip_cluster_delete_established(__be32 laddr, __be16 lport, __be32 daddr, __be16 dport);
+
 struct sock;
 
 #if 0
@@ -185,7 +252,31 @@ krgip_cluster_ip_tcp_get_established_finish(struct sock *sk,
 					    struct krgip_addr *addr,
 					    struct krgip_established **established,
 					    int error);
+
+int
+krgip_cluster_ip_established_prepare(struct sock *sk,
+				     unsigned short snum,
+				     struct krgip_cluster_ip_kddm_object **ip_obj_p,
+				     struct krgip_addrport **addr,
+				     struct krgip_established **established);
+void
+krgip_cluster_ip_established_finish(struct sock *sk,
+				    struct krgip_cluster_ip_kddm_object *ip_obj,
+				    struct krgip_addrport *addr,
+				    struct krgip_established **established,
+				    int error);
+void
+krgip_cluster_ip_established_unhash_prepare(struct sock *sk,
+					    struct krgip_cluster_established_kddm_object **established_obj_p,
+					    struct krgip_cluster_port_kddm_object **port_obj_p);
+void
+krgip_cluster_ip_established_unhash_finish(struct sock *sk,
+					   struct krgip_cluster_established_kddm_object *established_obj,
+					   struct krgip_cluster_port_kddm_object *port_obj);
+
 #endif
+
+
 
 int
 krgip_cluster_ip_tcp_get_port_prepare(struct sock *sk,

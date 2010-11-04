@@ -337,11 +337,6 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct sock *newsk;
 	int error;
-#ifdef CONFIG_KRG_CLUSTERIP
-	struct inet_sock *inet;
-	struct krgip_established *krg_established = NULL;
-	struct krgip_local_ports *krg_ports = NULL;
-#endif
 
 	lock_sock(sk);
 
@@ -369,17 +364,6 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 	newsk = reqsk_queue_get_child(&icsk->icsk_accept_queue, sk);
 	WARN_ON(newsk->sk_state == TCP_SYN_RECV);
 
-#ifdef CONFIG_KRG_CLUSTERIP
-	inet = inet_sk(newsk);
-	krg_ports = krgip_local_ports_find(&sock_net(newsk)->krgip, inet->saddr);
-	if (krg_ports) {
-		krg_established = krgip_established_alloc(inet->sport, inet->daddr, inet->dport);
-		if (!krg_established)
-			goto out_err;
-
-		krgip_established_add(krg_ports, krg_established);
-	}
-#endif
 out:
 	release_sock(sk);
 	return newsk;

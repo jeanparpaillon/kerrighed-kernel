@@ -1809,12 +1809,30 @@ void tcp_close(struct sock *sk, long timeout)
 	struct netns_krgip *krgip = &sock_net(sk)->krgip;
 	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
 	struct krgip_cluster_port_kddm_object *port_obj = NULL;
+	struct krgip_cluster_established_kddm_object *established_obj = NULL;
+
+	__be32 todel_laddr = 0;
+	__be16 todel_lport = 0;
+	__be32 todel_daddr = 0;
+	__be16 todel_dport = 0;
 #endif
 
 	lock_sock(sk);
 	sk->sk_shutdown = SHUTDOWN_MASK;
 #ifdef CONFIG_KRG_CLUSTERIP
-	/* Is there a clean way to do that ? */
+	/* Should be replaced by a simple test of sk against the inet_ehash list */
+	if (inet_lookup_established(sock_net(sk), &tcp_hashinfo, inet->daddr, inet->dport,
+				    inet->saddr, inet->sport, sk->sk_bound_dev_if)) {
+		/* krgip_cluster_ip_established_unhash_prepare(sk, &established_obj, &port_obj); */
+		todel_laddr = inet->saddr;
+		todel_lport = inet->sport;
+		todel_daddr = inet->daddr;
+		todel_dport = inet->dport;
+	} else {
+		krgip_cluster_ip_tcp_unhash_prepare(sk, &ip_obj, &port_obj);
+	}
+
+/*
 	if (krgip && krgip->local_ports_ip_table) {
 		krg_ports = krgip_local_ports_find(krgip, inet->saddr);
 		if (krg_ports) {
@@ -1823,9 +1841,9 @@ void tcp_close(struct sock *sk, long timeout)
 				krgip_established_del(krg_ports, inet->sport,
 						      inet->daddr,inet->dport);
 			else
-				krgip_cluster_ip_tcp_unhash_prepare(sk, &ip_obj, &port_obj);
 		}
 	}
+*/
 #endif
 
 	if (sk->sk_state == TCP_LISTEN) {
@@ -1976,7 +1994,13 @@ out:
 	bh_unlock_sock(sk);
 	local_bh_enable();
 #ifdef CONFIG_KRG_CLUSTERIP
-	krgip_cluster_ip_tcp_unhash_finish(sk, ip_obj, port_obj);
+	/* if (established_obj) { */
+	if (!port_obj && todel_laddr && todel_lport && todel_daddr && todel_dport) {
+		/* krgip_cluster_ip_established_unhash_finish(sk, established_obj, port_obj); */
+		krgip_cluster_delete_established(todel_laddr, todel_lport, todel_daddr, todel_dport);
+	} else {
+		krgip_cluster_ip_tcp_unhash_finish(sk, ip_obj, port_obj);
+	}
 #endif
 	sock_put(sk);
 }
