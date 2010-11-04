@@ -359,8 +359,7 @@ static inline struct kddm_obj *__get_alloc_kddm_obj_entry (
 static inline int do_func_on_obj_entry (struct kddm_set *set,
 					struct kddm_obj *obj_entry,
 					unsigned long objid,
-					int(*f)(unsigned long, void*, void*),
-					void *data)
+					struct kddm_obj_iterator *iterator)
 {
 	int r;
 
@@ -370,7 +369,7 @@ static inline int do_func_on_obj_entry (struct kddm_set *set,
 	if (do_get_kddm_obj_entry(NULL, obj_entry, objid) == -EAGAIN)
 		return -EAGAIN;
 
-	r = f(objid, obj_entry, data);
+	r = iterator->f(objid, obj_entry, iterator->data);
 
 	/* Called functions are not allowed to return -EAGAIN */
 	BUG_ON (r == -EAGAIN);
@@ -390,7 +389,11 @@ static inline void ___for_each_kddm_object(struct kddm_set *set,
 				   int(*f)(unsigned long, void *, void*),
 				   void *data)
 {
-	set->ops->for_each_obj_entry(set, f, data);
+	struct kddm_obj_iterator iterator;
+
+	iterator.f = f;
+	iterator.data = data;
+	set->ops->for_each_obj_entry(set, &iterator);
 }
 
 void __for_each_kddm_object(struct kddm_set *kddm_set,

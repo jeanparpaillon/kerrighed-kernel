@@ -153,6 +153,8 @@ static int __free_kddm_obj_entry(unsigned long index,
 
 void free_kddm_set_struct(struct kddm_set * kddm_set)
 {
+	struct kddm_obj_iterator iterator;
+
 	{   /// JUST FOR DEBUGGING: BEGIN
 		struct kddm_set *_kddm_set;
 		_kddm_set = _local_get_kddm_set(kddm_set->ns,
@@ -162,7 +164,9 @@ void free_kddm_set_struct(struct kddm_set * kddm_set)
 
 	/*** Free object struct and objects content ***/
 
-	kddm_set->ops->obj_set_free(kddm_set, __free_kddm_obj_entry, kddm_set);
+	iterator.f = __free_kddm_obj_entry;
+	iterator.data = kddm_set;
+	kddm_set->ops->obj_set_free(kddm_set, &iterator);
 
 	/*** Get rid of the IO linker ***/
 
