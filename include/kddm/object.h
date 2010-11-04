@@ -404,7 +404,7 @@ static inline int destroy_kddm_obj_entry_inatomic(struct kddm_set *kddm_set,
 }
 
 static inline void ___for_each_kddm_object(struct kddm_set *set,
-				   int(*f)(unsigned long, void *, void *, struct kddm_obj_list **),
+				   int (*f)(objid_t, struct kddm_obj *, void *, struct kddm_obj_list **),
 				   void *data)
 {
 	struct kddm_obj_iterator iterator;
@@ -416,15 +416,15 @@ static inline void ___for_each_kddm_object(struct kddm_set *set,
 }
 
 void __for_each_kddm_object(struct kddm_set *kddm_set,
-			    int(*f)(unsigned long, void *, void *, struct kddm_obj_list **),
+			    int (*f)(objid_t, struct kddm_obj *, void *, struct kddm_obj_list **),
 			    void *data);
 
 void for_each_kddm_object(int ns_id, kddm_set_id_t set_id,
-			  int(*f)(unsigned long, void*, void *, struct kddm_obj_list **),
+			  int (*f)(objid_t, struct kddm_obj *, void *, struct kddm_obj_list **),
 			  void *data);
 
 void __for_each_kddm_object_safe(struct kddm_set *kddm_set,
-				 int(*f)(unsigned long, void *, void *, struct kddm_obj_list **),
+				 int (*f)(objid_t, struct kddm_obj *, void *, struct kddm_obj_list **),
 				 void *data);
 
 /** Insert a new object frame in a kddm set.

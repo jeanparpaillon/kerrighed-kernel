@@ -142,9 +142,9 @@ exit:
 }
 
 
-static int __free_kddm_obj_entry(unsigned long index,
+static int __free_kddm_obj_entry(objid_t index,
+				 struct kddm_obj *obj_entry,
 				 void *data,
-				 void *priv_data,
 				 struct kddm_obj_list **dead_list)
 {
 	return KDDM_OBJ_REMOVED;

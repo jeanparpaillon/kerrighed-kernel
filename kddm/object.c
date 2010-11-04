@@ -567,7 +567,7 @@ void object_clear_frozen(struct kddm_obj * obj_entry,
 
 
 void __for_each_kddm_object(struct kddm_set *set,
-			    int(*f)(unsigned long, void *, void *, struct kddm_obj_list **),
+			    int (*f)(objid_t, struct kddm_obj *, void *, struct kddm_obj_list **),
 			    void *data)
 {
 	struct kddm_obj_iterator iterator;
@@ -586,7 +586,7 @@ void __for_each_kddm_object(struct kddm_set *set,
 
 void for_each_kddm_object(int ns_id,
 			  kddm_set_id_t set_id,
-			  int(*f)(unsigned long, void *, void *, struct kddm_obj_list **),
+			  int (*f)(objid_t, struct kddm_obj *, void *, struct kddm_obj_list **),
 			  void *data)
 {
 	struct kddm_set *set;
@@ -603,7 +603,7 @@ EXPORT_SYMBOL(for_each_kddm_object);
 
 
 void __for_each_kddm_object_safe(struct kddm_set *set,
-				 int(*f)(unsigned long, void *, void *, struct kddm_obj_list **),
+				 int (*f)(objid_t, struct kddm_obj *, void *, struct kddm_obj_list **),
 				 void *data)
 {
 	struct kddm_obj_list *dead_list = NULL;
