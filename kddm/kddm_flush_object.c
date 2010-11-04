@@ -153,12 +153,11 @@ struct flush_set_data {
 	void *data;
 };
 
-static int __kddm_flush_object(unsigned long objid,
-			       void *_obj_entry,
+static int __kddm_flush_object(objid_t objid,
+			       struct kddm_obj *obj_entry,
 			       void *_data,
 			       struct kddm_obj_list **dead_list)
 {
-	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
 	struct flush_set_data *param = _data;
 	kerrighed_node_t dest, new_owner;
 	struct kddm_set *set = param->set;

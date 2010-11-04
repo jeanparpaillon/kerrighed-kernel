@@ -170,7 +170,7 @@ struct kddm_obj_list {
 };
 
 struct kddm_obj_iterator {
-	int (*f)(unsigned long, void *, void *, struct kddm_obj_list **);
+	int (*f)(objid_t, struct kddm_obj *, void *, struct kddm_obj_list **);
 	void *data;
 	struct kddm_obj_list **dead_list;
 };
