@@ -47,6 +47,7 @@ try_again:
 		kddm_change_obj_state(set, obj_entry, objid, WAIT_OBJ_READ);
 		/* Fall through */
 
+	case WAIT_ACK_INV:
 	case WAIT_ACK_WRITE:
 	case WAIT_OBJ_WRITE:
 	case WAIT_OBJ_READ:
@@ -72,7 +73,6 @@ try_again:
 	case READ_COPY:
 	case READ_OWNER:
 	case WRITE_OWNER:
-	case WAIT_ACK_INV:
 		break;
 
 	case WAIT_OBJ_RM_DONE:
