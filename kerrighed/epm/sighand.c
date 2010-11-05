@@ -645,7 +645,7 @@ int epm_sighand_start(void)
 				    SIGHAND_STRUCT_KDDM_ID,
 				    SIGHAND_STRUCT_LINKER,
 				    KDDM_UNIQUE_ID_DEF_OWNER,
-				    0, 0);
+				    0, KDDM_NEED_SAFE_WALK);
 	if (IS_ERR(sighand_struct_kddm_set))
 		OOM;
 

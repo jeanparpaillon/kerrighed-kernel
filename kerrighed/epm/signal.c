@@ -1193,7 +1193,8 @@ int epm_signal_start(void)
 						     SIGNAL_STRUCT_LINKER,
 						     KDDM_CUSTOM_DEF_OWNER,
 						     0,
-						     KDDM_LOCAL_EXCLUSIVE);
+						     KDDM_LOCAL_EXCLUSIVE
+						     | KDDM_NEED_SAFE_WALK);
 	if (IS_ERR(signal_struct_kddm_set))
 		OOM;
 

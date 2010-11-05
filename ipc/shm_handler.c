@@ -232,7 +232,8 @@ int krg_shm_init_ns(struct ipc_namespace *ns)
 						     SHMID_LINKER,
 						     KDDM_RR_DEF_OWNER,
 						     sizeof(shmid_object_t),
-						     KDDM_LOCAL_EXCLUSIVE);
+						     KDDM_LOCAL_EXCLUSIVE
+						     | KDDM_NEED_SAFE_WALK);
 	if (IS_ERR(shm_ops->data_kddm_set)) {
 		r = PTR_ERR(shm_ops->data_kddm_set);
 		goto err_data;
