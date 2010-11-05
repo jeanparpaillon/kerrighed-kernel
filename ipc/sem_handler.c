@@ -705,7 +705,7 @@ int krg_sem_init_ns(struct ipc_namespace *ns)
 	sem_ops->krgops.data_kddm_set = create_new_kddm_set(
 		kddm_def_ns, SEMARRAY_KDDM_ID, SEMARRAY_LINKER,
 		KDDM_RR_DEF_OWNER, sizeof(semarray_object_t),
-		KDDM_LOCAL_EXCLUSIVE);
+		KDDM_LOCAL_EXCLUSIVE | KDDM_NEED_SAFE_WALK);
 
 	if (IS_ERR(sem_ops->krgops.data_kddm_set)) {
 		r = PTR_ERR(sem_ops->krgops.data_kddm_set);

@@ -604,7 +604,8 @@ void mm_struct_init (void)
 						 MM_STRUCT_LINKER,
 						 KDDM_UNIQUE_ID_DEF_OWNER,
 						 sizeof (struct mm_struct),
-						 KDDM_LOCAL_EXCLUSIVE);
+						 KDDM_LOCAL_EXCLUSIVE
+						 | KDDM_NEED_SAFE_WALK);
 
 	if (IS_ERR(mm_struct_kddm_set))
 		OOM;
