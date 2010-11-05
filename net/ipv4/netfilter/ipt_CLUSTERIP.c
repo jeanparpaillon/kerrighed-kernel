@@ -156,7 +156,8 @@ int krgip_cluster_ip_responsible(const struct sk_buff *skb, const struct cluster
 	struct krgip_cluster_established_kddm_object *established_obj = NULL;
 	struct krgip_established_resp *established_resp;
 
-	pr_debug("check connection proto %x, addr %u.%u.%u.%u:%u <=> %u.%u.%u.%u:%u\n",
+	pr_debug("check connection proto %x :\n"
+		 "    %u.%u.%u.%u:%u <=> %u.%u.%u.%u:%u\n",
 		 proto, SPLIT_IP4_ADDR(destip), ntohs(dport), SPLIT_IP4_ADDR(sourceip), ntohs(sport));
 
 
@@ -164,23 +165,9 @@ int krgip_cluster_ip_responsible(const struct sk_buff *skb, const struct cluster
 	case IPPROTO_UDP:
 		ip_head = &c->kddm_obj->local_ports->udp;
 		any_head = &c->ns->krgip.local_ports_any.udp;
-		return  (krgip_local_port_find(ip_head, dport)
-			|| krgip_local_port_find(any_head, dport));
+		break;
 	case IPPROTO_TCP:
 		established_resp = krgip_responsible_find(&c->kddm_obj->local_ports->established_tcp_resp, dport);
-
-		/*
-		established_set = c->ns->krgip.cluster_established_tcp;
-		if (established_set && established_set->state == KDDM_SET_READY) {
-			pr_debug("established_set exists\n");
-			established_object_entry = __get_kddm_obj_entry(established_set, (destip << 16) + dport);
-			if (established_object_entry && I_AM_OWNER(established_object_entry)) {
-				pr_debug("established_obj exists\n");
-				established_obj = established_object_entry->object;
-			}
-		}
-		*/
-
 		ip_head = &c->kddm_obj->local_ports->tcp;
 		any_head = &c->ns->krgip.local_ports_any.tcp;
 		break;
@@ -189,8 +176,9 @@ int krgip_cluster_ip_responsible(const struct sk_buff *skb, const struct cluster
 	}
 
 	/* If we have the connexion => ACCEPT */
-	if (inet_lookup_established(c->ns, &tcp_hashinfo, sourceip, sport,
-				    destip, dport, inet_iif(skb))) {
+	if (proto == IPPROTO_TCP && inet_lookup_established(c->ns, &tcp_hashinfo,
+							    sourceip, sport,
+							    destip, dport, inet_iif(skb))) {
 		pr_debug("local connection => ACCEPT\n");
 		return 1;
 	}

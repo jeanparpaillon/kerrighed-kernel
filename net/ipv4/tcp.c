@@ -1821,8 +1821,9 @@ void tcp_close(struct sock *sk, long timeout)
 	sk->sk_shutdown = SHUTDOWN_MASK;
 #ifdef CONFIG_KRG_CLUSTERIP
 	/* Should be replaced by a simple test of sk against the inet_ehash list */
-	if (inet_lookup_established(sock_net(sk), &tcp_hashinfo, inet->daddr, inet->dport,
-				    inet->saddr, inet->sport, sk->sk_bound_dev_if)) {
+/*	if (inet_lookup_established(sock_net(sk), &tcp_hashinfo, inet->daddr, inet->dport,
+				    inet->saddr, inet->sport, sk->sk_bound_dev_if)) {*/
+	if (inet->saddr && inet->sport && inet->daddr && inet->dport) {
 		/* krgip_cluster_ip_established_unhash_prepare(sk, &established_obj, &port_obj); */
 		todel_laddr = inet->saddr;
 		todel_lport = inet->sport;
@@ -1831,19 +1832,6 @@ void tcp_close(struct sock *sk, long timeout)
 	} else {
 		krgip_cluster_ip_tcp_unhash_prepare(sk, &ip_obj, &port_obj);
 	}
-
-/*
-	if (krgip && krgip->local_ports_ip_table) {
-		krg_ports = krgip_local_ports_find(krgip, inet->saddr);
-		if (krg_ports) {
-			if (krgip_established_find(&krg_ports->established_tcp, inet->sport,
-						   inet->daddr, inet->dport))
-				krgip_established_del(krg_ports, inet->sport,
-						      inet->daddr,inet->dport);
-			else
-		}
-	}
-*/
 #endif
 
 	if (sk->sk_state == TCP_LISTEN) {
@@ -1994,8 +1982,7 @@ out:
 	bh_unlock_sock(sk);
 	local_bh_enable();
 #ifdef CONFIG_KRG_CLUSTERIP
-	/* if (established_obj) { */
-	if (!port_obj && todel_laddr && todel_lport && todel_daddr && todel_dport) {
+	if (todel_laddr && todel_lport && todel_daddr && todel_dport) {
 		/* krgip_cluster_ip_established_unhash_finish(sk, established_obj, port_obj); */
 		krgip_cluster_delete_established(todel_laddr, todel_lport, todel_daddr, todel_dport);
 	} else {
