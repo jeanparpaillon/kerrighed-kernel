@@ -232,7 +232,7 @@ send_copy:
 	}
 
 	destroy_kddm_obj_entry(set, obj_entry, objid, 0);
-	return KDDM_OBJ_REMOVED;
+	return KDDM_OBJ_CLEARED;
 }
 
 void _kddm_flush_set(struct kddm_set *set,
