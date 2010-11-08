@@ -303,7 +303,8 @@ retry:
 				pte_unmap_unlock(ptep, ptl);
 
 				ret = f(objid, obj_entry, priv);
-				if (ret == KDDM_OBJ_REMOVED)
+				if (ret == KDDM_OBJ_REMOVED
+				    || ret == KDDM_OBJ_CLEARED)
 					pte_clear(mm, addr, ptep);
 				else
 					put_kddm_obj_entry(set, obj_entry,

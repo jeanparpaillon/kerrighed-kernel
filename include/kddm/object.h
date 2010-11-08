@@ -86,6 +86,7 @@ typedef enum {
         (kerrighed_node_id == kddm_io_default_owner(set, objid))
 
 #define KDDM_OBJ_REMOVED 1
+#define KDDM_OBJ_CLEARED 2
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -374,7 +375,7 @@ static inline int do_func_on_obj_entry (struct kddm_set *set,
 	/* Called functions are not allowed to return -EAGAIN */
 	BUG_ON (r == -EAGAIN);
 
-	if (r != KDDM_OBJ_REMOVED)
+	if (r != KDDM_OBJ_REMOVED && r != KDDM_OBJ_CLEARED)
 		put_kddm_obj_entry(set, obj_entry, objid);
 
 	return r;
