@@ -905,6 +905,12 @@ static int handle_krg_futex_wake_up(struct rpc_desc *desc, void *_msg,
 	u32 hash;
 	int ret = 0;
 
+#ifdef CONFIG_KRG_DEBUG
+	printk("(%s-%d) %s - futex %lx-%lx, pid waiting: %d\n",
+	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
+	       msg->key.both.word, msg->key.both.krg_id, msg->waiter_pid);
+#endif
+
 	hash = compute_futex_hash(&msg->key);
 
 	/*
@@ -967,6 +973,13 @@ static void krg_futex_wake_up(struct futex_q *q, spinlock_t *hb1_lock, spinlock_
 {
 	int ret;
 	struct futex_wake_up_msg msg;
+
+#ifdef CONFIG_KRG_DEBUG
+	printk("(%s-%d) %s - futex %lx-%lx, bitset: %u, pid waiting: %d\n",
+	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
+	       q->key.both.word, q->key.both.krg_id, q->bitset, q->waiter_pid);
+#endif
+
 	msg.key = q->key;
 	msg.waiter_pid = q->waiter_pid;
 
@@ -1003,6 +1016,12 @@ static void __wake_futex(struct futex_q *q,
 static void wake_futex(struct futex_q *q)
 #endif
 {
+#ifdef CONFIG_KRG_DEBUG
+	printk("(%s-%d) %s - futex %lx-%lx, bitset: %u, pid waiting: %d\n",
+	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
+	       q->key.both.word, q->key.both.krg_id, q->bitset, q->waiter_pid);
+#endif
+
 #ifdef CONFIG_KRG_EPM
 	if (!plist_node_empty(&q->list))
 #endif
@@ -1442,6 +1461,14 @@ retry:
 	if (unlikely(ret != 0))
 		goto out_put_key1;
 
+#ifdef CONFIG_KRG_DEBUG
+	printk("(%s-%d) %s - futex1 %lx-%lx, futex2 %lx-%lx, nr_wake: %d, nr_requeue: %d\n",
+	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
+	       key1.both.word, key1.both.krg_id,
+	       key2.both.word, key2.both.krg_id,
+	       nr_wake, nr_requeue);
+#endif
+
 #ifdef CONFIG_KRG_EPM
 retry_private:
 	ret = krg_double_grab_futex(&key1, &hb1, &key2, &hb2);
@@ -1856,6 +1883,12 @@ retry:
 	ret = get_futex_key(uaddr, fshared, &q.key, VERIFY_READ);
 	if (unlikely(ret != 0))
 		goto out;
+
+#ifdef CONFIG_KRG_DEBUG
+	printk("(%s-%d) %s - futex %lx-%lx, bitset: %u\n",
+	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
+	       q.key.both.word, q.key.both.krg_id, q.bitset);
+#endif
 
 	/*
 	 * The key must be saved in case it is overwritten by a requeue
@@ -2636,6 +2669,12 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 	if (clockrt && cmd != FUTEX_WAIT_BITSET)
 		return -ENOSYS;
 
+#ifdef CONFIG_KRG_DEBUG
+	printk("(%s-%d) %s - cmd: %d, uaddr: %p, uaddr2: %p, val: %u, val2: %u, val3: %u\n",
+	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
+	       cmd, uaddr, uaddr2, val, val2, val3);
+#endif
+
 	switch (cmd) {
 	case FUTEX_WAIT:
 		val3 = FUTEX_BITSET_MATCH_ANY;
@@ -2671,6 +2710,13 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 	default:
 		ret = -ENOSYS;
 	}
+
+#ifdef CONFIG_KRG_DEBUG
+	printk("(%s-%d) %s - cmd: %d, uaddr: %p, uaddr2: %p, val: %u, val2: %u, val3: %u"
+	       "- ret = %d\n",
+	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
+	       cmd, uaddr, uaddr2, val, val2, val3, ret);
+#endif
 	return ret;
 }
 
