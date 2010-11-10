@@ -10,6 +10,7 @@
 #include <linux/pagemap.h>
 #include <linux/delayacct.h>
 #include <asm/pgtable.h>
+#include <asm/tlbflush.h>
 #include <linux/swap.h>
 #include <linux/swapops.h>
 
@@ -34,7 +35,11 @@ static inline void unmap_page(struct mm_struct *mm,
 			      struct page *page,
 			      pte_t *ptep)
 {
+	struct vm_area_struct vma;
+
 	pte_clear(mm, addr, ptep);
+	vma.vm_mm = mm;
+	flush_tlb_page(&vma, addr);
 
 	update_hiwater_rss(mm);
 
