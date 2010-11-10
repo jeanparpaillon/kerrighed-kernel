@@ -431,6 +431,9 @@ static int hotplug_remove_local(struct hotplug_context *ctx)
 
 	hotplug_cancel_all_requests();
 
+	if (!num_online_krgnodes())
+		return 0;
+
 	krgnodes_or(old_map, krgnode_online_map, ctx->node_set.v);
 	return hotplug_coordinator_reconfigure(ctx, &krgnode_online_map, &old_map);
 }
