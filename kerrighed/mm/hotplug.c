@@ -38,22 +38,32 @@ static void do_flush_all_pages (void *_set, void *data)
 {
 	kerrighed_node_t dest_node;
 	struct kddm_set *set = _set;
+	struct anon_vma_kddm_set_private *private;
 	struct mm_struct *mm;
-	pid_t *pid;
+	pid_t pid;
 
 	if (set->iolinker != &memory_linker)
 		return;
 
-	pid = set->private_data;
-
-	dest_node = krg_lock_pid_location(*pid);
-	if (dest_node == KERRIGHED_NODE_ID_NONE)
-		BUG();
-	else
-		krg_unlock_pid_location(*pid);
-
 	mm = set->obj_set;
 	BUG_ON (!mm);
+
+	private = set->private_data;
+
+	pid = private->last_pid;
+	dest_node = krg_lock_pid_location(pid);
+	if (dest_node == KERRIGHED_NODE_ID_NONE) {
+		pid = private->last_tgid;
+		dest_node = krg_lock_pid_location(pid);
+	}
+	if (dest_node != KERRIGHED_NODE_ID_NONE) {
+		krg_unlock_pid_location(pid);
+	} else {
+		dest_node = set->def_owner;
+		if (!krgnode_online(dest_node))
+			dest_node = nth_online_krgnode(dest_node % num_online_krgnodes());
+	}
+	BUG_ON(!krgnode_online(dest_node));
 
 	_kddm_flush_object (mm_struct_kddm_set, mm->mm_id, dest_node);
 

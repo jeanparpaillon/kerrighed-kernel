@@ -701,6 +701,7 @@ int export_mm_struct(struct epm_action *action,
 		     struct task_struct *tsk)
 {
 	struct mm_struct *mm, *exported_mm;
+	struct anon_vma_kddm_set_private *private;
 	int r = 0;
 
 	mm = tsk->mm;
@@ -730,6 +731,10 @@ int export_mm_struct(struct epm_action *action,
 			  r = init_anon_vma_kddm_set(tsk, mm);
 			  if (r)
 				  goto exit_put_mm;
+		  } else {
+			  private = mm->anon_vma_kddm_set->private_data;
+			  private->last_pid = task_pid_knr(tsk);
+			  private->last_tgid = task_tgid_knr(tsk);
 		  }
 
 		  break;
