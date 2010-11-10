@@ -138,6 +138,7 @@ struct rpc_desc* rpc_begin_m(enum rpcid rpcid,
 			     krgnodemask_t* nodes);
 
 int rpc_cancel(struct rpc_desc* desc);
+int rpc_cancel_sync(struct rpc_desc *desc);
 
 int rpc_pack(struct rpc_desc* desc, int flags, const void* data, size_t size);
 int rpc_wait_pack(struct rpc_desc* desc, int seq_id);
