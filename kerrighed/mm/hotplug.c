@@ -39,7 +39,8 @@ static void do_flush_all_pages (void *_set, void *data)
 	kerrighed_node_t dest_node;
 	struct kddm_set *set = _set;
 	struct anon_vma_kddm_set_private *private;
-	struct mm_struct *mm;
+	struct mm_struct *mm, *obj_mm;
+	objid_t mm_id;
 	pid_t pid;
 
 	if (set->iolinker != &memory_linker)
@@ -65,9 +66,28 @@ static void do_flush_all_pages (void *_set, void *data)
 	}
 	BUG_ON(!krgnode_online(dest_node));
 
-	_kddm_flush_object (mm_struct_kddm_set, mm->mm_id, dest_node);
+	mm_id = mm->mm_id;
+	if (!mm_id)
+		return;
+
+	/*
+	 * To avoid racing with the destruction of this set in kcb_mm_release(),
+	 * set is flushed with mm_struct grabbed.
+	 */
+	obj_mm = _kddm_grab_object_no_ft(mm_struct_kddm_set, mm_id);
+	if (!obj_mm) {
+		_kddm_put_object(mm_struct_kddm_set, mm_id);
+		return;
+	}
+	BUG_ON(obj_mm != mm);
+
+	krgnode_clear(kerrighed_node_id, mm->copyset);
 
 	_kddm_flush_set(set, get_page_injection_node, &dest_node);
+
+	_kddm_put_object(mm_struct_kddm_set, mm_id);
+
+	_kddm_flush_object (mm_struct_kddm_set, mm_id, dest_node);
 }
 
 
