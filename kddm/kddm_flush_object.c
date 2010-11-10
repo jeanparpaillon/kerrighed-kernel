@@ -170,6 +170,8 @@ static int __kddm_flush_object(unsigned long objid,
 		/* There exist another copy in the cluster.
 		   Just invalidate the local one */
 		send_invalidation_ack(set, objid, get_prob_owner(obj_entry));
+		/* Fallthrough */
+	case INV_COPY:
 		break;
 
 	case READ_OWNER:
@@ -209,15 +211,13 @@ send_copy:
 		 */
 		break;
 
-	case INV_OWNER:
-	case INV_COPY:
-		break;
-
 	case WAIT_OBJ_RM_ACK2:
 		/*
 		 * FIXME: Must be handled in
 		 * remove_browse_objects_on_leaving_nodes()
 		 */
+		/* Fallthrough */
+	case INV_OWNER:
 		return 0;
 
 	case WAIT_OBJ_RM_DONE:
