@@ -239,7 +239,6 @@ static void set_add(krgnodemask_t * vector)
 	rpc_enable(OBJECT_SEND);
 	rpc_enable(SEND_WRITE_ACCESS);
 	rpc_enable(NO_OBJECT_SEND);
-	rpc_enable(KDDM_FORCE_UPDATE_DEF_OWNER);
 }
 
 /*--------------------------------------------------------------------------*
@@ -256,7 +255,6 @@ static int remove_browse_objects_on_leaving_nodes(objid_t objid,
 {
 	struct browse_data *param = _data;
 	struct kddm_set *set = param->set;
-	kerrighed_node_t new_def_owner;
 	int ret = 0;
 
 	switch (OBJ_STATE(obj_entry)) {
@@ -279,23 +277,6 @@ static int remove_browse_objects_on_leaving_nodes(objid_t objid,
 		break;
 
 	case INV_COPY:
-		/* We have probably a remaining node with probe owner pointing
-		 * to this leaving node. Force the new default owner to point
-		 * to a valid node. Remaining nodes pointing to this leaving
-		 * node will be updated to the new default owner.
-		 */
-
-		//// TODO: force the update only if the new_def_owner
-		//// does not change. If it changes, it will be updated by the
-		//// master copy.
-
-		new_def_owner = __kddm_io_default_owner(set, objid,
-							&param->new_nodes_map,
-							param->new_nb_nodes);
-		request_force_update_def_owner_prob(set, obj_entry, objid,
-						    new_def_owner);
-
-		/* Fallthrough */
 	case INV_OWNER:
 		do_destroy_kddm_obj_entry(set, obj_entry, objid);
 		ret = KDDM_OBJ_REMOVED;

@@ -56,27 +56,6 @@ static inline void forward_object_server_msg (struct kddm_obj * obj_entry,
 	rpc_async(msg_type, prob_owner, _msg, sizeof(msg_server_t));
 }
 
-static inline void new_forward_object_server_msg (struct rpc_desc* desc,
-						  struct kddm_obj * obj_entry,
-						  struct kddm_set *set,
-						  enum rpcid msg_type,
-						  void *_msg)
-{
-	msg_server_t *msg = (msg_server_t *)_msg;
-	kerrighed_node_t prob_owner;
-
-	if (obj_entry == NULL)
-		prob_owner = kddm_io_default_owner(set, msg->objid);
-	else
-		prob_owner = get_prob_owner(obj_entry);
-
-	BUG_ON(prob_owner == kerrighed_node_id);
-
-	msg->req_id = 0;
-	rpc_forward(desc, prob_owner);
-}
-
-
 
 
 /*****************************************************************************/
@@ -1270,67 +1249,6 @@ static int handle_change_prob_owner_req(struct rpc_desc* desc,
 	return 0;
 };
 
-/** Handle the force of the prob_owner update on the default_owner.
- *  @author Renaud Lottiaux
- *
- *  @param msg  Message received from the requesting node.
- */
-static int handle_force_update_def_owner_prob_req(struct rpc_desc* desc,
-						  void *_msg, size_t size)
-{
-	kerrighed_node_t dest_node;
-	msg_server_t *msg = _msg;
-	struct kddm_obj *obj_entry;
-	struct kddm_set *set;
-
-	BUG_ON (desc->client < 0 || desc->client > KERRIGHED_MAX_NODES);
-
-	obj_entry = get_alloc_kddm_obj_entry_lock_free (msg->ns_id,
-							msg->set_id,
-							msg->objid, &set);
-
-	switch (OBJ_STATE(obj_entry)) {
-	  case WAIT_OBJ_READ:
-	  case INV_COPY:
-	  case READ_COPY:
-		  if (msg->flags == 1)
-			  change_prob_owner(obj_entry, msg->new_owner);
-		  else
-			  new_forward_object_server_msg (desc, obj_entry, set,
-					    KDDM_FORCE_UPDATE_DEF_OWNER, msg);
-		  break;
-
-	  case INV_OWNER:
-	  case READ_OWNER:
-	  case WRITE_OWNER:
-	  case WRITE_GHOST:
-	  case WAIT_ACK_INV:
-	  case WAIT_ACK_WRITE:
-	  case WAIT_OBJ_WRITE:
-	  case WAIT_OBJ_RM_ACK:
-	  case WAIT_OBJ_RM_ACK2:
-	  case WAIT_OBJ_RM_DONE:
-	  case WAIT_CHG_OWN_ACK:
-	  case INV_FILLING:
-		  BUG_ON (!krgnode_online(kerrighed_node_id));
-		  if (msg->new_owner == kerrighed_node_id)
-			  break;
-		  dest_node = msg->new_owner;
-		  msg->new_owner = kerrighed_node_id;
-		  msg->flags = 1;
-		  rpc_async(KDDM_FORCE_UPDATE_DEF_OWNER, dest_node, msg,
-			    sizeof(msg_server_t));
-		  break;
-
-	  default:
-		  STATE_MACHINE_ERROR (msg->set_id, msg->objid, obj_entry);
-		  break;
-	}
-	put_kddm_obj_entry(set, obj_entry, msg->objid);
-
-	return 0;
-}
-
 
 /* Object Server Initialisation */
 
@@ -1402,9 +1320,6 @@ void object_server_init ()
 
 	rpc_register_int(KDDM_CHANGE_PROB_OWNER, handle_change_prob_owner_req,
 			 0);
-
-	rpc_register_int(KDDM_FORCE_UPDATE_DEF_OWNER,
-			 handle_force_update_def_owner_prob_req, 0);
 }
 
 
