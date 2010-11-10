@@ -371,6 +371,31 @@ int rpc_cancel(struct rpc_desc* desc){
 }
 
 static
+int __rpc_unpack_from_node(struct rpc_desc *desc, kerrighed_node_t node,
+			   int flags, void *data, size_t size);
+
+int rpc_cancel_sync(struct rpc_desc *desc)
+{
+	kerrighed_node_t node;
+	struct rpc_data data;
+	int err;
+
+	err = rpc_cancel_pack(desc);
+	if (err)
+		return err;
+
+	for_each_krgnode_mask(node, desc->nodes) {
+		do {
+			err = __rpc_unpack_from_node(desc, node, RPC_FLAGS_NOCOPY, &data, 0);
+			if (!err)
+				rpc_free_buffer(&data);
+		} while (err != -ECANCELED);
+	}
+
+	return 0;
+}
+
+static
 struct rpc_desc *
 forward_rpc_desc_setup(struct rpc_desc *desc, kerrighed_node_t target)
 {
@@ -632,7 +657,7 @@ __rpc_signal_dequeue_sigack(struct rpc_desc *desc,
 	return ret;
 }
 
-inline
+static
 int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 			   int flags, void* data, size_t size)
 {
