@@ -429,8 +429,9 @@ kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
 
 	  default:
 		  node = set->def_owner;
+		  /* WARNING: Fallback must match with __kddm_set_mgr() */
 		  if (unlikely(!__krgnode_isset(node, nodes)))
-			  node = __nth_krgnode(objid % nr_nodes, nodes);
+			  node = __nth_krgnode(node % nr_nodes, nodes);
 	}
 
 	return node;
