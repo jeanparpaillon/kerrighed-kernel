@@ -32,6 +32,8 @@ struct kmem_cache *kddm_set_cachep;
 extern struct kmem_cache *kddm_tree_cachep;
 extern struct kmem_cache *kddm_tree_lvl_cachep;
 
+struct rpc_synchro *kddm_server;
+
 kerrighed_node_t __kddm_set_mgr(struct kddm_set * set,
 				const krgnodemask_t *nodes,
 				int nr_nodes)
@@ -771,8 +773,6 @@ void __kddm_set_destroy(void *_kddm_set,
 
 void kddm_set_init()
 {
-	struct rpc_synchro* kddm_server;
-
 	printk ("KDDM set init\n");
 
 	kddm_server = rpc_synchro_new(1, "kddm server", 0);

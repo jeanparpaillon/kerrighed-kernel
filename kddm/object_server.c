@@ -15,6 +15,8 @@
 #include <kddm/object_server.h>
 #include "protocol_action.h"
 
+struct rpc_synchro *object_server;
+struct rpc_synchro *object_server_may_block;
 
 static inline struct kddm_obj *get_alloc_kddm_obj_entry_lock_free (int ns_id,
                                                    kddm_set_id_t set_id,
@@ -1254,9 +1256,6 @@ static int handle_change_prob_owner_req(struct rpc_desc* desc,
 
 void object_server_init ()
 {
-        struct rpc_synchro* object_server;
-	struct rpc_synchro* object_server_may_block;
-
 	object_server = rpc_synchro_new(1, "object server", 1);
 	object_server_may_block = rpc_synchro_new(1, "object srv may block", 1);
 

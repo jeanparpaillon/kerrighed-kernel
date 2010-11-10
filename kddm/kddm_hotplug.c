@@ -16,6 +16,7 @@
 #include <kerrighed/hotplug.h>
 #include <kddm/kddm.h>
 #include "protocol_action.h"
+#include "internal.h"
 
 struct cluster_barrier *kddm_barrier;
 
@@ -247,6 +248,111 @@ static void set_add(krgnodemask_t * vector)
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
+static atomic_t nr_kddm_server_synced;
+static DECLARE_WAIT_QUEUE_HEAD(all_kddm_server_synced_wqh);
+static atomic_t nr_object_server_synced;
+static DECLARE_WAIT_QUEUE_HEAD(all_object_server_synced_wqh);
+static atomic_t nr_object_server_may_block_synced;
+static DECLARE_WAIT_QUEUE_HEAD(all_object_server_may_block_synced_wqh);
+
+static int handle_req_kddm_server_sync(struct rpc_desc *desc, void *msg, size_t size)
+{
+	if (atomic_inc_return(&nr_kddm_server_synced) == kddm_nb_nodes)
+		wake_up(&all_kddm_server_synced_wqh);
+	return 0;
+}
+
+static void kddm_server_sync(void)
+{
+	struct rpc_desc *desc;
+	kerrighed_node_t node;
+	int dummy, err;
+
+	desc = rpc_begin_m(REQ_KDDM_SERVER_SYNC, &krgnode_kddm_map);
+	if (!desc)
+		OOM;
+
+	err = rpc_pack_type(desc, dummy);
+	if (err)
+		OOM;
+
+	for_each_krgnode_mask(node, krgnode_kddm_map) {
+		rpc_unpack_type_from(desc, node, dummy);
+	}
+
+	rpc_end(desc, 0);
+
+	wait_event(all_kddm_server_synced_wqh,
+		   atomic_read(&nr_kddm_server_synced) == kddm_nb_nodes);
+	/* Prepare next remove */
+	atomic_set(&nr_kddm_server_synced, 0);
+}
+
+static int handle_req_object_server_sync(struct rpc_desc *desc, void *msg, size_t size)
+{
+	if (atomic_inc_return(&nr_object_server_synced) == kddm_nb_nodes)
+		wake_up(&all_object_server_synced_wqh);
+	return 0;
+}
+
+static void object_server_sync(void)
+{
+	struct rpc_desc *desc;
+	kerrighed_node_t node;
+	int dummy, err;
+
+	desc = rpc_begin_m(REQ_OBJECT_SERVER_SYNC, &krgnode_kddm_map);
+	if (!desc)
+		OOM;
+
+	err = rpc_pack_type(desc, dummy);
+	if (err)
+		OOM;
+
+	for_each_krgnode_mask(node, krgnode_kddm_map) {
+		rpc_unpack_type_from(desc, node, dummy);
+	}
+
+	rpc_end(desc, 0);
+
+	wait_event(all_object_server_synced_wqh,
+		   atomic_read(&nr_object_server_synced) == kddm_nb_nodes);
+	/* Prepare next remove */
+	atomic_set(&nr_object_server_synced, 0);
+}
+
+static int handle_req_object_server_may_block_sync(struct rpc_desc *desc, void *msg, size_t size)
+{
+	if (atomic_inc_return(&nr_object_server_may_block_synced) == kddm_nb_nodes)
+		wake_up(&all_object_server_may_block_synced_wqh);
+	return 0;
+}
+
+static void object_server_may_block_sync(void)
+{
+	struct rpc_desc *desc;
+	kerrighed_node_t node;
+	int dummy, err;
+
+	desc = rpc_begin_m(REQ_OBJECT_SERVER_MAY_BLOCK_SYNC, &krgnode_kddm_map);
+	if (!desc)
+		OOM;
+
+	err = rpc_pack_type(desc, dummy);
+	if (err)
+		OOM;
+
+	for_each_krgnode_mask(node, krgnode_kddm_map) {
+		rpc_unpack_type_from(desc, node, dummy);
+	}
+
+	rpc_end(desc, 0);
+
+	wait_event(all_object_server_may_block_synced_wqh,
+		   atomic_read(&nr_object_server_may_block_synced) == kddm_nb_nodes);
+	/* Prepare next remove */
+	atomic_set(&nr_object_server_may_block_synced, 0);
+}
 
 static int remove_browse_objects_on_leaving_nodes(objid_t objid,
 						  struct kddm_obj *obj_entry,
@@ -451,6 +557,10 @@ static void set_remove(krgnodemask_t * vector)
 
 	cluster_barrier(kddm_barrier, &krgnode_kddm_map,
 			__first_krgnode(&krgnode_kddm_map));
+
+	kddm_server_sync();
+	object_server_sync();
+	object_server_may_block_sync();
 
 	freeze_kddm();
 
@@ -983,6 +1093,16 @@ int kddm_hotplug_init(void){
 
 //	rpc_register(KDDM_COPYSET, handle_set_copyset, 0);
 //	rpc_register(KDDM_SELECT_OWNER, handle_select_owner, 0);
+
+	__rpc_register(REQ_KDDM_SERVER_SYNC,
+		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_INT,
+		       kddm_server, handle_req_kddm_server_sync, 0);
+	__rpc_register(REQ_OBJECT_SERVER_SYNC,
+		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_INT,
+		       object_server, handle_req_object_server_sync, 0);
+	__rpc_register(REQ_OBJECT_SERVER_MAY_BLOCK_SYNC,
+		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_INT,
+		       object_server_may_block, handle_req_object_server_may_block_sync, 0);
 
 	register_hotplug_notifier(kddm_notification, HOTPLUG_PRIO_KDDM);
 	return 0;
