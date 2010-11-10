@@ -57,10 +57,13 @@ static void do_local_node_remove(struct rpc_desc *desc,
 	wait_event(all_removed_wqh, atomic_read(&nr_to_wait) == 0);
 
 	rpc_disable_all();
+	rpc_enable(HOTPLUG_FINISH_REQ);
 
 	ret = 0;
 	rpc_pack_type(desc, ret);
 	rpc_unpack_type(desc, ret);
+
+	rpc_disable(HOTPLUG_FINISH_REQ);
 
 	CLEAR_KERRIGHED_NODE_FLAGS(KRGFLAGS_RUNNING);
 	CLEAR_KERRIGHED_CLUSTER_FLAGS(KRGFLAGS_RUNNING);
