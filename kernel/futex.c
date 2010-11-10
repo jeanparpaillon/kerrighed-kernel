@@ -55,6 +55,7 @@
 #include <linux/magic.h>
 #include <linux/pid.h>
 #include <linux/nsproxy.h>
+#include <linux/netpoll.h>
 #ifdef CONFIG_KRG_EPM
 #include <linux/pid_namespace.h>
 #include <kddm/kddm.h>
@@ -904,11 +905,14 @@ static int handle_krg_futex_wake_up(struct rpc_desc *desc, void *_msg,
 	spinlock_t *lock_ptr;
 	u32 hash;
 	int ret = 0;
+	char buf[200];
 
 #ifdef CONFIG_KRG_DEBUG
-	printk("(%s-%d) %s - futex %lx-%lx, pid waiting: %d\n",
-	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
-	       msg->key.both.word, msg->key.both.krg_id, msg->waiter_pid);
+	snprintf(buf, 200, "(%s-%d) %s - futex %lx-%lx-%x, pid waiting: %d\n",
+		 current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
+		 msg->key.both.word, msg->key.both.krg_id, msg->key.both.offset,
+		 msg->waiter_pid);
+	nc_write_msg (buf);
 #endif
 
 	hash = compute_futex_hash(&msg->key);
@@ -973,11 +977,14 @@ static void krg_futex_wake_up(struct futex_q *q, spinlock_t *hb1_lock, spinlock_
 {
 	int ret;
 	struct futex_wake_up_msg msg;
+	char buf[200];
 
 #ifdef CONFIG_KRG_DEBUG
-	printk("(%s-%d) %s - futex %lx-%lx, bitset: %u, pid waiting: %d\n",
-	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
-	       q->key.both.word, q->key.both.krg_id, q->bitset, q->waiter_pid);
+	snprintf(buf, 200, "(%s-%d) %s - futex %lx-%lx-%x, bitset: %u, pid waiting: %d\n",
+		 current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
+		 q->key.both.word, q->key.both.krg_id, q->key.both.offset,
+		 q->bitset, q->waiter_pid);
+	nc_write_msg (buf);
 #endif
 
 	msg.key = q->key;
@@ -1016,10 +1023,13 @@ static void __wake_futex(struct futex_q *q,
 static void wake_futex(struct futex_q *q)
 #endif
 {
+	char buf[200];
 #ifdef CONFIG_KRG_DEBUG
-	printk("(%s-%d) %s - futex %lx-%lx, bitset: %u, pid waiting: %d\n",
-	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
-	       q->key.both.word, q->key.both.krg_id, q->bitset, q->waiter_pid);
+	snprintf(buf, 200, "(%s-%d) %s - futex %lx-%lx-%x, bitset: %u, pid waiting: %d\n",
+		 current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
+		 q->key.both.word, q->key.both.krg_id, q->key.both.offset,
+		 q->bitset, q->waiter_pid);
+	nc_write_msg (buf);
 #endif
 
 #ifdef CONFIG_KRG_EPM
@@ -1452,6 +1462,7 @@ static int futex_requeue(u32 __user *uaddr1, int fshared, u32 __user *uaddr2,
 	struct plist_head *head1;
 	struct futex_q *this, *next;
 	int ret, drop_count = 0;
+	char buf[200];
 
 retry:
 	ret = get_futex_key(uaddr1, fshared, &key1, VERIFY_READ);
@@ -1462,11 +1473,12 @@ retry:
 		goto out_put_key1;
 
 #ifdef CONFIG_KRG_DEBUG
-	printk("(%s-%d) %s - futex1 %lx-%lx, futex2 %lx-%lx, nr_wake: %d, nr_requeue: %d\n",
-	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
-	       key1.both.word, key1.both.krg_id,
-	       key2.both.word, key2.both.krg_id,
-	       nr_wake, nr_requeue);
+	snprintf(buf, 200, "(%s-%d) %s - futex1 %lx-%lx-%x, futex2 %lx-%lx-%x, nr_wake: %d, nr_requeue: %d\n",
+		 current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
+		 key1.both.word, key1.both.krg_id, key1.both.offset,
+		 key2.both.word, key2.both.krg_id, key2.both.offset,
+		 nr_wake, nr_requeue);
+	nc_write_msg (buf);
 #endif
 
 #ifdef CONFIG_KRG_EPM
@@ -1872,6 +1884,7 @@ static int futex_wait(u32 __user *uaddr, int fshared,
 	int ret;
 	struct hrtimer_sleeper t;
 	int rem = 0;
+	char buf[200];
 
 	if (!bitset)
 		return -EINVAL;
@@ -1885,9 +1898,11 @@ retry:
 		goto out;
 
 #ifdef CONFIG_KRG_DEBUG
-	printk("(%s-%d) %s - futex %lx-%lx, bitset: %u\n",
-	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
-	       q.key.both.word, q.key.both.krg_id, q.bitset);
+	snprintf(buf, 200, "(%s-%d) %s - futex %lx-%lx-%x, bitset: %u\n",
+		 current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
+		 q.key.both.word, q.key.both.krg_id, q.key.both.offset,
+		 q.bitset);
+	nc_write_msg (buf);
 #endif
 
 	/*
@@ -2661,6 +2676,7 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 	int clockrt, ret = -ENOSYS;
 	int cmd = op & FUTEX_CMD_MASK;
 	int fshared = 0;
+	char buf[200];
 
 	if (!(op & FUTEX_PRIVATE_FLAG))
 		fshared = 1;
@@ -2670,9 +2686,10 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 		return -ENOSYS;
 
 #ifdef CONFIG_KRG_DEBUG
-	printk("(%s-%d) %s - cmd: %d, uaddr: %p, uaddr2: %p, val: %u, val2: %u, val3: %u\n",
+	snprintf(buf, 200, "(%s-%d) %s - cmd: %d, uaddr: %p, uaddr2: %p, val: %u, val2: %u, val3: %u\n",
 	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
 	       cmd, uaddr, uaddr2, val, val2, val3);
+	nc_write_msg (buf);
 #endif
 
 	switch (cmd) {
@@ -2712,10 +2729,11 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 	}
 
 #ifdef CONFIG_KRG_DEBUG
-	printk("(%s-%d) %s - cmd: %d, uaddr: %p, uaddr2: %p, val: %u, val2: %u, val3: %u"
+	snprintf(buf, 200, "(%s-%d) %s - cmd: %d, uaddr: %p, uaddr2: %p, val: %u, val2: %u, val3: %u"
 	       "- ret = %d\n",
 	       current->comm, task_pid_knr(current), __PRETTY_FUNCTION__,
 	       cmd, uaddr, uaddr2, val, val2, val3, ret);
+	nc_write_msg (buf);
 #endif
 	return ret;
 }
