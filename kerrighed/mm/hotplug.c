@@ -34,17 +34,13 @@ static int get_page_injection_node(struct kddm_set *set,
 	return *dest_node;
 }
 
-static void do_flush_all_pages (void *_set, void *data)
+static void do_flush_all_pages(struct kddm_set *set)
 {
 	kerrighed_node_t dest_node;
-	struct kddm_set *set = _set;
 	struct anon_vma_kddm_set_private *private;
 	struct mm_struct *mm, *obj_mm;
 	objid_t mm_id;
 	pid_t pid;
-
-	if (set->iolinker != &memory_linker)
-		return;
 
 	mm = set->obj_set;
 	BUG_ON (!mm);
@@ -90,11 +86,48 @@ static void do_flush_all_pages (void *_set, void *data)
 	_kddm_flush_object (mm_struct_kddm_set, mm_id, dest_node);
 }
 
+struct memory_set_list {
+	struct memory_set_list *next;
+	struct kddm_set *set;
+};
+
+static void list_memory_sets(void *_set, void *_head)
+{
+	struct kddm_set *set = _set;
+	struct memory_set_list **head = _head;
+	struct memory_set_list *list;
+
+	if (set->iolinker != &memory_linker)
+		return;
+
+	list = kmalloc(sizeof(*list), GFP_KERNEL);
+	if (!list)
+		OOM;
+
+	atomic_inc(&set->count);
+	list->set = set;
+	list->next = *head;
+	*head = list;
+}
 
 static void flush_all_pages(void)
 {
+	struct memory_set_list *head = NULL;
+	struct memory_set_list *next;
+
+	down_read(&kddm_def_ns->table_sem);
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
-				 do_flush_all_pages, NULL);
+				 list_memory_sets, &head);
+	up_read(&kddm_def_ns->table_sem);
+
+	while (head) {
+		do_flush_all_pages(head->set);
+		put_kddm_set(head->set);
+
+		next = head->next;
+		kfree(head);
+		head = next;
+	}
 }
 
 static void do_destroy_kddm (void *_set, void *data)
