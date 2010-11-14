@@ -195,7 +195,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	remote_pid = send_task(desc, tsk, regs, &migration);
 
 	if (remote_pid < 0)
-		rpc_cancel(desc);
+		rpc_cancel_sync(desc);
 	rpc_end(desc, 0);
 
 	if (remote_pid < 0) {
