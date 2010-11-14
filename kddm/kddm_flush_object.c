@@ -153,11 +153,11 @@ struct flush_set_data {
 	void *data;
 };
 
-static int __kddm_flush_object(unsigned long objid,
-			       void *_obj_entry,
-			       void *_data)
+static int __kddm_flush_object(objid_t objid,
+			       struct kddm_obj *obj_entry,
+			       void *_data,
+			       struct kddm_obj_list **dead_list)
 {
-	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
 	struct flush_set_data *param = _data;
 	kerrighed_node_t dest, new_owner;
 	struct kddm_set *set = param->set;
@@ -170,6 +170,8 @@ static int __kddm_flush_object(unsigned long objid,
 		/* There exist another copy in the cluster.
 		   Just invalidate the local one */
 		send_invalidation_ack(set, objid, get_prob_owner(obj_entry));
+		/* Fallthrough */
+	case INV_COPY:
 		break;
 
 	case READ_OWNER:
@@ -209,15 +211,13 @@ send_copy:
 		 */
 		break;
 
-	case INV_OWNER:
-	case INV_COPY:
-		break;
-
 	case WAIT_OBJ_RM_ACK2:
 		/*
 		 * FIXME: Must be handled in
 		 * remove_browse_objects_on_leaving_nodes()
 		 */
+		/* Fallthrough */
+	case INV_OWNER:
 		return 0;
 
 	case WAIT_OBJ_RM_DONE:
@@ -231,8 +231,8 @@ send_copy:
 		return 0;
 	}
 
-	destroy_kddm_obj_entry(set, obj_entry, objid, 0);
-	return KDDM_OBJ_REMOVED;
+	destroy_kddm_obj_entry_inatomic(set, obj_entry, objid, dead_list);
+	return KDDM_OBJ_CLEARED;
 }
 
 void _kddm_flush_set(struct kddm_set *set,
@@ -245,7 +245,7 @@ void _kddm_flush_set(struct kddm_set *set,
 	param.f = f;
 	param.set = set;
 	param.data = data;
-	__for_each_kddm_object(set, __kddm_flush_object, &param);
+	__for_each_kddm_object_safe(set, __kddm_flush_object, &param);
 }
 
 EXPORT_SYMBOL(_kddm_flush_set);

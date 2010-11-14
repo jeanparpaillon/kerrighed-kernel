@@ -163,7 +163,17 @@ typedef struct kddm_obj {
 #endif
 } __attribute__((aligned(8))) kddm_obj_t;
 
+struct kddm_obj_list {
+	struct kddm_obj_list *next;
+	void *object;
+	objid_t objid;
+};
 
+struct kddm_obj_iterator {
+	int (*f)(objid_t, struct kddm_obj *, void *, struct kddm_obj_list **);
+	void *data;
+	struct kddm_obj_list **dead_list;
+};
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -175,10 +185,12 @@ typedef struct kddm_obj {
 #define _KDDM_LOCAL_EXCLUSIVE  0
 #define _KDDM_FT_LINKED        1
 #define _KDDM_FROZEN           2
+#define _KDDM_NEED_SAFE_WALK   3
 
 #define KDDM_LOCAL_EXCLUSIVE  (1<<_KDDM_LOCAL_EXCLUSIVE)
 #define KDDM_FT_LINKED        (1<<_KDDM_FT_LINKED)
 #define KDDM_FROZEN           (1<<_KDDM_FROZEN)
+#define KDDM_NEED_SAFE_WALK   (1<<_KDDM_NEED_SAFE_WALK)
 
 #define kddm_local_exclusive(kddm) test_bit(_KDDM_LOCAL_EXCLUSIVE, &kddm->flags)
 #define set_kddm_local_exclusive(kddm) set_bit(_KDDM_LOCAL_EXCLUSIVE, &kddm->flags);
@@ -192,6 +204,10 @@ typedef struct kddm_obj {
 #define set_kddm_frozen(kddm) set_bit(_KDDM_FROZEN, &(kddm)->flags);
 #define clear_kddm_frozen(kddm) clear_bit(_KDDM_FROZEN, &(kddm)->flags);
 
+#define kddm_need_safe_walk(kddm) test_bit(_KDDM_NEED_SAFE_WALK, &(kddm)->flags)
+#define set_kddm_need_safe_walk(kddm) set_bit(_KDDM_NEED_SAFE_WALK, &(kddm)->flags);
+#define clear_kddm_need_safe_walk(kddm) clear_bit(_KDDM_NEED_SAFE_WALK, &(kddm)->flags);
+
 #define KDDM_BREAK_COW_COPY 1
 #define KDDM_BREAK_COW_INV 2
 
@@ -204,8 +220,7 @@ struct rpc_desc;
 typedef struct kddm_set_ops {
 	void *(*obj_set_alloc) (struct kddm_set *set, void *data);
 	void (*obj_set_free) (struct kddm_set *set,
-			      int (*f)(unsigned long, void *data,void *priv),
-			      void *priv);
+			      struct kddm_obj_iterator *iterator);
 	struct kddm_obj *(*lookup_obj_entry)(struct kddm_set *set,
 					     objid_t objid);
 	struct kddm_obj *(*get_obj_entry)(struct kddm_set *set,
@@ -217,8 +232,7 @@ typedef struct kddm_set_ops {
 				      int break_type);
 	void (*remove_obj_entry) (struct kddm_set *set, objid_t objid);
 	void (*for_each_obj_entry)(struct kddm_set *set,
-				   int(*f)(unsigned long, void *, void*),
-				   void *data);
+				   struct kddm_obj_iterator *iterator);
 	void (*export) (struct rpc_desc* desc, struct kddm_set *set);
 	void *(*import) (struct rpc_desc* desc, int *free_data);
 	void (*lock_obj_table)(struct kddm_set *set);

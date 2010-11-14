@@ -230,7 +230,7 @@ int kddm_io_invalidate_object (struct kddm_obj * obj_entry, struct kddm_set * se
  *  @param obj_entry    Object entry the object belong to.
  */
 int kddm_io_remove_object_and_unlock (struct kddm_obj * obj_entry, struct kddm_set * set,
-				      objid_t objid);
+				      objid_t objid, struct kddm_obj_list **dead_list);
 
 int kddm_io_remove_object (void *object, struct kddm_set * set, objid_t objid);
 

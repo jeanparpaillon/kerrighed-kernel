@@ -743,38 +743,6 @@ void request_change_prob_owner(struct kddm_set * set,
 }
 
 
-/** Force the update of the prob_owner on the default_owner.
- *  @author Renaud Lottiaux
- *
- *  @param set        Set the object belong to.
- *  @param objid      Id of the object to change the owner.
- *  @param dest_node  Node to send the request to.
- *  @param new_owner  The new default owner.
- */
-void request_force_update_def_owner_prob(struct kddm_set * set,
-					 struct kddm_obj * obj_entry,
-					 objid_t objid,
-					 kerrighed_node_t new_def_owner)
-{
-	msg_server_t msg_to_server;
-
-	/* This function can only be called in reconfiguration phase */
-	BUG_ON (!kddm_frozen(set));
-	BUG_ON (new_def_owner == kerrighed_node_id);
-
-	msg_to_server.ns_id = set->ns->id;
-	msg_to_server.set_id = set->id;
-	msg_to_server.objid = objid;
-	msg_to_server.flags = 0;
-	msg_to_server.new_owner = new_def_owner;
-	msg_to_server.reply_node = kerrighed_node_id;
-	msg_to_server.sender_probe_owner = get_prob_owner(obj_entry);
-
-	rpc_sync(KDDM_FORCE_UPDATE_DEF_OWNER, get_prob_owner(obj_entry),
-		 &msg_to_server, sizeof(msg_server_t));
-}
-
-
 /*****************************************************************************/
 /*                                                                           */
 /*                          OBJECT INJECTION ACTIONS                         */

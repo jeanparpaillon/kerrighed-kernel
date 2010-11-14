@@ -280,10 +280,12 @@ int kddm_io_remove_object (void *object,
 
 int kddm_io_remove_object_and_unlock (struct kddm_obj * obj_entry,
 				      struct kddm_set * set,
-				      objid_t objid)
+				      objid_t objid,
+				      struct kddm_obj_list **dead_list)
 {
 	int res = 0;
 	void *object;
+	struct kddm_obj_list *dead_entry;
 
 	object = obj_entry->object;
 
@@ -295,7 +297,21 @@ int kddm_io_remove_object_and_unlock (struct kddm_obj * obj_entry,
 	obj_entry->object = NULL;
 	put_kddm_obj_entry(set, obj_entry, objid);
 
-	res = kddm_io_remove_object (object, set, objid);
+	if (dead_list) {
+		res = -ENOMEM;
+		dead_entry = kmalloc(sizeof(*dead_entry), GFP_ATOMIC);
+		if (dead_entry) {
+			dead_entry->next = *dead_list;
+			dead_entry->object = object;
+			dead_entry->objid = objid;
+			*dead_list = dead_entry;
+			res = 0;
+		} else {
+			OOM;
+		}
+	} else {
+		res = kddm_io_remove_object (object, set, objid);
+	}
 
 done:
 	return res;
@@ -429,8 +445,9 @@ kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
 
 	  default:
 		  node = set->def_owner;
+		  /* WARNING: Fallback must match with __kddm_set_mgr() */
 		  if (unlikely(!__krgnode_isset(node, nodes)))
-			  node = __nth_krgnode(objid % nr_nodes, nodes);
+			  node = __nth_krgnode(node % nr_nodes, nodes);
 	}
 
 	return node;

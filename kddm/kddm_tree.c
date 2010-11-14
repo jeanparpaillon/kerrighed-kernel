@@ -221,8 +221,7 @@ static int __kddm_tree_for_each_level(struct kddm_set *set,
 				      int level,
 				      unsigned long index,
 				      int free,
-				      int(*f)(unsigned long, void*, void*),
-				      void *priv)
+				      struct kddm_obj_iterator *iterator)
 {
 	int i, sub_level_freed = 0;
 	struct kddm_tree_lvl *sub_level;
@@ -240,7 +239,7 @@ retry:
 				obj_entry = (struct kddm_obj *)sub_level;
 
 				res = do_func_on_obj_entry(set, obj_entry,
-							   index, f, priv);
+							   index, iterator);
 				if (res == -EAGAIN)
 					goto retry;
 
@@ -250,7 +249,7 @@ retry:
 				sub_level_freed =
 				    __kddm_tree_for_each_level(set, sub_level,
 							   level+1, index, free,
-							   f, priv);
+							   iterator);
 			if (sub_level_freed) {
 				cur_level->sub_lvl[i] = NULL;
 				cur_level->nr_obj--;
@@ -271,14 +270,13 @@ free_level:
 
 static inline void __kddm_tree_for_each(struct kddm_set *set,
 					int free,
-					int(*f)(unsigned long, void*, void*),
-					void *priv)
+					struct kddm_obj_iterator *iterator)
 {
 	struct kddm_tree *tree = set->obj_set;
 
 	if (tree->lvl1 == NULL)
 		return;
-	if (__kddm_tree_for_each_level(set, tree->lvl1, 0, 0, free, f, priv))
+	if (__kddm_tree_for_each_level(set, tree->lvl1, 0, 0, free, iterator))
 		tree->lvl1 = NULL;
 }
 
@@ -290,10 +288,9 @@ static inline void __kddm_tree_for_each(struct kddm_set *set,
  *  @param priv      Private data passed to the function.
  */
 static void kddm_tree_for_each(struct kddm_set *set,
-			       int(*f)(unsigned long, void*, void*),
-			       void *priv)
+			       struct kddm_obj_iterator *iterator)
 {
-	__kddm_tree_for_each(set, 0, f, priv);
+	__kddm_tree_for_each(set, 0, iterator);
 }
 
 
@@ -353,10 +350,9 @@ static void *kddm_tree_alloc (struct kddm_set *set, void *data)
  *  @param priv        Private data passed to the function.
  */
 static void kddm_tree_free (struct kddm_set *set,
-			    int (*f)(unsigned long, void *data, void *priv),
-			    void *priv)
+			    struct kddm_obj_iterator *iterator)
 {
-	__kddm_tree_for_each(set, 1, f, priv);
+	__kddm_tree_for_each(set, 1, iterator);
 
 	kmem_cache_free(kddm_tree_cachep, set->obj_set);
 }
@@ -410,10 +406,9 @@ static void kddm_tree_remove_obj_entry (struct kddm_set *set,
 
 
 static void kddm_tree_for_each_obj_entry(struct kddm_set *set,
-					 int(*f)(unsigned long, void *, void*),
-					 void *data)
+					 struct kddm_obj_iterator *iterator)
 {
-	kddm_tree_for_each(set, f, data);
+	kddm_tree_for_each(set, iterator);
 }
 
 

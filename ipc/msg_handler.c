@@ -507,7 +507,7 @@ int krg_msg_init_ns(struct ipc_namespace *ns)
 	msg_ops->krgops.data_kddm_set = create_new_kddm_set(
 		kddm_def_ns, MSG_KDDM_ID, MSG_LINKER,
 		KDDM_RR_DEF_OWNER, sizeof(msq_object_t),
-		KDDM_LOCAL_EXCLUSIVE);
+		KDDM_LOCAL_EXCLUSIVE | KDDM_NEED_SAFE_WALK);
 
 	if (IS_ERR(msg_ops->krgops.data_kddm_set)) {
 		r = PTR_ERR(msg_ops->krgops.data_kddm_set);
