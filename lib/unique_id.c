@@ -156,9 +156,11 @@ static int recover_unique_ids(void)
 		return PTR_ERR(ids);
 
 	if (ids)
-		for (i = 0; i < NR_UNIQUE_IDS; i++)
+		for (i = 0; i < NR_UNIQUE_IDS; i++) {
 			atomic_long_set(&roots[i]->local_unique_id,
 					atomic_long_read(&ids[i].local_unique_id));
+			printk("%s: %d = %lu\n", __PRETTY_FUNCTION__, i, atomic_long_read(&ids[i].local_unique_id));
+		}
 
 	_kddm_put_object(unique_id_set, kerrighed_node_id);
 	return 0;
@@ -185,6 +187,7 @@ static int unique_ids_add(struct hotplug_context *ctx)
 static int unique_id_flusher(struct kddm_set *set, objid_t id,
 			     struct kddm_obj *obj, void *data)
 {
+	printk("%s: %d -> %d\n", __PRETTY_FUNCTION__, id, id % num_online_krgnodes());
 	return nth_online_krgnode(id % num_online_krgnodes());
 }
 
@@ -204,9 +207,11 @@ static int unique_ids_remove_local(struct hotplug_context *ctx)
 	if (IS_ERR(ids))
 		return PTR_ERR(ids);
 	BUG_ON(!ids);
-	for (i = 0; i < NR_UNIQUE_IDS; i++)
+	for (i = 0; i < NR_UNIQUE_IDS; i++) {
 		atomic_long_set(&ids[i].local_unique_id,
 				atomic_long_read(&roots[i]->local_unique_id));
+		printk("%s: %d = %lu\n", __PRETTY_FUNCTION__, i, atomic_long_read(&ids[i].local_unique_id));
+	}
 	_kddm_put_object(unique_id_set, kerrighed_node_id);
 
 	_kddm_flush_set(unique_id_set, unique_id_flusher, NULL);
