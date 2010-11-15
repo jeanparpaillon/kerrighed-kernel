@@ -154,6 +154,7 @@ int handle_hotplug_start_req(struct rpc_desc *desc, void *_msg, size_t size)
 	if (!req)
 		goto out;
 	req->node = rpc_desc_get_client(desc);
+	BUG_ON(req->node == KERRIGHED_NODE_ID_NONE);
 	req->id = msg->req_id;
 
 	mutex_lock(&global_hotplug_req_list_mutex);
@@ -238,6 +239,7 @@ int handle_hotplug_finish_req(struct rpc_desc *desc, void *_msg, size_t size)
 
 	BUG_ON(list_empty(&global_hotplug_req_list));
 	req = list_first_entry(&global_hotplug_req_list, struct hotplug_request, list);
+	BUG_ON(req->node != rpc_desc_get_client(desc));
 	BUG_ON(req->id != msg->req_id);
 	list_del(&req->list);
 	kfree(req);
@@ -294,9 +296,7 @@ unlock:
 	}
 }
 
-static
-int
-handle_hotplug_coordinator_move(struct rpc_desc *desc, void *_msg, size_t size)
+static void handle_hotplug_coordinator_move(struct rpc_desc *desc)
 {
 	struct hotplug_request *req, tmp, *safe;
 	int err;
@@ -305,6 +305,7 @@ handle_hotplug_coordinator_move(struct rpc_desc *desc, void *_msg, size_t size)
 	 * No need to lock the list, since all nodes have coordinator mutex
 	 * locked, and thus none try to start/finish requests.
 	 */
+	BUG_ON(!list_empty(&global_hotplug_req_list));
 	for (;;) {
 		err = rpc_unpack_type(desc, tmp);
 		if (err)
@@ -320,8 +321,10 @@ handle_hotplug_coordinator_move(struct rpc_desc *desc, void *_msg, size_t size)
 		list_add_tail(&req->list, &global_hotplug_req_list);
 	}
 
+	if (rpc_pack_type(desc, err))
+		goto cancel;
 out:
-	return err;
+	return;
 
 cancel:
 	rpc_cancel(desc);
@@ -387,17 +390,17 @@ cancel:
 	goto out;
 }
 
-static int hotplug_coordinator_reconfigure(struct hotplug_context *ctx)
+static int hotplug_coordinator_reconfigure(struct hotplug_context *ctx,
+					   const krgnodemask_t *new_map,
+					   const krgnodemask_t *full_map)
 {
-	krgnodemask_t nodes;
 	kerrighed_node_t new_coordinator;
 	int err;
 
-	krgnodes_or(nodes, krgnode_online_map, ctx->node_set.v);
-	new_coordinator = first_krgnode(nodes);
+	new_coordinator = __first_krgnode(new_map);
 
 	mutex_lock(&hotplug_coordinator_mutex);
-	err = cluster_barrier(hotplug_coordinator_barrier, &nodes, new_coordinator);
+	err = cluster_barrier(hotplug_coordinator_barrier, full_map, new_coordinator);
 	if (err)
 		goto unlock;
 
@@ -411,7 +414,7 @@ static int hotplug_coordinator_reconfigure(struct hotplug_context *ctx)
 	}
 	hotplug_coordinator = new_coordinator;
 
-	err = cluster_barrier(hotplug_coordinator_barrier, &nodes, new_coordinator);
+	err = cluster_barrier(hotplug_coordinator_barrier, full_map, new_coordinator);
 unlock:
 	mutex_unlock(&hotplug_coordinator_mutex);
 
@@ -420,18 +423,30 @@ unlock:
 
 static int hotplug_add(struct hotplug_context *ctx)
 {
-	return hotplug_coordinator_reconfigure(ctx);
+	krgnodemask_t new_map;
+
+	rpc_enable(HOTPLUG_COORDINATOR_MOVE);
+
+	krgnodes_or(new_map, krgnode_online_map, ctx->node_set.v);
+	return hotplug_coordinator_reconfigure(ctx, &new_map, &new_map);
 }
 
 static int hotplug_remove_local(struct hotplug_context *ctx)
 {
+	krgnodemask_t old_map;
+
 	hotplug_cancel_all_requests();
-	return hotplug_coordinator_reconfigure(ctx);
+
+	krgnodes_or(old_map, krgnode_online_map, ctx->node_set.v);
+	return hotplug_coordinator_reconfigure(ctx, &krgnode_online_map, &old_map);
 }
 
 static int hotplug_remove_advert(struct hotplug_context *ctx)
 {
-	return hotplug_coordinator_reconfigure(ctx);
+	krgnodemask_t old_map;
+
+	krgnodes_or(old_map, krgnode_online_map, ctx->node_set.v);
+	return hotplug_coordinator_reconfigure(ctx, &krgnode_online_map, &old_map);
 }
 
 static
@@ -488,7 +503,7 @@ int init_hotplug(void)
 	rpc_register_int(HOTPLUG_START_REQ, handle_hotplug_start_req, 0);
 	rpc_register_int(HOTPLUG_FINISH_REQ, handle_hotplug_finish_req, 0);
 	rpc_register_void(HOTPLUG_RUN_REQ, handle_hotplug_run_req, 0);
-	rpc_register_int(HOTPLUG_COORDINATOR_MOVE, handle_hotplug_coordinator_move, 0);
+	rpc_register(HOTPLUG_COORDINATOR_MOVE, handle_hotplug_coordinator_move, 0);
 
 	register_hotplug_notifier(hotplug_notifier, HOTPLUG_PRIO_HOTPLUG_COORDINATOR);
 
