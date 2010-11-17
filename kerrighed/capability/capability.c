@@ -119,7 +119,8 @@ static int krg_set_cap(struct task_struct *tsk,
 		goto out;
 
 	res = -EINVAL;
-	if (!cap_issubset(requested_cap->effective, requested_cap->permitted)
+	if (!cap_issubset(requested_cap->permitted, caps->permitted)
+	    || !cap_issubset(requested_cap->effective, requested_cap->permitted)
 	    || !cap_issubset(requested_cap->inheritable_permitted,
 			     requested_cap->permitted)
 	    || !cap_issubset(requested_cap->inheritable_effective,
