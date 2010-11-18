@@ -34,6 +34,9 @@
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/file_stat.h>
 #endif
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
 /*
  * Attempt to steal a page from a pipe buffer. This should perhaps go into
  * a vm helper function, it's already simplified quite a bit by the
@@ -1512,6 +1515,12 @@ SYSCALL_DEFINE4(vmsplice, int, fd, const struct iovec __user *, iov,
 	error = -EBADF;
 	file = fget_light(fd, &fput);
 	if (file) {
+#ifdef CONFIG_KRG_FAF
+		if (file->f_flags & O_FAF_CLT) {
+			error = -ENOSYS;
+			faf_error(file, "vmsplice");
+		} else
+#endif
 		if (file->f_mode & FMODE_WRITE)
 			error = vmsplice_to_pipe(file, iov, nr_segs, flags);
 		else if (file->f_mode & FMODE_READ)
@@ -1768,7 +1777,24 @@ SYSCALL_DEFINE4(tee, int, fdin, int, fdout, size_t, len, unsigned int, flags)
 
 			if (out) {
 				if (out->f_mode & FMODE_WRITE)
+#ifdef CONFIG_KRG_FAF
+				{
+					if (in->f_flags & O_FAF_CLT) {
+						faf_error(in, "tee");
+						error = -ENOSYS;
+						goto out_put;
+					}
+					if (out->f_flags & O_FAF_CLT) {
+						faf_error(out, "tee");
+						error = -ENOSYS;
+						goto out_put;
+					}
+#endif
 					error = do_tee(in, out, len, flags);
+#ifdef CONFIG_KRG_FAF
+				}
+				out_put:
+#endif
 				fput_light(out, fput_out);
 			}
 		}
