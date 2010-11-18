@@ -271,6 +271,14 @@ SYSCALL_DEFINE(sync_file_range)(int fd, loff_t offset, loff_t nbytes,
 	if (!file)
 		goto out;
 
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		faf_error(file, "sync_file_range");
+		ret = -ENOSYS;
+		goto out_put;
+	}
+#endif
+
 	i_mode = file->f_path.dentry->d_inode->i_mode;
 	ret = -ESPIPE;
 	if (!S_ISREG(i_mode) && !S_ISBLK(i_mode) && !S_ISDIR(i_mode) &&
