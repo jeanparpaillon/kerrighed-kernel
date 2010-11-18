@@ -169,7 +169,7 @@ int is_timer(const struct file *file)
 	return 0;
 }
 
-char *get_phys_filename(struct file *file, char *buffer, bool del_ok)
+char *get_phys_filename(const struct file *file, char *buffer, bool del_ok)
 {
 	char *filename;
 
@@ -178,7 +178,8 @@ char *get_phys_filename(struct file *file, char *buffer, bool del_ok)
 		bool deleted = false;
 		bool *deleted_param = del_ok ? NULL : &deleted;
 
-		filename = krg_faf_phys_d_path(file, buffer, PAGE_SIZE, deleted_param);
+		filename = krg_faf_phys_d_path(file, buffer, PAGE_SIZE,
+					       deleted_param);
 		if ((!del_ok && deleted) || IS_ERR(filename))
 			filename = NULL;
 	} else
@@ -188,7 +189,7 @@ char *get_phys_filename(struct file *file, char *buffer, bool del_ok)
 	return filename;
 }
 
-char *get_filename(struct file *file, char *buffer)
+char *get_filename(const struct file *file, char *buffer)
 {
 	char *filename;
 
@@ -204,7 +205,7 @@ char *get_filename(struct file *file, char *buffer)
 	return get_phys_filename(file, buffer, true);
 }
 
-char *alloc_filename(struct file *file, char **buffer)
+char *alloc_filename(const struct file *file, char **buffer)
 {
 	char *file_name;
 

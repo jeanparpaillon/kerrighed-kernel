@@ -46,7 +46,7 @@ int is_timer(const struct file *file);
  *
  * buffer must have a size of PAGE_SIZE
  */
-char *get_phys_filename(struct file *file, char *buffer, bool del_ok);
+char *get_phys_filename(const struct file *file, char *buffer, bool del_ok);
 
 /*
  * Return the name of a file as visible in /proc/<pid>/fd.
@@ -54,9 +54,9 @@ char *get_phys_filename(struct file *file, char *buffer, bool del_ok);
  *
  * buffer must have a size of PAGE_SIZE
  */
-char *get_filename(struct file *file, char *buffer);
+char *get_filename(const struct file *file, char *buffer);
 
-char *alloc_filename(struct file *file, char **buffer);
+char *alloc_filename(const struct file *file, char **buffer);
 
 void free_filename(char *buffer);
 
