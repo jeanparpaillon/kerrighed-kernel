@@ -37,6 +37,7 @@
 #ifdef CONFIG_KRG_MM
 #include <kerrighed/krgsyms.h>
 #include <kerrighed/dynamic_node_info_linker.h>
+#include <kerrighed/faf.h>
 #endif
 
 #include "internal.h"
@@ -1001,6 +1002,12 @@ unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
 	int error;
 	unsigned long reqprot = prot;
 
+#ifdef CONFIG_KRG_FAF
+	if (file && (file->f_flags & O_FAF_CLT)) {
+		faf_error(file, "mmap");
+		return -ENOSYS;
+	}
+#endif
 	/*
 	 * Does the application expect PROT_READ to imply PROT_EXEC?
 	 *
