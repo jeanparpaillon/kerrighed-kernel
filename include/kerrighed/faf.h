@@ -129,4 +129,7 @@ int setup_faf_file_if_needed(struct file *file);
 
 int setup_faf_file(struct file *file);
 
+
+void faf_error(const struct file *file, const char *function);
+
 #endif // __FAF_H__

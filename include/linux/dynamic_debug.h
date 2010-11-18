@@ -74,6 +74,19 @@ extern int ddebug_remove_module(char *mod_name);
 					##__VA_ARGS__);			\
 	} while (0)
 
+#ifdef CONFIG_KERRIGHED
+#define dynamic_pr_kerrighed(fmt, ...) do {				\
+	static struct _ddebug descriptor				\
+	__used								\
+	__attribute__((section("__verbose"), aligned(8))) =		\
+	{ KBUILD_MODNAME, __func__, __FILE__, fmt, DEBUG_HASH,	\
+		DEBUG_HASH2, __LINE__, _DPRINTK_FLAGS_DEFAULT };	\
+	if (__dynamic_dbg_enabled(descriptor))				\
+		printk(KERN_DEBUG "kerrighed: " pr_fmt(fmt),		\
+				##__VA_ARGS__);				\
+	} while (0)
+#endif
+
 #else
 
 static inline int ddebug_remove_module(char *mod)
@@ -83,6 +96,10 @@ static inline int ddebug_remove_module(char *mod)
 
 #define dynamic_pr_debug(fmt, ...)  do { } while (0)
 #define dynamic_dev_dbg(dev, format, ...)  do { } while (0)
+
+#ifdef CONFIG_KERRIGHED
+#define dynamic_pr_kerrighed(fmt, ...)  do { } while (0)
+#endif
 #endif
 
 #endif

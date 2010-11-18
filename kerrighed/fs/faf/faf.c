@@ -15,17 +15,30 @@
 #include <kerrighed/action.h>
 #include <kerrighed/faf.h>
 #include <kerrighed/file.h>
+#include <kerrighed/file_stat.h>
+#include <kerrighed/pid.h>
 #include "faf_internal.h"
 #include "faf_server.h"
 #include "faf_hooks.h"
 
 extern struct kmem_cache *faf_client_data_cachep;
 
-/*****************************************************************************/
-/*                                                                           */
-/*                             INTERFACE FUNCTIONS                           */
-/*                                                                           */
-/*****************************************************************************/
+void faf_error(const struct file *file, const char *function)
+{
+	char *buffer, *filename;
+	filename = alloc_filename(file, &buffer);
+
+	if (!IS_ERR(filename)) {
+		pr_kerrighed("%d/%s FAF does not support %s - %s\n",
+			     task_pid_knr(current), current->comm,
+			     function, filename);
+		free_filename(buffer);
+	} else {
+		pr_kerrighed("%d/%s FAF does not support %s\n",
+			     task_pid_knr(current), current->comm,
+			     function);
+	}
+}
 
 /** Add a file in the FAF daemon.
  *  @author Renaud Lottiaux

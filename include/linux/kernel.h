@@ -404,6 +404,12 @@ static inline char *pack_hex_byte(char *buf, u8 byte)
 	({ if (0) printk(KERN_DEBUG pr_fmt(fmt), ##__VA_ARGS__); 0; })
 #endif
 
+#ifdef CONFIG_KERRIGHED
+#define pr_kerrighed(fmt, ...) do { \
+		dynamic_pr_kerrighed(fmt, ##__VA_ARGS__);	\
+	} while (0)
+#endif
+
 /*
  * General tracing related utility functions - trace_printk(),
  * tracing_on/tracing_off and tracing_start()/tracing_stop

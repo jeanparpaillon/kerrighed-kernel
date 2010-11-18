@@ -33,25 +33,6 @@ static void init_baby_sitter(void)
 	strncpy(baby_sitter->comm, "baby sitter", 15);
 }
 
-#ifdef CONFIG_DYNAMIC_DEBUG
-#define dynamic_pr_kerrighed(fmt, ...) do {				\
-	static struct _ddebug descriptor				\
-	__used								\
-	__attribute__((section("__verbose"), aligned(8))) =		\
-	{ KBUILD_MODNAME, __func__, __FILE__, fmt, DEBUG_HASH,	\
-		DEBUG_HASH2, __LINE__, _DPRINTK_FLAGS_DEFAULT };	\
-	if (__dynamic_dbg_enabled(descriptor))				\
-		printk(KERN_DEBUG "kerrighed: " pr_fmt(fmt),		\
-				##__VA_ARGS__);				\
-	} while (0)
-#else
-#define dynamic_pr_kerrighed(fmt, ...)  do { } while (0)
-#endif
-
-#define pr_kerrighed(fmt, ...) do { \
-		dynamic_pr_kerrighed(fmt, ##__VA_ARGS__);	\
-	} while (0)
-
 static void __print_low_mem(const char *action, int error)
 {
 	pr_kerrighed("WARNING: Memory is low. %s: error %d\n",
