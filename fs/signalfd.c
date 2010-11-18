@@ -29,6 +29,10 @@
 #include <linux/signalfd.h>
 #include <linux/syscalls.h>
 
+#ifdef CONFIG_KRG_FAF
+#include <kerrighed/faf.h>
+#endif
+
 struct signalfd_ctx {
 	sigset_t sigmask;
 };
@@ -246,6 +250,14 @@ SYSCALL_DEFINE4(signalfd4, int, ufd, sigset_t __user *, user_mask,
 		struct file *file = fget(ufd);
 		if (!file)
 			return -EBADF;
+
+#ifdef CONFIG_KRG_FAF
+		if (file->f_flags & O_FAF_CLT) {
+			faf_error(file, "signalfd");
+			fput(file);
+			return -EINVAL;
+		}
+#endif
 		ctx = file->private_data;
 		if (file->f_op != &signalfd_fops) {
 			fput(file);
