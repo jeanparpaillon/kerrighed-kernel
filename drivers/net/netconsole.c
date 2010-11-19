@@ -50,10 +50,24 @@ MODULE_LICENSE("GPL");
 
 #define MAX_PARAM_LENGTH	256
 #define MAX_PRINT_CHUNK		1000
+#define SYSLOG_HEADER_LEN 4
+
+static int syslog_chars = SYSLOG_HEADER_LEN;
+static unsigned char syslog_line [MAX_PRINT_CHUNK + 10] = {
+	'<',
+	'5',
+	'>',
+	' ',
+	[4 ... MAX_PRINT_CHUNK+5] = '\0',
+};
 
 static char config[MAX_PARAM_LENGTH];
 module_param_string(netconsole, config, MAX_PARAM_LENGTH, 0);
 MODULE_PARM_DESC(netconsole, " netconsole=[src-port]@[src-ip]/[dev],[tgt-port]@<tgt-ip>/[tgt-macaddr]");
+
+static int do_syslog;
+module_param(do_syslog, bool, 000);
+MODULE_PARM_DESC(do_syslog, " do_syslog=<yes|no>\n");
 
 #ifndef	MODULE
 static int __init option_setup(char *opt)
@@ -63,6 +77,23 @@ static int __init option_setup(char *opt)
 }
 __setup("netconsole=", option_setup);
 #endif	/* MODULE */
+
+/*
+ * We feed kernel messages char by char, and send the UDP packet
+ * one linefeed. We buffer all characters received.
+ */
+static inline void feed_syslog_char(struct netpoll *np, const unsigned char c)
+{
+	if (syslog_chars == MAX_PRINT_CHUNK)
+		syslog_chars--;
+
+	syslog_line[syslog_chars] = c;
+	syslog_chars++;
+	if (c == '\n') {
+		netpoll_send_udp(np, syslog_line, syslog_chars);
+		syslog_chars = SYSLOG_HEADER_LEN;
+	}
+}
 
 /* Linked list of all configured targets */
 static LIST_HEAD(target_list);
@@ -700,7 +731,7 @@ static struct notifier_block netconsole_netdev_notifier = {
 
 static void write_msg(struct console *con, const char *msg, unsigned int len)
 {
-	int frag, left;
+	int frag, left, i;
 	unsigned long flags;
 	struct netconsole_target *nt;
 	const char *tmp;
@@ -719,12 +750,17 @@ static void write_msg(struct console *con, const char *msg, unsigned int len)
 			 * at least one target if we die inside here, instead
 			 * of unnecessarily keeping all targets in lock-step.
 			 */
-			tmp = msg;
-			for (left = len; left;) {
-				frag = min(left, MAX_PRINT_CHUNK);
-				netpoll_send_udp(&nt->np, tmp, frag);
-				tmp += frag;
-				left -= frag;
+			if (do_syslog) {
+				for (i = 0; i < len; i++)
+					feed_syslog_char(&nt->np, msg[i]);
+			} else {
+				tmp = msg;
+				for (left = len; left;) {
+					frag = min(left, MAX_PRINT_CHUNK);
+					netpoll_send_udp(&nt->np, tmp, frag);
+					tmp += frag;
+					left -= frag;
+				}
 			}
 		}
 		netconsole_target_put(nt);
