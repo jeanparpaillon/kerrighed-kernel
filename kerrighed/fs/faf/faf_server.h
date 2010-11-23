@@ -194,6 +194,12 @@ struct faf_epoll_ctl_msg {
 	struct epoll_event event;
 };
 
+struct faf_epoll_wait_msg {
+	int server_fd;
+	int maxevents;
+	int timeout;
+};
+
 struct old_linux_dirent;
 extern int do_oldreaddir(struct file *file, struct old_linux_dirent *dirent,
 			 unsigned int count);

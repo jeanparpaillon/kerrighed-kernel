@@ -2575,6 +2575,48 @@ cancel:
 	goto out_end;
 }
 
+int krg_faf_epoll_wait(struct file *file, struct epoll_event *events,
+		       int maxevents, int timeout)
+{
+	faf_client_data_t *data = file->private_data;
+	struct faf_epoll_wait_msg msg;
+	struct rpc_desc *desc;
+	int ret, error;
+
+	msg.server_fd = data->server_fd;
+	msg.maxevents = maxevents;
+	msg.timeout = timeout;
+
+	desc = rpc_begin(RPC_FAF_EPOLL_WAIT, data->server_id);
+	if (!desc) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	ret = rpc_pack_type(desc, msg);
+	if (ret)
+		goto cancel;
+
+	ret = rpc_unpack_type(desc, error);
+	if (ret)
+		goto cancel;
+
+	ret = rpc_unpack(desc, 0, events,
+			 maxevents * sizeof(struct epoll_event));
+	if (ret)
+		goto cancel;
+
+	ret = error;
+
+out_end:
+	rpc_end(desc, 0);
+out:
+	return ret;
+
+cancel:
+	rpc_cancel(desc);
+	goto out_end;
+}
 
 /* FAF Hooks Initialisation */
 

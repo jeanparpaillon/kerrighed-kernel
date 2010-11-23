@@ -2099,6 +2099,43 @@ cancel:
 	goto out;
 }
 
+void handle_faf_epoll_wait(struct rpc_desc *desc, void *msgIn, size_t size)
+{
+	struct faf_epoll_wait_msg *msg = msgIn;
+	struct epoll_event *events = NULL;
+	size_t esize;
+	int ret, error;
+
+	esize = msg->maxevents * sizeof(struct epoll_event);
+
+	events = kzalloc(esize, GFP_KERNEL);
+	if (!events) {
+		ret = -ENOMEM;
+		goto cancel;
+	}
+
+	error = sys_epoll_wait(msg->server_fd, events, msg->maxevents,
+			       msg->timeout);
+
+	ret = rpc_pack_type(desc, error);
+	if (ret)
+		goto cancel;
+
+	ret = rpc_pack(desc, 0, events, esize);
+	if (ret)
+		goto cancel;
+
+out:
+	if (events)
+		kfree(events);
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto out;
+}
+
 /* FAF handler Initialisation */
 void faf_server_init (void)
 {
@@ -2146,6 +2183,7 @@ void faf_server_init (void)
 	rpc_register_int(RPC_FAF_NOTIFY_CLOSE, handle_faf_notify_close, 0);
 
 	rpc_register_int(RPC_FAF_EPOLL_CTL, handle_faf_epoll_ctl, 0);
+	rpc_register_void(RPC_FAF_EPOLL_WAIT, handle_faf_epoll_wait, 0);
 }
 
 /* FAF server Finalization */

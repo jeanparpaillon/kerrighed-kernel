@@ -1374,6 +1374,13 @@ SYSCALL_DEFINE4(epoll_wait, int, epfd, struct epoll_event __user *, events,
 	if (!file)
 		goto error_return;
 
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		error = krg_faf_epoll_wait(file, events, maxevents, timeout);
+		goto error_fput;
+	}
+#endif
+
 	/*
 	 * We have to check that the file structure underneath the fd
 	 * the user passed to us _is_ an eventpoll file.

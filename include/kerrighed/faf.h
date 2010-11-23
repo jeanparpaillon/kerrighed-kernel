@@ -118,6 +118,8 @@ void krg_faf_poll_dequeue(struct file *file);
 struct epoll_event;
 int krg_faf_epoll_ctl(struct file *efile, int op, struct file *tfile,
 		      struct epoll_event *event);
+int krg_faf_epoll_wait(struct file *file, struct epoll_event *events,
+		       int maxevents, int timeout);
 
 /* Remote user access */
 unsigned long krg_copy_user_generic(void *to, const void *from,
