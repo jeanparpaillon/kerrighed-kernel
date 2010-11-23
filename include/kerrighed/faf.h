@@ -115,6 +115,10 @@ ssize_t krg_faf_sendfile(struct file *out, struct file *in, loff_t *ppos,
 int krg_faf_poll_wait(struct file *file, int wait);
 void krg_faf_poll_dequeue(struct file *file);
 
+struct epoll_event;
+int krg_faf_epoll_ctl(struct file *efile, int op, struct file *tfile,
+		      struct epoll_event *event);
+
 /* Remote user access */
 unsigned long krg_copy_user_generic(void *to, const void *from,
 				    unsigned long n, int zerorest);

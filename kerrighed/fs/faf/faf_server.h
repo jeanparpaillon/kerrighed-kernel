@@ -9,6 +9,7 @@
 
 #include <linux/socket.h>
 #include <linux/time.h>
+#include <linux/eventpoll.h>
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -185,6 +186,12 @@ struct faf_utimes_msg {
 	int flags;
 	bool times_not_null;
 	struct timespec times[2];
+};
+
+struct faf_epoll_ctl_msg {
+	int server_fd;
+	int op;
+	struct epoll_event event;
 };
 
 struct old_linux_dirent;

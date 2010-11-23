@@ -2530,6 +2530,50 @@ struct file_operations faf_file_ops = {
 	poll: faf_poll,
 };
 
+int krg_faf_epoll_ctl(struct file *efile, int op, struct file *tfile,
+		      struct epoll_event *event)
+{
+	faf_client_data_t *data = efile->private_data;
+	struct faf_epoll_ctl_msg msg;
+	struct rpc_desc *desc;
+	int ret, error;
+
+	ret = setup_faf_file(tfile);
+	if (ret && ret != -EALREADY)
+		goto out;
+
+	msg.server_fd = data->server_fd;
+	msg.op = op;
+	msg.event = *event;
+
+	desc = rpc_begin(RPC_FAF_EPOLL_CTL, data->server_id);
+	if (!desc) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	ret = rpc_pack_type(desc, msg);
+	if (ret)
+		goto cancel;
+
+	ret = send_faf_file_desc(desc, tfile);
+	if (ret)
+		goto cancel;
+
+	ret = rpc_unpack_type(desc, error);
+	if (ret)
+		goto cancel;
+
+	ret = error;
+out_end:
+	rpc_end(desc, 0);
+out:
+	return ret;
+
+cancel:
+	rpc_cancel(desc);
+	goto out_end;
+}
 
 
 /* FAF Hooks Initialisation */

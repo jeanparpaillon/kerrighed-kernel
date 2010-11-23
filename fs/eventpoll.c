@@ -1289,6 +1289,12 @@ SYSCALL_DEFINE4(epoll_ctl, int, epfd, int, op, int, fd,
 	 * adding an epoll file descriptor inside itself.
 	 */
 	error = -EINVAL;
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		error = krg_faf_epoll_ctl(file, op, tfile, &epds);
+		goto error_tgt_fput;
+	}
+#endif
 	if (file == tfile || !is_file_epoll(file))
 		goto error_tgt_fput;
 

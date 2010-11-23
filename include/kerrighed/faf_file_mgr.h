@@ -39,4 +39,6 @@ int __send_faf_file_desc(struct rpc_desc *desc, struct file *file);
 
 struct file *rcv_faf_file_desc(struct rpc_desc *desc);
 
+int receive_fd_from_network(struct rpc_desc *desc);
+
 #endif // __FAF_FILE_MGR__

@@ -2076,6 +2076,29 @@ int handle_faf_notify_close(struct rpc_desc *desc, void *msgIn, size_t size)
 	return 0;
 }
 
+int handle_faf_epoll_ctl(struct rpc_desc *desc, void *msgIn, size_t size)
+{
+	struct faf_epoll_ctl_msg *msg = msgIn;
+	int fd, ret;
+
+	fd = receive_fd_from_network(desc);
+	if (fd < 0) {
+		ret = fd;
+		goto cancel;
+	}
+
+	ret = sys_epoll_ctl(msg->server_fd, msg->op, fd, &msg->event);
+	if (ret)
+		sys_close(fd);
+
+out:
+	return ret;
+
+cancel:
+	rpc_cancel(desc);
+	goto out;
+}
+
 /* FAF handler Initialisation */
 void faf_server_init (void)
 {
@@ -2121,6 +2144,8 @@ void faf_server_init (void)
 	rpc_register_void(RPC_FAF_RECVMSG, handle_faf_recvmsg, 0);
 	rpc_register_void(RPC_FAF_SENDFILE, handle_faf_sendfile, 0);
 	rpc_register_int(RPC_FAF_NOTIFY_CLOSE, handle_faf_notify_close, 0);
+
+	rpc_register_int(RPC_FAF_EPOLL_CTL, handle_faf_epoll_ctl, 0);
 }
 
 /* FAF server Finalization */

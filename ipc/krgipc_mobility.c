@@ -719,35 +719,6 @@ exit:
 	return r;
 }
 
-static int receive_fd_from_network(struct rpc_desc *desc)
-{
-	int r, fd;
-	struct file *file;
-
-	fd = get_unused_fd();
-	if (fd < 0) {
-		r = fd;
-		goto out;
-	}
-
-	file = rcv_faf_file_desc(desc);
-	if (IS_ERR(file)) {
-		r = PTR_ERR(file);
-		goto out_put_fd;
-	}
-
-	fd_install(fd, file);
-
-	r = fd;
-
-out:
-	return r;
-
-out_put_fd:
-	put_unused_fd(fd);
-	goto out;
-}
-
 struct msgq_checkpoint_msg
 {
 	int msqid;
