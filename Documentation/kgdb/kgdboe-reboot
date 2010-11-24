@@ -1,0 +1,11 @@
+#!/bin/bash
+
+ADDR=$1
+PORT=6443
+if [ $# -ge 2 ]; then
+	PORT=$2
+fi
+
+echo -ne '\003' | nc -u -q 0 $ADDR $PORT > /dev/null
+echo -ne '$R0#82' | nc -u -q 0 $ADDR $PORT > /dev/null
+echo -ne '+' | nc -u -q 0 $ADDR $PORT > /dev/null
