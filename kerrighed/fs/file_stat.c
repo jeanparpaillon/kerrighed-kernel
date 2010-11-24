@@ -267,8 +267,23 @@ int can_checkpoint_file(const struct file *file)
 
 int can_export_file(const struct file *file)
 {
-	if (is_posix_mqueue(file))
+	if (is_posix_mqueue(file)) {
+		pr_kerrighed("Export of posix message queue "
+			     "is not supported\n");
 		return 0;
+	} else if (is_anon_shared_mmap(file)) {
+		pr_kerrighed("Export of anonymous shared mmap file "
+			     "is not supported\n");
+		return 0;
+	} else if (is_timer(file)) {
+		pr_kerrighed("Export of timerfd file "
+			     "is not supported\n");
+		return 0;
+	} else if (is_signal(file)) {
+		pr_kerrighed("Export of signalfd file "
+			     "is not supported\n");
+		return 0;
+	}
 
 	return 1;
 }
