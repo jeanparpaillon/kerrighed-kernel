@@ -610,7 +610,8 @@ krgip_cluster_ip_tcp_unhash_prepare(struct sock *sk,
 		return;
 
 	bindaddr = 0;
-	if (sk->sk_userlocks & SOCK_BINDADDR_LOCK) {
+/*	if (sk->sk_userlocks & SOCK_BINDADDR_LOCK) {*/
+	if (inet->saddr != 0) {
 		bindaddr = inet->rcv_saddr;
 
 		ip_obj = _kddm_get_object(ip_set, bindaddr);
