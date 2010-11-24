@@ -22,6 +22,7 @@
 #include <kerrighed/signal.h>
 #include <kerrighed/application.h>
 #include <kerrighed/krgnodemask.h>
+#include <kerrighed/namespace.h>
 #include <asm/cputime.h>
 #endif
 #ifdef CONFIG_KRG_SCHED
@@ -126,7 +127,9 @@ int krg_do_notify_parent(struct task_struct *task, struct siginfo *info)
 	req.ptrace = task->ptrace;
 	req.info = *info;
 
-	desc = rpc_begin(PROC_DO_NOTIFY_PARENT, parent_node);
+	desc = rpc_begin(PROC_DO_NOTIFY_PARENT,
+			 task_active_pid_ns(task)->krg_ns->rpc_comm,
+			 parent_node);
 	if (!desc)
 		goto err;
 	err = rpc_pack_type(desc, req);
@@ -164,13 +167,11 @@ err:
 static
 struct children_kddm_object *
 parent_children_writelock_pid_location_lock(struct task_struct *task,
-					    pid_t *real_parent_tgid_p,
 					    pid_t *real_parent_pid_p,
 					    pid_t *parent_pid_p,
 					    kerrighed_node_t *parent_node_p)
 {
 	struct children_kddm_object *children_obj;
-	pid_t real_parent_tgid;
 	pid_t real_parent_pid;
 	pid_t parent_pid;
 	struct task_kddm_object *obj;
@@ -186,8 +187,7 @@ parent_children_writelock_pid_location_lock(struct task_struct *task,
 	 * migration
 	 */
 	for (;;) {
-		children_obj = krg_parent_children_writelock(task,
-							     &real_parent_tgid);
+		children_obj = krg_parent_children_writelock(task);
 		if (!children_obj)
 			break;
 		krg_get_parent(children_obj, task,
@@ -211,7 +211,6 @@ parent_children_writelock_pid_location_lock(struct task_struct *task,
 	 * otherwise none is locked.
 	 */
 	if (children_obj) {
-		*real_parent_tgid_p = real_parent_tgid;
 		*real_parent_pid_p = real_parent_pid;
 		*parent_pid_p = parent_pid;
 		*parent_node_p = parent_node;
@@ -222,14 +221,12 @@ parent_children_writelock_pid_location_lock(struct task_struct *task,
 int krg_delayed_notify_parent(struct task_struct *leader)
 {
 	struct children_kddm_object *parent_children_obj;
-	pid_t real_parent_tgid;
 	pid_t parent_pid, real_parent_pid;
 	kerrighed_node_t parent_node;
 	int zap_leader;
 
 	parent_children_obj = parent_children_writelock_pid_location_lock(
 				leader,
-				&real_parent_tgid,
 				&real_parent_pid,
 				&parent_pid,
 				&parent_node);
@@ -241,15 +238,8 @@ int krg_delayed_notify_parent(struct task_struct *leader)
 	 * Needed to check whether we were reparented to init, and to
 	 * know which task to notify in case parent is still remote
 	 */
-	if (parent_children_obj) {
-		/* Make sure that task_obj is up to date */
-		krg_update_parents(leader, parent_pid, real_parent_pid);
-		leader->task_obj->parent_node = parent_node;
-	} else if (leader->real_parent == baby_sitter
-		   || leader->parent == baby_sitter) {
-		/* Real parent died and let us reparent leader to local init. */
-		krg_reparent_to_local_child_reaper(leader);
-	}
+	krg_update_parents(leader, parent_children_obj,
+			   parent_pid, real_parent_pid, parent_node);
 
 	do_notify_parent(leader, leader->exit_signal);
 
@@ -344,6 +334,21 @@ static void handle_wait_task_zombie(struct rpc_desc *desc,
 		res.ioac = p->ioac;
 		task_io_accounting_add(&res.ioac, &sig->ioac);
 	}
+
+	/*
+	 * Tell client to unlock pid location.
+	 * wait_task_zombie()->release_task() frees the task KDDM
+	 * object and would deadlock.
+	 * We hold tasklist_lock, so migration is blocked and will fail if we
+	 * succeed reaping the child.
+	 */
+	retval = req->pid;
+	err = rpc_pack_type(desc, retval);
+	if (err) {
+		read_unlock(&tasklist_lock);
+		goto err_cancel;
+	}
+
 	retval = wait_task_zombie(p, req->options,
 				  &res.info,
 				  &res.status, &res.ru);
@@ -367,36 +372,47 @@ err_cancel:
 	rpc_cancel(desc);
 }
 
-int krg_wait_task_zombie(pid_t pid, kerrighed_node_t zombie_location,
+int krg_wait_task_zombie(pid_t pid,
 			 int options,
 			 struct siginfo __user *infop,
 			 int __user *stat_addr, struct rusage __user *ru)
 {
 	struct wait_task_request req;
+	kerrighed_node_t zombie_location;
 	int retval;
 	struct wait_task_result res;
 	struct rpc_desc *desc;
 	bool noreap = options & WNOWAIT;
 	int err;
 
-	/*
-	 * Zombie's location does not need to remain locked since it won't
-	 * change afterwards, but this will be needed to support hot removal of
-	 * nodes with zombie migration.
-	 */
-	BUG_ON(!krgnode_online(zombie_location));
+	zombie_location = krg_lock_pid_location(pid);
+	if (zombie_location == KERRIGHED_NODE_ID_NONE)
+		/* Reaped by another sub-thread */
+		return 0;
 
-	desc = rpc_begin(PROC_WAIT_TASK_ZOMBIE, zombie_location);
-	if (!desc)
+	desc = rpc_begin(PROC_WAIT_TASK_ZOMBIE,
+			 current->nsproxy->krg_ns->rpc_comm, zombie_location);
+	if (!desc) {
+		krg_unlock_pid_location(pid);
 		return -ENOMEM;
+	}
 
 	req.pid = pid;
 	/* True as long as no remote ptrace is allowed */
 	req.real_parent_tgid = task_tgid_knr(current);
 	req.options = options;
 	err = rpc_pack_type(desc, req);
+	if (err) {
+		krg_unlock_pid_location(pid);
+		goto err_cancel;
+	}
+
+	err = rpc_unpack_type(desc, retval);
+	krg_unlock_pid_location(pid);
 	if (err)
 		goto err_cancel;
+	if (!retval)
+		goto out;
 
 	err = rpc_unpack_type(desc, retval);
 	if (err)
@@ -473,7 +489,7 @@ krg_prepare_exit_ptrace_task(struct task_struct *tracer,
 			     struct task_struct *task)
 {
 	struct children_kddm_object *obj;
-	pid_t real_parent_tgid, real_parent_pid, parent_pid;
+	pid_t real_parent_pid, parent_pid;
 	kerrighed_node_t parent_node;
 
 	/* Prepare a call to do_notify_parent() in __ptrace_detach() */
@@ -486,7 +502,6 @@ krg_prepare_exit_ptrace_task(struct task_struct *tracer,
 	if (obj)
 		obj = parent_children_writelock_pid_location_lock(
 			task,
-			&real_parent_tgid,
 			&real_parent_pid,
 			&parent_pid,
 			&parent_node);
@@ -500,12 +515,7 @@ krg_prepare_exit_ptrace_task(struct task_struct *tracer,
 	write_lock_irq(&tasklist_lock);
 	BUG_ON(!task->ptrace);
 
-	if (obj && task->task_obj) {
-		krg_update_parents(task, parent_pid, real_parent_pid);
-		task->task_obj->parent_node = parent_node;
-	} else if (!obj && task->real_parent == baby_sitter) {
-		krg_reparent_to_local_child_reaper(task);
-	}
+	krg_update_parents(task, obj, parent_pid, real_parent_pid, parent_node);
 
 	return obj;
 }
@@ -538,7 +548,6 @@ void *krg_prepare_exit_notify(struct task_struct *task)
 {
 	void *cookie = NULL;
 #ifdef CONFIG_KRG_EPM
-	pid_t real_parent_tgid = 0;
 	pid_t real_parent_pid = 0;
 	pid_t parent_pid = 0;
 	kerrighed_node_t parent_node = KERRIGHED_NODE_ID_NONE;
@@ -548,7 +557,6 @@ void *krg_prepare_exit_notify(struct task_struct *task)
 	if (rcu_dereference(task->parent_children_obj))
 		cookie = parent_children_writelock_pid_location_lock(
 				task,
-				&real_parent_tgid,
 				&real_parent_pid,
 				&parent_pid,
 				&parent_node);
@@ -562,15 +570,8 @@ void *krg_prepare_exit_notify(struct task_struct *task)
 
 #ifdef CONFIG_KRG_EPM
 		write_lock_irq(&tasklist_lock);
-		if (cookie) {
-			/* Make sure that task_obj is up to date */
-			krg_update_parents(task, parent_pid, real_parent_pid);
-			task->task_obj->parent_node = parent_node;
-		} else if (task->real_parent == baby_sitter
-			   || task->parent == baby_sitter) {
-			/* Real parent died and let us reparent to local init. */
-			krg_reparent_to_local_child_reaper(task);
-		}
+		krg_update_parents(task, cookie, parent_pid, real_parent_pid,
+				   parent_node);
 		write_unlock_irq(&tasklist_lock);
 #endif /* CONFIG_KRG_EPM */
 	}
@@ -602,7 +603,6 @@ void krg_finish_exit_notify(struct task_struct *task, int signal, void *cookie)
 		} else {
 			krg_set_child_exit_signal(parent_children_obj, task);
 			krg_set_child_exit_state(parent_children_obj, task);
-			krg_set_child_location(parent_children_obj, task);
 		}
 		krg_children_unlock(parent_children_obj);
 	}
@@ -623,7 +623,7 @@ void krg_release_task(struct task_struct *p)
 #ifdef CONFIG_KRG_EPM
 		if (krg_action_pending(p, EPM_MIGRATE))
 			/* Migration aborted because p died before */
-			migration_aborted(p);
+			migration_aborted(p, -ESRCH);
 	}
 #endif /* CONFIG_KRG_EPM */
 }
@@ -679,15 +679,27 @@ struct notify_remote_child_reaper_msg {
 	pid_t zombie_pid;
 };
 
-static void handle_notify_remote_child_reaper(struct rpc_desc *desc,
-					      void *_msg,
-					      size_t size)
+static int handle_notify_remote_child_reaper(struct rpc_desc *desc,
+					     void *_msg,
+					     size_t size)
 {
 	struct notify_remote_child_reaper_msg *msg = _msg;
+	struct task_kddm_object *obj;
 	struct task_struct *zombie;
 	bool release = false;
 
-	krg_task_writelock(msg->zombie_pid);
+	obj = krg_task_writelock(msg->zombie_pid);
+	if (!obj)
+		/* Already reaped */
+		return 0;
+	if (obj->node != kerrighed_node_id) {
+		/*
+		 * Has migrated after being reparented
+		 * Notification is done by unhide_process()
+		 */
+		krg_task_unlock(msg->zombie_pid);
+		return 0;
+	}
 	write_lock_irq(&tasklist_lock);
 
 	zombie = find_task_by_kpid(msg->zombie_pid);
@@ -711,20 +723,46 @@ static void handle_notify_remote_child_reaper(struct rpc_desc *desc,
 
 	if (release)
 		release_task(zombie);
+
+	return 0;
 }
 
-void notify_remote_child_reaper(pid_t zombie_pid,
-				kerrighed_node_t zombie_location)
+void notify_remote_child_reaper(pid_t zombie_pid)
 {
+	kerrighed_node_t zombie_location;
+
 	struct notify_remote_child_reaper_msg msg = {
 		.zombie_pid = zombie_pid
 	};
 
-	BUG_ON(zombie_location == KERRIGHED_NODE_ID_NONE);
-	BUG_ON(zombie_location == kerrighed_node_id);
+	zombie_location = krg_lock_pid_location(zombie_pid);
+	if (zombie_location == KERRIGHED_NODE_ID_NONE)
+		/* Already reaped */
+		return;
+	krg_unlock_pid_location(zombie_pid);
+	if (zombie_location == kerrighed_node_id)
+		/*
+		 * Child either was local and local notification was done,
+		 * or has become local and unhide_process() did the
+		 * notification.
+		 */
+		return;
 
-	rpc_async(PROC_NOTIFY_REMOTE_CHILD_REAPER, zombie_location,
-		  &msg, sizeof(msg));
+	rpc_sync(PROC_NOTIFY_REMOTE_CHILD_REAPER,
+		 current->nsproxy->krg_ns->rpc_comm, zombie_location,
+		 &msg, sizeof(msg));
+}
+
+void krg_zombie_check_notify_child_reaper(struct task_struct *task,
+					  struct children_kddm_object *parent_children_obj)
+{
+	if (parent_children_obj)
+		return;
+
+	krg_update_parents(task, parent_children_obj, 0, 0, kerrighed_node_id);
+	do_notify_parent(task, task->exit_signal);
+	if (task_detached(task))
+		task->exit_state = EXIT_DEAD;
 }
 
 #endif /* CONFIG_KRG_EPM */
@@ -736,8 +774,8 @@ void proc_krg_exit_start(void)
 {
 #ifdef CONFIG_KRG_EPM
 	rpc_register_void(PROC_DO_NOTIFY_PARENT, handle_do_notify_parent, 0);
-	rpc_register_void(PROC_NOTIFY_REMOTE_CHILD_REAPER,
-			  handle_notify_remote_child_reaper, 0);
+	rpc_register_int(PROC_NOTIFY_REMOTE_CHILD_REAPER,
+			 handle_notify_remote_child_reaper, 0);
 	rpc_register_void(PROC_WAIT_TASK_ZOMBIE, handle_wait_task_zombie, 0);
 #endif
 }

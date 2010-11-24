@@ -34,6 +34,7 @@
 #include <linux/mutex.h>
 #include <linux/rwsem.h>
 #include <linux/spinlock.h>
+#include <linux/global_lock.h>
 #include <linux/string.h>
 #include <linux/workqueue.h>
 #include <linux/list.h>
@@ -44,6 +45,7 @@
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/hotplug.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/workqueue.h>
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/ghost.h>
@@ -59,7 +61,6 @@
 #include "internal.h"
 #include "hashed_string_list.h"
 #include "string_list.h"
-#include "global_lock.h"
 
 struct global_config_attr {
 	struct list_head list;
@@ -92,12 +93,12 @@ static int mount_count;
 
 int global_config_freeze(void)
 {
-	return global_lock_readlock(0);
+	return global_lock_readlock(GLOBAL_LOCK_SCHED);
 }
 
 void global_config_thaw(void)
 {
-	global_lock_unlock(0);
+	global_lock_unlock(GLOBAL_LOCK_SCHED);
 }
 
 static inline int in_krg_scheduler_subsys(struct config_item *item)
@@ -291,10 +292,13 @@ static struct rpc_desc *__global_config_op_begin(krgnodemask_t *nodes,
 	struct config_op_message msg = {
 		.op = op
 	};
+	struct krg_namespace *ns;
 	struct rpc_desc *desc;
 	int err;
 
-	desc = rpc_begin_m(GLOBAL_CONFIG_OP, nodes);
+	ns = find_get_krg_ns();
+	desc = rpc_begin_m(GLOBAL_CONFIG_OP, ns->rpc_comm, nodes);
+	put_krg_ns(ns);
 	if (!desc)
 		return ERR_PTR(-ENOMEM);
 
@@ -762,7 +766,12 @@ struct string_list_object *create_begin(struct config_item *parent,
 	if (current->flags & PF_KTHREAD)
 		return NULL;
 
-	err = global_lock_try_writelock(0);
+	membership_online_hold();
+	err = -EPERM;
+	if (!krgnode_online(kerrighed_node_id))
+		goto err_online;
+
+	err = global_lock_try_writelock(GLOBAL_LOCK_SCHED);
 	if (err)
 		goto err_lock;
 
@@ -786,8 +795,10 @@ err_is_element:
 err_list:
 	kfree(path);
 err_path:
-	global_lock_unlock(0);
+	global_lock_unlock(GLOBAL_LOCK_SCHED);
 err_lock:
+err_online:
+	membership_online_release();
 	list = ERR_PTR(err);
 	goto out;
 }
@@ -857,7 +868,8 @@ static void __create_end(struct string_list_object *list)
 {
 	if (list) {
 		hashed_string_list_unlock_hash(global_items_set, list);
-		global_lock_unlock(0);
+		global_lock_unlock(GLOBAL_LOCK_SCHED);
+		membership_online_release();
 	}
 }
 
@@ -901,7 +913,8 @@ static void create_error(struct string_list_object *list,
 {
 	if (list) {
 		hashed_string_list_unlock_hash(global_items_set, list);
-		global_lock_unlock(0);
+		global_lock_unlock(GLOBAL_LOCK_SCHED);
+		membership_online_release();
 	}
 }
 
@@ -1122,7 +1135,7 @@ static void global_drop(struct global_config_item *item)
 	struct string_list_object *list;
 	int err;
 
-	err = global_lock_try_writelock(0);
+	err = global_lock_try_writelock(GLOBAL_LOCK_SCHED);
 	if (err) {
 		delay_drop(item);
 		return;
@@ -1144,7 +1157,7 @@ static void global_drop(struct global_config_item *item)
 	hashed_string_list_unlock_hash(global_items_set, list);
 
 out:
-	global_lock_unlock(0);
+	global_lock_unlock(GLOBAL_LOCK_SCHED);
 	return;
 
 err_list:
@@ -1262,23 +1275,37 @@ global_config_attr_store_begin(struct config_item *item)
 {
 	struct string_list_object *list;
 	char *path;
+	int err;
 
 	if (current->flags & PF_KTHREAD)
 		return NULL;
 
+	membership_online_hold();
+	err = -EPERM;
+	if (!krgnode_online(kerrighed_node_id))
+		goto err;
+
+	err = -ENOMEM;
 	path = get_full_path(item, NULL);
 	if (!path)
-		return ERR_PTR(-ENOMEM);
+		goto err;
 
 	down_read(&attrs_rwsem);
 
 	list = hashed_string_list_lock_hash(global_items_set, path);
 	BUG_ON(!list);
 	put_path(path);
-	if (IS_ERR(list))
+	if (IS_ERR(list)) {
 		up_read(&attrs_rwsem);
+		err = PTR_ERR(list);
+		goto err;
+	}
 
 	return list;
+
+err:
+	membership_online_release();
+	return ERR_PTR(err);
 }
 
 static ssize_t attr_store_record(struct config_item *item,
@@ -1377,6 +1404,7 @@ out_unlock:
 
 	hashed_string_list_unlock_hash(global_items_set, list);
 	up_read(&attrs_rwsem);
+	membership_online_release();
 
 	return err;
 }
@@ -1394,6 +1422,7 @@ void global_config_attr_store_error(struct string_list_object *list,
 	if (list) {
 		hashed_string_list_unlock_hash(global_items_set, list);
 		up_read(&attrs_rwsem);
+		membership_online_release();
 	}
 }
 
@@ -1624,6 +1653,59 @@ int global_config_post_add(struct hotplug_context *ctx)
 		global_config_thaw();
 
 	return 0;
+}
+
+int global_config_remove_local(struct hotplug_context *ctx)
+{
+	struct global_config_item *item;
+	struct string_list_object *list;
+	const char *name;
+	int err;
+
+	if (num_online_krgnodes())
+		return hashed_string_list_remove_local(global_items_set);
+
+	if (first_krgnode(ctx->node_set.v) != kerrighed_node_id)
+		return 0;
+
+	err = 0;
+	list_for_each_entry(item, &items_head, list) {
+		name = item->path;
+
+		list = hashed_string_list_lock_hash(global_items_set, name);
+		BUG_ON(!list);
+		if (IS_ERR(list)) {
+			err = PTR_ERR(list);
+			break;
+		}
+		string_list_remove_element(list, name);
+		hashed_string_list_unlock_hash(global_items_set, list);
+	}
+
+	return err;
+}
+
+int global_config_remove(struct hotplug_context *ctx)
+{
+	krgnodemask_t nodes = krgnodemask_of_node(kerrighed_node_id);
+	struct global_config_item *item, *tmp;
+	enum config_op op;
+	int err = 0;
+
+	list_for_each_entry_safe_reverse(item, tmp, &items_head, list) {
+		if (item->drop_ops->is_symlink)
+			op = CO_UNLINK;
+		else
+			op = CO_RMDIR;
+		err = __global_config_dir_op(&nodes, op, item->path, NULL);
+		if (err)
+			goto out;
+	}
+
+	rpc_disable(GLOBAL_CONFIG_OP);
+
+out:
+	return err;
 }
 
 /**

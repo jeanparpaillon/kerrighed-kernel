@@ -383,16 +383,15 @@ static void policy_update_node_set(struct scheduler *scheduler,
 	}
 }
 
-static int do_update_node_set(struct scheduler *s,
-			      const krgnodemask_t *new_set,
-			      bool max_fit)
+static int __do_update_node_set(struct scheduler *s,
+			        const krgnodemask_t *new_set,
+			        bool max_fit)
 {
 	krgnodemask_t removed_set, added_set;
 	const krgnodemask_t *old_set;
 	struct scheduler_policy *policy = NULL;
 	int err = -EBUSY;
 
-	mutex_lock(&schedulers_list_mutex);
 	spin_lock(&schedulers_list_lock);
 
 	if (max_fit) {
@@ -431,6 +430,18 @@ unlock:
 
 	if (!err)
 		policy_update_node_set(s, &removed_set, &added_set);
+
+	return err;
+}
+
+static int do_update_node_set(struct scheduler *s,
+			      const krgnodemask_t *new_set,
+			      bool max_fit)
+{
+	int err;
+
+	mutex_lock(&schedulers_list_mutex);
+	err = __do_update_node_set(s, new_set, max_fit);
 	mutex_unlock(&schedulers_list_mutex);
 
 	return err;
@@ -812,6 +823,33 @@ int scheduler_post_add(struct hotplug_context *ctx)
 			policy_update_node_set(s, &removed, added);
 
 unlock:
+	mutex_unlock(&schedulers_list_mutex);
+
+	return 0;
+}
+
+int scheduler_remove(struct hotplug_context *ctx)
+{
+	krgnodemask_t added = KRGNODE_MASK_NONE;
+	const krgnodemask_t *removed = &ctx->node_set.v;
+	struct scheduler *s;
+	krgnodemask_t set;
+
+	mutex_lock(&schedulers_list_mutex);
+
+	spin_lock(&schedulers_list_lock);
+	krgnodes_andnot(shared_set, shared_set, ctx->node_set.v);
+	spin_unlock(&schedulers_list_lock);
+
+	list_for_each_entry(s, &schedulers_head, list) {
+		if (s->node_set_max_fit) {
+			policy_update_node_set(s, removed, &added);
+		} else {
+			krgnodes_andnot(set, s->node_set, *removed);
+			__do_update_node_set(s, &set, false);
+		}
+	}
+
 	mutex_unlock(&schedulers_list_mutex);
 
 	return 0;

@@ -22,7 +22,6 @@
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
-#include <linux/hashtable.h>
 
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
@@ -53,16 +52,29 @@ struct tx_engine {
 
 static DEFINE_PER_CPU(struct tx_engine, tipc_tx_engine);
 static DEFINE_SPINLOCK(tipc_tx_queue_lock);
+
+static LIST_HEAD(tipc_ack_head);
+static DEFINE_SPINLOCK(tipc_ack_list_lock);
 static void tipc_send_ack_worker(struct work_struct *work);
 static DECLARE_DELAYED_WORK(tipc_ack_work, tipc_send_ack_worker);
 
-struct rx_engine {
-	kerrighed_node_t from;
+struct tipc_connection {
+	struct rpc_connection conn;
+	atomic_long_t send_seq_id;
+	unsigned long send_ack_id;
+	unsigned long last_cleanup_ack;
 	struct sk_buff_head rx_queue;
 	struct delayed_work run_rx_queue_work;
+	unsigned long recv_seq_id;
+	struct list_head ack_list;
+	int consecutive_recv;
+	int max_consecutive_recv;
 };
 
-struct rx_engine tipc_rx_engine[KERRIGHED_MAX_NODES];
+static inline struct tipc_connection *to_ll(struct rpc_connection *conn)
+{
+	return container_of(conn, struct tipc_connection, conn);
+}
 
 struct workqueue_struct *krgcom_wq;
 
@@ -131,11 +143,7 @@ u32 tipc_port_ref;
 DEFINE_PER_CPU(u32, tipc_send_ref);
 struct tipc_name_seq tipc_seq;
 
-krgnodemask_t nodes_requiring_ack;
-unsigned long last_cleanup_ack[KERRIGHED_MAX_NODES];
 static int ack_cleanup_window_size;
-static int consecutive_recv[KERRIGHED_MAX_NODES];
-static int max_consecutive_recv[KERRIGHED_MAX_NODES];
 
 void __rpc_put_raw_data(void *data){
 	kfree_skb((struct sk_buff*)data);
@@ -146,16 +154,19 @@ void __rpc_get_raw_data(void *data){
 }
 
 static
-inline int __send_iovec(kerrighed_node_t node, int nr_iov, struct iovec *iov)
+inline
+int __send_iovec(struct tipc_connection *conn, int nr_iov, struct iovec *iov)
 {
 	struct tipc_name name = {
 		.type = TIPC_KRG_SERVER_TYPE,
-		.instance = node
+		.instance = conn->conn.peer
 	};
 	struct __rpc_header *h = iov[0].iov_base;
 	int err;
 
-	h->link_ack_id = rpc_link_recv_seq_id[node] - 1;
+	h->source_conn_id = conn->conn.id;
+	h->target_conn_id = conn->conn.peer_id;
+	h->link_ack_id = conn->recv_seq_id - 1;
 	lockdep_off();
 	err = tipc_send2name(per_cpu(tipc_send_ref, smp_processor_id()),
 			     &name, 0,
@@ -164,18 +175,18 @@ inline int __send_iovec(kerrighed_node_t node, int nr_iov, struct iovec *iov)
 	if (err > 0)
 		err = 0;
 	if (!err)
-		consecutive_recv[node] = 0;
+		conn->consecutive_recv = 0;
 
 	return err;
 }
 
 static
-inline int send_iovec(kerrighed_node_t node, int nr_iov, struct iovec *iov)
+inline int send_iovec(struct tipc_connection *conn, int nr_iov, struct iovec *iov)
 {
 	int err;
 
 	local_bh_disable();
-	err = __send_iovec(node, nr_iov, iov);
+	err = __send_iovec(conn, nr_iov, iov);
 	local_bh_enable();
 
 	return err;
@@ -217,32 +228,131 @@ static void __rpc_tx_elem_free(struct rpc_tx_elem *elem)
 	kmem_cache_free(rpc_tx_elem_cachep, elem);
 }
 
+static void __rpc_tx_elem_init(struct rpc_tx_elem *elem,
+			       struct rpc_connection_set *conn_set,
+			       const krgnodemask_t *nodes,
+			       enum rpcid rpcid,
+			       int flags,
+			       size_t size)
+{
+	struct tipc_connection *conn;
+	int link_seq_index;
+	kerrighed_node_t node;
+
+	rpc_connection_set_get(conn_set);
+	elem->conn_set = conn_set;
+	__krgnodes_copy(&elem->nodes, nodes);
+
+	link_seq_index = 0;
+	__for_each_krgnode_mask(node, nodes) {
+		conn = to_ll(conn_set->conn[node]);
+		elem->link_seq_id[link_seq_index] =
+			atomic_long_inc_return(&conn->send_seq_id);
+		link_seq_index++;
+	}
+
+	elem->index = 0;
+	elem->link_seq_index = 0;
+
+	elem->h.from = kerrighed_node_id;
+	elem->h.rpcid = rpcid;
+	elem->h.flags = flags;
+
+	elem->iov[0].iov_base = &elem->h;
+	elem->iov[0].iov_len = sizeof(elem->h);
+	elem->iov[1].iov_base = elem->data;
+	elem->iov[1].iov_len = size;
+}
+
 static int __rpc_tx_elem_send(struct rpc_tx_elem *elem, int link_seq_index,
 			      kerrighed_node_t node)
 {
+	struct tipc_connection *conn = to_ll(elem->conn_set->conn[node]);
 	int err = 0;
 
+	if (conn->conn.state == RPC_CONN_TIME_WAIT)
+		goto out;
+
 	elem->h.link_seq_id = elem->link_seq_id[link_seq_index];
-	if (elem->h.link_seq_id <= rpc_link_send_ack_id[node])
+	if (elem->h.link_seq_id <= conn->send_ack_id)
 		goto out;
 
 	/* try to send */
-	err = send_iovec(node, ARRAY_SIZE(elem->iov), elem->iov);
+	err = send_iovec(conn, ARRAY_SIZE(elem->iov), elem->iov);
 
 out:
 	return err;
 }
 
+static void __rpc_tx_elem_queue(struct rpc_tx_elem *elem)
+{
+	struct tx_engine *engine;
+	kerrighed_node_t node;
+	int link_seq_index;
+	int err;
+
+	preempt_disable();
+	engine = &per_cpu(tipc_tx_engine, smp_processor_id());
+
+	if (irqs_disabled()) {
+		/* Add the packet in the tx_queue */
+		lockdep_off();
+		spin_lock(&tipc_tx_queue_lock);
+		list_add_tail(&elem->tx_queue, &engine->delayed_tx_queue);
+		spin_unlock(&tipc_tx_queue_lock);
+		lockdep_on();
+
+		/* Schedule the work ASAP */
+		queue_work(krgcom_wq, &engine->delayed_tx_work.work);
+		preempt_enable();
+		return;
+	}
+
+	err = 0;
+	link_seq_index = 0;
+	for_each_krgnode_mask(node, elem->nodes) {
+		err = __rpc_tx_elem_send(elem, link_seq_index, node);
+		if (err < 0)
+			break;
+
+		link_seq_index++;
+	}
+
+	spin_lock_bh(&tipc_tx_queue_lock);
+	if (err < 0)
+		list_add_tail(&elem->tx_queue, &engine->retx_queue);
+	else
+		/* Add the packet in the not_retx_queue */
+		list_add_tail(&elem->tx_queue, &engine->not_retx_queue);
+	spin_unlock_bh(&tipc_tx_queue_lock);
+
+	preempt_enable();
+}
+
+static void send_acks(struct tipc_connection *conn)
+{
+	spin_lock_bh(&tipc_ack_list_lock);
+	if (list_empty(&conn->ack_list)
+	    && conn->conn.state != RPC_CONN_TIME_WAIT) {
+		rpc_connection_get(&conn->conn);
+		list_add_tail(&conn->ack_list, &tipc_ack_head);
+		queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
+	}
+	spin_unlock_bh(&tipc_ack_list_lock);
+}
+
 static
 void tipc_send_ack_worker(struct work_struct *work)
 {
+	LIST_HEAD(ack_head);
 	struct iovec iov[1];
 	struct __rpc_header h;
-	kerrighed_node_t node;
+	struct tipc_connection *conn, *safe;
 	int err;
 
-	if (next_krgnode(0, nodes_requiring_ack) > KERRIGHED_MAX_NODES)
-		return;
+	spin_lock_bh(&tipc_ack_list_lock);
+	list_splice_init(&tipc_ack_head, &ack_head);
+	spin_unlock_bh(&tipc_ack_list_lock);
 
 	h.from = kerrighed_node_id;
 	h.rpcid = RPC_ACK;
@@ -251,10 +361,15 @@ void tipc_send_ack_worker(struct work_struct *work)
 	iov[0].iov_base = &h;
 	iov[0].iov_len = sizeof(h);
 
-	for_each_krgnode_mask(node, nodes_requiring_ack) {
-		err = send_iovec(node, ARRAY_SIZE(iov), iov);
-		if (!err)
-			krgnode_clear(node, nodes_requiring_ack);
+	list_for_each_entry_safe(conn, safe, &ack_head, ack_list) {
+		spin_lock_bh(&tipc_ack_list_lock);
+		list_del_init(&conn->ack_list);
+		spin_unlock_bh(&tipc_ack_list_lock);
+
+		err = send_iovec(conn, ARRAY_SIZE(iov), iov);
+		if (err)
+			send_acks(conn);
+		rpc_connection_put(&conn->conn);
 	}
 }
 
@@ -428,6 +543,13 @@ exit_empty:
 	lockdep_on();
 }
 
+static void __rpc_tx_elem_check_last_ack(struct rpc_tx_elem *elem)
+{
+	if (elem->h.rpcid == RPC_CLOSE
+	    && (elem->h.flags & __RPC_HEADER_FLAGS_SRV_REPLY))
+		rpc_connection_last_ack(elem->conn_set->conn[elem->h.client]);
+}
+
 static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 {
 	struct tx_engine *engine = container_of(work, struct tx_engine, cleanup_not_retx_work.work);
@@ -441,6 +563,7 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 	spin_unlock_bh(&tipc_tx_queue_lock);
 
 	list_for_each_entry_safe(iter, safe, &queue, tx_queue){
+		struct tipc_connection *conn;
 		int need_to_free, link_seq_index;
 
 		need_to_free = 0;
@@ -450,8 +573,8 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 
 			iter->h.link_seq_id = iter->link_seq_id[link_seq_index];
 
-			if (iter->h.link_seq_id >
-			    rpc_link_send_ack_id[node])
+			conn = to_ll(iter->conn_set->conn[node]);
+			if (iter->h.link_seq_id > conn->send_ack_id)
 				goto next_iter;
 
 			link_seq_index++;
@@ -461,6 +584,8 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 	next_iter:
 		if(need_to_free){
 			list_del(&iter->tx_queue);
+			__rpc_tx_elem_check_last_ack(iter);
+			rpc_connection_set_put(iter->conn_set);
 			__rpc_tx_elem_free(iter);
 		}
 	}
@@ -472,6 +597,18 @@ static void tipc_cleanup_not_retx_worker(struct work_struct *work)
 		spin_unlock_bh(&tipc_tx_queue_lock);
 	}
 
+}
+
+static void cleanup_not_retx(void)
+{
+	struct tx_engine *engine;
+	int cpu;
+
+	for_each_online_cpu(cpu) {
+		engine = &per_cpu(tipc_tx_engine, cpu);
+		queue_delayed_work_on(cpu, krgcom_wq,
+				      &engine->cleanup_not_retx_work,0);
+	}
 }
 
 static
@@ -559,9 +696,6 @@ int __rpc_send_ll(struct rpc_desc* desc,
 			 int rpc_flags)
 {
 	struct rpc_tx_elem* elem;
-	struct tx_engine *engine;
-	kerrighed_node_t node;
-	int link_seq_index;
 
 	elem = __rpc_tx_elem_alloc(size, __krgnodes_weight(nodes));
 	if (!elem) {
@@ -571,80 +705,22 @@ int __rpc_send_ll(struct rpc_desc* desc,
 			return -ENOMEM;
 	}
 
-	link_seq_index = 0;
-	__for_each_krgnode_mask(node, nodes) {
-		rpc_link_seq_id(elem->link_seq_id[link_seq_index], node);
-		link_seq_index++;
-	}
-	if (rpc_flags & RPC_FLAGS_NEW_DESC_ID)
-		rpc_new_desc_id_unlock(desc->type == RPC_RQ_CLT);
+	if (desc->type == RPC_RQ_SRV)
+		__flags |= __RPC_HEADER_FLAGS_SRV_REPLY;
+	__rpc_tx_elem_init(elem, desc->conn_set, nodes, desc->rpcid, __flags, size);
 
-	elem->h.from = kerrighed_node_id;
+	if (rpc_flags & RPC_FLAGS_NEW_DESC_ID)
+		rpc_new_desc_id_unlock(desc->comm, desc->type == RPC_RQ_CLT);
+
 	elem->h.client = desc->client;
 	elem->h.server = desc->server;
 	elem->h.desc_id = desc->desc_id;
 	elem->h.client_desc_id = desc->client_desc_id;
 	elem->h.seq_id = seq_id;
-	
-	elem->h.flags = __flags;
-	if(desc->type == RPC_RQ_SRV)
-		elem->h.flags |= __RPC_HEADER_FLAGS_SRV_REPLY;
-
-	elem->h.rpcid = desc->rpcid;
-
-	elem->iov[0].iov_base = &elem->h;
-	elem->iov[0].iov_len = sizeof(elem->h);
-	
-	elem->iov[1].iov_base = (void *) data;
-	elem->iov[1].iov_len = size;
-
-	elem->index = 0;
-	elem->link_seq_index = 0;
 
 	memcpy(elem->data, data, size);
-	elem->iov[1].iov_base = elem->data;
-		
-	__krgnodes_copy(&elem->nodes, nodes);	
 
-	preempt_disable();
-	engine = &per_cpu(tipc_tx_engine, smp_processor_id());
-	if (irqs_disabled()) {
-		/* Add the packet in the tx_queue */
-		lockdep_off();
-		spin_lock(&tipc_tx_queue_lock);
-		list_add_tail(&elem->tx_queue, &engine->delayed_tx_queue);
-		spin_unlock(&tipc_tx_queue_lock);
-		lockdep_on();
-
-		/* Schedule the work ASAP */
-		queue_work(krgcom_wq, &engine->delayed_tx_work.work);
-
-	} else {
-		int err = 0;
-
-		link_seq_index = 0;
-		__for_each_krgnode_mask(node, nodes){
-
-			err = __rpc_tx_elem_send(elem, link_seq_index, node);
-			if(err<0){
-				spin_lock_bh(&tipc_tx_queue_lock);
-				list_add_tail(&elem->tx_queue,
-						&engine->retx_queue);
-				spin_unlock_bh(&tipc_tx_queue_lock);
-				break;
-			}
-
-			link_seq_index++;
-		}
-
-		if(err>=0){
-			/* Add the packet in the not_retx_queue */
-			spin_lock_bh(&tipc_tx_queue_lock);
-			list_add_tail(&elem->tx_queue, &engine->not_retx_queue);
-			spin_unlock_bh(&tipc_tx_queue_lock);
-		}
-	}
-	preempt_enable();
+	__rpc_tx_elem_queue(elem);
 	return 0;
 }
 
@@ -699,20 +775,16 @@ int do_action(struct rpc_desc *desc, struct __rpc_header *h)
 		spin_unlock(&desc->desc_lock);
 		return rpc_handle_new(desc);
 	case RPC_STATE_WAIT1:
-		if (desc->type == RPC_RQ_CLT
-		    && desc->wait_from != h->server) {
-			spin_unlock(&desc->desc_lock);
+		if (desc->type == RPC_RQ_CLT && desc->wait_from != h->server)
 			break;
-		}
 	case RPC_STATE_WAIT:
-		desc->state = RPC_STATE_RUN;
-		wake_up_process(desc->thread);
-		spin_unlock(&desc->desc_lock);
+		rpc_desc_wake_up(desc);
 		break;
 	default:
-		spin_unlock(&desc->desc_lock);			
 		break;
 	}
+	spin_unlock(&desc->desc_lock);
+
 	return 0;
 }
 
@@ -824,9 +896,13 @@ int handle_valid_desc(struct rpc_desc *desc,
 	return err;
 }
 
-static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
+static
+struct rpc_desc *
+server_rpc_desc_setup(struct rpc_connection *conn, const struct __rpc_header *h)
 {
+	krgnodemask_t nodes;
 	struct rpc_desc *desc;
+	int err = -ENOMEM;
 
 	desc = rpc_desc_alloc();
 	if (!desc)
@@ -843,6 +919,25 @@ static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
 	// Since a RPC_RQ_CLT can only be received from one node:
 	// by choice, we decide to use 0 as the corresponding id
 	krgnode_set(0, desc->nodes);
+
+	rpc_communicator_get(conn->comm);
+	desc->comm = conn->comm;
+	/* Only RPC_CLOSE must be able to use an invalidated connection */
+	if (h->rpcid == RPC_CLOSE) {
+		BUG_ON(h->client != conn->peer);
+		desc->conn_set = __rpc_connection_set_alloc();
+		if (!desc->conn_set)
+			goto err_conn_set;
+		rpc_connection_get(conn);
+		desc->conn_set->conn[conn->peer] = conn;
+	} else {
+		nodes = krgnodemask_of_node(h->client);
+		desc->conn_set = rpc_connection_set_alloc(desc->comm, &nodes);
+		if (IS_ERR(desc->conn_set)) {
+			err = PTR_ERR(desc->conn_set);
+			goto err_conn_set;
+		}
+	}
 
 	desc->desc_id = h->desc_id;
 	desc->type = RPC_RQ_SRV;
@@ -864,23 +959,22 @@ static struct rpc_desc *server_rpc_desc_setup(const struct __rpc_header *h)
 	rpc_desc_get(desc);
 
 	BUG_ON(h->desc_id != desc->desc_id);
-	if (__hashtable_add(desc_srv[h->from], h->desc_id, desc))
-		goto err_hashtable;
-	desc->table = desc_srv[h->from];
+	rpc_desc_table_add(conn->desc_srv, desc);
+	desc->hash_lock = &conn->desc_done_lock;
 
 out:
 	return desc;
 
-err_hashtable:
-	rpc_desc_put(desc);
-	__rpc_emergency_send_buf_free(desc);
 err_emergency_send:
+	rpc_connection_set_put(desc->conn_set);
+err_conn_set:
+	rpc_communicator_put(desc->comm);
 	kmem_cache_free(rpc_desc_recv_cachep, desc->desc_recv[0]);
 err_desc_recv:
 	kmem_cache_free(rpc_desc_send_cachep, desc->desc_send);
 err_desc_send:
 	rpc_desc_put(desc);
-	return NULL;
+	return ERR_PTR(err);
 }
 
 /*
@@ -888,16 +982,18 @@ err_desc_send:
  * Packets are in the right order, so we have to find the corresponding
  * descriptor (if any).
  */
-static int tipc_handler_ordered(struct sk_buff *buf,
+static int tipc_handler_ordered(struct tipc_connection *conn,
+				struct sk_buff *buf,
 				unsigned const char* data,
 				unsigned int size)
 {
+	struct rpc_connection *rpc_conn = &conn->conn;
 	unsigned char const* iter;
 	struct __rpc_header *h;
 	struct rpc_desc *desc;
 	struct rpc_desc_elem* descelem;
 	struct rpc_desc_recv* desc_recv;
-	struct hashtable_t* desc_ht;
+	spinlock_t *hash_lock;
 	int err = 0;
 
 	iter = data;
@@ -906,15 +1002,18 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 
 	/* select the right array regarding the type of request:
 	   __RPC_HEADER_FLAGS_SRV_REPLY: we are the client side -> desc_clt
-	   else: we are the server side -> desc_srv[]
+	   else: we are the server side -> desc_srv
 	*/
-	desc_ht = (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY) ? desc_clt : desc_srv[h->from];
-
-	hashtable_lock(desc_ht);
 	if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
-		desc = __hashtable_find(desc_ht, h->client_desc_id);
+		hash_lock = &rpc_conn->comm->desc_clt_lock;
 	else
-		desc = __hashtable_find(desc_ht, h->desc_id);
+		hash_lock = &rpc_conn->desc_done_lock;
+
+	spin_lock(hash_lock);
+	if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
+		desc = rpc_desc_table_find(rpc_conn->comm->desc_clt, h->client_desc_id);
+	else
+		desc = rpc_desc_table_find(rpc_conn->desc_srv, h->desc_id);
 
 	if (desc) {
 
@@ -926,41 +1025,40 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 
 			// requesting desc is already closed (most probably an async request
 			// just discard this packet
-			hashtable_unlock(desc_ht);
+			spin_unlock(hash_lock);
 			goto out;
 
 		}else{
 
-			spin_lock(&rpc_desc_done_lock[h->from]);
-			if (unlikely(h->desc_id <= rpc_desc_done_id[h->from])) {
-
-				spin_unlock(&rpc_desc_done_lock[h->from]);
-				hashtable_unlock(desc_ht);
+			if (unlikely(h->desc_id <= rpc_conn->desc_done_id)) {
+				spin_unlock(hash_lock);
 				goto out;
-
 			}
 
-			rpc_desc_done_id[h->from] = h->desc_id;
-			spin_unlock(&rpc_desc_done_lock[h->from]);
-
-			desc = server_rpc_desc_setup(h);
-			if (!desc) {
+			desc = server_rpc_desc_setup(rpc_conn, h);
+			if (IS_ERR(desc)) {
 				/*
-				 * Drop the packet, but not silently.
+				 * Drop the packet, but not silently if this is
+				 * due to memory pressure.
 				 * tipc_handler() may decide to drop more pending
 				 * packets to decrease memory pressure, or keep
 				 * the packet and retry handling it later.
 				 */
-				hashtable_unlock(desc_ht);
-				err = -ENOMEM;
+				if (PTR_ERR(desc) == -ENOMEM)
+					err = -ENOMEM;
+				else
+					rpc_conn->desc_done_id = h->desc_id;
+				spin_unlock(hash_lock);
 				goto out;
 			}
+
+			rpc_conn->desc_done_id = h->desc_id;
 
 		}
 
 	}
 
-	BUG_ON(desc->table != desc_ht);
+	BUG_ON(desc->hash_lock != hash_lock);
 	if (h->flags & __RPC_HEADER_FLAGS_SRV_REPLY)
 		BUG_ON(desc->desc_id != h->client_desc_id);
 	else
@@ -969,12 +1067,11 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 	/* Optimization: do not allocate memory if we already know that it is
 	 * useless to.
 	 * If desc is valid after double check, desc_recv retrieved below will
-	 * be valid too, since hashtable's lock acts as a memory barrier between
+	 * be valid too, since hash_lock acts as a memory barrier between
 	 * the processor having allocated desc (and inserted it in the table)
 	 * and us.
 	 * If desc has a valid state here, as long as we do not release
-	 * hashtable's lock desc_recv retrieved below is valid too (see
-	 * rpc_end()).
+	 * hash_lock desc_recv retrieved below is valid too (see rpc_end()).
 	 */
 	switch (desc->type) {
 	case RPC_RQ_CLT:
@@ -997,19 +1094,19 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 	}
 	/* Is the transaction still accepting packets? */
 	if (!(desc->state & RPC_STATE_MASK_VALID) ||
-	    (desc_recv->flags & RPC_FLAGS_CLOSED)) {
-		hashtable_unlock(desc_ht);
+	    test_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags)) {
+		spin_unlock(hash_lock);
 		goto out_put;
 	}
 
-	hashtable_unlock(desc_ht);
+	spin_unlock(hash_lock);
 
 	descelem = kmem_cache_alloc(rpc_desc_elem_cachep, GFP_ATOMIC);
 	if (!descelem) {
 		/*
 		 * Same OOM handling as for new rpc_desc above, except that we
 		 * keep the rpc_desc, even if we just created it, because it is
-		 * now visible in the hashtable and it would just add
+		 * now visible in the hash table and it would just add
 		 * complexity to try to free it.
 		 */
 		err = -ENOMEM;
@@ -1027,7 +1124,7 @@ static int tipc_handler_ordered(struct sk_buff *buf,
 
 	/* Double-check withe desc->desc_lock held */
 	if (!(desc->state & RPC_STATE_MASK_VALID) ||
-	    (desc_recv->flags & RPC_FLAGS_CLOSED)) {
+	    test_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags)) {
 		// This side is closed. Discard the packet
 		spin_unlock(&desc->desc_lock);
 		rpc_desc_elem_free(descelem);
@@ -1046,42 +1143,47 @@ out:
 	return err;
 }
 
-static inline int handle_one_packet(kerrighed_node_t node,
+static inline int handle_one_packet(struct tipc_connection *conn,
 				    struct sk_buff *buf,
 				    unsigned char const *data,
 				    unsigned int size)
 {
-	int err;
+	const struct __rpc_header *h = (void *)data;
+	int err = 0;
 
-	err = tipc_handler_ordered(buf, data, size);
+	/* Silently drop packets sent after connection close */
+	if (!rpc_connection_check_state(&conn->conn, h->rpcid))
+		err = tipc_handler_ordered(conn, buf, data, size);
+	else
+		printk("krgrpc: Dropping packet after close "
+		       "(rpcid=%d from=%d desc_id=%lu seq_id=%lu)!\n",
+		       h->rpcid, h->from, h->desc_id, h->seq_id);
 	if (!err) {
-		if (node == kerrighed_node_id)
-			rpc_link_send_ack_id[node] = rpc_link_recv_seq_id[node];
-		rpc_link_recv_seq_id[node]++;
+		if (conn->conn.peer == kerrighed_node_id)
+			conn->send_ack_id = conn->recv_seq_id;
+		conn->recv_seq_id++;
 	}
 	return err;
 }
 
-static void schedule_run_rx_queue(struct rx_engine *engine);
+static void schedule_run_rx_queue(struct tipc_connection *conn);
 
-static void run_rx_queue(struct rx_engine *engine)
+static void run_rx_queue(struct tipc_connection *conn)
 {
 	struct sk_buff_head *queue;
-	kerrighed_node_t node;
 	struct sk_buff *buf;
 	struct __rpc_header *h;
 
-	node = engine->from;
-	queue = &engine->rx_queue;
+	queue = &conn->rx_queue;
 	while ((buf = skb_peek(queue))) {
 		h = (struct __rpc_header *)buf->data;
 
-		BUG_ON(h->link_seq_id < rpc_link_recv_seq_id[node]);
-		if (h->link_seq_id > rpc_link_recv_seq_id[node])
+		BUG_ON(h->link_seq_id < conn->recv_seq_id);
+		if (h->link_seq_id > conn->recv_seq_id)
 			break;
 
-		if (handle_one_packet(node, buf, buf->data, buf->len)) {
-			schedule_run_rx_queue(engine);
+		if (handle_one_packet(conn, buf, buf->data, buf->len)) {
+			schedule_run_rx_queue(conn);
 			break;
 		}
 
@@ -1092,16 +1194,26 @@ static void run_rx_queue(struct rx_engine *engine)
 
 static void run_rx_queue_worker(struct work_struct *work)
 {
-	struct rx_engine *engine =
-		container_of(work, struct rx_engine, run_rx_queue_work.work);
-	spin_lock_bh(&engine->rx_queue.lock);
-	run_rx_queue(engine);
-	spin_unlock_bh(&engine->rx_queue.lock);
+	struct tipc_connection *conn;
+
+	conn = container_of(work, struct tipc_connection, run_rx_queue_work.work);
+	spin_lock_bh(&conn->rx_queue.lock);
+	run_rx_queue(conn);
+	spin_unlock_bh(&conn->rx_queue.lock);
+	rpc_connection_put(&conn->conn);
 }
 
-static void schedule_run_rx_queue(struct rx_engine *engine)
+static void schedule_run_rx_queue(struct tipc_connection *conn)
 {
-	queue_delayed_work(krgcom_wq, &engine->run_rx_queue_work, HZ / 2);
+	int queued;
+
+	if (conn->conn.state == RPC_CONN_TIME_WAIT)
+		return;
+
+	rpc_connection_get(&conn->conn);
+	queued = queue_delayed_work(krgcom_wq, &conn->run_rx_queue_work, HZ / 2);
+	if (!queued)
+		rpc_connection_put(&conn->conn);
 }
 
 /*
@@ -1117,6 +1229,8 @@ static void tipc_handler(void *usr_handle,
 			 struct tipc_portid const *orig,
 			 struct tipc_name_seq const *dest)
 {
+	struct rpc_connection *rpc_conn;
+	struct tipc_connection *conn;
 	struct sk_buff_head *queue;
 	struct sk_buff *__buf;
 	struct __rpc_header *h;
@@ -1125,23 +1239,43 @@ static void tipc_handler(void *usr_handle,
 	h = (struct __rpc_header*)data;
 	BUG_ON(size != __buf->len);
 
-	queue = &tipc_rx_engine[h->from].rx_queue;
+	if (h->target_conn_id == -1) {
+		BUG_ON(h->rpcid != RPC_CONNECT);
+		if (h->link_ack_id != 0) {
+			__WARN();
+			return;
+		}
+		BUG_ON(h->link_seq_id != 1);
+		BUG_ON(h->seq_id != 1);
+		rpc_conn = rpc_handle_new_connection(h->from, h->source_conn_id,
+						     (struct rpc_connect_msg *)(h + 1));
+	} else {
+		rpc_conn = rpc_find_get_connection(h->target_conn_id);
+	}
+	if (!rpc_conn) {
+		__WARN();
+		return;
+	}
+	if (rpc_conn->peer_id == -1) {
+		if (rpc_handle_complete_connection(rpc_conn, h->source_conn_id)) {
+			__WARN();
+			return;
+		}
+	}
+
+	conn = to_ll(rpc_conn);
+	queue = &conn->rx_queue;
+
 	spin_lock(&queue->lock);
 
 	// Update the ack value sent by the other node
-	if (h->link_ack_id > rpc_link_send_ack_id[h->from]){
-		rpc_link_send_ack_id[h->from] = h->link_ack_id;
-		if(rpc_link_send_ack_id[h->from] - last_cleanup_ack[h->from]
-			> ack_cleanup_window_size){
-			int cpuid;
-			last_cleanup_ack[h->from] = h->link_ack_id;
-			for_each_online_cpu(cpuid){
-				struct tx_engine *engine = &per_cpu(tipc_tx_engine,
-									cpuid);
-				queue_delayed_work_on(cpuid, krgcom_wq,
-							&engine->cleanup_not_retx_work,0);
-
-			}
+	if (h->link_ack_id > conn->send_ack_id){
+		conn->send_ack_id = h->link_ack_id;
+		if ((conn->send_ack_id - conn->last_cleanup_ack
+			> ack_cleanup_window_size)
+		    || rpc_conn->state > RPC_CONN_ESTABLISHED) {
+			conn->last_cleanup_ack = h->link_ack_id;
+			cleanup_not_retx();
 		}
 
 	}
@@ -1149,22 +1283,23 @@ static void tipc_handler(void *usr_handle,
 	if (h->rpcid == RPC_ACK)
 		goto exit;
 
+	if (rpc_conn->state == RPC_CONN_TIME_WAIT)
+		goto exit;
+
 	// Check if we are not receiving an already received packet
-	if (h->link_seq_id < rpc_link_recv_seq_id[h->from]) {
-		krgnode_set(h->from, nodes_requiring_ack);
-		queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
+	if (h->link_seq_id < conn->recv_seq_id) {
+		send_acks(conn);
 		goto exit;
 	}
 
 	// Check if we are receiving lot of packets but sending none
-	if (consecutive_recv[h->from] >= max_consecutive_recv[h->from]){
-		krgnode_set(h->from, nodes_requiring_ack);
-		queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
-	}
-	consecutive_recv[h->from]++;
+	if (conn->consecutive_recv >= conn->max_consecutive_recv
+	    || rpc_conn->state > RPC_CONN_ESTABLISHED)
+		send_acks(conn);
+	conn->consecutive_recv++;
 
 	// Is-it the next ordered message ?
-	if (h->link_seq_id > rpc_link_recv_seq_id[h->from]) {
+	if (h->link_seq_id > conn->recv_seq_id) {
 		struct sk_buff *at;
 		unsigned long seq_id = h->link_seq_id;
 
@@ -1187,16 +1322,18 @@ static void tipc_handler(void *usr_handle,
 		goto exit;
 	}
 
-	if (handle_one_packet(h->from, __buf, data, size)) {
+	if (handle_one_packet(conn, __buf, data, size)) {
 		skb_get(__buf);
 		__skb_queue_head(queue, __buf);
-		schedule_run_rx_queue(&tipc_rx_engine[h->from]);
+		schedule_run_rx_queue(conn);
 	} else {
-		run_rx_queue(&tipc_rx_engine[h->from]);
+		run_rx_queue(conn);
 	}
 
  exit:
 	spin_unlock(&queue->lock);
+
+	rpc_connection_put(rpc_conn);
 }
 
 static
@@ -1308,39 +1445,99 @@ void krg_node_reachable(kerrighed_node_t nodeid){
 void krg_node_unreachable(kerrighed_node_t nodeid){
 }
 
-void rpc_enable_lowmem_mode(kerrighed_node_t nodeid){
-	max_consecutive_recv[nodeid] = MAX_CONSECUTIVE_RECV__LOWMEM_MODE;
+void
+rpc_enable_lowmem_mode(struct rpc_communicator *comm, kerrighed_node_t nodeid)
+{
+	struct rpc_connection *conn;
+	struct tipc_connection *ll;
 
-	krgnode_set(nodeid, nodes_requiring_ack);
-	queue_delayed_work(krgcom_wq, &tipc_ack_work, 0);
+	conn = rpc_communicator_get_connection(comm, nodeid);
+	if (!conn)
+		return;
+	ll = to_ll(conn);
+
+	ll->max_consecutive_recv = MAX_CONSECUTIVE_RECV__LOWMEM_MODE;
+	send_acks(ll);
+
+	rpc_connection_put(conn);
 }
 
-void rpc_disable_lowmem_mode(kerrighed_node_t nodeid){
-	max_consecutive_recv[nodeid] = MAX_CONSECUTIVE_RECV;
+void
+rpc_disable_lowmem_mode(struct rpc_communicator *comm, kerrighed_node_t nodeid)
+{
+	struct rpc_connection *conn;
+	struct tipc_connection *ll;
+
+	conn = rpc_communicator_get_connection(comm, nodeid);
+	if (!conn)
+		return;
+	ll = to_ll(conn);
+	ll->max_consecutive_recv = MAX_CONSECUTIVE_RECV;
+	rpc_connection_put(conn);
 }
 
-void rpc_enable_local_lowmem_mode(void){
-	int cpuid;
-
+void rpc_enable_local_lowmem_mode(struct rpc_communicator *comm)
+{
 	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE__LOWMEM_MODE;
-
-	for_each_online_cpu(cpuid){
-		struct tx_engine *engine = &per_cpu(tipc_tx_engine, cpuid);
-		queue_delayed_work_on(cpuid, krgcom_wq,
-			&engine->cleanup_not_retx_work, 0);
-	}
+	cleanup_not_retx();
 }
 
-void rpc_disable_local_lowmem_mode(void){
+void rpc_disable_local_lowmem_mode(struct rpc_communicator *comm)
+{
 	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE;
+}
+
+struct rpc_connection *
+rpc_connection_alloc_ll(struct rpc_communicator *comm, kerrighed_node_t node)
+{
+	struct tipc_connection *ll;
+
+	ll = kmalloc(sizeof(*ll), GFP_ATOMIC);
+	if (!ll)
+		return NULL;
+
+	atomic_long_set(&ll->send_seq_id, 0);
+	ll->send_ack_id = 0;
+	ll->last_cleanup_ack = 0;
+	skb_queue_head_init(&ll->rx_queue);
+	INIT_DELAYED_WORK(&ll->run_rx_queue_work, run_rx_queue_worker);
+	ll->recv_seq_id = 1;
+	INIT_LIST_HEAD(&ll->ack_list);
+	ll->consecutive_recv = 0;
+	ll->max_consecutive_recv = MAX_CONSECUTIVE_RECV;
+
+	return &ll->conn;
+}
+
+void rpc_connection_free_ll(struct rpc_connection *conn)
+{
+	struct tipc_connection *ll = to_ll(conn);
+	BUG_ON(!list_empty(&ll->ack_list));
+	BUG_ON(!skb_queue_empty(&ll->rx_queue));
+	kfree(ll);
+}
+
+void rpc_connection_kill_ll(struct rpc_connection *conn)
+{
+	struct tipc_connection *ll = to_ll(conn);
+
+	BUG_ON(conn->state != RPC_CONN_TIME_WAIT);
+
+	spin_lock_bh(&tipc_ack_list_lock);
+	if (!list_empty(&ll->ack_list))
+		list_del_init(&ll->ack_list);
+	spin_unlock_bh(&tipc_ack_list_lock);
+
+	cancel_delayed_work_sync(&ll->run_rx_queue_work);
+	spin_lock_bh(&ll->rx_queue.lock);
+	__skb_queue_purge(&ll->rx_queue);
+	spin_unlock_bh(&ll->rx_queue.lock);
 }
 
 int comlayer_init(void)
 {
 	int res = 0;
 	long i;
-
-	krgnodes_clear(nodes_requiring_ack);	
 
 	for_each_possible_cpu(i) {
 		struct tx_engine *engine = &per_cpu(tipc_tx_engine, i);
@@ -1361,16 +1558,6 @@ int comlayer_init(void)
 	krgcom_wq = create_workqueue("krgcom");
 
 	ack_cleanup_window_size = ACK_CLEANUP_WINDOW_SIZE;
-
-	for (i = 0; i < KERRIGHED_MAX_NODES; i++) {
-		tipc_rx_engine[i].from = i;
-		skb_queue_head_init(&tipc_rx_engine[i].rx_queue);
-		INIT_DELAYED_WORK(&tipc_rx_engine[i].run_rx_queue_work,
-				  run_rx_queue_worker);
-		last_cleanup_ack[i] = 0;
-		consecutive_recv[i] = 0;
-		max_consecutive_recv[i] = MAX_CONSECUTIVE_RECV;
-	}
 
 	tipc_net_id = kerrighed_session_id;
 

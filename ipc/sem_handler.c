@@ -9,8 +9,10 @@
 #include <linux/ipc_namespace.h>
 #include <linux/msg.h>
 #include <linux/sem.h>
+#include <linux/semaphore.h>
 #include <linux/nsproxy.h>
 #include <kddm/kddm.h>
+#include <kddm/kddm_flush_object.h>
 #include <kerrighed/pid.h>
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/hotplug.h>
@@ -295,9 +297,11 @@ found:
 	put_ipc_ns(ns);
 }
 
-void krg_ipc_sem_wakeup_process(struct sem_queue *q, int error)
+void krg_ipc_sem_wakeup_process(struct sem_array *sma, struct sem_queue *q,
+				int error)
 {
 	struct ipcsem_wakeup_msg msg;
+	struct rpc_communicator *comm;
 	struct rpc_desc *desc;
 
 	msg.requester = kerrighed_node_id;
@@ -305,7 +309,8 @@ void krg_ipc_sem_wakeup_process(struct sem_queue *q, int error)
 	msg.pid = remote_sleeper_pid(q); /* q->pid contains the tgid */
 	msg.error = error;
 
-	desc = rpc_begin(IPC_SEM_WAKEUP, q->node);
+	comm = sma->sem_perm.krgops->map_kddm_set->ns->rpc_comm;
+	desc = rpc_begin(IPC_SEM_WAKEUP, comm, q->node);
 	rpc_pack_type(desc, msg);
 	rpc_unpack_type(desc, msg.error);
 	rpc_end(desc, 0);
@@ -672,6 +677,39 @@ exit_wo_action:
 /*                                                                           */
 /*****************************************************************************/
 
+static int ipc_flusher(struct kddm_set *set, objid_t objid,
+		       struct kddm_obj *obj_entry, void *data)
+{
+	kerrighed_node_t node;
+
+	/*
+	 * TODO: choose a better node to flush to.
+	 * This may be done looking at the processes blocked.
+	 */
+	node = first_krgnode(krgnode_online_map);
+
+	return node;
+}
+
+int krg_sem_flush_set(struct ipc_namespace *ns)
+{
+	struct semkrgops *semops;
+
+	down_write(&sem_ids(ns).rw_mutex);
+
+	semops = container_of(sem_ids(ns).krgops, struct semkrgops, krgops);
+
+	_kddm_flush_set(semops->krgops.data_kddm_set, ipc_flusher, NULL);
+	_kddm_flush_set(semops->krgops.map_kddm_set, ipc_flusher, NULL);
+	_kddm_flush_set(semops->krgops.key_kddm_set, ipc_flusher, NULL);
+
+	_kddm_flush_set(semops->undo_list_kddm_set, ipc_flusher, NULL);
+
+	up_write(&sem_ids(ns).rw_mutex);
+
+	return 0;
+}
+
 int krg_sem_init_ns(struct ipc_namespace *ns)
 {
 	int r;
@@ -705,7 +743,7 @@ int krg_sem_init_ns(struct ipc_namespace *ns)
 	sem_ops->krgops.data_kddm_set = create_new_kddm_set(
 		kddm_def_ns, SEMARRAY_KDDM_ID, SEMARRAY_LINKER,
 		KDDM_RR_DEF_OWNER, sizeof(semarray_object_t),
-		KDDM_LOCAL_EXCLUSIVE);
+		KDDM_LOCAL_EXCLUSIVE | KDDM_NEED_SAFE_WALK);
 
 	if (IS_ERR(sem_ops->krgops.data_kddm_set)) {
 		r = PTR_ERR(sem_ops->krgops.data_kddm_set);
@@ -722,7 +760,8 @@ int krg_sem_init_ns(struct ipc_namespace *ns)
 		goto err_undolist;
 	}
 
-	init_unique_id_root(&sem_ops->undo_list_unique_id_root);
+	init_unique_id_root(UNIQUE_ID_SEMUNDO,
+			    &sem_ops->undo_list_unique_id_root);
 
 	sem_ops->krgops.ipc_lock = kcb_ipc_sem_lock;
 	sem_ops->krgops.ipc_unlock = kcb_ipc_sem_unlock;
@@ -751,6 +790,8 @@ void krg_sem_exit_ns(struct ipc_namespace *ns)
 
 		sem_ops = container_of(sem_ids(ns).krgops, struct semkrgops,
 				      krgops);
+
+		unregister_unique_id_root(UNIQUE_ID_SEMUNDO);
 
 		_destroy_kddm_set(sem_ops->undo_list_kddm_set);
 		_destroy_kddm_set(sem_ops->krgops.data_kddm_set);

@@ -17,12 +17,15 @@
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
+#include <linux/wait.h>
 #include <linux/kernel.h>
 #include <linux/fdtable.h>
 #include <linux/fs_struct.h>
 #include <linux/pid_namespace.h>
 #include <linux/rcupdate.h>
 #include <linux/uaccess.h>
+#include <linux/list.h>
+#include <linux/hash.h>
 #include <linux/notifier.h>
 #include <kerrighed/kerrighed_signal.h>
 #include <kerrighed/sys/types.h>
@@ -42,11 +45,28 @@
 #include <kerrighed/action.h>
 #include <kerrighed/migration.h>
 #include <kerrighed/hotplug.h>
+#include <kerrighed/workqueue.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include "remote_clone.h"
 #include "network_ghost.h"
 #include "epm_internal.h"
+
+struct zombie_migration {
+	struct work_struct work;
+	struct task_struct *task;
+	kerrighed_node_t target;
+};
+
+enum {
+	MIGRATION_WAIT_HASH_BITS = 9,
+	MIGRATION_WAIT_HASH_SIZE = (1 << MIGRATION_WAIT_HASH_BITS),
+
+	MIGRATION_WAIT_NORET = 1,
+};
+
+static struct hlist_head migration_waiters[MIGRATION_WAIT_HASH_SIZE];
+static DEFINE_SPINLOCK(migration_waiters_lock);
 
 #ifdef CONFIG_KRG_SCHED
 ATOMIC_NOTIFIER_HEAD(kmh_migration_send_start);
@@ -63,12 +83,74 @@ EXPORT_SYMBOL(kmh_migration_aborted);
 
 #define si_node(info)	(*(kerrighed_node_t *)&(info)._sifields._pad)
 
+static inline int migration_waiter_hashfn(struct task_struct *task)
+{
+	return hash_ptr(task, MIGRATION_WAIT_HASH_BITS);
+}
+
+static void migration_waiter_add(struct migration_wait *wait)
+{
+	struct hlist_head *head;
+
+	head = &migration_waiters[migration_waiter_hashfn(wait->task)];
+	spin_lock(&migration_waiters_lock);
+	hlist_add_head(&wait->node, head);
+	spin_unlock(&migration_waiters_lock);
+}
+
+static void migration_waiter_del(struct migration_wait *wait)
+{
+	spin_lock(&migration_waiters_lock);
+	hlist_del(&wait->node);
+	spin_unlock(&migration_waiters_lock);
+}
+
+void prepare_wait_for_migration(struct task_struct *task, struct migration_wait *wait)
+{
+	wait->task = task;
+	init_waitqueue_head(&wait->wqh);
+	wait->ret = MIGRATION_WAIT_NORET;
+	migration_waiter_add(wait);
+}
+
+void finish_wait_for_migration(struct migration_wait *wait)
+{
+	migration_waiter_del(wait);
+}
+
+int wait_for_migration(struct task_struct *task, struct migration_wait *wait)
+{
+	wait_event(wait->wqh, !krg_action_pending(task, EPM_MIGRATE));
+	return wait->ret == MIGRATION_WAIT_NORET ? 0 : wait->ret;
+}
+
+static void migration_wait_wake(struct task_struct *task, int ret)
+{
+	struct migration_wait *wait;
+	struct hlist_head *head;
+	struct hlist_node *pos;
+
+	head = &migration_waiters[migration_waiter_hashfn(task)];
+	spin_lock(&migration_waiters_lock);
+	hlist_for_each_entry(wait, pos, head, node)
+		if (wait->task == task) {
+			if (wait->ret == MIGRATION_WAIT_NORET)
+				wait->ret = ret;
+			wake_up(&wait->wqh);
+		}
+	spin_unlock(&migration_waiters_lock);
+}
+
 static int migration_implemented(struct task_struct *task)
 {
+	bool zombie = task->exit_state == EXIT_ZOMBIE;
 	int ret = 0;
 
+	if (!zombie && task->exit_state)
+		goto out;
+
 	if (!task->sighand->krg_objid || !task->signal->krg_objid
-	    || !task->task_obj || !task->children_obj
+	    || !task->task_obj || (!zombie && !task->children_obj)
 	    || (task->real_parent != baby_sitter
 		&& !is_container_init(task->real_parent)
 		&& !task->parent_children_obj))
@@ -85,8 +167,8 @@ static int migration_implemented(struct task_struct *task)
 
 	/* No kernel thread, no task sharing its VM */
 	if ((task->flags & PF_KTHREAD)
-	    || !task->mm
-	    || atomic_read(&task->mm->mm_ltasks) > 1)
+	    || (!zombie
+		&& (!task->mm || atomic_read(&task->mm->mm_ltasks) > 1)))
 		goto out_unlock;
 
 	/* No task sharing its signal handlers */
@@ -98,11 +180,13 @@ static int migration_implemented(struct task_struct *task)
 		goto out_unlock;
 
 	/* No task sharing its file descriptors table */
-	if (!task->files || atomic_read(&task->files->count) > 1)
+	if (!zombie
+	    && (!task->files || atomic_read(&task->files->count) > 1))
 		goto out_unlock;
 
 	/* No task sharing its fs_struct */
-	if (!task->fs || task->fs->users > 1)
+	if (!zombie
+	    && (!task->fs || task->fs->users > 1))
 		goto out_unlock;
 
 	ret = 1;
@@ -138,12 +222,49 @@ int may_migrate(struct task_struct *task)
 }
 EXPORT_SYMBOL(may_migrate);
 
-void migration_aborted(struct task_struct *tsk)
+void migration_aborted(struct task_struct *tsk, int ret)
 {
 #ifdef CONFIG_KRG_SCHED
 	atomic_notifier_call_chain(&kmh_migration_aborted, 0, tsk);
 #endif
 	krg_action_stop(tsk, EPM_MIGRATE);
+	migration_wait_wake(tsk, ret);
+}
+
+static int prepare_migrate(struct task_struct *task)
+{
+	int err;
+
+	err = hide_process(task);
+	if (err)
+		return err;
+
+	/*
+	 * Prevent the migrated task from removing the sighand_struct and
+	 * signal_struct copies before migration cleanup ends
+	 */
+	krg_sighand_pin(task->sighand);
+	krg_signal_pin(task->signal);
+	if (!task->exit_state)
+		mm_struct_pin(task->mm);
+
+	return err;
+}
+
+static void undo_migrate(struct task_struct *task)
+{
+	if (!task->exit_state)
+		mm_struct_unpin(task->mm);
+
+	krg_signal_writelock(task->signal);
+	krg_signal_unlock(task->signal);
+	krg_signal_unpin(task->signal);
+
+	krg_sighand_writelock(task->sighand->krg_objid);
+	krg_sighand_unlock(task->sighand->krg_objid);
+	krg_sighand_unpin(task->sighand);
+
+	unhide_process(task);
 }
 
 static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
@@ -151,7 +272,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 {
 	struct epm_action migration;
 	struct rpc_desc *desc;
-	pid_t remote_pid;
+	int retval;
 
 	BUG_ON(tsk == NULL);
 	BUG_ON(regs == NULL);
@@ -168,9 +289,19 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	if (!migration_implemented(tsk))
 		return -ENOSYS;
 
-	desc = rpc_begin(RPC_EPM_MIGRATE, target);
+	membership_online_hold();
+	retval = -ENONET;
+	if (!krgnode_online(target))
+		goto out;
+
+	retval = prepare_migrate(tsk);
+	if (retval)
+		goto out;
+
+	retval = -ENOMEM;
+	desc = rpc_begin(RPC_EPM_MIGRATE, task_active_pid_ns(tsk)->krg_ns->rpc_comm, target);
 	if (!desc)
-		return -ENOMEM;
+		goto err_undo;
 
 	migration.type = EPM_MIGRATE;
 	migration.migrate.pid = task_pid_knr(tsk);
@@ -178,78 +309,60 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	migration.migrate.source = kerrighed_node_id;
 	migration.migrate.start_date = current_kernel_time();
 
-	krg_unset_pid_location(tsk);
-
-	__krg_task_writelock(tsk);
-	leave_all_relatives(tsk);
-	__krg_task_unlock(tsk);
-
-	/*
-	 * Prevent the migrated task from removing the sighand_struct and
-	 * signal_struct copies before migration cleanup ends
-	 */
-	krg_sighand_pin(tsk->sighand);
-	krg_signal_pin(tsk->signal);
-	mm_struct_pin(tsk->mm);
-
-	remote_pid = send_task(desc, tsk, regs, &migration);
-
-	if (remote_pid < 0)
-		rpc_cancel(desc);
-	rpc_end(desc, 0);
-
-	if (remote_pid < 0) {
-		struct task_kddm_object *obj;
-
-		mm_struct_unpin(tsk->mm);
-
-		krg_signal_writelock(tsk->signal);
-		krg_signal_unlock(tsk->signal);
-		krg_signal_unpin(tsk->signal);
-
-		krg_sighand_writelock(tsk->sighand->krg_objid);
-		krg_sighand_unlock(tsk->sighand->krg_objid);
-		krg_sighand_unpin(tsk->sighand);
-
-		obj = __krg_task_writelock(tsk);
-		BUG_ON(!obj);
-		write_lock_irq(&tasklist_lock);
-		obj->task = tsk;
-		tsk->task_obj = obj;
-		write_unlock_irq(&tasklist_lock);
-		__krg_task_unlock(tsk);
-
-		join_local_relatives(tsk);
-
-		krg_set_pid_location(tsk);
+	retval = send_task(desc, tsk, regs, &migration);
+	if (retval < 0) {
+		rpc_cancel_sync(desc);
 	} else {
-		BUG_ON(remote_pid != task_pid_knr(tsk));
-		/* Do not notify a task having done vfork() */
-		cleanup_vfork_done(tsk);
+		BUG_ON(retval != task_pid_knr(tsk));
+		retval = 0;
 	}
 
-	return remote_pid > 0 ? 0 : remote_pid;
+	rpc_end(desc, 0);
+
+	if (retval)
+		goto err_undo;
+
+	/* Do not notify a task having done vfork() */
+	cleanup_vfork_done(tsk);
+
+out:
+	membership_online_release();
+
+	return retval;
+
+err_undo:
+	undo_migrate(tsk);
+	goto out;
 }
 
-static void krg_task_migrate(int sig, struct siginfo *info,
-			     struct pt_regs *regs)
+static int __krg_task_migrate(struct task_struct *tsk,
+			      struct pt_regs *regs,
+			      kerrighed_node_t target)
 {
-	struct task_struct *tsk = current;
 	int r = 0;
 
-	r = do_task_migrate(tsk, regs, si_node(*info));
+	r = do_task_migrate(tsk, regs, target);
 
 	if (!r) {
 #ifdef CONFIG_KRG_SCHED
 		atomic_notifier_call_chain(&kmh_migration_send_end, 0, NULL);
 #endif
-		do_exit_wo_notify(0); /* Won't return */
+		krg_action_stop(tsk, EPM_MIGRATE);
+		migration_wait_wake(tsk, 0);
+		return r;
 	}
 
 	/* Migration failed */
-	migration_aborted(tsk);
+	migration_aborted(tsk, r);
+	return r;
 }
 
+static void krg_task_migrate(int sig, struct siginfo *info,
+			     struct pt_regs *regs)
+{
+	if (!__krg_task_migrate(current, regs, si_node(*info)))
+		do_exit_wo_notify(0); /* Won't return */
+}
 /**
  *  Process migration handler.
  *  @author Renaud Lottiaux, Geoffroy Vallée
@@ -272,16 +385,68 @@ static void handle_migrate(struct rpc_desc *desc, void *msg, size_t size)
 	action->migrate.end_date = current_kernel_time();
 	atomic_notifier_call_chain(&kmh_migration_recv_end, 0, action);
 #endif
-	krg_action_stop(task, EPM_MIGRATE);
 
-	wake_up_new_task(task, CLONE_VM);
+	if (task->exit_state)
+		/* Never schedule an imported zombie */
+		put_task_struct(task);
+	else
+		wake_up_new_task(task, CLONE_VM);
+}
+
+static void zombie_migration_work(struct work_struct *work)
+{
+	struct zombie_migration *m;
+	struct task_struct *task;
+
+	m = container_of(work, struct zombie_migration, work);
+	task = m->task;
+
+	if (!__krg_task_migrate(task, task_pt_regs(task), m->target)) {
+		write_lock_irq(&tasklist_lock);
+		BUG_ON(task->exit_state != EXIT_ZOMBIE);
+		task->exit_state = EXIT_MIGRATION;
+		write_unlock_irq(&tasklist_lock);
+
+		release_task(task);
+	}
+
+	put_task_struct(task);
+	kfree(m);
+}
+
+static int do_migrate_zombie(struct task_struct *task, kerrighed_node_t target)
+{
+	struct zombie_migration *work;
+
+	work = kmalloc(sizeof(*work), GFP_ATOMIC);
+	if (!work)
+		return -ENOMEM;
+
+	INIT_WORK(&work->work, zombie_migration_work);
+	get_task_struct(task);
+	work->task = task;
+	work->target = target;
+	queue_work(krg_wq, &work->work);
+
+	return 0;
+}
+
+static int do_migrate_live(struct task_struct *task, kerrighed_node_t target)
+{
+	struct siginfo info;
+
+	info.si_errno = 0;
+	info.si_pid = 0;
+	info.si_uid = 0;
+	si_node(info) = target;
+
+	return send_kerrighed_signal(KRG_SIG_MIGRATE, &info, task);
 }
 
 /* Expects tasklist_lock locked */
 static int do_migrate_process(struct task_struct *task,
 			      kerrighed_node_t destination_node_id)
 {
-	struct siginfo info;
 	int retval;
 
 	if (!krgnode_online(destination_node_id))
@@ -304,14 +469,29 @@ static int do_migrate_process(struct task_struct *task,
 	atomic_notifier_call_chain(&kmh_migration_send_start, 0, task);
 #endif
 
-	info.si_errno = 0;
-	info.si_pid = 0;
-	info.si_uid = 0;
-	si_node(info) = destination_node_id;
-
-	retval = send_kerrighed_signal(KRG_SIG_MIGRATE, &info, task);
+	if (task->exit_state)
+		retval = do_migrate_zombie(task, destination_node_id);
+	else
+		retval = do_migrate_live(task, destination_node_id);
 	if (retval)
-		migration_aborted(task);
+		migration_aborted(task, retval);
+
+	if (task_pid_knr(current)) {
+		printk("kerrighed: migration of %d (%s) to node %d requested"
+		       " by %d (%s)\n",
+		       task_pid_knr(task), task->comm, destination_node_id,
+		       task_pid_knr(current), current->comm);
+
+	} else if (is_krgrpc_thread(current)) {
+		printk("kerrighed: migration of %d (%s) to node %d requested"
+		       " remotely\n",
+		       task_pid_knr(task), task->comm, destination_node_id);
+
+	} else {
+		printk("kerrighed: migration of %d (%s) to node %d requested"
+		       " by scheduler\n",
+		       task_pid_knr(task), task->comm, destination_node_id);
+	}
 
 	return retval;
 }
@@ -372,25 +552,48 @@ struct migration_request_msg {
 	kerrighed_node_t destination_node_id;
 };
 
-static int handle_migrate_remote_process(struct rpc_desc *desc,
-					 void *_msg, size_t size)
+static void handle_migrate_remote_process(struct rpc_desc *desc,
+					  void *_msg, size_t size)
 {
 	struct migration_request_msg msg;
+	struct migration_wait wait;
+	struct task_struct *task;
 	struct pid *pid;
 	const struct cred *old_cred;
-	int retval;
+	int retval, err;
 
 	pid = krg_handle_remote_syscall_begin(desc, _msg, size,
 					      &msg, &old_cred);
 	if (IS_ERR(pid)) {
 		retval = PTR_ERR(pid);
-		goto out;
+		goto cancel;
 	}
-	retval = __migrate_linux_threads(pid_task(pid, PIDTYPE_PID), msg.scope,
+	task = pid_task(pid, PIDTYPE_PID);
+
+	get_task_struct(task);
+	prepare_wait_for_migration(task, &wait);
+
+	retval = __migrate_linux_threads(task, msg.scope,
 					 msg.destination_node_id);
+	err = rpc_pack_type(desc, retval);
+
+	if (!err && !retval)
+		retval = wait_for_migration(task, &wait);
+	finish_wait_for_migration(&wait);
+	put_task_struct(task);
+
+	if (!err && !retval)
+		err = rpc_pack_type(desc, retval);
+	if (err)
+		goto cancel;
+
+end:
 	krg_handle_remote_syscall_end(pid, old_cred);
-out:
-	return retval;
+	return;
+
+cancel:
+	rpc_cancel(desc);
+	goto end;
 }
 
 static int migrate_remote_process(pid_t pid,
@@ -398,13 +601,40 @@ static int migrate_remote_process(pid_t pid,
 				  kerrighed_node_t destination_node_id)
 {
 	struct migration_request_msg msg;
+	struct rpc_desc *desc;
+	int ret, err;
 
 	msg.pid = pid;
 	msg.scope = scope;
 	msg.destination_node_id = destination_node_id;
 
-	return krg_remote_syscall_simple(PROC_REQUEST_MIGRATION, pid,
-					 &msg, sizeof(msg));
+	desc = krg_remote_syscall_begin(PROC_REQUEST_MIGRATION, pid,
+					&msg, sizeof(msg));
+	if (IS_ERR(desc))
+		return PTR_ERR(desc);
+
+	err = rpc_unpack_type(desc, ret);
+	__krg_remote_syscall_unlock(pid);
+	if (err)
+		goto cancel;
+	if (ret)
+		goto out_end;
+
+	/* Migration was successfully requested. Wait for its completion. */
+	err = rpc_unpack_type(desc, ret);
+	if (err)
+		goto cancel;
+
+out_end:
+	__krg_remote_syscall_end(desc);
+
+	return ret;
+
+cancel:
+	if (err > 0)
+		err = -EPIPE;
+	ret = err;
+	goto out_end;
 }
 
 int migrate_linux_threads(pid_t pid,
@@ -412,6 +642,7 @@ int migrate_linux_threads(pid_t pid,
 			  kerrighed_node_t dest_node)
 {
 	struct task_struct *task;
+	struct migration_wait wait;
 	int r;
 
 	/* Check the destination node */
@@ -427,8 +658,15 @@ int migrate_linux_threads(pid_t pid,
 		return migrate_remote_process(pid, scope, dest_node);
 	}
 
+	get_task_struct(task);
+	prepare_wait_for_migration(task, &wait);
 	r = __migrate_linux_threads(task, scope, dest_node);
 	rcu_read_unlock();
+
+	if (!r)
+		r = wait_for_migration(task, &wait);
+	finish_wait_for_migration(&wait);
+	put_task_struct(task);
 
 	return r;
 }
@@ -477,8 +715,8 @@ int epm_migration_start(void)
 	krg_handler[KRG_SIG_MIGRATE] = krg_task_migrate;
 	if (rpc_register_void(RPC_EPM_MIGRATE, handle_migrate, 0))
 		BUG();
-	if (rpc_register_int(PROC_REQUEST_MIGRATION,
-			     handle_migrate_remote_process, 0))
+	if (rpc_register_void(PROC_REQUEST_MIGRATION,
+			      handle_migrate_remote_process, 0))
 		BUG();
 
 	return 0;

@@ -44,6 +44,9 @@ int export_kddm_info_struct (struct epm_action *action,
 {
 	int r = 0;
 
+	if (tsk->exit_state)
+		return 0;
+
 	BUG_ON (tsk->kddm_info == NULL);
 
 	switch (action->type) {
@@ -58,6 +61,8 @@ int export_kddm_info_struct (struct epm_action *action,
 		  break;
 
 	  default:
+		  BUG();
+		  r = -EINVAL;
 		  break;
 	}
 
@@ -81,12 +86,17 @@ int import_kddm_info_struct (struct epm_action *action,
 	struct kddm_info_struct *kddm_info;
 	int r;
 
+	if (tsk->exit_state) {
+		tsk->kddm_info = NULL;
+		return 0;
+	}
+
 	switch (action->type) {
 	  case EPM_REMOTE_CLONE:
 		  r = initialize_kddm_info_struct (tsk);
 		  break;
 
-	  case EPM_CHECKPOINT:
+	  case EPM_RESTART:
 	  case EPM_MIGRATE:
 		  r = -ENOMEM;
 		  kddm_info = kmem_cache_alloc(kddm_info_cachep,
@@ -128,5 +138,6 @@ int import_kddm_info_struct (struct epm_action *action,
 
 void unimport_kddm_info_struct (struct task_struct *tsk)
 {
-	kmem_cache_free (kddm_info_cachep, tsk->kddm_info);
+	if (!tsk->exit_state)
+		kmem_cache_free (kddm_info_cachep, tsk->kddm_info);
 }

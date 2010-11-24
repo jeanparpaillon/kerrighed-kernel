@@ -3,12 +3,19 @@
 
 #include <linux/uio.h>
 #include <linux/list.h>
+#include <linux/hash.h>
 #include <linux/spinlock.h>
+#include <linux/rcupdate.h>
+#include <linux/workqueue.h>
 #include <linux/radix-tree.h>
 #include <linux/slab.h>
+#include <linux/kref.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
 #include <net/krgrpc/rpc.h>
+
+/* Packets are not expected to be retransmitted after 1 min */
+#define RPC_MAX_TTL 60 * HZ
 
 #define __RPC_HEADER_FLAGS_SIGNAL    (1<<0)
 #define __RPC_HEADER_FLAGS_SIGACK    (1<<1)
@@ -43,7 +50,48 @@ struct rpc_desc_recv {
 	struct list_head list_signal_head;
 	struct rpc_desc_elem *iter;
 	struct rpc_desc_elem *iter_provided;
-	int flags;
+	unsigned long flags;		     /* bitfield */
+};
+
+enum rpc_connection_state {
+	RPC_CONN_CLOSED,
+	RPC_CONN_SYNSENT,
+	RPC_CONN_ESTABLISHED_AUTOCLOSE,
+	RPC_CONN_ESTABLISHED,
+	RPC_CONN_AUTOCLOSING,
+	RPC_CONN_CLOSE_WAIT,
+	RPC_CONN_LAST_ACK,
+	RPC_CONN_FIN_WAIT_1,
+	RPC_CONN_FIN_WAIT_2,
+	RPC_CONN_CLOSING,
+	RPC_CONN_TIME_WAIT,
+};
+
+struct rpc_connect_msg {
+	int comm_id;
+};
+
+struct rpc_connection {
+	struct hlist_head desc_srv[RPC_DESC_TABLE_SIZE];
+	unsigned long desc_done_id;
+	spinlock_t desc_done_lock;
+	struct kref kref;
+	struct rpc_communicator *comm;
+	int id;
+	int peer_id;
+	kerrighed_node_t peer;
+	enum rpc_connection_state state;
+	unsigned int connect_pending:1;
+	spinlock_t state_lock;
+	struct completion close_done;
+	struct delayed_work kill_work;
+	struct delayed_work timeout_work;
+	struct rcu_head rcu;
+};
+
+struct rpc_connection_set {
+	struct rpc_connection *conn[KERRIGHED_MAX_NODES];
+	struct kref kref;
 };
 
 struct __rpc_synchro_tree {
@@ -91,6 +139,8 @@ struct rpc_service {
 
 struct __rpc_header {
 	kerrighed_node_t from;
+	int source_conn_id;
+	int target_conn_id;
 	kerrighed_node_t client;
 	kerrighed_node_t server;
 	unsigned long desc_id;
@@ -113,6 +163,7 @@ struct rpc_desc_elem {
 
 struct rpc_tx_elem {
 	krgnodemask_t nodes;
+	struct rpc_connection_set *conn_set;
 	kerrighed_node_t index;
 	kerrighed_node_t link_seq_index;
 	void *data;
@@ -124,13 +175,6 @@ struct rpc_tx_elem {
 
 extern struct rpc_service** rpc_services;
 
-struct hashtable_t;
-extern struct hashtable_t* desc_srv[KERRIGHED_MAX_NODES];
-extern struct hashtable_t* desc_clt;
-extern unsigned long rpc_desc_id;
-extern unsigned long rpc_desc_done_id[KERRIGHED_MAX_NODES];
-extern spinlock_t rpc_desc_done_lock[KERRIGHED_MAX_NODES];
-
 extern struct kmem_cache* rpc_desc_cachep;
 extern struct kmem_cache* rpc_desc_send_cachep;
 extern struct kmem_cache* rpc_desc_recv_cachep;
@@ -138,15 +182,10 @@ extern struct kmem_cache* rpc_desc_elem_cachep;
 extern struct kmem_cache* rpc_tx_elem_cachep;
 extern struct kmem_cache* __rpc_synchro_cachep;
 
-extern unsigned long rpc_mask[RPCID_MAX/(sizeof(unsigned long)*8)+1];
 extern spinlock_t waiting_desc_lock;
 extern struct list_head waiting_desc;
 
 extern struct list_head list_synchro_head;
-
-extern unsigned long rpc_link_send_seq_id[KERRIGHED_MAX_NODES];
-extern unsigned long rpc_link_send_ack_id[KERRIGHED_MAX_NODES];
-extern unsigned long rpc_link_recv_seq_id[KERRIGHED_MAX_NODES];
 
 struct rpc_desc* rpc_desc_alloc(void);
 struct rpc_desc_send* rpc_desc_send_alloc(void);
@@ -155,6 +194,54 @@ void rpc_desc_elem_free(struct rpc_desc_elem *elem);
 
 void rpc_desc_get(struct rpc_desc* desc);
 void rpc_desc_put(struct rpc_desc* desc);
+
+static inline int rpc_desc_hash_fn(unsigned long id)
+{
+	return hash_long(id, RPC_DESC_TABLE_BITS);
+}
+
+static inline
+struct rpc_desc *rpc_desc_table_find(struct hlist_head *table, unsigned long id)
+{
+	struct hlist_head *head;
+	struct rpc_desc *desc;
+	struct hlist_node *node;
+
+	head = &table[rpc_desc_hash_fn(id)];
+	hlist_for_each_entry(desc, node, head, list)
+		if (desc->desc_id == id)
+			return desc;
+	return NULL;
+}
+
+#define do_each_desc(desc, table) do {                                   \
+        struct hlist_node *____pos;                                      \
+        int ____i;                                                       \
+        for (____i = 0; ____i < RPC_DESC_TABLE_SIZE; ____i++) {          \
+                hlist_for_each_entry(desc, ____pos, &table[____i], list)
+
+#define while_each_desc(desc, table)                                     \
+        }                                                                \
+} while (0)
+
+static inline
+void rpc_desc_table_add(struct hlist_head *table, struct rpc_desc *desc)
+{
+	hlist_add_head(&desc->list, &table[rpc_desc_hash_fn(desc->desc_id)]);
+}
+
+static inline void rpc_desc_table_remove(struct rpc_desc *desc)
+{
+	hlist_del(&desc->list);
+}
+
+static inline void rpc_desc_table_init(struct hlist_head *table)
+{
+	int i;
+
+	for (i = 0; i < RPC_DESC_TABLE_SIZE; i++)
+		INIT_HLIST_HEAD(&table[i]);
+}
 
 void rpc_do_signal(struct rpc_desc *desc,
 		   struct rpc_desc_elem *signal_elem);
@@ -165,8 +252,11 @@ int __rpc_signalack(struct rpc_desc* desc);
 int rpc_handle_new(struct rpc_desc* desc);
 void rpc_wake_up_thread(struct rpc_desc *desc);
 
-void rpc_new_desc_id_lock(bool lock_table);
-void rpc_new_desc_id_unlock(bool unlock_table);
+void rpc_desc_wake_up(struct rpc_desc *desc);
+void rpc_desc_cancel_wait(struct rpc_desc *desc, kerrighed_node_t node);
+
+void rpc_new_desc_id_lock(struct rpc_communicator *comm, bool lock_table);
+void rpc_new_desc_id_unlock(struct rpc_communicator *comm, bool unlock_table);
 int __rpc_emergency_send_buf_alloc(struct rpc_desc *desc, size_t size);
 void __rpc_emergency_send_buf_free(struct rpc_desc *desc);
 int __rpc_send_ll(struct rpc_desc* desc,
@@ -179,6 +269,53 @@ int __rpc_send_ll(struct rpc_desc* desc,
 void __rpc_put_raw_data(void *raw);
 void __rpc_get_raw_data(void *raw);
 
+struct rpc_connection *
+rpc_connection_alloc_ll(struct rpc_communicator *comm, kerrighed_node_t node);
+void rpc_connection_free_ll(struct rpc_connection *connection);
+void rpc_connection_kill_ll(struct rpc_connection *connection);
+
+int
+rpc_connection_alloc(struct rpc_communicator *comm, kerrighed_node_t node);
+
+static inline void rpc_connection_get(struct rpc_connection *connection)
+{
+	kref_get(&connection->kref);
+}
+
+void rpc_connection_release(struct kref *kref);
+static inline void rpc_connection_put(struct rpc_connection *connection)
+{
+	kref_put(&connection->kref, rpc_connection_release);
+}
+
+struct rpc_connection *rpc_find_get_connection(int id);
+struct rpc_connection *rpc_handle_new_connection(kerrighed_node_t node,
+						 int peer_id,
+						 const struct rpc_connect_msg *msg);
+int rpc_handle_complete_connection(struct rpc_connection *conn, int peer_id);
+int rpc_connection_check_state(struct rpc_connection *conn, enum rpcid rpcid);
+void rpc_connection_last_ack(struct rpc_connection *conn);
+
+struct rpc_connection *
+rpc_communicator_get_connection(struct rpc_communicator *comm,
+				kerrighed_node_t node);
+
+struct rpc_connection_set *__rpc_connection_set_alloc(void);
+struct rpc_connection_set *
+rpc_connection_set_alloc(struct rpc_communicator *comm,
+			 const krgnodemask_t *nodes);
+
+static inline void rpc_connection_set_get(struct rpc_connection_set *set)
+{
+	kref_get(&set->kref);
+}
+
+void rpc_connection_set_release(struct kref *kref);
+static inline void rpc_connection_set_put(struct rpc_connection_set *set)
+{
+	kref_put(&set->kref, rpc_connection_set_release);
+}
+
 void __rpc_synchro_free(struct rpc_desc *desc);
 int rpc_synchro_lookup(struct rpc_desc* desc);
 
@@ -190,20 +327,6 @@ int comlayer_disable_dev(const char *name);
 int thread_pool_init(void);
 int rpclayer_init(void);
 int rpc_monitor_init(void);
-
-#define rpc_link_seq_id(p, node) \
-  __asm__ __volatile__( \
-    "lock xadd %%eax, %1" \
-    :"=a" (p), "=m" (rpc_link_send_seq_id[node]) \
-    :"a" (1) : "memory")
-
-#define rpc_desc_set_id(p) \
-  __asm__ __volatile__( \
-    "lock xadd %%eax, %1" \
-    :"=a" (p), "=m" (rpc_desc_id) \
-    :"a" (1) : "memory")
-
-#endif
 
 static inline bool rpc_desc_forwarded(struct rpc_desc *desc)
 {
@@ -239,3 +362,5 @@ void __rpc_synchro_put(struct __rpc_synchro *__rpc_synchro){
 				__rpc_synchro);
 	}
 }
+
+#endif /* __RPC_INTERNAL__ */

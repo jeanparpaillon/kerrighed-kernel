@@ -5,7 +5,7 @@
 #include <kerrighed/sys/types.h>
 
 /* Used by checkpoint/restart */
-int reserve_pid(pid_t pid);
+int reserve_pid(long app_id, pid_t pid);
 int krg_pid_link_task(pid_t pid);
 int __krg_pid_link_task(pid_t pid);
 int end_pid_reservation(pid_t pid);

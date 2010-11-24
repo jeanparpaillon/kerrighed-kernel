@@ -156,7 +156,10 @@ static ssize_t timerfd_read(struct file *file, char __user *buf, size_t count,
 	return res;
 }
 
-static const struct file_operations timerfd_fops = {
+#ifndef CONFIG_KRG_DVFS
+static
+#endif
+const struct file_operations timerfd_fops = {
 	.release	= timerfd_release,
 	.poll		= timerfd_poll,
 	.read		= timerfd_read,

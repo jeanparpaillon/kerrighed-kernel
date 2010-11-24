@@ -21,8 +21,7 @@ kerrighed_node_t global_pid_default_owner(struct kddm_set *set, objid_t objid,
 	if (node < 0 || node >= KERRIGHED_MAX_NODES)
 		/* Invalid ID */
 		node = kerrighed_node_id;
-	if (node != kerrighed_node_id
-	    && unlikely(!__krgnode_isset(node, nodes)))
+	if (!__krgnode_isset(node, nodes))
 		node = __next_krgnode_in_ring(node, nodes);
 	return node;
 }

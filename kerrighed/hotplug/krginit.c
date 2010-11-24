@@ -80,6 +80,10 @@ deffct(rpc);
 deffct(stream);
 #endif
 deffct(kddm);
+#ifdef CONFIG_KRG_HOTPLUG
+deffct(unique_ids_hotplug);
+#endif
+deffct(global_lock);
 deffct(kermm);
 #ifdef CONFIG_KRG_DVFS
 deffct(dvfs);
@@ -371,6 +375,16 @@ int init_kerrighed_upper_layers(void)
 		goto err_kddm;
 #endif
 
+#ifdef CONFIG_KRG_HOTPLUG
+	if (init_unique_ids_hotplug())
+		goto err_unique_ids_hotplug;
+#endif
+
+#ifdef CONFIG_KRG_KDDM
+	if (init_global_lock())
+		goto err_global_lock;
+#endif
+
 #ifdef CONFIG_KRG_EPM
 	if (init_ghost())
 		goto err_ghost;
@@ -465,6 +479,14 @@ int init_kerrighed_upper_layers(void)
 #ifdef CONFIG_KRG_MM
 	cleanup_kermm();
       err_kermm:
+#endif
+#ifdef CONFIG_KRG_KDDM
+	cleanup_global_lock();
+      err_global_lock:
+#endif
+#ifdef CONFIG_KRG_HOTPLUG
+	cleanup_unique_ids_hotplug();
+      err_unique_ids_hotplug:
 #endif
 #ifdef CONFIG_KRG_KDDM
 	cleanup_kddm();

@@ -17,7 +17,8 @@ struct epm_action;
 
 void prepare_to_export(struct task_struct *task)
 {
-	unlazy_fpu(task);
+	if (!task->exit_state)
+		unlazy_fpu(task);
 }
 
 /* struct thread_info */
@@ -98,24 +99,26 @@ int export_thread_struct(struct epm_action *action,
 {
 	int r = -EBUSY;
 
-	if (test_tsk_thread_flag(tsk, TIF_IO_BITMAP))
-		goto out;
+	if (!tsk->exit_state) {
+		if (test_tsk_thread_flag(tsk, TIF_IO_BITMAP))
+			goto out;
 #ifdef CONFIG_X86_DS
-	if (test_tsk_thread_flag(tsk, TIF_DS_AREA_MSR))
-		goto out;
+		if (test_tsk_thread_flag(tsk, TIF_DS_AREA_MSR))
+			goto out;
 #endif
 
 #ifdef CONFIG_X86_64
-	savesegment(gs, tsk->thread.gsindex);
-	savesegment(fs, tsk->thread.fsindex);
-	savesegment(es, tsk->thread.es);
-	savesegment(ds, tsk->thread.ds);
+		savesegment(gs, tsk->thread.gsindex);
+		savesegment(fs, tsk->thread.fsindex);
+		savesegment(es, tsk->thread.es);
+		savesegment(ds, tsk->thread.ds);
 
 #else /* CONFIG_X86_32 */
-	lazy_save_gs(tsk->thread.gs);
+		lazy_save_gs(tsk->thread.gs);
 
-	WARN_ON(tsk->thread.vm86_info);
+		WARN_ON(tsk->thread.vm86_info);
 #endif /* CONFIG_X86_32 */
+	}
 
 	r = ghost_write(ghost, &tsk->thread, sizeof (tsk->thread));
 	if (r)
@@ -135,6 +138,15 @@ int import_thread_struct(struct epm_action *action,
 	r = ghost_read(ghost, &tsk->thread, sizeof (tsk->thread));
 	if (r)
 		goto out;
+
+	/*
+	 * Make get_wchan return do_exit for zombies
+	 * We only set a marker to let copy_thread() do the right thing.
+	 */
+	if (tsk->exit_state)
+		tsk->thread.sp = ~0UL;
+	else
+		tsk->thread.sp = 0;
 
 	if (tsk->thread.xstate) {
 		r = -ENOMEM;

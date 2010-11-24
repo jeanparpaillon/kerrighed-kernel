@@ -37,11 +37,6 @@ pid_t send_task(struct rpc_desc *desc,
 
 	err = rpc_unpack_type(desc, pid_remote_task);
 	post_export_process(action, ghost, tsk);
-	if (err) {
-		if (err == RPC_EPIPE)
-			err = -EPIPE;
-		BUG_ON(err > 0);
-	}
 
 out_close:
 	ghost_close(ghost);
@@ -64,6 +59,8 @@ struct task_struct *recv_task(struct rpc_desc *desc, struct epm_action *action)
 	new_tsk = import_process(action, ghost);
 	if (IS_ERR(new_tsk))
 		goto err_close;
+
+	krg_action_stop(new_tsk, action->type);
 
 	pid = task_pid_knr(new_tsk);
 	err = rpc_pack_type(desc, pid);

@@ -14,8 +14,10 @@
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kerrighed/hotplug.h>
+#include <kerrighed/namespace.h>
 #include <kddm/kddm.h>
 #include "protocol_action.h"
+#include "internal.h"
 
 struct cluster_barrier *kddm_barrier;
 
@@ -24,6 +26,8 @@ extern kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
 						 const krgnodemask_t *nodes,
 						 int nr_nodes);
 
+int do_destroy_kddm_obj_entry(struct kddm_set *set, struct kddm_obj *obj_entry,
+			      objid_t objid);
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -31,19 +35,44 @@ extern kerrighed_node_t __kddm_io_default_owner (struct kddm_set *set,
  *                                                                          *
  *--------------------------------------------------------------------------*/
 
-struct browse_add_param {
+struct browse_data {
 	struct kddm_set *set;
 	krgnodemask_t new_nodes_map;
 	kerrighed_node_t new_nb_nodes;
 };
 
-static int add_browse_objects(unsigned long objid,
-			      void *_obj_entry,
-			      void *_data)
+static void fix_set_manager(void *_set, void *_data)
 {
-	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
+	struct browse_data *param = _data;
+	struct kddm_set *set = _set;
+	kerrighed_node_t new_kddm_mgr;
+	kddm_id_msg_t kddm_id;
+
+	/*
+	 * If another node has to become manager for a KDDM managed by this
+	 * node, force the new manager to fetch KDDM data structure.
+	 */
+
+	if (KDDM_SET_MGR(set) != kerrighed_node_id)
+		return;
+
+	new_kddm_mgr = __kddm_set_mgr(set, &param->new_nodes_map, param->new_nb_nodes);
+	if (new_kddm_mgr == kerrighed_node_id)
+		return;
+
+	kddm_id.set_id = set->id;
+	kddm_id.ns_id = set->ns->id;
+	rpc_sync(REQ_KDDM_CHANGE_MGR, set->ns->rpc_comm, new_kddm_mgr,
+		 &kddm_id, sizeof(kddm_id));
+}
+
+static int add_browse_objects(objid_t objid,
+			      struct kddm_obj *obj_entry,
+			      void *_data,
+			      struct kddm_obj_list **dead_list)
+{
 	kerrighed_node_t old_def_owner, new_def_owner;
-	struct browse_add_param *param = _data;
+	struct browse_data *param = _data;
 	struct kddm_set *set = param->set;
 
 	old_def_owner = kddm_io_default_owner (set, objid);
@@ -51,9 +80,16 @@ static int add_browse_objects(unsigned long objid,
 						&param->new_nodes_map,
 						param->new_nb_nodes);
 
-	if (new_def_owner == old_def_owner)
+	BUG_ON (!krgnode_isset(new_def_owner, param->new_nodes_map));
+
+	if ((new_def_owner == old_def_owner) &&
+	    (set->def_owner != KDDM_UNIQUE_ID_DEF_OWNER))
 		goto done;
 
+	/* TODO: in KDDM_UNIQUE_ID_DEF_OWNER case, we can also  consider the
+	 * job done if the new def_owner is not on a node we are adding.
+	 * If the new def_owner is on a node already present: nothing to do.
+	 */
 	switch (OBJ_STATE(obj_entry)) {
 	case READ_OWNER:
 	case WRITE_GHOST:
@@ -65,13 +101,16 @@ static int add_browse_objects(unsigned long objid,
 		if (new_def_owner == kerrighed_node_id)
 			break;
 		/* Inform the new owner a copy already exist */
-		request_change_prob_owner(set, objid, new_def_owner,
+		request_change_prob_owner(set, obj_entry, objid, new_def_owner,
 					  kerrighed_node_id);
 		break;
 
 	case INV_OWNER:
+		if (new_def_owner == kerrighed_node_id)
+			break;
 		/* Update the local default owner to the new one */
 		change_prob_owner(obj_entry, new_def_owner);
+		kddm_change_obj_state(set, obj_entry, objid, INV_COPY);
 		break;
 
 	case INV_COPY:
@@ -99,38 +138,51 @@ done:
 
 static void add_browse_sets(void *_set, void *_data)
 {
-	struct browse_add_param *param = _data;
+	struct browse_data *param = _data;
 	struct kddm_set *set = _set;
+
+	BUG_ON(set->state == KDDM_SET_LOCKED);
+	if (set->state != KDDM_SET_READY)
+		return;
 
 	BUG_ON(set->def_owner < 0);
 	BUG_ON(set->def_owner > KDDM_MAX_DEF_OWNER);
 
 	switch (set->def_owner) {
+	default:
+		if (krgnode_online(set->def_owner))
+			/*
+			 * The default owner is hard coded to an already online
+			 * node. Adding a node doesn't change anything for
+			 * this case.
+			 */
+			break;
+		/* Fallthrough */
+
 	case KDDM_RR_DEF_OWNER:
 	case KDDM_CUSTOM_DEF_OWNER:
+	case KDDM_UNIQUE_ID_DEF_OWNER:
 		param->set = set;
 		__for_each_kddm_object(set, add_browse_objects, _data);
-		break;
-
-	case KDDM_UNIQUE_ID_DEF_OWNER:
-		/* The unique_id default owners are hard-coded depending on
-		 * object ids. Adding a node doesn't change anything. */
-	default:
-		/* The default owner is hard coded to a given node.
-		 * Adding a node doesn't change anything for these cases.
-		 */
 		break;
 	};
 
 };
 
-static void set_add(krgnodemask_t * vector)
+static void set_add(struct hotplug_context *ctx)
 {
-	struct browse_add_param param;
+	krgnodemask_t *vector = &ctx->node_set.v;
+	struct browse_data param;
         kerrighed_node_t node;
 
-	if(__krgnode_isset(kerrighed_node_id, vector))
+	if (__krgnode_isset(kerrighed_node_id, vector)) {
+		BUG_ON(kddm_def_ns->rpc_comm);
+		rpc_communicator_get(ctx->ns->rpc_comm);
+		kddm_def_ns->rpc_comm = ctx->ns->rpc_comm;
+
+		rpc_enable(REQ_KDDM_CHANGE_MGR);
 		rpc_enable(KDDM_CHANGE_PROB_OWNER);
+	}
 
 	krgnodes_copy(param.new_nodes_map, krgnode_online_map);
 
@@ -143,6 +195,23 @@ static void set_add(krgnodemask_t * vector)
 	};
 
 	freeze_kddm();
+
+	cluster_barrier(kddm_barrier, &param.new_nodes_map,
+			__first_krgnode(&param.new_nodes_map));
+
+	/* Nodes being added are supposed to only have system KDDM sets. */
+	/*
+	 * WARNING: Fix map handling in
+	 * kddm_set.c:handle_req_kddm_set_change_mgr() whenever nodes being
+	 * added should also fix their KDDM sets
+	 */
+	if (krgnode_online(kerrighed_node_id))
+		__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
+					 fix_set_manager, &param);
+
+	/* Only required to keep an even number of invocations */
+	cluster_barrier(kddm_barrier, &param.new_nodes_map,
+			__first_krgnode(&param.new_nodes_map));
 
 	cluster_barrier(kddm_barrier, &param.new_nodes_map,
 			__first_krgnode(&param.new_nodes_map));
@@ -161,6 +230,9 @@ static void set_add(krgnodemask_t * vector)
 	if(!__krgnode_isset(kerrighed_node_id, vector))
 		return;
 
+	rpc_enable(REQ_KDDM_SET_LOOKUP);
+	rpc_enable(REQ_KDDM_SET_DESTROY);
+
 	rpc_enable(REQ_OBJECT_COPY);
 	rpc_enable(REQ_OBJECT_REMOVE);
 	rpc_enable(REQ_OBJECT_REMOVE_TO_MGR);
@@ -177,91 +249,365 @@ static void set_add(krgnodemask_t * vector)
 	rpc_enable(NO_OBJECT_SEND);
 }
 
-/**
- *
- * Remove related part
- *
- **/
+/*--------------------------------------------------------------------------*
+ *                                                                          *
+ *                                 NODE REMOVAL                             *
+ *                                                                          *
+ *--------------------------------------------------------------------------*/
 
-static int browse_remove(unsigned long objid, void *_obj_entry,
-			 void *_data)
+static atomic_t nr_kddm_server_synced;
+static DECLARE_WAIT_QUEUE_HEAD(all_kddm_server_synced_wqh);
+static atomic_t nr_object_server_synced;
+static DECLARE_WAIT_QUEUE_HEAD(all_object_server_synced_wqh);
+static atomic_t nr_object_server_may_block_synced;
+static DECLARE_WAIT_QUEUE_HEAD(all_object_server_may_block_synced_wqh);
+
+static int handle_req_kddm_server_sync(struct rpc_desc *desc, void *msg, size_t size)
 {
-	struct kddm_obj *obj_entry = _obj_entry;
-	struct kddm_set *kddm_set = (struct kddm_set *)_data;
+	if (atomic_inc_return(&nr_kddm_server_synced) == kddm_nb_nodes)
+		wake_up(&all_kddm_server_synced_wqh);
+	return 0;
+}
 
-	might_sleep();
+static void kddm_server_sync(void)
+{
+	struct rpc_desc *desc;
+	kerrighed_node_t node;
+	int dummy, err;
+
+	desc = rpc_begin_m(REQ_KDDM_SERVER_SYNC, kddm_def_ns->rpc_comm, &krgnode_kddm_map);
+	if (!desc)
+		OOM;
+
+	err = rpc_pack_type(desc, dummy);
+	if (err)
+		OOM;
+
+	for_each_krgnode_mask(node, krgnode_kddm_map) {
+		rpc_unpack_type_from(desc, node, dummy);
+	}
+
+	rpc_end(desc, 0);
+
+	wait_event(all_kddm_server_synced_wqh,
+		   atomic_read(&nr_kddm_server_synced) == kddm_nb_nodes);
+	/* Prepare next remove */
+	atomic_set(&nr_kddm_server_synced, 0);
+}
+
+static int handle_req_object_server_sync(struct rpc_desc *desc, void *msg, size_t size)
+{
+	if (atomic_inc_return(&nr_object_server_synced) == kddm_nb_nodes)
+		wake_up(&all_object_server_synced_wqh);
+	return 0;
+}
+
+static void object_server_sync(void)
+{
+	struct rpc_desc *desc;
+	kerrighed_node_t node;
+	int dummy, err;
+
+	desc = rpc_begin_m(REQ_OBJECT_SERVER_SYNC, kddm_def_ns->rpc_comm, &krgnode_kddm_map);
+	if (!desc)
+		OOM;
+
+	err = rpc_pack_type(desc, dummy);
+	if (err)
+		OOM;
+
+	for_each_krgnode_mask(node, krgnode_kddm_map) {
+		rpc_unpack_type_from(desc, node, dummy);
+	}
+
+	rpc_end(desc, 0);
+
+	wait_event(all_object_server_synced_wqh,
+		   atomic_read(&nr_object_server_synced) == kddm_nb_nodes);
+	/* Prepare next remove */
+	atomic_set(&nr_object_server_synced, 0);
+}
+
+static int handle_req_object_server_may_block_sync(struct rpc_desc *desc, void *msg, size_t size)
+{
+	if (atomic_inc_return(&nr_object_server_may_block_synced) == kddm_nb_nodes)
+		wake_up(&all_object_server_may_block_synced_wqh);
+	return 0;
+}
+
+static void object_server_may_block_sync(void)
+{
+	struct rpc_desc *desc;
+	kerrighed_node_t node;
+	int dummy, err;
+
+	desc = rpc_begin_m(REQ_OBJECT_SERVER_MAY_BLOCK_SYNC, kddm_def_ns->rpc_comm, &krgnode_kddm_map);
+	if (!desc)
+		OOM;
+
+	err = rpc_pack_type(desc, dummy);
+	if (err)
+		OOM;
+
+	for_each_krgnode_mask(node, krgnode_kddm_map) {
+		rpc_unpack_type_from(desc, node, dummy);
+	}
+
+	rpc_end(desc, 0);
+
+	wait_event(all_object_server_may_block_synced_wqh,
+		   atomic_read(&nr_object_server_may_block_synced) == kddm_nb_nodes);
+	/* Prepare next remove */
+	atomic_set(&nr_object_server_may_block_synced, 0);
+}
+
+static int remove_browse_objects_on_leaving_nodes(objid_t objid,
+						  struct kddm_obj *obj_entry,
+						  void *_data,
+						  struct kddm_obj_list **dead_list)
+{
+	struct browse_data *param = _data;
+	struct kddm_set *set = param->set;
+	int ret = 0;
+
 	switch (OBJ_STATE(obj_entry)) {
-	case READ_OWNER:
-		up (&kddm_def_ns->table_sem);
-		_kddm_flush_object(kddm_set, objid,
-				   krgnode_next_online_in_ring(kerrighed_node_id));
-		down (&kddm_def_ns->table_sem);
-		return -1;
-		break;
-
 	case READ_COPY:
-	case WRITE_GHOST:
+	case READ_OWNER:
 	case WRITE_OWNER:
-		// we have to flush this object
-		_kddm_flush_object(kddm_set, objid,
-				   krgnode_next_online_in_ring(kerrighed_node_id));
-		break;
-
+	case WRITE_GHOST:
+	case INV_FILLING:
 	case WAIT_ACK_INV:
 	case WAIT_OBJ_RM_ACK:
-		printk ("kddm_set_remove_cb: WAIT_ACK_INV: todo\n");
-		break;
-
+	case WAIT_OBJ_RM_ACK2:
 	case WAIT_ACK_WRITE:
 	case WAIT_CHG_OWN_ACK:
 	case WAIT_OBJ_READ:
 	case WAIT_OBJ_WRITE:
-		// here we have to check if there are some pending process...
-		// and may be we kill them
-		if (waitqueue_active
-		    (&obj_entry->waiting_tsk))
-			printk("we have some pending process in %lu %s (%x)\n",
-			       objid,
-			       STATE_NAME
-			       (OBJ_STATE(obj_entry)),
-			       OBJ_STATE(obj_entry));
-
-	case INV_OWNER:
-	case INV_COPY:
+	case WAIT_OBJ_RM_DONE:
+		printk ("WARNING !!!! KDDM remove: found object (%ld;%ld) "
+			"state %s\n", set->id, objid,
+			STATE_NAME(OBJ_STATE(obj_entry)));
 		break;
 
-	case WAIT_OBJ_RM_DONE:
-		PANIC ("Case not yet managed\n");
+	case INV_COPY:
+	case INV_OWNER:
+		do_destroy_kddm_obj_entry(set, obj_entry, objid);
+		ret = KDDM_OBJ_REMOVED;
+		break;
 
 	default:
-		STATE_MACHINE_ERROR
-			(kddm_set->id,
-			 objid, obj_entry);
+		STATE_MACHINE_ERROR (set->id, objid, obj_entry);
+		break;
+	}
+
+	return ret;
+};
+
+
+static int remove_browse_objects_on_remaining_nodes(objid_t objid,
+						    struct kddm_obj *obj_entry,
+						    void *_data,
+						    struct kddm_obj_list **dead_list)
+{
+	struct browse_data *param = _data;
+	struct kddm_set *set = param->set;
+	kerrighed_node_t old_def_owner, new_def_owner;
+
+	old_def_owner = kddm_io_default_owner (set, objid);
+	new_def_owner = __kddm_io_default_owner(set, objid,
+						&param->new_nodes_map,
+						param->new_nb_nodes);
+
+	switch (OBJ_STATE(obj_entry)) {
+	case READ_OWNER:
+	case WRITE_OWNER:
+	case WRITE_GHOST:
+		// Perhaps not usefull, at least for copyset
+		__krgnodes_and(COPYSET(obj_entry), COPYSET(obj_entry),
+			       &param->new_nodes_map, KERRIGHED_MAX_NODES);
+		__krgnodes_and(RMSET(obj_entry), RMSET(obj_entry),
+			       &param->new_nodes_map, KERRIGHED_MAX_NODES);
+
+		/* Fall through */
+
+	case WAIT_ACK_INV:
+	case WAIT_ACK_WRITE:
+	case WAIT_CHG_OWN_ACK:
+		BUG_ON (get_prob_owner(obj_entry) != kerrighed_node_id);
+		if (new_def_owner == kerrighed_node_id)
+			break;
+		/* Inform the new owner a copy already exist */
+		request_change_prob_owner(set, obj_entry, objid, new_def_owner,
+					  kerrighed_node_id);
+		break;
+
+	case WAIT_OBJ_RM_ACK:
+	case WAIT_OBJ_RM_ACK2:
+	case WAIT_OBJ_RM_DONE:
+	case WAIT_OBJ_WRITE:
+	case WAIT_OBJ_READ:
+	case READ_COPY:
+	case INV_COPY:
+		if(!krgnode_isset(get_prob_owner(obj_entry),
+				  param->new_nodes_map))
+			change_prob_owner(obj_entry, new_def_owner);
+		break;
+
+	case INV_OWNER:
+		if (new_def_owner == kerrighed_node_id)
+			break;
+		/* Update the local default owner to the new one */
+		change_prob_owner(obj_entry, new_def_owner);
+		kddm_change_obj_state(set, obj_entry, objid, INV_COPY);
+		break;
+
+	case INV_FILLING:
+		BUG();
+
+	default:
+		STATE_MACHINE_ERROR (set->id, objid, obj_entry);
 		break;
 	}
 
 	return 0;
 };
 
-static void kddm_set_remove_cb(void *_kddm_set, void *_data)
+
+static void remove_browse_sets(void *_set, void *_data)
 {
-	struct kddm_set *kddm_set = _kddm_set;
+	struct browse_data *param = _data;
+	struct kddm_set *set = _set;
 
-	__for_each_kddm_object(kddm_set, browse_remove, kddm_set);
+	if (set->state != KDDM_SET_READY)
+		return;
 
-};
+	param->set = set;
+	if (__krgnode_isset(kerrighed_node_id, &param->new_nodes_map))
+		___for_each_kddm_object(set,
+			       remove_browse_objects_on_remaining_nodes,
+			       _data);
+	else
+		___for_each_kddm_object(set,
+					remove_browse_objects_on_leaving_nodes,
+					_data);
+
+	if (param->new_nb_nodes)
+		fix_set_manager(set, param);
+}
+
+static int remove_browse_objects_on_remaining_nodes2(objid_t objid,
+						     struct kddm_obj *obj_entry,
+						     void *_data,
+						     struct kddm_obj_list **dead_list)
+{
+	struct browse_data *param = _data;
+	struct kddm_set *set = param->set;
+
+	switch (OBJ_STATE(obj_entry)) {
+	case READ_OWNER:
+	case WRITE_OWNER:
+	case WRITE_GHOST:
+	case INV_OWNER:
+		BUG_ON(get_prob_owner(obj_entry) != kerrighed_node_id);
+		break;
+
+	case WAIT_OBJ_RM_ACK:
+	case WAIT_OBJ_RM_ACK2:
+	case WAIT_OBJ_RM_DONE:
+	case WAIT_OBJ_WRITE:
+	case WAIT_OBJ_READ:
+	case INV_FILLING:
+		BUG();
+		break;
+
+	case READ_COPY:
+		break;
+
+	case INV_COPY:
+		if (get_prob_owner(obj_entry) == kerrighed_node_id)
+			kddm_change_obj_state(set, obj_entry, objid, INV_OWNER);
+		break;
+
+	default:
+		STATE_MACHINE_ERROR(set->id, objid, obj_entry);
+		break;
+	}
+
+	return 0;
+}
+
+static void remove_browse_sets2(void *_set, void *_data)
+{
+	struct browse_data *param = _data;
+	struct kddm_set *set = _set;
+
+	if (set->state != KDDM_SET_READY)
+		return;
+
+	param->set = set;
+	___for_each_kddm_object(set,
+				remove_browse_objects_on_remaining_nodes2,
+				_data);
+}
 
 static void set_remove(krgnodemask_t * vector)
 {
+	krgnodemask_t prev_kddm_map;
+	struct browse_data param;
 
-	printk("set_remove...\n");
-	return;
+	/* Compute new node map */
 
-	down (&kddm_def_ns->table_sem);
+	krgnodes_copy(param.new_nodes_map, krgnode_online_map);
+	param.new_nb_nodes = kerrighed_nb_nodes;
+
+	krgnodes_copy(prev_kddm_map, krgnode_kddm_map);
+
+	cluster_barrier(kddm_barrier, &krgnode_kddm_map,
+			__first_krgnode(&krgnode_kddm_map));
+
+	kddm_server_sync();
+	object_server_sync();
+	object_server_may_block_sync();
+
+	freeze_kddm();
+
+	cluster_barrier(kddm_barrier, &prev_kddm_map,
+			first_krgnode(prev_kddm_map));
+
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
-				 kddm_set_remove_cb, vector);
-	up (&kddm_def_ns->table_sem);
+				 remove_browse_sets, &param);
+
+	cluster_barrier(kddm_barrier, &prev_kddm_map,
+			first_krgnode(prev_kddm_map));
+
+	if(krgnode_isset(kerrighed_node_id, param.new_nodes_map)) {
+		__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
+					 remove_browse_sets2, &param);
+
+		kddm_nb_nodes = param.new_nb_nodes;
+		krgnodes_copy(krgnode_kddm_map, param.new_nodes_map);
+	}
+	else {
+		kddm_nb_nodes = 1;
+		krgnodes_clear(krgnode_kddm_map);
+		krgnode_set(kerrighed_node_id, krgnode_kddm_map);
+	}
+
+	/* TODO: remove the following useless barrier, as soon as the barrier
+	 * code will support odd number of calls to the same barrier.
+	 */
+	cluster_barrier(kddm_barrier, &prev_kddm_map,
+			first_krgnode(prev_kddm_map));
+
+	unfreeze_kddm();
 };
+
+static void set_remove_distant(struct hotplug_context *ctx)
+{
+	BUG_ON(kddm_def_ns->rpc_comm != ctx->ns->rpc_comm);
+	rpc_communicator_put(kddm_def_ns->rpc_comm);
+	kddm_def_ns->rpc_comm = NULL;
+}
 
 /**
  *
@@ -494,10 +840,10 @@ static void handle_select_owner(struct rpc_desc *desc)
  ** Per kddm_set callback
  **
  **/
-static int browse_clean_failure(unsigned long objid, void *_obj_entry,
-				void *_data)
+static int browse_clean_failure(objid_t objid, struct kddm_obj *obj_entry,
+				void *_data,
+				struct kddm_obj_list **dead_list)
 {
-	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
 	BUG_ON(!obj_entry);
 	CLEAR_FAILURE_FLAG(obj_entry);
 	return 0;
@@ -510,12 +856,12 @@ static void kddm_set_clean_failure_cb(void *_set, void *_data)
 	__for_each_kddm_object(set, browse_clean_failure, NULL);
 };
 
-static int browse_failure(unsigned long objid, void *_obj_entry,
-			  void *_data)
+static int browse_failure(objid_t objid, struct kddm_obj *obj_entry,
+			  void *_data,
+			  struct kddm_obj_list **dead_list)
 {
 	int correct_prob_owner = 0;
 	struct kddm_set * set = (struct kddm_set *)_data;
-	struct kddm_obj *obj_entry = (struct kddm_obj *)_obj_entry;
 
 	if(TEST_FAILURE_FLAG(obj_entry))
 		goto exit;
@@ -643,11 +989,11 @@ static void kddm_set_failure_cb(void *_set, void *_data)
 	__for_each_kddm_object(set, browse_failure, set);
 };
 
-static int browse_select_owner(objid_t objid, void *_obj_entry,
-			       void *_data)
+static int browse_select_owner(objid_t objid, struct kddm_obj *obj_entry,
+			       void *_data,
+			       struct kddm_obj_list **dead_list)
 {
 	krgnodemask_t *vector_fail = _data;
-	struct kddm_obj * obj_entry = (struct kddm_obj *)_obj_entry;
 
 	BUG_ON(!vector_fail);
 
@@ -725,21 +1071,28 @@ static void set_failure(krgnodemask_t * vector)
 static int kddm_notification(struct notifier_block *nb, hotplug_event_t event,
 			     void *data){
 	struct hotplug_context *ctx;
-	struct hotplug_node_set *node_set;
+
+	ctx = data;
 
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:
-		ctx = data;
-		set_add(&ctx->node_set.v);
+		set_add(ctx);
 		break;
-	case HOTPLUG_NOTIFY_REMOVE:
-		ctx = data;
+	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
+	case HOTPLUG_NOTIFY_REMOVE_ADVERT:
 		set_remove(&ctx->node_set.v);
 		break;
-	case HOTPLUG_NOTIFY_FAIL:
-		node_set = data;
-//		set_failure(&node_set->v);
+	case HOTPLUG_NOTIFY_REMOVE_DISTANT:
+		set_remove_distant(ctx);
 		break;
+
+	case HOTPLUG_NOTIFY_REMOVE_ACK:
+		/* Nothing to do */
+		break;
+
+	case HOTPLUG_NOTIFY_FAIL:
+		/* Not yet managed */
+		BUG();
 	default:
 		break;
 	}
@@ -753,6 +1106,16 @@ int kddm_hotplug_init(void){
 
 //	rpc_register(KDDM_COPYSET, handle_set_copyset, 0);
 //	rpc_register(KDDM_SELECT_OWNER, handle_select_owner, 0);
+
+	__rpc_register(REQ_KDDM_SERVER_SYNC,
+		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_INT,
+		       kddm_server, handle_req_kddm_server_sync, 0);
+	__rpc_register(REQ_OBJECT_SERVER_SYNC,
+		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_INT,
+		       object_server, handle_req_object_server_sync, 0);
+	__rpc_register(REQ_OBJECT_SERVER_MAY_BLOCK_SYNC,
+		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_INT,
+		       object_server_may_block, handle_req_object_server_may_block_sync, 0);
 
 	register_hotplug_notifier(kddm_notification, HOTPLUG_PRIO_KDDM);
 	return 0;

@@ -7,7 +7,24 @@
 
 #include <linux/list.h>
 #include <linux/spinlock.h>
+#include <linux/kref.h>
 #include <linux/errno.h>
+#include <linux/sched.h>
+
+struct rpc_connection;
+
+#define RPC_DESC_TABLE_BITS 5
+#define RPC_DESC_TABLE_SIZE (1 << RPC_DESC_TABLE_BITS)
+
+struct rpc_communicator {
+	unsigned long next_desc_id;
+	struct hlist_head desc_clt[RPC_DESC_TABLE_SIZE];
+	spinlock_t desc_clt_lock;
+	struct rpc_connection *conn[KERRIGHED_MAX_NODES];
+	unsigned long rpc_mask[(RPCID_MAX + BITS_PER_LONG - 1) / BITS_PER_LONG];
+	struct kref kref;
+	int id;
+};
 
 enum rpc_target {
 	RPC_TARGET_NODE,
@@ -21,14 +38,7 @@ enum rpc_handler {
 	RPC_HANDLER_MAX
 };
 
-enum rpc_error {
-	RPC_EOK = 0,
-	RPC_EINTR,
-	RPC_ESIGACK,
-	RPC_EPIPE,
-	RPC_ECLOSE,
-	RPC_EVAL,
-};
+#define ESIGACK 542
 
 enum {
 	__RPC_FLAGS_NOBLOCK, /* request async operation */
@@ -82,17 +92,19 @@ enum rpc_rq_state {
  | RPC_STATE_WAIT \
  | RPC_STATE_WAIT1)
 
+struct rpc_connection_set;
 struct rpc_service;
-struct hashtable_t;
 
 struct rpc_desc {
 	struct rpc_desc_send* desc_send;
 	struct rpc_desc_recv* desc_recv[KERRIGHED_MAX_NODES];
+	struct rpc_communicator *comm;
+	struct rpc_connection_set *conn_set;
 	struct rpc_service* service;
 	krgnodemask_t nodes;
 	enum rpc_rq_type type;
-	struct hashtable_t *table;
-	struct list_head list;
+	struct hlist_node list;
+	spinlock_t *hash_lock;
 	unsigned in_interrupt:1;
 	unsigned forwarded:1;
 	unsigned long desc_id;
@@ -141,9 +153,11 @@ int __rpc_register(enum rpcid rpcid,
 		   unsigned long flags);
 
 struct rpc_desc* rpc_begin_m(enum rpcid rpcid,
+			     struct rpc_communicator *comm,
 			     krgnodemask_t* nodes);
 
 int rpc_cancel(struct rpc_desc* desc);
+int rpc_cancel_sync(struct rpc_desc *desc);
 
 int rpc_pack(struct rpc_desc* desc, int flags, const void* data, size_t size);
 int rpc_wait_pack(struct rpc_desc* desc, int seq_id);
@@ -151,13 +165,13 @@ int rpc_cancel_pack(struct rpc_desc* desc);
 
 int rpc_forward(struct rpc_desc* desc, kerrighed_node_t node);
 
-enum rpc_error rpc_unpack(struct rpc_desc* desc, int flags, void* data, size_t size);
-enum rpc_error rpc_unpack_from(struct rpc_desc* desc, kerrighed_node_t node,
-			       int flags, void* data, size_t size);
+int rpc_unpack(struct rpc_desc* desc, int flags, void* data, size_t size);
+int rpc_unpack_from(struct rpc_desc* desc, kerrighed_node_t node,
+		    int flags, void* data, size_t size);
 void rpc_cancel_unpack(struct rpc_desc* desc);
 
+kerrighed_node_t rpc_check_return(struct rpc_desc *desc, int *value);
 kerrighed_node_t rpc_wait_return(struct rpc_desc* desc, int* value);
-int rpc_wait_return_from(struct rpc_desc* desc, kerrighed_node_t node);
 int rpc_wait_all(struct rpc_desc *desc);
 
 int rpc_signal(struct rpc_desc* desc, int sigid);
@@ -168,10 +182,12 @@ void rpc_free_buffer(struct rpc_data *buf);
 
 s64 rpc_consumed_bytes(void);
 
-void rpc_enable_lowmem_mode(kerrighed_node_t nodeid);
-void rpc_disable_lowmem_mode(kerrighed_node_t nodeid);
-void rpc_enable_local_lowmem_mode(void);
-void rpc_disable_local_lowmem_mode(void);
+void
+rpc_enable_lowmem_mode(struct rpc_communicator *comm, kerrighed_node_t nodeid);
+void
+rpc_disable_lowmem_mode(struct rpc_communicator *comm, kerrighed_node_t nodeid);
+void rpc_enable_local_lowmem_mode(struct rpc_communicator *comm);
+void rpc_disable_local_lowmem_mode(struct rpc_communicator *comm);
 
 /*
  * Convenient define
@@ -211,23 +227,25 @@ int rpc_register(enum rpcid rpcid,
 
 static inline
 struct rpc_desc* rpc_begin(enum rpcid rpcid,
+			   struct rpc_communicator *comm,
 			   kerrighed_node_t node){
 	krgnodemask_t nodes;
 
 	krgnodes_clear(nodes);
 	krgnode_set(node, nodes);
 
-	return rpc_begin_m(rpcid, &nodes);
+	return rpc_begin_m(rpcid, comm, &nodes);
 };
 
 static inline
 int rpc_async_m(enum rpcid rpcid,
+		struct rpc_communicator *comm,
 		krgnodemask_t* nodes,
 		const void* data, size_t size){
 	struct rpc_desc* desc;
 	int err = -ENOMEM;
 
-	desc = rpc_begin_m(rpcid, nodes);
+	desc = rpc_begin_m(rpcid, comm, nodes);
 	if (!desc)
 		goto out;
 
@@ -242,6 +260,7 @@ out:
 
 static inline
 int rpc_async(enum rpcid rpcid,
+	      struct rpc_communicator *comm,
 	      kerrighed_node_t node,
 	      const void* data, size_t size){
 	krgnodemask_t nodes;
@@ -249,11 +268,12 @@ int rpc_async(enum rpcid rpcid,
 	krgnodes_clear(nodes);
 	krgnode_set(node, nodes);
 	
-	return rpc_async_m(rpcid, &nodes, data, size);
+	return rpc_async_m(rpcid, comm, &nodes, data, size);
 };
 
 static inline
 int rpc_sync_m(enum rpcid rpcid,
+	       struct rpc_communicator *comm,
 	       krgnodemask_t* nodes,
 	       const void* data, size_t size){
 	struct rpc_desc *desc;
@@ -261,7 +281,7 @@ int rpc_sync_m(enum rpcid rpcid,
 	int i;
 
 	r = -ENOMEM;
-	desc = rpc_begin_m(rpcid, nodes);
+	desc = rpc_begin_m(rpcid, comm, nodes);
 	if (!desc)
 		goto out;
 
@@ -294,6 +314,7 @@ out:
 
 static inline
 int rpc_sync(enum rpcid rpcid,
+	     struct rpc_communicator *comm,
 	     kerrighed_node_t node,
 	     const void* data, size_t size){
 	krgnodemask_t nodes;
@@ -301,7 +322,7 @@ int rpc_sync(enum rpcid rpcid,
 	krgnodes_clear(nodes);
 	krgnode_set(node, nodes);
 	
-	return rpc_sync_m(rpcid, &nodes, data, size);
+	return rpc_sync_m(rpcid, comm, &nodes, data, size);
 };
 
 void rpc_enable(enum rpcid rpcid);
@@ -314,8 +335,31 @@ int rpc_enable_dev(const char *name);
 void rpc_disable_alldev(void);
 int rpc_disable_dev(const char *name);
 
+static inline void rpc_communicator_get(struct rpc_communicator *communicator)
+{
+	kref_get(&communicator->kref);
+}
+void rpc_communicator_release(struct kref *kref);
+static inline
+void rpc_communicator_put(struct rpc_communicator *communicator)
+{
+	kref_put(&communicator->kref, rpc_communicator_release);
+}
+struct rpc_communicator *rpc_find_get_communicator(int id);
+
+int rpc_connect(struct rpc_communicator *comm, kerrighed_node_t node);
+void rpc_close(struct rpc_communicator *comm, kerrighed_node_t node);
+
+int rpc_connect_mask(struct rpc_communicator *comm, const krgnodemask_t *nodes);
+void rpc_close_mask(struct rpc_communicator *comm, const krgnodemask_t *nodes);
+
 kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc);
 
 extern struct task_struct *first_krgrpc;
 extern struct files_struct krgrpc_files;
+
+static inline int is_krgrpc_thread(struct task_struct *task)
+{
+	return (task->files == &krgrpc_files);
+}
 #endif

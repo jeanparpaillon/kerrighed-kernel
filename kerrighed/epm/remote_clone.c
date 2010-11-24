@@ -13,6 +13,7 @@
 #include <kerrighed/krginit.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/pid.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/hotplug.h>
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
@@ -49,7 +50,6 @@ int krg_do_fork(unsigned long clone_flags,
 	struct epm_action remote_clone;
 	struct rpc_desc *desc;
 	struct completion vfork;
-	pid_t remote_pid = -1;
 	int retval = -ENOSYS;
 
 	if (!cluster_started)
@@ -83,10 +83,16 @@ int krg_do_fork(unsigned long clone_flags,
 	if (distant_node < 0 || distant_node == kerrighed_node_id)
 		goto out_action_stop;
 
+	membership_online_hold();
+	retval = -ENONET;
+	if (!krgnode_online(distant_node))
+		goto out_release;
+
 	retval = -ENOMEM;
-	desc = rpc_begin(RPC_EPM_REMOTE_CLONE, distant_node);
+	desc = rpc_begin(RPC_EPM_REMOTE_CLONE,
+			 current->nsproxy->krg_ns->rpc_comm, distant_node);
 	if (!desc)
-		goto out_action_stop;
+		goto out_release;
 
 	remote_clone.type = EPM_REMOTE_CLONE;
 	remote_clone.remote_clone.target = distant_node;
@@ -102,13 +108,16 @@ int krg_do_fork(unsigned long clone_flags,
 		remote_clone.remote_clone.vfork = &vfork;
 	}
 
-	remote_pid = send_task(desc, task, regs, &remote_clone);
+	retval = send_task(desc, task, regs, &remote_clone);
 
-	if (remote_pid < 0)
-		rpc_cancel(desc);
+	if (retval < 0)
+		rpc_cancel_sync(desc);
 	rpc_end(desc, 0);
 
-	if (remote_pid > 0 && (clone_flags & CLONE_VFORK)) {
+out_release:
+	membership_online_release();
+
+	if (retval > 0 && (clone_flags & CLONE_VFORK)) {
 		freezer_do_not_count();
 		wait_for_completion(&vfork);
 		freezer_count();
@@ -118,7 +127,7 @@ out_action_stop:
 	krg_action_stop(task, EPM_REMOTE_CLONE);
 
 out:
-	return remote_pid;
+	return retval;
 }
 
 static void handle_remote_clone(struct rpc_desc *desc, void *msg, size_t size)
@@ -131,8 +140,6 @@ static void handle_remote_clone(struct rpc_desc *desc, void *msg, size_t size)
 		rpc_cancel(desc);
 		return;
 	}
-
-	krg_action_stop(task, EPM_REMOTE_CLONE);
 
 	wake_up_new_task(task, CLONE_VM);
 }
@@ -157,6 +164,9 @@ int export_vfork_done(struct epm_action *action,
 {
 	struct vfork_done_proxy proxy;
 	int retval = 0;
+
+	if (task->exit_state)
+		return 0;
 
 	switch (action->type) {
 	case EPM_MIGRATE:
@@ -208,6 +218,9 @@ int import_vfork_done(struct epm_action *action,
 	struct vfork_done_proxy tmp_proxy;
 	int retval = 0;
 
+	if (task->exit_state)
+		return 0;
+
 	switch (action->type) {
 	case EPM_MIGRATE:
 		if (!task->vfork_done)
@@ -245,6 +258,10 @@ out:
 void unimport_vfork_done(struct task_struct *task)
 {
 	struct completion *vfork_done = task->vfork_done;
+
+	if (task->exit_state)
+		return;
+
 	if (vfork_done && task->remote_vfork_done)
 		vfork_done_proxy_free((struct vfork_done_proxy *)vfork_done);
 }
@@ -270,9 +287,11 @@ static void handle_vfork_done(struct rpc_desc *desc, void *data, size_t size)
 void krg_vfork_done(struct completion *vfork_done)
 {
 	struct vfork_done_proxy *proxy = (struct vfork_done_proxy *)vfork_done;
+	struct krg_namespace *ns = find_get_krg_ns();
 
-	rpc_async(PROC_VFORK_DONE, proxy->waiter_node,
+	rpc_async(PROC_VFORK_DONE, ns->rpc_comm, proxy->waiter_node,
 		  &proxy->waiter_vfork_done, sizeof(proxy->waiter_vfork_done));
+	put_krg_ns(ns);
 	vfork_done_proxy_free(proxy);
 }
 

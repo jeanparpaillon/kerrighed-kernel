@@ -434,10 +434,9 @@ static int get_local_tasks_stop_result(struct app_struct* app)
 		} else if (t->task->state == TASK_DEAD) {
 			/* Process is zombie !! */
 			r = -E_CR_TASKDEAD;
-			ckpt_err(NULL, r,
-				 "Process %d (%s) of application %ld is dead"
-				 " or zombie",
-				 t->task->pid, t->task->comm, app->app_id);
+			app_error("freeze", r, app->app_id,
+				  "Process %d (%s) is dead or zombie",
+				  t->task->pid, t->task->comm);
 			goto exit;
 		}
 		if (!r)
@@ -547,6 +546,7 @@ int export_application(struct epm_action *action,
 	long app_id = -1;
 
 	BUG_ON(!task);
+	BUG_ON(action->type == EPM_RESTART);
 
 	/* leave an application if no more checkpointable */
 	if (!cap_raised(task->krg_caps.effective, CAP_CHECKPOINTABLE) &&
@@ -582,7 +582,9 @@ int import_application(struct epm_action *action,
 	if (r)
 		goto out;
 
-	if (action->type == EPM_CHECKPOINT)
+	BUG_ON(action->type == EPM_CHECKPOINT);
+
+	if (action->type == EPM_RESTART)
 		return 0;
 
 	if (!cap_raised(task->krg_caps.effective, CAP_CHECKPOINTABLE))
@@ -649,10 +651,10 @@ static int local_prepare_stop(struct app_struct *app)
 
 			r = krg_action_start(tsk->task, EPM_CHECKPOINT);
 			if (r) {
-				ckpt_err(NULL, r,
-					 "krg_action_start fails for "
-					 "process %d %s",
-					 tsk->task->pid, tsk->task->comm);
+				app_error("freeze", r, app->app_id,
+					  "krg_action_start fails for "
+					  "process %d %s",
+					  tsk->task->pid, tsk->task->comm);
 				goto error;
 			}
 
@@ -790,7 +792,12 @@ int global_stop(struct app_kddm_object *obj)
 	msg.requester = kerrighed_node_id;
 	msg.app_id = obj->app_id;
 
-	desc = rpc_begin_m(APP_STOP, &obj->nodes);
+	desc = rpc_begin_m(APP_STOP, kddm_def_ns->rpc_comm, &obj->nodes);
+	if (!desc) {
+		r = -ENOMEM;
+		goto out;
+	}
+
 	err_rpc = rpc_pack_type(desc, msg);
 	if (err_rpc)
 		goto err_rpc;
@@ -819,15 +826,16 @@ int global_stop(struct app_kddm_object *obj)
 	if (err_rpc)
 		goto err_rpc;
 
-exit:
+out_end:
 	rpc_end(desc, 0);
+out:
 	return r;
 
 err_rpc:
 	r = err_rpc;
 error:
 	rpc_cancel(desc);
-	goto exit;
+	goto out_end;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -843,8 +851,13 @@ static void __continue_task(task_state_t *tsk, int first_run)
 
 	if (!first_run)
 		complete(&tsk->checkpoint.completion);
-	else
-		wake_up_new_task(tsk->task, CLONE_VM);
+	else {
+		/* Never schedule an imported zombie */
+		if (tsk->task->exit_state)
+			put_task_struct(tsk->task);
+		else
+			wake_up_new_task(tsk->task, CLONE_VM);
+	}
 }
 
 static void __local_continue(struct app_struct *app, int first_run)
@@ -909,7 +922,11 @@ static int global_continue(struct app_kddm_object *obj)
 	else
 		msg.first_run = 0;
 
-	desc = rpc_begin_m(APP_CONTINUE, &obj->nodes);
+	desc = rpc_begin_m(APP_CONTINUE, kddm_def_ns->rpc_comm, &obj->nodes);
+	if (!desc) {
+		r = -ENOMEM;
+		goto out;
+	}
 
 	r = rpc_pack_type(desc, msg);
 	if (r)
@@ -918,14 +935,14 @@ static int global_continue(struct app_kddm_object *obj)
 	/* waiting results from the node hosting the application */
 	r = app_wait_returns_from_nodes(desc, obj->nodes);
 
-exit:
+out_end:
 	rpc_end(desc, 0);
-
+out:
 	return r;
 
 err_rpc:
 	rpc_cancel(desc);
-	goto exit;
+	goto out_end;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -1015,7 +1032,9 @@ static int global_kill(struct app_kddm_object *obj, int signal)
 	msg.app_id = obj->app_id;
 	msg.signal = signal;
 
-	desc = rpc_begin_m(APP_KILL, &obj->nodes);
+	desc = rpc_begin_m(APP_KILL, kddm_def_ns->rpc_comm, &obj->nodes);
+	if (!desc)
+		goto out;
 
 	r = rpc_pack_type(desc, msg);
 	if (r)
@@ -1027,14 +1046,14 @@ static int global_kill(struct app_kddm_object *obj, int signal)
 	/* waiting results from the node hosting the application */
 	r = app_wait_returns_from_nodes(desc, obj->nodes);
 
-exit:
+out_end:
 	rpc_end(desc, 0);
-
+out:
 	return r;
 
 err_rpc:
 	rpc_cancel(desc);
-	goto exit;
+	goto out_end;
 }
 
 int global_unfreeze(struct app_kddm_object *obj, int signal)
@@ -1198,29 +1217,37 @@ exit:
 	return r;
 }
 
-void do_ckpt_msg(int err, char *fmt, ...)
-{
-	va_list args;
-	char *buffer;
-
-	va_start(args, fmt);
-	buffer = kvasprintf(GFP_KERNEL, fmt, args);
-	va_end(args);
-
-	if (buffer) {
-		printk("%s\n", buffer);
-		kfree(buffer);
-	} else
-		printk("WARNING: Memory is low\n"
-		       "Chekpoint/Restart operation failed with error %d\n",
-		       err);
-}
-
 /*--------------------------------------------------------------------------*
  *                                                                          *
  *          APPLICATION CHECKPOINT SERVER MANAGEMENT                        *
  *                                                                          *
  *--------------------------------------------------------------------------*/
+
+static int app_flusher(struct kddm_set *set, objid_t objid,
+		       struct kddm_obj *obj_entry, void *data)
+{
+	struct app_kddm_object *app = obj_entry->object;
+	kerrighed_node_t node;
+
+	node = global_pid_default_owner(set, objid,
+					&krgnode_online_map,
+					num_online_krgnodes());
+	if (!krgnode_isset(node, app->nodes)) {
+		krgnodemask_t nodes;
+
+		krgnodes_and(nodes, app->nodes, krgnode_online_map);
+		node = first_krgnode(nodes);
+		if (node == KERRIGHED_MAX_NODES)
+			node = first_krgnode(krgnode_online_map);
+	}
+
+	return node;
+}
+
+void application_remove_local(void)
+{
+	_kddm_flush_set(app_kddm_set, app_flusher, NULL);
+}
 
 void application_cr_server_init(void)
 {

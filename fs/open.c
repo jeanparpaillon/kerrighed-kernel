@@ -319,6 +319,13 @@ static long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 	if (!file)
 		goto out;
 
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		error = krg_faf_ftruncate(file, length, small);
+		goto out_putf;
+	}
+#endif
+
 	/* explicitly opened as large or we are on 64-bit box */
 	if (file->f_flags & O_LARGEFILE)
 		small = 0;
@@ -408,6 +415,14 @@ SYSCALL_DEFINE(fallocate)(int fd, int mode, loff_t offset, loff_t len)
 		goto out;
 	if (!(file->f_mode & FMODE_WRITE))
 		goto out_fput;
+
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		ret = krg_faf_fallocate(file, mode, offset, len);
+		goto out_fput;
+	}
+#endif
+
 	/*
 	 * Revalidate the write permissions, in case security policy has
 	 * changed since the files were opened.
@@ -617,6 +632,13 @@ SYSCALL_DEFINE2(fchmod, unsigned int, fd, mode_t, mode)
 	if (!file)
 		goto out;
 
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		err = krg_faf_fchmod(file, mode);
+		goto out_putf;
+	}
+#endif
+
 	dentry = file->f_path.dentry;
 	inode = dentry->d_inode;
 
@@ -770,6 +792,13 @@ SYSCALL_DEFINE3(fchown, unsigned int, fd, uid_t, user, gid_t, group)
 	file = fget(fd);
 	if (!file)
 		goto out;
+
+#ifdef CONFIG_KRG_FAF
+	if (file->f_flags & O_FAF_CLT) {
+		error = krg_faf_fchown(file, user, group);
+		goto out_fput;
+	}
+#endif
 
 	error = mnt_want_write(file->f_path.mnt);
 	if (error)

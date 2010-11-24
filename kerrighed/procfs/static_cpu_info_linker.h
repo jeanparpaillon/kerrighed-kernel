@@ -39,6 +39,7 @@ extern struct kddm_set *static_cpu_info_kddm_set;
  *--------------------------------------------------------------------------*/
 
 int static_cpu_info_init(void);
+void init_static_cpu_info_objects(void);
 
 /** Helper function to get static CPU informations.
  *  @author Renaud Lottiaux

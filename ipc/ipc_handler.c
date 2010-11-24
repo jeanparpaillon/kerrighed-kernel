@@ -372,11 +372,15 @@ void ipc_procfs_exit(void)
 void ipc_handler_init(void)
 {
 	ipc_procfs_start();
+
+	ipc_hotplug_init();
 }
 
 void ipc_handler_finalize(void)
 {
 	ipc_procfs_exit();
+
+	ipc_hotplug_cleanup();
 }
 
 #endif

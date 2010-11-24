@@ -4,6 +4,7 @@
 #define __FAF_H__
 
 #include <linux/types.h>
+#include <linux/list.h>
 #include <linux/namei.h>
 
 struct file;
@@ -18,6 +19,8 @@ struct statfs;
  *--------------------------------------------------------------------------*/
 
 typedef struct faf_client_data {
+	struct list_head list;
+	unsigned server_dead:1;
 	kerrighed_node_t server_id;
 	int server_fd;
 	unsigned long f_flags;
@@ -59,7 +62,22 @@ long krg_faf_ioctl(struct file *file, unsigned int cmd,
 long krg_faf_fstat(struct file *file, struct kstat *stat);
 long krg_faf_fstatfs(struct file *file, struct statfs *statfs);
 long krg_faf_fsync(struct file *file);
+long krg_faf_ftruncate(struct file *file, loff_t length, int small);
 long krg_faf_flock(struct file *file, unsigned int cmd);
+int krg_faf_fchmod(struct file *file, mode_t mode);
+int krg_faf_fchown(struct file *file, uid_t user, gid_t group);
+long krg_faf_fallocate(struct file *file, int mode, loff_t offset, loff_t len);
+
+struct timespec;
+int krg_faf_utimes(struct file *file, struct timespec *times, int flags);
+
+int krg_faf_fsetxattr(struct file *file, const char __user *name,
+		      const void __user *value, size_t size, int flags);
+ssize_t krg_faf_fgetxattr(struct file *file, const char __user *name,
+			  void __user *value, size_t size);
+ssize_t krg_faf_flistxattr(struct file *file, char __user *list, size_t size);
+int krg_faf_fremovexattr(struct file *file, const char __user *name);
+
 char *krg_faf_d_path(const struct file *file, char *buffer, int size, bool *deleted);
 char *krg_faf_phys_d_path(const struct file *file, char *buff, int size, bool *deleted);
 int krg_faf_do_path_lookup(struct file *file, const char *name,

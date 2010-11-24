@@ -14,14 +14,21 @@ extern struct workqueue_struct *krg_ha_wq;
 
 extern struct work_struct fail_work;
 
+extern struct mutex hotplug_mutex;
+
 int hooks_start(void);
 void hooks_stop(void);
 
 struct hotplug_context;
 
+int hotplug_queue_request(struct hotplug_context *ctx);
+int hotplug_start_request(struct hotplug_context *ctx);
+void hotplug_finish_request(struct hotplug_context *ctx);
+
 int do_cluster_start(struct hotplug_context *ctx);
 int __nodes_add(struct hotplug_context *ctx);
-int self_remove(struct krg_namespace *ns);
+void local_add_done(struct rpc_desc *desc);
+void self_remove(struct krg_namespace *ns);
 
 int repair_monitor(void);
 void update_heartbeat(void);

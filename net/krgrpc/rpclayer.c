@@ -15,7 +15,6 @@
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/krgnodemask.h>
-#include <linux/hashtable.h>
 
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
@@ -30,19 +29,19 @@ kerrighed_node_t rpc_desc_get_client(struct rpc_desc *desc){
 	return desc->client;
 }
 
-void rpc_new_desc_id_lock(bool lock_table)
+void rpc_new_desc_id_lock(struct rpc_communicator *comm, bool lock_table)
 {
 	if (!irqs_disabled())
 		local_bh_disable();
 	spin_lock(&lock_id);
 	if (lock_table)
-		hashtable_lock(desc_clt);
+		spin_lock(&comm->desc_clt_lock);
 }
 
-void rpc_new_desc_id_unlock(bool unlock_table)
+void rpc_new_desc_id_unlock(struct rpc_communicator *comm, bool unlock_table)
 {
 	if (unlock_table)
-		hashtable_unlock(desc_clt);
+		spin_unlock(&comm->desc_clt_lock);
 	spin_unlock(&lock_id);
 	if (!irqs_disabled())
 		local_bh_enable();
@@ -62,23 +61,15 @@ int __rpc_send(struct rpc_desc* desc,
 		if (desc->desc_id == 0) {
 			bool is_client = desc->type == RPC_RQ_CLT;
 
-			BUG_ON(desc->table);
+			BUG_ON(desc->hash_lock);
 
-			rpc_new_desc_id_lock(is_client);
+			rpc_new_desc_id_lock(desc->comm, is_client);
 
-			rpc_desc_set_id(desc->desc_id);
+			desc->desc_id = desc->comm->next_desc_id++;
 			if (is_client) {
 				desc->client_desc_id = desc->desc_id;
-				if (__hashtable_add(desc_clt, desc->desc_id,
-						    desc)) {
-					rpc_new_desc_id_unlock(true);
-
-					desc->desc_id = 0;
-					desc->client_desc_id = 0;
-
-					return -ENOMEM;
-				}
-				desc->table = desc_clt;
+				rpc_desc_table_add(desc->comm->desc_clt, desc);
+				desc->hash_lock = &desc->comm->desc_clt_lock;
 			}
 
 			/* Calls rpc_new_desc_id_unlock() on success */
@@ -88,11 +79,10 @@ int __rpc_send(struct rpc_desc* desc,
 					    rpc_flags | RPC_FLAGS_NEW_DESC_ID);
 			if (err) {
 				if (is_client) {
-					__hashtable_remove(desc_clt,
-							   desc->desc_id);
-					desc->table = NULL;
+					rpc_desc_table_remove(desc);
+					desc->hash_lock = NULL;
 				}
-				rpc_new_desc_id_unlock(is_client);
+				rpc_new_desc_id_unlock(desc->comm, is_client);
 
 				desc->desc_id = 0;
 				desc->client_desc_id = 0;
@@ -126,6 +116,7 @@ int __rpc_send(struct rpc_desc* desc,
 }
 
 struct rpc_desc* rpc_begin_m(enum rpcid rpcid,
+			     struct rpc_communicator *comm,
 			     krgnodemask_t* nodes)
 {
 	struct rpc_desc* desc;
@@ -150,18 +141,27 @@ struct rpc_desc* rpc_begin_m(enum rpcid rpcid,
 			goto oom_free_desc_recv;
 	}
 
+	rpc_communicator_get(comm);
+	desc->comm = comm;
+	desc->conn_set = rpc_connection_set_alloc(desc->comm, &desc->nodes);
+	if (IS_ERR(desc->conn_set))
+		goto oom_free_desc_recv;
+
 	desc->rpcid = rpcid;
 	desc->service = rpc_services[rpcid];
 	desc->client = kerrighed_node_id;
 
 	if (__rpc_emergency_send_buf_alloc(desc, 0))
-		goto oom_free_desc_recv;
+		goto oom_free_conn_set;
 
 	desc->state = RPC_STATE_RUN;
 
 	return desc;
 
+oom_free_conn_set:
+	rpc_connection_set_put(desc->conn_set);
 oom_free_desc_recv:
+	rpc_communicator_put(desc->comm);
 	for_each_krgnode_mask(i, desc->nodes)
 		if (desc->desc_recv[i])
 			kmem_cache_free(rpc_desc_recv_cachep,
@@ -248,6 +248,7 @@ int __rpc_end_unpack_clean(struct rpc_desc* desc)
 int rpc_end(struct rpc_desc* desc, int flags)
 {
 	struct rpc_desc_send *rpc_desc_send;
+	spinlock_t *hash_lock;
 	int err;
 
 	lockdep_off();
@@ -272,17 +273,19 @@ int rpc_end(struct rpc_desc* desc, int flags)
 		BUG();
 	}
 
-	spin_lock_bh(&desc->desc_lock);
-	hashtable_lock(desc->table);
+	hash_lock = desc->hash_lock;
+	if (hash_lock) {
+		spin_lock_bh(hash_lock);
+		spin_lock(&desc->desc_lock);
 
-	desc->state = RPC_STATE_END;
+		desc->state = RPC_STATE_END;
 
-	__hashtable_remove(desc->table, desc->desc_id);
-	BUG_ON(__hashtable_find(desc->table, desc->desc_id));
+		rpc_desc_table_remove(desc);
+		desc->hash_lock = NULL;
 
-	hashtable_unlock(desc->table);
-	desc->table = NULL;
-	spin_unlock_bh(&desc->desc_lock);
+		spin_unlock(&desc->desc_lock);
+		spin_unlock_bh(hash_lock);
+	}
 
 	__rpc_emergency_send_buf_free(desc);
 
@@ -291,6 +294,9 @@ int rpc_end(struct rpc_desc* desc, int flags)
 	kmem_cache_free(rpc_desc_send_cachep, rpc_desc_send);
 
 	__rpc_end_unpack_clean(desc);
+
+	rpc_connection_set_put(desc->conn_set);
+	rpc_communicator_put(desc->comm);
 
 	if(desc->__synchro)
 		__rpc_synchro_put(desc->__synchro);
@@ -349,7 +355,7 @@ void rpc_cancel_unpack_from(struct rpc_desc *desc, kerrighed_node_t node)
 
 	BUG_ON(rpc_desc_forwarded(desc));
 
-	desc_recv->flags |= RPC_FLAGS_CLOSED;
+	set_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags);
 	/* TODO: send a notification to the sender so that it stops sending */
 }
 
@@ -371,6 +377,31 @@ int rpc_cancel(struct rpc_desc* desc){
 }
 
 static
+int __rpc_unpack_from_node(struct rpc_desc *desc, kerrighed_node_t node,
+			   int flags, void *data, size_t size);
+
+int rpc_cancel_sync(struct rpc_desc *desc)
+{
+	kerrighed_node_t node;
+	struct rpc_data data;
+	int err;
+
+	err = rpc_cancel_pack(desc);
+	if (err)
+		return err;
+
+	for_each_krgnode_mask(node, desc->nodes) {
+		do {
+			err = __rpc_unpack_from_node(desc, node, RPC_FLAGS_NOCOPY, &data, 0);
+			if (!err)
+				rpc_free_buffer(&data);
+		} while (err != -ECANCELED);
+	}
+
+	return 0;
+}
+
+static
 struct rpc_desc *
 forward_rpc_desc_setup(struct rpc_desc *desc, kerrighed_node_t target)
 {
@@ -385,7 +416,14 @@ forward_rpc_desc_setup(struct rpc_desc *desc, kerrighed_node_t target)
 		goto err_desc_send;
 	/* fwd_desc->desc_recv = NULL; */
 
+	rpc_communicator_get(desc->comm);
+	fwd_desc->comm = desc->comm;
 	krgnode_set(target, fwd_desc->nodes);
+	fwd_desc->conn_set = rpc_connection_set_alloc(fwd_desc->comm,
+						      &fwd_desc->nodes);
+	if (IS_ERR(fwd_desc->conn_set))
+		goto err_conn_set;
+
 	/* First __rpc_send() will set fwd_desc->desc_id */
 	fwd_desc->type = RPC_RQ_FWD;
 	fwd_desc->client = desc->client;
@@ -394,7 +432,7 @@ forward_rpc_desc_setup(struct rpc_desc *desc, kerrighed_node_t target)
 	fwd_desc->rpcid = desc->rpcid;
 	/* fwd_desc->service = NULL; */
 	/* fwd_desc->thread = NULL; */
-	/* fwd_desc->table = NULL; */
+	/* fwd_desc->hash_lock = NULL; */
 
 	if (__rpc_emergency_send_buf_alloc(fwd_desc, 0))
 		goto err_emergency_buf;
@@ -404,6 +442,9 @@ forward_rpc_desc_setup(struct rpc_desc *desc, kerrighed_node_t target)
 	return fwd_desc;
 
 err_emergency_buf:
+	rpc_connection_set_put(fwd_desc->conn_set);
+err_conn_set:
+	rpc_communicator_put(fwd_desc->comm);
 	kmem_cache_free(rpc_desc_send_cachep, fwd_desc->desc_send);
 err_desc_send:
 	rpc_desc_put(fwd_desc);
@@ -413,6 +454,8 @@ err_desc_send:
 static void forward_rpc_desc_cleanup(struct rpc_desc *desc)
 {
 	__rpc_emergency_send_buf_free(desc);
+	rpc_connection_set_put(desc->conn_set);
+	rpc_communicator_put(desc->comm);
 	kmem_cache_free(rpc_desc_send_cachep, desc->desc_send);
 	rpc_desc_put(desc);
 }
@@ -456,7 +499,7 @@ int rpc_forward(struct rpc_desc *desc, kerrighed_node_t node)
 
 	list_for_each_entry_reverse(elem, &queue, list_desc_elem)
 		if (elem->flags & __RPC_HEADER_FLAGS_CANCEL_PACK) {
-			desc_recv->flags |= RPC_FLAGS_CLOSED;
+			set_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags);
 			err = -EPIPE;
 			goto out_restore_queue;
 		}
@@ -632,7 +675,7 @@ __rpc_signal_dequeue_sigack(struct rpc_desc *desc,
 	return ret;
 }
 
-inline
+static
 int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 			   int flags, void* data, size_t size)
 {
@@ -643,20 +686,20 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 	atomic_t seq_id;
 
 	BUG_ON(!desc);
-	BUG_ON(!data);
-
 	BUG_ON(rpc_desc_forwarded(desc));
 
-	if (desc_recv->flags & RPC_FLAGS_CLOSED)
-		return RPC_EPIPE;
-
-	if (unlikely(desc_recv->flags & RPC_FLAGS_REPOST))
+	if (unlikely(test_bit(__RPC_FLAGS_REPOST, &desc_recv->flags)))
 		atomic_set(&seq_id, atomic_read(&desc_recv->seq_id));
 	else
 		atomic_set(&seq_id, atomic_inc_return(&desc_recv->seq_id));
 
  restart:
 	spin_lock_bh(&desc->desc_lock);
+
+	if (test_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags)) {
+		spin_unlock_bh(&desc->desc_lock);
+		return -ECANCELED;
+	}
 
 	/* Return rpc_signalacks ASAP */
 	if (unlikely(!list_empty(&desc_recv->list_signal_head))) {
@@ -667,8 +710,8 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 			if (flags & RPC_FLAGS_SIGACK) {
 				spin_unlock_bh(&desc->desc_lock);
 				rpc_desc_elem_free(descelem);
-				desc_recv->flags |= RPC_FLAGS_REPOST;
-				return RPC_ESIGACK;
+				set_bit(__RPC_FLAGS_REPOST, &desc_recv->flags);
+				return -ESIGACK;
 			}
 			/* Store discarded sigacks in a list to free them with
 			 * desc_lock released */
@@ -723,8 +766,8 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 		__rpc_end_unpack_clean_queue(&sigacks_head);
 
 	if (desc_recv->iter->flags & __RPC_HEADER_FLAGS_CANCEL_PACK) {
-		desc_recv->flags |= RPC_FLAGS_CLOSED;
-		return RPC_EPIPE;
+		set_bit(__RPC_FLAGS_CLOSED, &desc_recv->flags);
+		return -ECANCELED;
 	}
 
 	if (flags & RPC_FLAGS_NOCOPY) {
@@ -745,8 +788,8 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 		BUG();
 	}
 
-	desc_recv->flags &= ~RPC_FLAGS_REPOST;
-	return RPC_EOK;
+	clear_bit(__RPC_FLAGS_REPOST, &desc_recv->flags);
+	return 0;
 
  __restart:
 	if (flags&RPC_FLAGS_NOBLOCK) {
@@ -769,8 +812,8 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 			desc_recv->iter_provided = descelem;
 		
 		spin_unlock_bh(&desc->desc_lock);
-		desc_recv->flags &= ~RPC_FLAGS_REPOST;
-		return RPC_EOK;
+		clear_bit(__RPC_FLAGS_REPOST, &desc_recv->flags);
+		return 0;
 	}
 
 	desc->thread = current;
@@ -781,15 +824,15 @@ int __rpc_unpack_from_node(struct rpc_desc* desc, kerrighed_node_t node,
 
 	schedule();
 	if (signal_pending(current) && (flags & RPC_FLAGS_INTR)) {
-		desc_recv->flags |= RPC_FLAGS_REPOST;
-		return RPC_EINTR;
+		set_bit(__RPC_FLAGS_REPOST, &desc_recv->flags);
+		return -EINTR;
 	}
 
 	goto restart;
 }
 
-enum rpc_error
-rpc_unpack(struct rpc_desc* desc, int flags, void* data, size_t size){
+int rpc_unpack(struct rpc_desc* desc, int flags, void* data, size_t size)
+{
 	switch(desc->type){
 	case RPC_RQ_CLT:{
 		kerrighed_node_t node;
@@ -815,16 +858,15 @@ rpc_unpack(struct rpc_desc* desc, int flags, void* data, size_t size){
 	return 0;
 }
 
-enum rpc_error
-rpc_unpack_from(struct rpc_desc* desc, kerrighed_node_t node,
-		int flags, void* data, size_t size)
+int rpc_unpack_from(struct rpc_desc* desc, kerrighed_node_t node,
+		    int flags, void* data, size_t size)
 {
 	switch(desc->type){
 	case RPC_RQ_CLT:
 		return __rpc_unpack_from_node(desc, node, flags, data, size);
 	case RPC_RQ_SRV:
 		if(node == desc->client)
-			return __rpc_unpack_from_node(desc, node, flags, data, size);
+			return __rpc_unpack_from_node(desc, 0, flags, data, size);
 		return 0;
 	default:
 		printk("unexpected case\n");
@@ -834,67 +876,78 @@ rpc_unpack_from(struct rpc_desc* desc, kerrighed_node_t node,
 	return 0;
 }
 
-kerrighed_node_t rpc_wait_return(struct rpc_desc* desc, int* value)
+/*
+ * Returns KERRIGHED_MAX_NODES if no node returned yet,
+ * or releases desc->lock and returns a valid node id
+ *                                    or an error code when retrieving a value.
+ */
+static kerrighed_node_t __rpc_check_return(struct rpc_desc *desc, int *value)
 {
 	kerrighed_node_t node;
+	int err;
 
-	if (desc->type != RPC_RQ_CLT)
-		return -1;
-
-
- __restart:
-	
-	spin_lock_bh(&desc->desc_lock);
 	for(node=0;node<KERRIGHED_MAX_NODES;node++){
 		if(desc->desc_recv[node]
-		   && atomic_read(&desc->desc_recv[node]->nbunexpected)){
+		   && (atomic_read(&desc->desc_recv[node]->nbunexpected)
+		       || test_bit(__RPC_FLAGS_CLOSED,
+				   &desc->desc_recv[node]->flags))) {
 
 			spin_unlock_bh(&desc->desc_lock);
 
-			if(value)
-				rpc_unpack_from(desc, node,
-						0, value, sizeof(*value));
+			if (value) {
+				err = rpc_unpack_type_from(desc, node, *value);
+				if (err) {
+					if (err > 0)
+						err = -EPIPE;
+					return err;
+				}
+			}
 
-			return node;
+			break;
 		}
 	}
 
-	desc->state = RPC_STATE_WAIT;
-	desc->thread = current;
-	set_current_state(TASK_INTERRUPTIBLE);
-	spin_unlock_bh(&desc->desc_lock);
-
-	schedule();
-
-	goto __restart;
+	return node;
 }
 
-int rpc_wait_return_from(struct rpc_desc* desc, kerrighed_node_t node)
+kerrighed_node_t rpc_check_return(struct rpc_desc *desc, int *value)
 {
+	kerrighed_node_t ret;
 
-	if(desc->type != RPC_RQ_CLT)
-		return -1;
+	BUG_ON(desc->type != RPC_RQ_CLT);
 
- __restart:
-	
 	spin_lock_bh(&desc->desc_lock);
-	if(atomic_read(&desc->desc_recv[node]->nbunexpected)){
-		int value;
-
+	ret = __rpc_check_return(desc, value);
+	if (ret == KERRIGHED_MAX_NODES) {
 		spin_unlock_bh(&desc->desc_lock);
-		rpc_unpack_type_from(desc, node, value);
-		return value;
-	}
-	
-	desc->state = RPC_STATE_WAIT1;
-	desc->wait_from = node;
-	desc->thread = current;
-	set_current_state(TASK_INTERRUPTIBLE);
-	spin_unlock_bh(&desc->desc_lock);
 
-	schedule();
-	
-	goto __restart;
+		ret = -EAGAIN;
+	}
+
+	return ret;
+}
+
+kerrighed_node_t rpc_wait_return(struct rpc_desc *desc, int *value)
+{
+	kerrighed_node_t ret = -EPIPE;
+
+	BUG_ON(desc->type != RPC_RQ_CLT);
+
+	for (;;) {
+		spin_lock_bh(&desc->desc_lock);
+		ret = __rpc_check_return(desc, value);
+		if (ret != KERRIGHED_MAX_NODES)
+			break;
+
+		desc->state = RPC_STATE_WAIT;
+		desc->thread = current;
+		__set_current_state(TASK_UNINTERRUPTIBLE);
+		spin_unlock_bh(&desc->desc_lock);
+
+		schedule();
+	}
+
+	return ret;
 }
 
 int rpc_wait_all(struct rpc_desc *desc)
@@ -924,6 +977,38 @@ int rpc_wait_all(struct rpc_desc *desc)
 	}
 	
 	return 0;
+}
+
+void rpc_desc_wake_up(struct rpc_desc *desc)
+{
+	desc->state = RPC_STATE_RUN;
+	wake_up_process(desc->thread);
+}
+
+void rpc_desc_cancel_wait(struct rpc_desc *desc, kerrighed_node_t node)
+{
+	bool do_wakeup = false;
+
+	spin_lock_bh(&desc->desc_lock);
+	switch (desc->type) {
+	case RPC_RQ_CLT:
+		do_wakeup = (desc->state == RPC_STATE_WAIT1
+			     && desc->wait_from == node)
+			    || desc->state == RPC_STATE_WAIT;
+		break;
+	case RPC_RQ_SRV:
+		do_wakeup = desc->state == RPC_STATE_WAIT1
+			    || desc->state == RPC_STATE_WAIT;
+		break;
+	default:
+		BUG();
+	}
+
+	set_bit(__RPC_FLAGS_CLOSED, &desc->desc_recv[node]->flags);
+
+	if (do_wakeup)
+		rpc_desc_wake_up(desc);
+	spin_unlock_bh(&desc->desc_lock);
 }
 
 int rpc_signal(struct rpc_desc* desc, int sigid)

@@ -141,8 +141,11 @@ int krg_ipc_msg_newque(struct ipc_namespace *ns, struct msg_queue *msq)
 	}
 
 	msq_object->local_msq = msq;
-	msq_object->local_msq->is_master = 1;
+	msq_object->local_msq->master_node = kerrighed_node_id;
 	msq_object->mobile_msq.q_perm.id = -1;
+	INIT_LIST_HEAD(&msq_object->mobile_msq.q_messages);
+	INIT_LIST_HEAD(&msq_object->mobile_msq.q_receivers);
+	INIT_LIST_HEAD(&msq_object->mobile_msq.q_senders);
 
 	_kddm_set_object(msg_ids(ns).krgops->data_kddm_set, index, msq_object);
 
@@ -199,6 +202,8 @@ void krg_ipc_msg_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp)
 
 /*****************************************************************************/
 
+DEFINE_REMOTE_SLEEPERS_QUEUE(msg_remote_sleepers);
+
 struct msgsnd_msg
 {
 	kerrighed_node_t requester;
@@ -221,6 +226,8 @@ long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 	int err;
 	int index;
 	struct msgsnd_msg msg;
+
+	down_read(&krgipcmsg_rwsem);
 
 	index = ipcid_to_idx(msqid);
 
@@ -259,7 +266,7 @@ long krg_ipc_msgsnd(int msqid, long mtype, void __user *mtext,
 	if (r)
 		goto exit_free_buffer;
 
-	desc = rpc_begin(IPC_MSG_SEND, *master_node);
+	desc = rpc_begin(IPC_MSG_SEND, master_set->ns->rpc_comm, *master_node);
 	_kddm_put_object(master_set, index);
 
 	r = rpc_pack_type(desc, msg);
@@ -283,6 +290,8 @@ exit_rpc:
 exit_free_buffer:
 	kfree(buffer);
 exit:
+	up_read(&krgipcmsg_rwsem);
+
 	return r;
 }
 
@@ -292,6 +301,7 @@ static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 	long r;
 	struct msgsnd_msg *msg = _msg;
 	struct ipc_namespace *ns;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
 
 	ns = find_get_krg_ipcns();
 	BUG_ON(!ns);
@@ -306,21 +316,28 @@ static void handle_do_msg_send(struct rpc_desc *desc, void *_msg, size_t size)
 	if (r)
 		goto exit_free_text;
 
-	r = remote_sleep_prepare(desc);
-	if (r)
+	r = remote_sleep_prepare(desc, &msg_remote_sleepers, &wait);
+	if (r) {
+		if (r == -ERESTARTSYS)
+			goto pack_res;
 		goto exit_free_text;
+	}
 
 	r = __do_msgsnd(msg->msqid, msg->mtype, mtext, msg->msgsz, msg->msgflg,
 			ns, msg->tgid);
 
-	remote_sleep_finish();
+	remote_sleep_finish(&msg_remote_sleepers, &wait);
 
+pack_res:
 	r = rpc_pack_type(desc, r);
 
 exit_free_text:
 	kfree(mtext);
 exit_put_ns:
 	put_ipc_ns(ns);
+
+	if (r)
+		rpc_cancel(desc);
 }
 
 struct msgrcv_msg
@@ -338,14 +355,15 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 		    struct ipc_namespace *ns, pid_t tgid)
 {
 	struct rpc_desc * desc;
-	enum rpc_error err;
 	struct kddm_set *master_set;
 	kerrighed_node_t *master_node;
-	void * buffer;
+	void *buffer = NULL;
 	long r;
-	int retval;
+	int err;
 	int index;
 	struct msgrcv_msg msg;
+
+	down_read(&krgipcmsg_rwsem);
 
 	/* TODO: manage ipc namespace */
 	index = ipcid_to_idx(msqid);
@@ -355,7 +373,8 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 	master_node = _kddm_get_object_no_ft(master_set, index);
 	if (!master_node) {
 		_kddm_put_object(master_set, index);
-		return -EINVAL;
+		r = -EINVAL;
+		goto exit;
 	}
 
 	if (*master_node == kerrighed_node_id) {
@@ -364,7 +383,7 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 		_kddm_put_object(master_set, index);
 		r = __do_msgrcv(msqid, pmtype, mtext, msgsz, msgtyp,
 				msgflg, ns, tgid);
-		return r;
+		goto exit;
 	}
 
 	msg.requester = kerrighed_node_id;
@@ -374,53 +393,57 @@ long krg_ipc_msgrcv(int msqid, long *pmtype, void __user *mtext,
 	msg.tgid = tgid;
 	msg.msgsz = msgsz;
 
-	desc = rpc_begin(IPC_MSG_RCV, *master_node);
+	desc = rpc_begin(IPC_MSG_RCV, master_set->ns->rpc_comm, *master_node);
 	_kddm_put_object(master_set, index);
 
-	r = rpc_pack_type(desc, msg);
-	if (r)
-		goto exit;
+	err = rpc_pack_type(desc, msg);
+	if (err)
+		goto cancel;
 
-	r = unpack_remote_sleep_res_prepare(desc);
-	if (r)
-		goto exit;
+	err = unpack_remote_sleep_res_prepare(desc);
+	if (err)
+		goto cancel;
 
 	err = unpack_remote_sleep_res_type(desc, r);
-	if (!err) {
-		if (r > 0) {
-			/* get the real msg type */
-			err = rpc_unpack(desc, 0, pmtype, sizeof(long));
-			if (err)
-				goto err_rpc;
+	if (err)
+		goto cancel;
 
-			buffer = kmalloc(r, GFP_KERNEL);
-			if (!buffer) {
-				r = -ENOMEM;
-				goto exit;
-			}
+	if (r < 0)
+		goto exit_end_rpc;
 
-			err = rpc_unpack(desc, 0, buffer, r);
-			if (err) {
-				kfree(buffer);
-				goto err_rpc;
-			}
+	/* get the real msg type */
+	err = rpc_unpack(desc, 0, pmtype, sizeof(long));
+	if (err)
+		goto cancel;
 
-			retval = copy_to_user(mtext, buffer, r);
-			kfree(buffer);
-			if (retval)
-				r = retval;
-		}
-	} else {
-		r = err;
+	buffer = kmalloc(r, GFP_KERNEL);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto cancel;
 	}
 
-exit:
+	err = rpc_unpack(desc, 0, buffer, r);
+	if (err)
+		goto cancel;
+
+	err = copy_to_user(mtext, buffer, r);
+	if (err)
+		goto cancel;
+
+exit_end_rpc:
+	if (buffer)
+		kfree(buffer);
 	rpc_end(desc, 0);
+exit:
+	up_read(&krgipcmsg_rwsem);
 	return r;
 
-err_rpc:
-	r = -EPIPE;
-	goto exit;
+cancel:
+	r = err;
+	if (r == -ECANCELED)
+		r = -EPIPE;
+	rpc_cancel(desc);
+	goto exit_end_rpc;
 }
 
 static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
@@ -430,6 +453,7 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 	int r;
 	struct msgrcv_msg *msg = _msg;
 	struct ipc_namespace *ns;
+	DEFINE_REMOTE_SLEEPERS_WAIT(wait);
 
 	ns = find_get_krg_ipcns();
 	BUG_ON(!ns);
@@ -438,15 +462,21 @@ static void handle_do_msg_rcv(struct rpc_desc *desc, void *_msg, size_t size)
 	if (!mtext)
 		goto exit_put_ns;
 
-	r = remote_sleep_prepare(desc);
-	if (r)
+	r = remote_sleep_prepare(desc, &msg_remote_sleepers, &wait);
+	if (r) {
+		if (r == -ERESTARTSYS) {
+			msgsz = -ERESTARTSYS;
+			goto pack_res;
+		}
 		goto exit_free_text;
+	}
 
 	msgsz = __do_msgrcv(msg->msqid, &pmtype, mtext, msg->msgsz,
 			    msg->msgtyp, msg->msgflg, ns, msg->tgid);
 
-	remote_sleep_finish();
+	remote_sleep_finish(&msg_remote_sleepers, &wait);
 
+pack_res:
 	r = rpc_pack_type(desc, msgsz);
 	if (r || msgsz <= 0)
 		goto exit_free_text;
@@ -471,6 +501,109 @@ exit_put_ns:
 /*                              INITIALIZATION                               */
 /*                                                                           */
 /*****************************************************************************/
+
+static int ipc_flusher(struct kddm_set *set, objid_t objid,
+		       struct kddm_obj *obj_entry, void *data)
+{
+	kerrighed_node_t node;
+
+	/*
+	 * TODO: choose a better node to flush to.
+	 * This may be done looking at the processes blocked.
+	 */
+	node = first_krgnode(krgnode_online_map);
+
+	return node;
+}
+
+static int flush_one_msg_queue(struct ipc_namespace *ns, struct msg_queue *msq)
+{
+	int index;
+	struct kddm_set *data_set, *node_set;
+	kerrighed_node_t dest;
+
+	index = ipcid_to_idx(msq->q_perm.id);
+	data_set = msg_ids(ns).krgops->data_kddm_set;
+	node_set = krgipc_ops_master_set(msg_ids(ns).krgops);
+
+	dest = first_krgnode(krgnode_online_map);
+
+	if (msq->master_node == kerrighed_node_id) {
+		msq_object_t *msq_object;
+		kerrighed_node_t *master_node;
+
+		msq_object = _kddm_grab_object_no_ft(data_set, index);
+		BUG_ON(!msq_object);
+		_kddm_put_object(data_set, index);
+
+		master_node = _kddm_grab_object_no_ft(node_set, index);
+		BUG_ON(!master_node);
+		*master_node = dest;
+		_kddm_put_object(node_set, index);
+	}
+
+	_kddm_flush_object(data_set, index, dest);
+	_kddm_flush_object(node_set, index, dest);
+
+	return 0;
+}
+
+static int flush_msg_queues(struct ipc_namespace *ns)
+{
+	struct kern_ipc_perm *perm;
+	struct msg_queue *msq;
+	struct ipc_ids *ids;
+	struct msgkrgops *msgops;
+	kerrighed_node_t node;
+	int err, total, in_use, next_id;
+
+	node = first_krgnode(krgnode_online_map);
+
+	ids = &msg_ids(ns);
+	msgops = container_of(ids->krgops, struct msgkrgops, krgops);
+
+	in_use = ids->in_use;
+
+	err = 0;
+
+	for (total = 0, next_id = 0; total < in_use; next_id++) {
+		perm = idr_find(&ids->ipcs_idr, next_id);
+		if (!perm)
+			continue;
+
+		msq = container_of(perm, struct msg_queue, q_perm);
+		err = flush_one_msg_queue(ns, msq);
+		if (err)
+			goto error;
+
+		total++;
+	}
+
+error:
+	return err;
+}
+
+int krg_msg_flush_set(struct ipc_namespace *ns)
+{
+	int err;
+	struct msgkrgops *msgops;
+
+	down_write(&msg_ids(ns).rw_mutex);
+
+	msgops = container_of(msg_ids(ns).krgops, struct msgkrgops, krgops);
+
+	err = flush_msg_queues(ns);
+	if (err)
+		goto error;
+
+	_kddm_flush_set(msgops->krgops.map_kddm_set, ipc_flusher, NULL);
+	_kddm_flush_set(msgops->krgops.key_kddm_set, ipc_flusher, NULL);
+	_kddm_flush_set(msgops->master_kddm_set, ipc_flusher, NULL);
+
+error:
+	up_write(&msg_ids(ns).rw_mutex);
+	return err;
+}
 
 int krg_msg_init_ns(struct ipc_namespace *ns)
 {
@@ -506,7 +639,7 @@ int krg_msg_init_ns(struct ipc_namespace *ns)
 	msg_ops->krgops.data_kddm_set = create_new_kddm_set(
 		kddm_def_ns, MSG_KDDM_ID, MSG_LINKER,
 		KDDM_RR_DEF_OWNER, sizeof(msq_object_t),
-		KDDM_LOCAL_EXCLUSIVE);
+		KDDM_LOCAL_EXCLUSIVE | KDDM_NEED_SAFE_WALK);
 
 	if (IS_ERR(msg_ops->krgops.data_kddm_set)) {
 		r = PTR_ERR(msg_ops->krgops.data_kddm_set);

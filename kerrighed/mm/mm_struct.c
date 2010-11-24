@@ -14,6 +14,7 @@
 #include <net/krgrpc/rpc.h>
 #include <net/krgrpc/rpcid.h>
 #include <kerrighed/krginit.h>
+#include <kerrighed/pid.h>
 #include <asm/uaccess.h>
 #include <kerrighed/krg_services.h>
 #include <kddm/kddm.h>
@@ -314,13 +315,17 @@ int init_anon_vma_kddm_set(struct task_struct *tsk,
 			   struct mm_struct *mm)
 {
 	struct kddm_set *set;
+	struct anon_vma_kddm_set_private private;
 
 	mm->mm_id = 0;
 	krgnodes_clear (mm->copyset);
 
+	private.last_pid = task_pid_knr(tsk);
+	private.last_tgid = task_tgid_knr(tsk);
+
 	set = __create_new_kddm_set(kddm_def_ns, 0, &kddm_pt_set_ops, mm,
 				    MEMORY_LINKER, kerrighed_node_id,
-				    PAGE_SIZE, NULL, 0, 0);
+				    PAGE_SIZE, &private, sizeof(private), 0);
 
 	if (IS_ERR(set))
 		return PTR_ERR(set);
@@ -450,7 +455,8 @@ void krg_do_mmap_region(struct vm_area_struct *vma,
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);
 
-	rpc_sync_m(RPC_MM_MMAP_REGION, &copyset, &msg, sizeof(msg));
+	rpc_sync_m(RPC_MM_MMAP_REGION, kddm_def_ns->rpc_comm, &copyset,
+		   &msg, sizeof(msg));
 }
 
 
@@ -474,7 +480,8 @@ void krg_do_munmap(struct mm_struct *mm,
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);
 
-	rpc_sync_m(RPC_MM_MUNMAP, &copyset, &msg, sizeof(msg));
+	rpc_sync_m(RPC_MM_MUNMAP, kddm_def_ns->rpc_comm, &copyset,
+		   &msg, sizeof(msg));
 }
 
 void krg_do_mremap(struct mm_struct *mm, unsigned long addr,
@@ -503,7 +510,8 @@ void krg_do_mremap(struct mm_struct *mm, unsigned long addr,
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);
 
-	rpc_sync_m(RPC_MM_MREMAP, &copyset, &msg, sizeof(msg));
+	rpc_sync_m(RPC_MM_MREMAP, kddm_def_ns->rpc_comm, &copyset,
+		   &msg, sizeof(msg));
 }
 
 void krg_do_brk(struct mm_struct *mm,
@@ -527,7 +535,8 @@ void krg_do_brk(struct mm_struct *mm,
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);
 
-	rpc_sync_m(RPC_MM_DO_BRK, &copyset, &msg, sizeof(msg));
+	rpc_sync_m(RPC_MM_DO_BRK, kddm_def_ns->rpc_comm, &copyset,
+		   &msg, sizeof(msg));
 }
 
 int krg_expand_stack(struct vm_area_struct *vma,
@@ -550,7 +559,8 @@ int krg_expand_stack(struct vm_area_struct *vma,
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);
 
-	r = rpc_sync_m(RPC_MM_EXPAND_STACK, &copyset, &msg, sizeof(msg));
+	r = rpc_sync_m(RPC_MM_EXPAND_STACK, kddm_def_ns->rpc_comm, &copyset,
+		       &msg, sizeof(msg));
 
 	return r;
 }
@@ -579,7 +589,8 @@ void krg_do_mprotect(struct mm_struct *mm,
 	krgnodes_copy(copyset, mm->copyset);
 	krgnode_clear(kerrighed_node_id, copyset);
 
-	rpc_sync_m(RPC_MM_MPROTECT, &copyset, &msg, sizeof(msg));
+	rpc_sync_m(RPC_MM_MPROTECT, kddm_def_ns->rpc_comm, &copyset,
+		   &msg, sizeof(msg));
 }
 
 
@@ -593,14 +604,15 @@ void krg_do_mprotect(struct mm_struct *mm,
 
 void mm_struct_init (void)
 {
-	init_unique_id_root (&mm_struct_unique_id_root);
+	init_unique_id_root (UNIQUE_ID_MM_STRUCT, &mm_struct_unique_id_root);
 
 	mm_struct_kddm_set = create_new_kddm_set(kddm_def_ns,
 						 MM_STRUCT_KDDM_ID,
 						 MM_STRUCT_LINKER,
 						 KDDM_UNIQUE_ID_DEF_OWNER,
 						 sizeof (struct mm_struct),
-						 KDDM_LOCAL_EXCLUSIVE);
+						 KDDM_LOCAL_EXCLUSIVE
+						 | KDDM_NEED_SAFE_WALK);
 
 	if (IS_ERR(mm_struct_kddm_set))
 		OOM;

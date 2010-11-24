@@ -139,6 +139,36 @@ int is_tty(const struct file *file)
 	return r;
 }
 
+extern const struct file_operations eventpoll_fops;
+
+int is_eventpoll(const struct file *file)
+{
+	if (file->f_op == &eventpoll_fops)
+		return 1;
+
+	return 0;
+}
+
+extern const struct file_operations signalfd_fops;
+
+int is_signal(const struct file *file)
+{
+	if (file->f_op == &signalfd_fops)
+		return 1;
+
+	return 0;
+}
+
+extern const struct file_operations timerfd_fops;
+
+int is_timer(const struct file *file)
+{
+	if (file->f_op == &timerfd_fops)
+		return 1;
+
+	return 0;
+}
+
 char *get_phys_filename(struct file *file, char *buffer, bool del_ok)
 {
 	char *filename;
@@ -212,6 +242,15 @@ int can_checkpoint_file(const struct file *file)
 		return 0;
 	} else if (is_anon_shared_mmap(file)) {
 		printk("Checkpoint of anonymous shared mmap file is not supported\n");
+		return 0;
+	} else if (is_eventpoll(file)) {
+		printk("Checkpoint of eventpoll file is not supported\n");
+		return 0;
+	} else if (is_timer(file)) {
+		printk("Checkpoint of timerfd file is not supported\n");
+		return 0;
+	} else if (is_signal(file)) {
+		printk("Checkopint of signalfd file is not supported\n");
 		return 0;
 	}
 

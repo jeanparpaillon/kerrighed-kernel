@@ -18,6 +18,7 @@ typedef enum {
 	EPM_MIGRATE,
 	EPM_REMOTE_CLONE,
 	EPM_CHECKPOINT,
+	EPM_RESTART, /* Never used in krg_action_start/stop */
 	EPM_ACTION_MAX	   /* Always in last position */
 } krg_epm_action_t;
 
@@ -59,9 +60,11 @@ struct epm_action {
 			struct completion *vfork;
 		} remote_clone;
 		struct {
+			long appid;
 			c_shared_obj_option_t shared;
 		} checkpoint;
 		struct {
+			long appid;
 			r_shared_obj_option_t shared;
 			struct app_struct * app;
 			int flags;
@@ -77,10 +80,18 @@ static inline kerrighed_node_t epm_target_node(struct epm_action *action)
 	case EPM_REMOTE_CLONE:
 		return action->remote_clone.target;
 	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		return KERRIGHED_NODE_ID_NONE;
 	default:
 		BUG();
 	}
+}
+
+char *__krg_action_to_str(krg_epm_action_t action);
+
+static inline char *krg_action_to_str(struct epm_action *action)
+{
+	return __krg_action_to_str(action->type);
 }
 
 /*

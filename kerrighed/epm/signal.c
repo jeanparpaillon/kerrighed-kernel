@@ -422,14 +422,14 @@ void krg_signal_alloc(struct task_struct *task, struct pid *pid,
 {
 	struct task_struct *krg_cur;
 
-	if (!task->nsproxy->krg_ns)
-		return;
-
 	if (krg_current && !in_krg_do_fork())
 		/*
 		 * This is a process migration or restart: signal_struct is
 		 * already setup.
 		 */
+		return;
+
+	if (!task->nsproxy->krg_ns)
 		return;
 
 	if (!krg_current && (clone_flags & CLONE_THREAD))
@@ -616,6 +616,9 @@ static int export_sigpending(ghost_t *ghost,
 	unsigned long flags;
 	int err;
 
+	if (task->exit_state)
+		return 0;
+
 	INIT_LIST_HEAD(&tmp_queue.list);
 	nr_sig = 0;
 	if (!lock_task_sighand(task, &flags))
@@ -666,6 +669,11 @@ static int import_sigpending(ghost_t *ghost,
 	struct sigqueue *q;
 	int i;
 	int err;
+
+	if (task->exit_state) {
+		init_sigpending(pending);
+		return 0;
+	}
 
 	err = ghost_read(ghost, &pending->signal, sizeof(pending->signal));
 	if (err)
@@ -826,6 +834,10 @@ int export_signal_struct(struct epm_action *action,
 	}
 
 err_write:
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to save struct signal_struct");
+
 	return r;
 }
 
@@ -873,7 +885,7 @@ int import_signal_struct(struct epm_action *action,
 	struct signal_struct *sig;
 	int r;
 
-	if (action->type == EPM_CHECKPOINT
+	if (action->type == EPM_RESTART
 	    && action->restart.shared == CR_LINK_ONLY) {
 		r = cr_link_to_signal_struct(action, ghost, tsk);
 		return r;
@@ -928,7 +940,7 @@ out_mig_unlock:
 		tsk->signal = sig;
 		break;
 
-	case EPM_CHECKPOINT: {
+	case EPM_RESTART: {
 		struct signal_struct tmp_sig;
 
 		sig = cr_signal_alloc(krg_objid);
@@ -1022,10 +1034,15 @@ err_free_signal:
 		goto err_read;
 
 	} default:
-		PANIC("Case not supported: %d\n", action->type);
+		BUG();
+		r = -EINVAL;
 	}
 
 err_read:
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to restore struct signal_struct");
+
 	return r;
 }
 
@@ -1044,13 +1061,7 @@ static int cr_export_now_signal_struct(struct epm_action *action,
 				       struct task_struct *task,
 				       union export_args *args)
 {
-	int r;
-	r = export_signal_struct(action, ghost, task);
-	if (r)
-		ckpt_err(action, r,
-			 "Fail to save struct signal_struct of process %d (%s)",
-			 task_pid_knr(task), task->comm);
-	return r;
+	return export_signal_struct(action, ghost, task);
 }
 
 static int cr_import_now_signal_struct(struct epm_action *action,
@@ -1064,13 +1075,8 @@ static int cr_import_now_signal_struct(struct epm_action *action,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_signal_struct(action, ghost, fake);
-	if (r) {
-		ckpt_err(action, r,
-			 "App %ld - Fail to restore a struct signal_struct",
-			 action->restart.app->app_id);
+	if (r)
 		goto err;
-	}
-
 	*returned_data = fake->signal;
 err:
 	return r;
@@ -1162,7 +1168,7 @@ int import_private_signals(struct epm_action *action,
 
 	switch (action->type) {
 	case EPM_MIGRATE:
-	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		err = import_sigpending(ghost, task, &task->pending);
 		break;
 	default:
@@ -1176,6 +1182,18 @@ int import_private_signals(struct epm_action *action,
 void unimport_private_signals(struct task_struct *task)
 {
 	unimport_sigpending(task, &task->pending);
+}
+
+static int signal_flusher(struct kddm_set *set, objid_t objid,
+			  struct kddm_obj *obj_entry, void *data)
+{
+	BUG();
+	return KERRIGHED_NODE_ID_NONE;
+}
+
+void signal_remove_local(void)
+{
+	_kddm_flush_set(signal_struct_kddm_set, signal_flusher, NULL);
 }
 
 int epm_signal_start(void)
@@ -1195,7 +1213,8 @@ int epm_signal_start(void)
 						     SIGNAL_STRUCT_LINKER,
 						     KDDM_CUSTOM_DEF_OWNER,
 						     0,
-						     KDDM_LOCAL_EXCLUSIVE);
+						     KDDM_LOCAL_EXCLUSIVE
+						     | KDDM_NEED_SAFE_WALK);
 	if (IS_ERR(signal_struct_kddm_set))
 		OOM;
 

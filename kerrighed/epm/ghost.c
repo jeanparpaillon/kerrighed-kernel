@@ -19,6 +19,7 @@
 #include <linux/utsname.h>
 #include <linux/iocontext.h>
 #include <linux/ioprio.h>
+#include <linux/posix-timers.h>
 #include <linux/list.h>
 #include <linux/rcupdate.h>
 #include <net/net_namespace.h>
@@ -28,6 +29,7 @@
 #include <kerrighed/krgsyms.h>
 #include <kerrighed/children.h>
 #include <kerrighed/task.h>
+#include <kerrighed/krg_exit.h>
 #include <kerrighed/signal.h>
 #include <kerrighed/pid.h>
 #include <kerrighed/application.h>
@@ -106,6 +108,9 @@ static int export_binfmt(struct epm_action *action,
 			 ghost_t *ghost, struct task_struct *task)
 {
 	int binfmt_id;
+
+	if (task->exit_state)
+		return 0;
 
 	binfmt_id = krgsyms_export(task->binfmt);
 	if (binfmt_id == KRGSYMS_UNDEF)
@@ -229,10 +234,17 @@ static int export_cpu_timers(struct epm_action *action,
 
 	/* TODO */
 	if (action->type != EPM_REMOTE_CLONE) {
-		if (!list_empty(&task->cpu_timers[0])
-		    || !list_empty(&task->cpu_timers[1])
-		    || !list_empty(&task->cpu_timers[2]))
+		if (task->exit_state == EXIT_ZOMBIE) {
+			spin_lock_irq(&task->sighand->siglock);
+			posix_cpu_timers_exit(task);
+			if (thread_group_empty(task))
+				posix_cpu_timers_exit_group(task);
+			spin_unlock_irq(&task->sighand->siglock);
+		} else if (!list_empty(&task->cpu_timers[0])
+			   || !list_empty(&task->cpu_timers[1])
+			   || !list_empty(&task->cpu_timers[2])) {
 			err = -EBUSY;
+		}
 	}
 
 	return err;
@@ -278,6 +290,9 @@ static int export_nsproxy(struct epm_action *action,
 			  ghost_t *ghost, struct task_struct *task)
 {
 	int retval;
+
+	if (task->exit_state)
+		return 0;
 
 	BUG_ON(!task->nsproxy->krg_ns);
 
@@ -349,6 +364,9 @@ static int export_io_context(struct epm_action *action,
 #ifdef CONFIG_BLOCK
 	struct io_context *ioc = task->io_context;
 
+	if (task->exit_state)
+		return 0;
+
 	if (!ioc)
 		return 0;
 
@@ -380,7 +398,7 @@ static int export_pi_state(struct epm_action *action,
 	int err = 0;
 
 #ifdef CONFIG_FUTEX
-	if (!list_empty(&task->pi_state_list))
+	if (!task->exit_state && !list_empty(&task->pi_state_list))
 		err = -EBUSY;
 #endif
 
@@ -393,7 +411,7 @@ static int export_mempolicy(struct epm_action *action,
 	int err = 0;
 
 #ifdef CONFIG_NUMA
-	if (task->mempolicy)
+	if (!task->exit_state && task->mempolicy)
 		err = -EBUSY;
 #endif
 
@@ -472,7 +490,7 @@ static int export_task(struct epm_action *action,
 		GOTO_ERROR;
 
 #ifndef CONFIG_KRG_IPC
-	if (task->sysvsem.undo_list) {
+	if (!task->exit_state && task->sysvsem.undo_list) {
 		r = -EBUSY;
 		GOTO_ERROR;
 	}
@@ -653,7 +671,7 @@ static void unimport_krg_structs(struct epm_action  *action,
 {
 	switch (action->type) {
 	case EPM_REMOTE_CLONE:
-	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		__krg_task_free(task);
 		break;
 	default:
@@ -685,7 +703,8 @@ static void unimport_last_siginfo(struct task_struct *task)
 
 static void unimport_io_context(struct task_struct *task)
 {
-	put_io_context(task->io_context);
+	if (!task->exit_state)
+		put_io_context(task->io_context);
 }
 
 static void unimport_rt_mutexes(struct task_struct *task)
@@ -712,7 +731,8 @@ static void unimport_notifier(struct task_struct *task)
 
 static void unimport_nsproxy(struct task_struct *task)
 {
-	put_nsproxy(task->nsproxy);
+	if (!task->exit_state)
+		put_nsproxy(task->nsproxy);
 }
 
 /* unimport_files_struct() is located in kerrighed/fs/mobility.c */
@@ -768,9 +788,12 @@ void unimport_group_leader(struct task_struct *task)
 static
 void unimport_children(struct epm_action *action, struct task_struct *task)
 {
+	if (task->exit_state)
+		return;
+
 	switch (action->type) {
 	case EPM_REMOTE_CLONE:
-	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		__krg_children_writelock(task);
 		krg_children_exit(task);
 		break;
@@ -916,6 +939,9 @@ static int import_binfmt(struct epm_action *action,
 	int binfmt_id;
 	int err;
 
+	if (task->exit_state)
+		return 0;
+
 	err = ghost_read(ghost, &binfmt_id, sizeof(int));
 	if (err)
 		goto out;
@@ -929,6 +955,11 @@ static int import_children(struct epm_action *action,
 {
 	int r = 0;
 
+	if (task->exit_state) {
+		task->children_obj = NULL;
+		return 0;
+	}
+
 	switch (action->type) {
 	case EPM_MIGRATE:
 		task->children_obj = __krg_children_readlock(task);
@@ -937,7 +968,7 @@ static int import_children(struct epm_action *action,
 		break;
 
 	case EPM_REMOTE_CLONE:
-	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		/*
 		 * C/R: children are restored later in
 		 * app_restart.c:local_restore_children_objects()
@@ -973,7 +1004,7 @@ static int import_group_leader(struct epm_action *action,
 	 * otherwise.
 	 */
 	if (task->pid != task->tgid) {
-		BUG_ON(action->type != EPM_CHECKPOINT);
+		BUG_ON(action->type != EPM_RESTART);
 
 		err = ghost_read(ghost, &tgid, sizeof(tgid));
 		if (err)
@@ -1110,6 +1141,11 @@ static int import_nsproxy(struct epm_action *action,
 	struct nsproxy *ns;
 	int retval = -ENOMEM;
 
+	if (task->exit_state) {
+		task->nsproxy = NULL;
+		return 0;
+	}
+
 	ns = kmem_cache_zalloc(nsproxy_cachep, GFP_KERNEL);
 	task->nsproxy = ns;
 	if (!ns)
@@ -1183,6 +1219,11 @@ static int import_io_context(struct epm_action *action,
 	struct io_context *ioc;
 	unsigned short ioprio;
 	int err;
+
+	if (task->exit_state) {
+		task->io_context = NULL;
+		return 0;
+	}
 
 	if (!task->io_context)
 		return 0;
@@ -1319,7 +1360,7 @@ static int import_krg_structs(struct epm_action *action,
 		break;
 	case EPM_MIGRATE:
 		break;
-	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		/*
 		 * Initialization of the (real) parent pid and real parent
 		 * tgid in case of restart
@@ -1328,10 +1369,12 @@ static int import_krg_structs(struct epm_action *action,
 		 * Bringing restarted processes to foreground will need more
 		 * work
 		 */
+		read_lock(&tasklist_lock);
 		reaper = task_active_pid_ns(tsk)->child_reaper;
 		obj->parent = task_pid_knr(reaper);
 		obj->real_parent = obj->parent;
 		obj->real_parent_tgid = task_tgid_knr(reaper);
+		read_unlock(&tasklist_lock);
 		/*
 		 * obj->group_leader has already been set when creating the
 		 * object. Fix it for non leader threads.
@@ -1419,7 +1462,10 @@ static struct task_struct *import_task(struct epm_action *action,
 	INIT_LIST_HEAD(&task->cpu_timers[2]);
 	mutex_init(&task->cred_exec_mutex);
 #ifndef CONFIG_KRG_IPC
-	BUG_ON(task->sysvsem.undo_list);
+	if (task->exit_state)
+		task->syvsem.undo_list = NULL;
+	else
+		BUG_ON(task->sysvsem.undo_list);
 #endif
 	BUG_ON(task->notifier);
 	BUG_ON(task->notifier_data);
@@ -1459,14 +1505,14 @@ static struct task_struct *import_task(struct epm_action *action,
 	task->lockdep_recursion = 0;
 #endif
 	/* End of lock debugging stuff */
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_RESTART)
 		task->journal_info = NULL;
 	else
 		BUG_ON(task->journal_info);
 	BUG_ON(task->bio_list);
 	BUG_ON(task->bio_tail);
 	BUG_ON(task->reclaim_state);
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_RESTART)
 		task->backing_dev_info = NULL;
 	else
 		BUG_ON(task->backing_dev_info);
@@ -1476,7 +1522,10 @@ static struct task_struct *import_task(struct epm_action *action,
 	task->pi_state_cache = NULL;
 #endif
 #ifdef CONFIG_NUMA
-	BUG_ON(task->mempolicy);
+	if (task->exit_state)
+		task->mempolicy = NULL;
+	else
+		BUG_ON(task->mempolicy);
 #endif
 	task->splice_pipe = NULL;
 	BUG_ON(task->scm_work_list);
@@ -1702,8 +1751,10 @@ void free_ghost_process(struct task_struct *ghost)
 	free_ghost_cred(ghost);
 
 	free_ghost_cgroups(ghost);
-	put_nsproxy(ghost->nsproxy);
-	kmem_cache_free(kddm_info_cachep, ghost->kddm_info);
+	if (!ghost->exit_state) {
+		put_nsproxy(ghost->nsproxy);
+		kmem_cache_free(kddm_info_cachep, ghost->kddm_info);
+	}
 
 	free_ghost_thread_info(ghost);
 
@@ -1752,8 +1803,10 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	struct children_kddm_object *parent_children_obj;
 	pid_t real_parent_tgid;
 	int retval;
+	bool zombie = tskRecv->exit_state;
 
 	BUG_ON(!l_regs || !tskRecv);
+	BUG_ON(action->type == EPM_CHECKPOINT);
 
 	/*
 	 * The active process must be considered as remote until all links
@@ -1841,23 +1894,20 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 
 	BUG_ON(newTsk->task_obj);
 	BUG_ON(obj->task);
-	write_lock_irq(&tasklist_lock);
-	newTsk->task_obj = obj;
-	obj->task = newTsk;
-	write_unlock_irq(&tasklist_lock);
 	BUG_ON(newTsk->parent_children_obj != tskRecv->parent_children_obj);
-	BUG_ON(!newTsk->children_obj);
+	if (!zombie)
+		BUG_ON(!newTsk->children_obj);
 
 	BUG_ON(newTsk->exit_signal != (flags & CSIGNAL));
 	BUG_ON(action->type == EPM_MIGRATE &&
 	       newTsk->exit_signal != tskRecv->exit_signal);
 
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_RESTART)
 		newTsk->exit_signal = tskRecv->exit_signal;
 
 	/* TODO: distributed threads */
 	BUG_ON(newTsk->group_leader->pid != newTsk->tgid);
-	BUG_ON(newTsk->task_obj->group_leader != task_tgid_knr(newTsk));
+	BUG_ON(obj->group_leader != task_tgid_knr(newTsk));
 
 	if (action->type == EPM_REMOTE_CLONE) {
 		retval = krg_new_child(parent_children_obj,
@@ -1872,7 +1922,7 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 			      action->remote_clone.from_pid);
 	}
 
-	if (action->type == EPM_MIGRATE || action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_MIGRATE || action->type == EPM_RESTART)
 		newTsk->did_exec = tskRecv->did_exec;
 
 	__krg_task_unlock(tskRecv);
@@ -1880,8 +1930,9 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 	retval = register_pids(newTsk, action);
 	BUG_ON(retval);
 
-	if (action->type == EPM_MIGRATE
-	    || action->type == EPM_CHECKPOINT) {
+	if ((action->type == EPM_MIGRATE
+	     || action->type == EPM_RESTART)
+	    && !zombie) {
 		/*
 		 * signals should be copied from the ghost, as do_fork does not
 		 * clone the signal queue
@@ -1909,10 +1960,11 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 		set_tsk_thread_flag(newTsk, TIF_SIGPENDING);
 	}
 
-	newTsk->files->next_fd = tskRecv->files->next_fd;
+	if (!zombie)
+		newTsk->files->next_fd = tskRecv->files->next_fd;
 
 	if (action->type == EPM_MIGRATE
-	    || action->type == EPM_CHECKPOINT) {
+	    || action->type == EPM_RESTART) {
 		/* Remember process times until now (cleared by do_fork) */
 		newTsk->utime = tskRecv->utime;
 		/* stime will be updated later to account for migration time */
@@ -1925,25 +1977,102 @@ struct task_struct *create_new_process_from_ghost(struct task_struct *tskRecv,
 
 		/* Restore flags changed by copy_process() */
 		newTsk->flags = tskRecv->flags;
+		if (zombie) {
+			newTsk->flags |= PF_EXITPIDONE;
+			newTsk->state = TASK_DEAD;
+		}
 	}
 	newTsk->flags &= ~PF_STARTING;
-
-	/*
-	 * Atomically restore links with local relatives and allow relatives
-	 * to consider newTsk as local.
-	 * Until now, newTsk is linked to baby sitter and not linked to any
-	 * child.
-	 */
-	join_local_relatives(newTsk);
 
 #ifdef CONFIG_KRG_SCHED
 	post_import_krg_sched_info(newTsk);
 #endif
 
-	/* Now the process can be made world-wide visible. */
-	krg_set_pid_location(newTsk);
-
 	return newTsk;
+}
+
+int hide_process(struct task_struct *task)
+{
+	struct task_kddm_object *obj;
+	pid_t pid;
+	bool dead;
+
+	rcu_read_lock();
+	pid = task_pid_knr(task);
+	rcu_read_unlock();
+	if (!pid)
+		goto dead;
+
+	obj = krg_task_writelock(pid);
+	if (!obj) {
+		dead = true;
+		goto unlock_obj;
+	}
+	write_lock_irq(&tasklist_lock);
+	dead = task->exit_state == EXIT_DEAD;
+	if (dead)
+		goto unlock_list;
+
+	__krg_unset_pid_location(task);
+	__leave_all_relatives(task);
+
+unlock_list:
+	write_unlock_irq(&tasklist_lock);
+unlock_obj:
+	krg_task_unlock(pid);
+	if (dead)
+		goto dead;
+
+	BUG_ON(obj != task->task_obj);
+
+	return 0;
+
+dead:
+	return -ESRCH;
+}
+
+void unhide_process(struct task_struct *task)
+{
+	struct task_kddm_object *task_obj;
+	struct children_kddm_object *children_obj, *parent_children_obj;
+	bool zombie = task->exit_state == EXIT_ZOMBIE, dead = false;
+
+	if (zombie)
+		parent_children_obj = krg_parent_children_readlock(task);
+	else
+		parent_children_obj = NULL;
+	children_obj = __krg_children_readlock(task);
+	task_obj = __krg_task_writelock(task);
+	BUG_ON(!task_obj);
+	write_lock_irq(&tasklist_lock);
+
+	task_obj->task = task;
+	task->task_obj = task_obj;
+
+	/*
+	 * Atomically restore links with local relatives and allow relatives
+	 * to consider task as local.
+	 * Until now, task is linked to baby sitter and not linked to any child.
+	 */
+	__join_local_relatives(task);
+	/* Now the process can be made world-wide visible. */
+	__krg_set_pid_location(task);
+
+	if (zombie) {
+		BUG_ON(task->exit_state != EXIT_ZOMBIE);
+		krg_zombie_check_notify_child_reaper(task, parent_children_obj);
+		dead = task->exit_state == EXIT_DEAD;
+	}
+
+	write_unlock_irq(&tasklist_lock);
+	__krg_task_unlock(task);
+	if (children_obj)
+		krg_children_unlock(children_obj);
+	if (parent_children_obj)
+		krg_children_unlock(parent_children_obj);
+
+	if (dead)
+		release_task(task);
 }
 
 struct task_struct *import_process(struct epm_action *action,
@@ -1999,6 +2128,9 @@ struct task_struct *import_process(struct epm_action *action,
 	err = import_application(action, ghost, active_task);
 	if (err)
 		goto err_application;
+
+	unhide_process(active_task);
+	/* Zombie tasks can be released from now on */
 
 	return active_task;
 

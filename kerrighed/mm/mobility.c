@@ -64,6 +64,9 @@ extern struct vm_operations_struct special_mapping_vmops;
 
 void free_ghost_mm (struct task_struct *tsk)
 {
+	if (tsk->exit_state)
+		return;
+
 	/* if not NULL, mm_release will try to write in userspace... which
 	 * does not exist anyway since we are in kernel thread context
 	 */
@@ -701,7 +704,11 @@ int export_mm_struct(struct epm_action *action,
 		     struct task_struct *tsk)
 {
 	struct mm_struct *mm, *exported_mm;
+	struct anon_vma_kddm_set_private *private;
 	int r = 0;
+
+	if (tsk->exit_state)
+		return 0;
 
 	mm = tsk->mm;
 	exported_mm = mm;
@@ -730,6 +737,10 @@ int export_mm_struct(struct epm_action *action,
 			  r = init_anon_vma_kddm_set(tsk, mm);
 			  if (r)
 				  goto exit_put_mm;
+		  } else {
+			  private = mm->anon_vma_kddm_set->private_data;
+			  private->last_pid = task_pid_knr(tsk);
+			  private->last_tgid = task_tgid_knr(tsk);
 		  }
 
 		  break;
@@ -744,7 +755,7 @@ int export_mm_struct(struct epm_action *action,
 
 	r = do_export_mm_struct (action, ghost, exported_mm);
 	if (r)
-		goto up_mmap_sem;
+		goto out;
 
 	down_read(&mm->mmap_sem);
 	r = export_context_struct(ghost, exported_mm);
@@ -762,24 +773,26 @@ int export_mm_struct(struct epm_action *action,
 		goto up_mmap_sem;
 
 	r = export_mm_counters(action, ghost, mm, exported_mm);
+	if (r)
+		goto up_mmap_sem;
+
+	if (action->type == EPM_CHECKPOINT)
+		r = cr_export_process_pages(tsk->application, ghost, tsk);
 
 up_mmap_sem:
-	if (action->type == EPM_CHECKPOINT) {
-		r = cr_export_process_pages(tsk->application, ghost, tsk);
-		if (r)
-			goto out;
-	}
-
 	up_read(&mm->mmap_sem);
-	if (r)
-		goto out;
+
 out:
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to save struct mm_struct");
+
 	return r;
 
 exit_put_mm:
 	if (exported_mm != mm)
 		mmput(exported_mm);
-	return r;
+	goto out;
 }
 
 
@@ -1079,7 +1092,7 @@ static int import_one_vma (struct epm_action *action,
 		vma->vm_flags &= ~VM_LOCKED;
 	}
 
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_RESTART)
 		restore_initial_vm_ops(vma);
 
 	if (vm_ops_type == KRGSYMS_VM_OPS_SPECIAL_MAPPING)
@@ -1306,7 +1319,7 @@ static inline int do_import_mm_struct(struct epm_action *action,
 	int r = 0;
 
 	switch(action->type) {
-	  case EPM_CHECKPOINT:
+	  case EPM_RESTART:
 		  mm = allocate_mm();
 		  if (!mm)
 			  goto done;
@@ -1367,7 +1380,10 @@ int import_mm_struct (struct epm_action *action,
 	struct kddm_set *set;
 	int r;
 
-	if (action->type == EPM_CHECKPOINT
+	if (tsk->exit_state)
+		return 0;
+
+	if (action->type == EPM_RESTART
 	    && action->restart.shared == CR_LINK_ONLY) {
 		r = cr_link_to_mm_struct(action, ghost, tsk);
 		return r;
@@ -1409,7 +1425,7 @@ int import_mm_struct (struct epm_action *action,
 	    && !(action->remote_clone.clone_flags & CLONE_VM))
 		mm->locked_vm = 0;
 
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_RESTART)
 		r = cr_import_process_pages(action, ghost, mm);
 	else
 		r = import_mm_struct_end(mm, tsk);
@@ -1426,6 +1442,10 @@ int import_mm_struct (struct epm_action *action,
 err:
 	krg_put_mm (mm->mm_id);
 	unimport_mm_struct(tsk);
+
+	epm_error(action, r, tsk,
+		  "Fail to restore struct mm_struct");
+
 	return r;
 }
 
@@ -1433,7 +1453,8 @@ err:
 
 void unimport_mm_struct(struct task_struct *task)
 {
-	free_ghost_mm(task);
+	if (!task->exit_state)
+		free_ghost_mm(task);
 }
 
 
@@ -1442,13 +1463,7 @@ static int cr_export_now_mm_struct(struct epm_action *action, ghost_t *ghost,
 				   struct task_struct *task,
 				   union export_args *args)
 {
-	int r;
-	r = export_mm_struct(action, ghost, task);
-	if (r)
-		ckpt_err(action, r,
-			 "Fail to save struct mm_struct of process %d (%s)",
-			 task_pid_knr(task), task->comm);
-	return r;
+	return export_mm_struct(action, ghost, task);
 }
 
 
@@ -1460,12 +1475,8 @@ static int cr_import_now_mm_struct(struct epm_action *action, ghost_t *ghost,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_mm_struct(action, ghost, fake);
-	if (r) {
-		ckpt_err(action, r,
-			 "Fail to restore a struct mm_struct",
-			 action->restart.app->app_id);
+	if (r)
 		goto err;
-	}
 
 	*returned_data = fake->mm;
 err:

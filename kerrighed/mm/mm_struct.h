@@ -12,7 +12,10 @@
 #include <kddm/kddm_grab_object.h>
 #include <kddm/kddm_put_object.h>
 
-
+struct anon_vma_kddm_set_private {
+	pid_t last_pid;
+	pid_t last_tgid;
+};
 
 /*--------------------------------------------------------------------------*
  *                                                                          *

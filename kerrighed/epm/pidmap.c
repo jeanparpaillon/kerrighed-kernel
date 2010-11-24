@@ -266,11 +266,22 @@ static int recv_pidmap(struct rpc_desc *desc,
 		if (err)
 			goto err;
 		if (page_index == 0) {
-			/* Init's bit is set in map->page */
+			int j;
+
+			/*
+			 * Init's bit must be set, but might have just been
+			 * cleared if the node is being removed. So fix the
+			 * incoming map, and recompute nr_free.
+			 */
 			BUG_ON(!test_bit(1, map->page));
 			BUG_ON(atomic_read(&map->nr_free) != BITS_PER_PAGE - 2);
+
 			BUG_ON(!test_bit(0, page));
-			BUG_ON(!test_bit(1, page));
+			set_bit(1, page);
+			nr_free = BITS_PER_PAGE - 2;
+			for (j = 2; j < BITS_PER_PAGE; j++)
+				if (test_bit(j, page))
+					nr_free--;
 		} else {
 			BUG_ON(atomic_read(&map->nr_free) != BITS_PER_PAGE);
 		}
@@ -396,7 +407,7 @@ int pidmap_map_add(struct hotplug_context *ctx)
 	BUG_ON(host_node == kerrighed_node_id);
 
 	err = -ENOMEM;
-	desc = rpc_begin(EPM_PIDMAP_STEAL, host_node);
+	desc = rpc_begin(EPM_PIDMAP_STEAL, ctx->ns->rpc_comm, host_node);
 	if (!desc)
 		goto unlock;
 
@@ -425,6 +436,119 @@ cancel:
 	goto end;
 }
 
+static void handle_pidmap_inject(struct rpc_desc *desc, void *_msg, size_t size)
+{
+	kerrighed_node_t node = *(kerrighed_node_t *)_msg;
+	struct pid_namespace *pidmap_ns;
+	int err;
+
+	pidmap_ns = pidmap_alloc();
+	if (IS_ERR(pidmap_ns))
+		goto cancel;
+
+	err = recv_pidmap(desc, node, pidmap_ns);
+	if (err) {
+		put_pid_ns(pidmap_ns);
+		goto cancel;
+	}
+
+	foreign_pidmap[node] = pidmap_ns;
+
+	return;
+
+cancel:
+	rpc_cancel(desc);
+}
+
+static int pidmap_inject(struct hotplug_context *ctx,
+			 kerrighed_node_t node, struct pid_namespace *pidmap_ns,
+			 kerrighed_node_t target)
+{
+	struct rpc_desc *desc;
+	int err;
+
+	desc = rpc_begin(EPM_PIDMAP_INJECT, ctx->ns->rpc_comm, target);
+	if (!desc)
+		return -ENOMEM;
+
+	err = rpc_pack_type(desc, node);
+	if (err)
+		goto cancel;
+
+	err = send_pidmap(desc, pidmap_ns);
+	if (err)
+		goto cancel;
+
+end:
+	rpc_end(desc, 0);
+	return err;
+
+cancel:
+	rpc_cancel(desc);
+	goto end;
+}
+
+static int pidmaps_inject(struct hotplug_context *ctx)
+{
+	struct pid_namespace *pidmap_ns;
+	kerrighed_node_t target, node;
+	int err;
+
+	target = kerrighed_node_id;
+	for (node = 0; node < KERRIGHED_MAX_NODES; node++) {
+		if (node == kerrighed_node_id)
+			continue;
+		if (pidmap_map.host[node] != kerrighed_node_id)
+			continue;
+
+		pidmap_ns = foreign_pidmap[node];
+		target = krgnode_next_online_in_ring(target);
+		err = pidmap_inject(ctx, node, pidmap_ns, target);
+		if (err)
+			return err;
+
+		foreign_pidmap[node] = NULL;
+		put_pid_ns(pidmap_ns);
+
+		pidmap_map.host[node] = target;
+	}
+
+	target = krgnode_next_online_in_ring(target);
+	err = pidmap_inject(ctx, kerrighed_node_id, ctx->ns->root_nsproxy.pid_ns, target);
+	if (err)
+		return err;
+
+	pidmap_map.host[kerrighed_node_id] = target;
+
+	return 0;
+}
+
+int pidmap_map_remove_local(struct hotplug_context *ctx)
+{
+	int err;
+
+	if (!num_online_krgnodes()) {
+		pidmap_map_cleanup(ctx->ns);
+		return 0;
+	}
+
+	pid_wait_quiescent();
+
+	err = pidmap_map_write_lock();
+	if (err)
+		return err;
+	err = pidmaps_inject(ctx);
+	pidmap_map_write_unlock();
+	if (err)
+		return err;
+
+	err = _kddm_flush_object(pidmap_map_kddm_set, 0,
+				 first_krgnode(krgnode_online_map));
+	if (err == -ENOENT)
+		err = 0;
+	return err;
+}
+
 void epm_pidmap_start(void)
 {
 	register_io_linker(PIDMAP_MAP_LINKER, &pidmap_map_io_linker);
@@ -437,6 +561,7 @@ void epm_pidmap_start(void)
 		OOM;
 
 	rpc_register_void(EPM_PIDMAP_STEAL, handle_pidmap_steal, 0);
+	rpc_register_void(EPM_PIDMAP_INJECT, handle_pidmap_inject, 0);
 }
 
 void epm_pidmap_exit(void)

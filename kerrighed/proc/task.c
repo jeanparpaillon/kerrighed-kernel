@@ -83,7 +83,7 @@ static int task_alloc_object(struct kddm_obj *obj_entry,
 	p->pid_obj = NULL;
 #endif
 	init_rwsem(&p->sem);
-	p->write_locked = 0;
+	p->removing = 0;
 
 	p->alive = 1;
 	kref_init(&p->kref);
@@ -263,12 +263,12 @@ int krg_task_alloc(struct task_struct *task, struct pid *pid)
 	int nr = pid_knr(pid);
 
 	task->task_obj = NULL;
-	if (!task->nsproxy->krg_ns)
-		return 0;
 #ifdef CONFIG_KRG_EPM
 	if (krg_current)
 		return 0;
 #endif
+	if (!task->nsproxy->krg_ns)
+		return 0;
 	/* Exclude kernel threads and local pids from using task kddm objects. */
 	/*
 	 * At this stage, current->mm points the mm of the task being duplicated
@@ -349,7 +349,7 @@ void krg_task_abort(struct task_struct *task)
 	if (!obj)
 		return;
 
-	obj->write_locked = 2;
+	obj->removing = 1;
 	up_write(&obj->sem);
 
 	_kddm_remove_frozen_object(task_kddm_set, obj->pid);
@@ -406,17 +406,16 @@ struct task_kddm_object *krg_task_readlock(pid_t pid)
 		return NULL;
 
 	obj = _kddm_get_object_no_ft(task_kddm_set, pid);
-	if (likely(obj)) {
-		down_read(&obj->sem);
-		if (obj->write_locked == 2) {
-			/* Dying object */
-			up_read(&obj->sem);
-			_kddm_put_object(task_kddm_set, pid);
-			return NULL;
-		}
-		/* Marker for unlock. Dirty but temporary. */
-		obj->write_locked = 0;
-	}
+	if (!obj)
+		return NULL;
+
+	down_read(&obj->sem);
+	/* Marker for unlock. Dirty but temporary. */
+	obj->write_locked = 0;
+
+	if (obj->removing)
+		/* Dying object */
+		return NULL;
 
 	return obj;
 }
@@ -438,20 +437,19 @@ static struct task_kddm_object *task_writelock(pid_t pid, int nested)
 		return NULL;
 
 	obj = _kddm_grab_object_no_ft(task_kddm_set, pid);
-	if (likely(obj)) {
-		if (!nested)
-			down_write(&obj->sem);
-		else
-			down_write_nested(&obj->sem, SINGLE_DEPTH_NESTING);
-		if (obj->write_locked == 2) {
-			/* Dying object */
-			up_write(&obj->sem);
-			_kddm_put_object(task_kddm_set, pid);
-			return NULL;
-		}
-		/* Marker for unlock. Dirty but temporary. */
-		obj->write_locked = 1;
-	}
+	if (!obj)
+		return NULL;
+
+	if (!nested)
+		down_write(&obj->sem);
+	else
+		down_write_nested(&obj->sem, SINGLE_DEPTH_NESTING);
+	/* Marker for unlock. Dirty but temporary. */
+	obj->write_locked = 1;
+
+	if (obj->removing)
+		/* Dying object */
+		return NULL;
 
 	return obj;
 }
@@ -488,15 +486,16 @@ struct task_kddm_object *krg_task_create_writelock(pid_t pid)
 	BUG_ON(!(pid & GLOBAL_PID_MASK));
 
 	obj = _kddm_grab_object(task_kddm_set, pid);
-	if (likely(obj && !IS_ERR(obj))) {
-		down_write(&obj->sem);
-		/* No dying object race or this is really smelly */
-		BUG_ON(obj->write_locked == 2);
-		/* Marker for unlock. Dirty but temporary. */
-		obj->write_locked = 1;
-	} else {
-		_kddm_put_object(task_kddm_set, pid);
-	}
+	BUG_ON(!obj);
+	if (IS_ERR(obj))
+		return NULL;
+
+	down_write(&obj->sem);
+	/* Marker for unlock. Dirty but temporary. */
+	obj->write_locked = 1;
+
+	/* No dying object race or this is really smelly */
+	BUG_ON(obj->removing);
 
 	return obj;
 }
@@ -539,16 +538,29 @@ void __krg_task_unlock(struct task_struct *task)
  * @author Pascal Gallard
  * Set (or update) the location of pid
  */
+void __krg_set_pid_location(struct task_struct *task)
+{
+	struct task_kddm_object *p = task->task_obj;
+	if (p)
+		p->node = kerrighed_node_id;
+}
+
 int krg_set_pid_location(struct task_struct *task)
 {
 	struct task_kddm_object *p;
 
 	p = __krg_task_writelock(task);
-	if (likely(p))
-		p->node = kerrighed_node_id;
+	BUG_ON(p != task->task_obj);
+	__krg_set_pid_location(task);
 	__krg_task_unlock(task);
 
 	return 0;
+}
+
+void __krg_unset_pid_location(struct task_struct *task)
+{
+	struct task_kddm_object *p = task->task_obj;
+	p->node = KERRIGHED_NODE_ID_NONE;
 }
 
 int krg_unset_pid_location(struct task_struct *task)
@@ -558,8 +570,8 @@ int krg_unset_pid_location(struct task_struct *task)
 	BUG_ON(!(task_pid_knr(task) & GLOBAL_PID_MASK));
 
 	p = __krg_task_writelock(task);
-	BUG_ON(p == NULL);
-	p->node = KERRIGHED_NODE_ID_NONE;
+	BUG_ON(p != task->task_obj);
+	__krg_unset_pid_location(task);
 	__krg_task_unlock(task);
 
 	return 0;
@@ -610,6 +622,18 @@ out:
 void krg_unlock_pid_location(pid_t pid)
 {
 	krg_task_unlock(pid);
+}
+
+static int task_flusher(struct kddm_set *set, objid_t objid,
+			struct kddm_obj *obj_entry, void *data)
+{
+	BUG();
+	return KERRIGHED_NODE_ID_NONE;
+}
+
+void proc_task_remove_local(void)
+{
+	_kddm_flush_set(task_kddm_set, task_flusher, NULL);
 }
 
 /**

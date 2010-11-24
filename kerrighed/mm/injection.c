@@ -122,20 +122,20 @@ void handle_notify_low_mem (struct rpc_desc* desc,
 //		  printk ("## MEM NOTIFY - Node[%d] switched to FREE_MEM\n",
 //			  nodeid);
 		  if (old_val == OUT_OF_MEM)
-			  rpc_disable_lowmem_mode(nodeid);
+			  rpc_disable_lowmem_mode(desc->comm, nodeid);
 		  break;
 
 	  case LOW_MEM:
 //		  printk ("## MEM NOTIFY - Node[%d] switched to LOW_MEM\n",
 //			  nodeid);
 		  if (old_val == OUT_OF_MEM)
-			  rpc_disable_lowmem_mode(nodeid);
+			  rpc_disable_lowmem_mode(desc->comm, nodeid);
 		  break;
 
 	  case OUT_OF_MEM:
 //		  printk ("## MEM NOTIFY - Node[%d] switched to OUT_OF_MEM\n",
 //			  nodeid);
-		  rpc_enable_lowmem_mode(nodeid);
+		  rpc_enable_lowmem_mode(desc->comm, nodeid);
 		  break;
 	}
 }
@@ -149,8 +149,8 @@ static void do_notify_mem(unsigned long unused)
 	krgnodes_copy(nodes, krgnode_online_map);
 	krgnode_clear(kerrighed_node_id, nodes);
 
-	rpc_async_m(RPC_MM_NOTIFY_LOW_MEM, &nodes, &mem_usage_notified,
-		    sizeof(mem_usage_notified));
+	rpc_async_m(RPC_MM_NOTIFY_LOW_MEM, kddm_def_ns->rpc_comm, &nodes,
+		    &mem_usage_notified, sizeof(mem_usage_notified));
 }
 
 
@@ -193,18 +193,18 @@ set_mem_usage:
 	  case FREE_MEM:
 //		  printk ("## MEM NOTIFY - Switch local node to FREE_MEM\n");
 		  if (old_val == OUT_OF_MEM)
-			  rpc_disable_local_lowmem_mode();
+			  rpc_disable_local_lowmem_mode(kddm_def_ns->rpc_comm);
 		  break;
 
 	  case LOW_MEM:
 //		  printk ("## MEM NOTIFY - Switch local node to LOW_MEM\n");
 		  if (old_val == OUT_OF_MEM)
-			  rpc_disable_local_lowmem_mode();
+			  rpc_disable_local_lowmem_mode(kddm_def_ns->rpc_comm);
 		  break;
 
 	  case OUT_OF_MEM:
 //		  printk ("## MEM NOTIFY - Switch local node to OUT_OF_MEM\n");
-		  rpc_enable_local_lowmem_mode();
+		  rpc_enable_local_lowmem_mode(kddm_def_ns->rpc_comm);
 		  break;
 	}
 

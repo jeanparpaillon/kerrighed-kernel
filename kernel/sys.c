@@ -46,6 +46,7 @@
 #include <net/krgrpc/rpcid.h>
 #include <kerrighed/remote_cred.h>
 #include <kerrighed/remote_syscall.h>
+#include <kerrighed/hotplug.h>
 #endif
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/krginit.h>
@@ -284,12 +285,15 @@ static int krg_setpriority_pg_user(int which, int who, int niceval)
 	    && !(who & GLOBAL_PID_MASK))
 		goto out;
 
+	membership_online_hold();
+
 	krgnodes_copy(nodes, krgnode_online_map);
 
-	desc = rpc_begin_m(PROC_SETPRIORITY_PG_USER, &nodes);
+	desc = rpc_begin_m(PROC_SETPRIORITY_PG_USER,
+			   current->nsproxy->krg_ns->rpc_comm, &nodes);
 	if (!desc) {
 		retval = -ENOMEM;
-		goto out;
+		goto out_release;
 	}
 
 	msg.which = which;
@@ -319,6 +323,8 @@ static int krg_setpriority_pg_user(int which, int who, int niceval)
 out_end:
 	rpc_end(desc, 0);
 
+out_release:
+	membership_online_release();
 out:
 	return retval;
 
@@ -343,7 +349,7 @@ static int handle_setpriority_process(struct rpc_desc *desc, void *msg,
 	}
 
 	retval = do_setpriority(PRIO_PROCESS, pid_knr(pid), niceval,
-				ns_of_pid(pid)->krg_ns_root);
+				krg_pid_ns_root(ns_of_pid(pid)));
 
 	krg_handle_remote_syscall_end(pid, old_cred);
 
@@ -528,12 +534,15 @@ static int krg_getpriority_pg_user(int which, int who)
 	    && !(who & GLOBAL_PID_MASK))
 		goto out;
 
+	membership_online_hold();
+
 	krgnodes_copy(nodes, krgnode_online_map);
 
-	desc = rpc_begin_m(PROC_GETPRIORITY_PG_USER, &nodes);
+	desc = rpc_begin_m(PROC_GETPRIORITY_PG_USER,
+			   current->nsproxy->krg_ns->rpc_comm, &nodes);
 	if (!desc) {
 		retval = -ENOMEM;
-		goto out;
+		goto out_release;
 	}
 
 	msg.which = which;
@@ -564,6 +573,8 @@ static int krg_getpriority_pg_user(int which, int who)
 out_end:
 	rpc_end(desc, 0);
 
+out_release:
+	membership_online_release();
 out:
 	return retval;
 
@@ -587,7 +598,7 @@ static int handle_getpriority_process(struct rpc_desc *desc, void *msg,
 	}
 
 	retval = do_getpriority(PRIO_PROCESS, pid_knr(pid),
-				ns_of_pid(pid)->krg_ns_root);
+				krg_pid_ns_root(ns_of_pid(pid)));
 
 	krg_handle_remote_syscall_end(pid, old_cred);
 
@@ -1459,7 +1470,9 @@ static int krg_forward_setpgid(kerrighed_node_t node, pid_t pid, pid_t pgid)
 	msg.pgid = pgid;
 	msg.parent_session = task_session_knr(current);
 
-	retval = rpc_sync(PROC_FORWARD_SETPGID, node, &msg, sizeof(msg));
+	retval = rpc_sync(PROC_FORWARD_SETPGID,
+			  current->nsproxy->krg_ns->rpc_comm, node,
+			  &msg, sizeof(msg));
 
 out:
 	return retval;
@@ -1470,7 +1483,6 @@ struct children_kddm_object *
 krg_prepare_setpgid(pid_t pid, pid_t pgid, kerrighed_node_t *nodep)
 {
 	struct children_kddm_object *parent_children_obj = NULL;
-	pid_t real_parent_tgid;
 	kerrighed_node_t node = KERRIGHED_NODE_ID_NONE;
 	struct task_kddm_object *task_obj;
 	struct timespec backoff_time = {
@@ -1488,8 +1500,7 @@ krg_prepare_setpgid(pid_t pid, pid_t pgid, kerrighed_node_t *nodep)
 	if (pid == current->tgid) {
 		if (rcu_dereference(current->parent_children_obj))
 			parent_children_obj =
-				krg_parent_children_writelock(current,
-							      &real_parent_tgid);
+				krg_parent_children_writelock(current);
 		goto out;
 	}
 
@@ -1616,7 +1627,7 @@ static int handle_getpgid(struct rpc_desc *desc, void *msg, size_t size)
 		goto out;
 	}
 
-	retval = do_getpgid(pid_knr(pid), ns_of_pid(pid)->krg_ns_root);
+	retval = do_getpgid(pid_knr(pid), krg_pid_ns_root(ns_of_pid(pid)));
 
 	krg_handle_remote_syscall_end(pid, old_cred);
 
@@ -1704,7 +1715,7 @@ static int handle_getsid(struct rpc_desc *desc, void *msg, size_t size)
 		goto out;
 	}
 
-	retval = do_getsid(pid_knr(pid), ns_of_pid(pid)->krg_ns_root);
+	retval = do_getsid(pid_knr(pid), krg_pid_ns_root(ns_of_pid(pid)));
 
 	krg_handle_remote_syscall_end(pid, old_cred);
 
@@ -1749,16 +1760,13 @@ SYSCALL_DEFINE0(setsid)
 	pid_t session = pid_vnr(sid);
 #ifdef CONFIG_KRG_EPM
 	struct children_kddm_object *parent_children_obj = NULL;
-	pid_t real_parent_tgid;
 #endif /* CONFIG_KRG_EPM */
 	int err = -EPERM;
 
 #ifdef CONFIG_KRG_EPM
 	down_read(&kerrighed_init_sem);
 	if (rcu_dereference(current->parent_children_obj))
-		parent_children_obj =
-			krg_parent_children_writelock(current,
-						      &real_parent_tgid);
+		parent_children_obj = krg_parent_children_writelock(current);
 #endif /* CONFIG_KRG_EPM */
 	write_lock_irq(&tasklist_lock);
 	/* Fail if I am already a session leader */

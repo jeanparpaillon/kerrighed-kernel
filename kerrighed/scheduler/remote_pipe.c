@@ -13,7 +13,9 @@
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/krginit.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/workqueue.h>
+#include <kerrighed/hotplug.h>
 #include <kerrighed/scheduler/pipe.h>
 #include <kerrighed/scheduler/global_config.h>
 #include <kerrighed/scheduler/remote_pipe.h>
@@ -117,6 +119,8 @@ static void pipe_get_remote_value_worker(struct work_struct *work)
 end_request:
 	err = rpc_end(show_desc->desc, 0);
 
+	membership_online_release();
+
 	spin_lock(&show_desc->lock);
 	show_desc->pending = 0;
 	spin_unlock(&show_desc->lock);
@@ -125,7 +129,7 @@ end_request:
 
 err_cancel:
 	rpc_cancel(show_desc->desc);
-	if (err == RPC_EPIPE)
+	if (err == -ECANCELED)
 		err = -EPIPE;
 	BUG_ON(err >= 0);
 	show_desc->ret = err;
@@ -140,19 +144,29 @@ static int start_pipe_get_remote_value(
 	const void *in_value_p, unsigned int in_nr)
 {
 	struct remote_pipe_desc *show_desc = &sink->remote_pipe;
+	struct krg_namespace *ns;
 	struct rpc_desc *desc;
 	size_t in_size = sink->type->get_value_types.in_type_size;
 	int err;
 
-	if (!krgnode_online(node))
-		return -EINVAL;
 	if (node == kerrighed_node_id)
 		return scheduler_source_get_value(local_pipe->source,
 						  value_p, nr,
 						  in_value_p, in_nr);
-	desc = rpc_begin(SCHED_PIPE_GET_REMOTE_VALUE, node);
+
+	err = -EBUSY;
+	if (!membership_online_try_hold())
+		goto err;
+	err = -EINVAL;
+	if (!krgnode_online(node))
+		goto err_not_online;
+
+	err = -ENOMEM;
+	ns = find_get_krg_ns();
+	desc = rpc_begin(SCHED_PIPE_GET_REMOTE_VALUE, ns->rpc_comm, node);
+	put_krg_ns(ns);
 	if (!desc)
-		return -ENOMEM;
+		goto err;
 	err = global_config_pack_item(desc, &local_pipe->config.cg_item);
 	if (err)
 		goto err_cancel;
@@ -178,6 +192,9 @@ static int start_pipe_get_remote_value(
 err_cancel:
 	rpc_cancel(desc);
 	rpc_end(desc, 0);
+err_not_online:
+	membership_online_release();
+err:
 	BUG_ON(err == -EAGAIN);
 	return err;
 }

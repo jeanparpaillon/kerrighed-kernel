@@ -269,8 +269,7 @@ static inline pte_t *kddm_pt_lookup_pte (struct mm_struct *mm,
 static inline void __pt_for_each_pte(struct kddm_set *set,
 				     struct mm_struct *mm, pmd_t *pmd,
 				     unsigned long start, unsigned long end,
-				     int(*f)(unsigned long, void*, void*),
-				     void *priv)
+				     struct kddm_obj_iterator *iterator)
 {
 	struct kddm_obj *obj_entry, *new_obj = NULL;
 	unsigned long addr;
@@ -284,14 +283,14 @@ static inline void __pt_for_each_pte(struct kddm_set *set,
 	 * This lock being taken during page swap, we can face a recursive
 	 * lock if the kernel have to free memory during obj_entry allocaton.
 	 */
-	if (!f)
+	if (!iterator->f)
 		new_obj = alloc_kddm_obj_entry(set, 0);
 
 	ptep = pte_offset_map_lock(mm, pmd, start, &ptl);
 
 	objid = start / PAGE_SIZE;
 	for (addr = start; addr != end; addr += PAGE_SIZE) {
-		if (f) {
+		if (iterator->f) {
 retry:
 			obj_entry = get_obj_entry_from_pte(mm, addr, ptep,
 							   NULL);
@@ -302,16 +301,18 @@ retry:
 
 				pte_unmap_unlock(ptep, ptl);
 
-				ret = f(objid, obj_entry, priv);
-				if (ret == KDDM_OBJ_REMOVED)
+				ret = iterator->f(objid, obj_entry, iterator->data, iterator->dead_list);
+				if (ret == KDDM_OBJ_REMOVED
+				    || ret == KDDM_OBJ_CLEARED)
 					pte_clear(mm, addr, ptep);
-
-				put_kddm_obj_entry(set, obj_entry, objid);
+				else
+					put_kddm_obj_entry(set, obj_entry,
+							   objid);
 				ptep = pte_offset_map_lock(mm, pmd, addr, &ptl);
 			}
 		}
 		else {
-			obj_entry = init_pte(mm, ptep, set, objid, priv,
+			obj_entry = init_pte(mm, ptep, set, objid, iterator->data,
 					     new_obj);
 
 			/* The object has been used, allocate a new one */
@@ -334,8 +335,7 @@ retry:
 static inline void __pt_for_each_pmd(struct kddm_set *set,
 				     struct mm_struct *mm, pud_t *pud,
 				     unsigned long start, unsigned long end,
-				     int(*f)(unsigned long, void*, void*),
-				     void *priv)
+				     struct kddm_obj_iterator *iterator)
 {
 	unsigned long addr, next;
 	pmd_t *pmd;
@@ -345,7 +345,7 @@ static inline void __pt_for_each_pmd(struct kddm_set *set,
 	for (addr = start; addr != end; addr = next) {
 		next = pmd_addr_end(addr, end);
 		if (pmd_present(*pmd))
-			__pt_for_each_pte(set, mm, pmd, addr, next, f, priv);
+			__pt_for_each_pte(set, mm, pmd, addr, next, iterator);
 		pmd++;
 	}
 }
@@ -353,8 +353,7 @@ static inline void __pt_for_each_pmd(struct kddm_set *set,
 static inline void __pt_for_each_pud(struct kddm_set *set,
 				     struct mm_struct *mm, pgd_t *pgd,
 				     unsigned long start, unsigned long end,
-				     int(*f)(unsigned long, void*, void*),
-				     void *priv)
+				     struct kddm_obj_iterator *iterator)
 {
 	unsigned long addr, next;
 	pud_t *pud;
@@ -364,15 +363,14 @@ static inline void __pt_for_each_pud(struct kddm_set *set,
 	for (addr = start; addr != end; addr = next) {
 		next = pud_addr_end(addr, end);
 		if (pud_present(*pud))
-			__pt_for_each_pmd(set, mm, pud, addr, next, f, priv);
+			__pt_for_each_pmd(set, mm, pud, addr, next, iterator);
 		pud++;
 	}
 }
 
 static void kddm_pt_for_each(struct kddm_set *set, struct mm_struct *mm,
 			     unsigned long start, unsigned long end,
-			     int(*f)(unsigned long, void*, void*),
-			     void *priv)
+			     struct kddm_obj_iterator *iterator)
 {
 	unsigned long addr, next;
 	pgd_t *pgd;
@@ -382,7 +380,7 @@ static void kddm_pt_for_each(struct kddm_set *set, struct mm_struct *mm,
 	for (addr = start; addr != end; addr = next) {
 		next = pgd_addr_end(addr, end);
 		if (pgd_present(*pgd))
-			__pt_for_each_pud(set, mm, pgd, addr, next, f, priv);
+			__pt_for_each_pud(set, mm, pgd, addr, next, iterator);
 		pgd++;
 	}
 }
@@ -726,19 +724,18 @@ done:
 
 
 static void kddm_pt_for_each_obj_entry(struct kddm_set *set,
-				       int(*f)(unsigned long, void *, void*),
-				       void *data)
+				       struct kddm_obj_iterator *iterator)
 {
 	struct mm_struct *mm = set->obj_set;
 	struct vm_area_struct *vma;
 
-	BUG_ON(!f);
+	BUG_ON(!iterator->f);
 
 	down_write(&mm->mmap_sem);
 	for (vma = mm->mmap; vma != NULL; vma = vma->vm_next)
 		if (anon_vma(vma))
 			kddm_pt_for_each(set, mm, vma->vm_start, vma->vm_end,
-					 f, data);
+					 iterator);
 	up_write(&mm->mmap_sem);
 }
 
@@ -783,6 +780,7 @@ static void *kddm_pt_alloc (struct kddm_set *set, void *_data)
 {
 	struct mm_struct *mm = _data;
 	struct vm_area_struct *vma;
+	struct kddm_obj_iterator iterator;
 
 	if (mm == NULL) {
 		mm = alloc_fake_mm(NULL);
@@ -797,10 +795,14 @@ static void *kddm_pt_alloc (struct kddm_set *set, void *_data)
 
 	mm->anon_vma_kddm_id = set->id;
 
+	iterator.f = NULL;
+	iterator.dead_list = NULL;
 	for (vma = mm->mmap; vma != NULL; vma = vma->vm_next) {
-		if (anon_vma(vma))
+		if (anon_vma(vma)) {
+			iterator.data = vma;
 			kddm_pt_for_each(set, mm, vma->vm_start, vma->vm_end,
-					 NULL, vma);
+					 &iterator);
+		}
 		check_link_vma_to_anon_memory_kddm_set (vma);
 	}
 
@@ -814,8 +816,7 @@ static void *kddm_pt_alloc (struct kddm_set *set, void *_data)
 
 
 static void kddm_pt_free (struct kddm_set *set,
-			  int (*f)(unsigned long, void *data, void *priv),
-			  void *priv)
+			  struct kddm_obj_iterator *iterator)
 {
 	struct mm_struct *mm = set->obj_set;
 

@@ -389,6 +389,8 @@ struct task_struct *alloc_shared_fake_task_struct(struct app_struct *app)
 		goto err_ns;
 	}
 
+	fake->pid = 0;
+
 	get_uts_ns(krg_ns->root_nsproxy.uts_ns);
 	fake->nsproxy->uts_ns = krg_ns->root_nsproxy.uts_ns;
 	get_ipc_ns(krg_ns->root_nsproxy.ipc_ns);
@@ -462,8 +464,8 @@ void destroy_shared_objects(struct app_struct *app,
 
 /*--------------------------------------------------------------------------*/
 
-static int __export_one_shared_object_kernel(ghost_t *ghost,
-					     struct epm_action *action,
+static int __export_one_shared_object_kernel(struct epm_action *action,
+					     ghost_t *ghost,
 					     struct shared_object *this)
 {
 	int r = 0;
@@ -494,9 +496,9 @@ error:
 	return r;
 }
 
-static int export_one_shared_object(ghost_t *ghost,
+static int export_one_shared_object(struct epm_action *action,
+				    ghost_t *ghost,
 				    ghost_t *user_ghost,
-				    struct epm_action *action,
 				    struct shared_object *this)
 {
 	int r;
@@ -507,7 +509,7 @@ static int export_one_shared_object(ghost_t *ghost,
 	       && this->checkpoint.locality != SHARED_MASTER
 	       && this->checkpoint.locality != SHARED_SLAVE);
 
-	r = __export_one_shared_object_kernel(ghost, action, this);
+	r = __export_one_shared_object_kernel(action, ghost, this);
 	if (r)
 		goto error;
 
@@ -518,14 +520,15 @@ static int export_one_shared_object(ghost_t *ghost,
 
 error:
 	if (r)
-		ckpt_err(NULL, r,
-			 "Fail to checkpoint object of type: %u and key: %lu",
-			 this->index.type, this->index.key);
+		epm_error(action, r, this->checkpoint.export.task,
+			  "Fail to save object of type: %u and key: %lu",
+			  this->index.type, this->index.key);
 
 	return r;
 }
 
-static int export_shared_objects(ghost_t *ghost,
+static int export_shared_objects(struct epm_action *action,
+				 ghost_t *ghost,
 				 ghost_t *user_ghost,
 				 struct app_struct *app,
 				 enum shared_obj_type from,
@@ -533,11 +536,7 @@ static int export_shared_objects(ghost_t *ghost,
 {
 	int r = 0;
 	enum shared_obj_type end = NO_OBJ;
-	struct epm_action action;
 	struct rb_node *node, *next_node;
-
-	action.type = EPM_CHECKPOINT;
-	action.checkpoint.shared = CR_SAVE_NOW;
 
 	node = rb_first(&app->shared_objects.root);
 	while (node) {
@@ -555,7 +554,7 @@ static int export_shared_objects(ghost_t *ghost,
 		if (idx->type > to)
 			goto exit_write_end;
 
-		r = export_one_shared_object(ghost, user_ghost, &action, this);
+		r = export_one_shared_object(action, ghost, user_ghost, this);
 		clear_one_shared_object(node, app);
 
 		if (r)
@@ -575,9 +574,13 @@ error:
 static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 {
 	int r, err;
-
+	struct epm_action action;
 	ghost_fs_t oldfs;
 	ghost_t *ghost, *user_ghost;
+
+	action.type = EPM_CHECKPOINT;
+	action.checkpoint.appid = app->app_id;
+	action.checkpoint.shared = CR_SAVE_NOW;
 
 	__set_ghost_fs(&oldfs);
 
@@ -586,10 +589,10 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
-		ckpt_err(NULL, r,
-			 "Fail to create file "
-			 "/var/chkpt/%ld/v%d/shared_obj_%u.bin",
-			 app->app_id, chkpt_sn, kerrighed_node_id);
+		epm_error(&action, r, NULL,
+			  "Fail to create file "
+			  "/var/chkpt/%ld/v%d/shared_obj_%u.bin",
+			  app->app_id, chkpt_sn, kerrighed_node_id);
 		goto exit_unset_fs;
 	}
 
@@ -598,19 +601,19 @@ static int chkpt_shared_objects(struct app_struct *app, int chkpt_sn)
 
 	if (IS_ERR(user_ghost)) {
 		r = PTR_ERR(user_ghost);
-		ckpt_err(NULL, r,
-			 "Fail to create file "
-			 "/var/chkpt/%ld/v%d/%s/user_info_%u.txt",
-			 app->app_id, chkpt_sn, kerrighed_node_id);
+		epm_error(&action, r, NULL,
+			  "Fail to create file "
+			  "/var/chkpt/%ld/v%d/%s/user_info_%u.txt",
+			  app->app_id, chkpt_sn, kerrighed_node_id);
 		goto exit_close_ghost;
 	}
 
-	r = export_shared_objects(ghost, user_ghost, app,
+	r = export_shared_objects(&action, ghost, user_ghost, app,
 				  PIPE_INODE, DVFS_FILE);
 	if (r)
 		goto exit_close_user_ghost;
 
-	r = export_shared_objects(ghost, user_ghost, app,
+	r = export_shared_objects(&action, ghost, user_ghost, app,
 				  FILES_STRUCT, SIGNAL_STRUCT);
 
 exit_close_user_ghost:
@@ -937,7 +940,7 @@ err_clear_shared:
 /*--------------------------------------------------------------------------*/
 
 
-static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
+static int import_one_shared_object(struct epm_action *action, ghost_t *ghost,
 				    struct task_struct *fake,
 				    enum shared_obj_type type)
 {
@@ -1011,22 +1014,17 @@ static int import_one_shared_object(ghost_t *ghost, struct epm_action *action,
 		kfree(s);
 err:
 	if (r)
-		ckpt_err(NULL, r,
-			 "Fail to restore object of type: %u and key: %lu",
-			 type, stmp.index.key);
+		epm_error(action, r, fake,
+			  "Fail to restore object of type: %u and key: %lu",
+			  type, stmp.index.key);
 	return r;
 }
 
-static int import_shared_objects(ghost_t *ghost, struct app_struct *app,
+static int import_shared_objects(struct epm_action *action, ghost_t *ghost,
 				 struct task_struct *fake)
 {
 	int r;
-	struct epm_action action;
 	enum shared_obj_type type = NO_OBJ;
-
-	action.type = EPM_CHECKPOINT;
-	action.restart.shared = CR_LOAD_NOW;
-	action.restart.app = app;
 
 	r = ghost_read(ghost, &type, sizeof(enum shared_obj_type));
 	if (r)
@@ -1036,7 +1034,7 @@ static int import_shared_objects(ghost_t *ghost, struct app_struct *app,
 
 	while (type != NO_OBJ) {
 
-		r = import_one_shared_object(ghost, &action, fake, type);
+		r = import_one_shared_object(action, ghost, fake, type);
 		if (r)
 			goto error;
 
@@ -1693,7 +1691,13 @@ static int local_restart_shared_objects(struct rpc_desc *desc,
 	int r = -EINVAL;
 	int idx = 0;
 	kerrighed_node_t node;
+	struct epm_action action;
 	ghost_t *ghost;
+
+	action.type = EPM_RESTART;
+	action.restart.appid = app->app_id;
+	action.restart.shared = CR_LOAD_NOW;
+	action.restart.app = app;
 
 	/* 1) restore objects for which we are master */
 	for_each_krgnode_mask(node, app->restart.replacing_nodes) {
@@ -1703,16 +1707,16 @@ static int local_restart_shared_objects(struct rpc_desc *desc,
 
 		if (IS_ERR(ghost)) {
 			r = PTR_ERR(ghost);
-			ckpt_err(NULL, r,
-				 "Fail to open file "
-				 "/var/chkpt/%ld/v%d/shared_obj_%u.bin",
-				 app->app_id, chkpt_sn, kerrighed_node_id);
+			epm_error(&action, r, NULL,
+				  "Fail to open file "
+				  "/var/chkpt/%ld/v%d/shared_obj_%u.bin",
+				  app->app_id, chkpt_sn, kerrighed_node_id);
 			goto err_import;
 		}
 
 		set_file_ghost_pos(ghost, ghost_offsets[idx]);
 
-		r = import_shared_objects(ghost, app, fake);
+		r = import_shared_objects(&action, ghost, fake);
 		if (r)
 			goto err_close_ghost;
 
@@ -1870,9 +1874,8 @@ int global_restart_shared(struct rpc_desc *desc,
 error:
 	clear_substitution_files(&substitute_files);
 	if (r)
-		ckpt_err(NULL, r,
-			 "Fail to restore shared objects of application %ld",
-			 obj->app_id);
+		app_error(__krg_action_to_str(EPM_RESTART), r, obj->app_id,
+			  "Fail to restore shared objects");
 
 	return r;
 }

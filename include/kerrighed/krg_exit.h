@@ -20,7 +20,7 @@ int krg_do_wait(struct children_kddm_object *obj, int *notask_error,
 		struct rusage __user *ru);
 
 /* Used by krg_do_wait() */
-int krg_wait_task_zombie(pid_t pid, kerrighed_node_t zombie_location,
+int krg_wait_task_zombie(pid_t pid,
 			 int options,
 			 struct siginfo __user *infop,
 			 int __user *stat_addr, struct rusage __user *ru);
@@ -29,8 +29,10 @@ int krg_wait_task_zombie(pid_t pid, kerrighed_node_t zombie_location,
 int krg_do_notify_parent(struct task_struct *task, struct siginfo *info);
 
 /* Used by remote (zombie) child reparenting */
-void notify_remote_child_reaper(pid_t zombie_pid,
-				kerrighed_node_t zombie_location);
+void notify_remote_child_reaper(pid_t zombie_pid);
+/* Used by zombie migration/restart */
+void krg_zombie_check_notify_child_reaper(struct task_struct *task,
+					  struct children_kddm_object *parent_children_obj);
 
 /* Delayed do_notify_parent() in release_task() */
 int krg_delayed_notify_parent(struct task_struct *leader);

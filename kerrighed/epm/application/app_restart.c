@@ -18,6 +18,7 @@
 #include <kerrighed/ghost.h>
 #include <kerrighed/ghost_helpers.h>
 #include <kerrighed/physical_fs.h>
+#include <kerrighed/hotplug.h>
 #include <net/krgrpc/rpcid.h>
 #include <net/krgrpc/rpc.h>
 #include <kddm/kddm.h>
@@ -45,9 +46,9 @@ static int restore_app_kddm_object(struct app_kddm_object *obj,
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
-		ckpt_err(NULL, r,
-			 "Fail to open file /var/chkpt/%ld/v%d/global.bin",
-			 app_id, chkpt_sn);
+		app_error(__krg_action_to_str(EPM_RESTART), r, app_id,
+			  "Fail to open file /var/chkpt/%ld/v%d/global.bin",
+			  app_id, chkpt_sn);
 		goto err_open;
 	}
 
@@ -149,11 +150,8 @@ err_open:
 
 err_kernel_version:
 	r = -E_CR_BADDATA;
-	ckpt_err(NULL, r,
-		 "Restart %ld aborted: checkpoint was done on another"
-		 " kernel",
-		 app_id);
-
+	app_error(__krg_action_to_str(EPM_RESTART), r, app_id,
+		  "checkpoint was done on another kernel");
 	goto err_read;
 }
 
@@ -263,9 +261,9 @@ static int restore_local_app(long app_id, int chkpt_sn,
 
 	if (IS_ERR(ghost)) {
 		r = PTR_ERR(ghost);
-		ckpt_err(NULL, r,
-			 "Fail to open file /var/chkpt/%ld/v%d/node_%u.bin",
-			 app_id, chkpt_sn, node_id);
+		app_error(__krg_action_to_str(EPM_RESTART), r, app_id,
+			  "Fail to open file /var/chkpt/%ld/v%d/node_%u.bin",
+			  app_id, chkpt_sn, node_id);
 		goto err_open;
 	}
 
@@ -482,7 +480,11 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn, int fl
 	}
 
 	if (!krgnodes_empty(nodes)) {
-		desc = rpc_begin_m(APP_INIT_RESTART, &nodes);
+		desc = rpc_begin_m(APP_INIT_RESTART, kddm_def_ns->rpc_comm, &nodes);
+		if (!desc) {
+			r = -ENOMEM;
+			goto exit;
+		}
 
 		r = rpc_pack_type(desc, msg);
 		if (r)
@@ -506,7 +508,12 @@ static int global_init_restart(struct app_kddm_object *obj, int chkpt_sn, int fl
 
 		krgnode_set(recovery_node, nodes);
 
-		desc = rpc_begin(APP_INIT_RESTART, recovery_node);
+		desc = rpc_begin(APP_INIT_RESTART, kddm_def_ns->rpc_comm, recovery_node);
+		if (!desc) {
+			r = -ENOMEM;
+			goto exit;
+		}
+
 		r = rpc_pack_type(desc, msg);
 		if (r)
 			goto err_rpc;
@@ -597,7 +604,7 @@ static int local_reserve_pid_processes(struct app_struct *app)
 	int err = 0;
 
 	list_for_each_entry(t, &app->tasks, next_task) {
-		err = reserve_pid(t->restart.pid);
+		err = reserve_pid(app->app_id, t->restart.pid);
 		if (err) {
 			tfail = t;
 			goto error;
@@ -811,14 +818,14 @@ static int end_rebuild_orphan_pids(pids_list_t *orphan_pids)
 	return r;
 }
 
-static inline int rebuild_orphan_pids(pids_list_t *orphan_pids)
+static int rebuild_orphan_pids(long appid, pids_list_t *orphan_pids)
 {
 	int r = 0;
 	unique_pid_t *upid;
 
 	list_for_each_entry(upid, &(orphan_pids->pids), next) {
 		BUG_ON(upid->reserved);
-		r = reserve_pid(upid->pid);
+		r = reserve_pid(appid, upid->pid);
 		if (r)
 			goto err;
 		upid->reserved = 1;
@@ -1210,7 +1217,7 @@ static int global_do_restart(struct app_kddm_object *obj,
 	msg.app_id = obj->app_id;
 	msg.requester_task = *requester;
 
-	desc = rpc_begin_m(APP_DO_RESTART, &obj->nodes);
+	desc = rpc_begin_m(APP_DO_RESTART, kddm_def_ns->rpc_comm, &obj->nodes);
 	if (!desc)
 		return -ENOMEM;
 
@@ -1236,7 +1243,7 @@ static int global_do_restart(struct app_kddm_object *obj,
 		goto err_no_pids;
 
 	/* reserve orphan session/pgrp pids */
-	r = rebuild_orphan_pids(&orphan_pids);
+	r = rebuild_orphan_pids(obj->app_id, &orphan_pids);
 	if (r)
 		goto error;
 
@@ -1353,6 +1360,8 @@ int app_restart(struct restart_request *req,
 	struct app_kddm_object *obj;
 	int r = 0;
 
+	membership_online_hold();
+
 	obj = kddm_grab_object(kddm_def_ns, APP_KDDM_ID, req->app_id);
 
 	if (obj->app_id == req->app_id) {
@@ -1377,6 +1386,8 @@ exit:
 	else
 exit_app_busy:
 		kddm_put_object(kddm_def_ns, APP_KDDM_ID, req->app_id);
+
+	membership_online_release();
 
 	return r;
 }

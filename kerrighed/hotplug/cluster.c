@@ -4,10 +4,12 @@
 
 #define MODULE_NAME "Hotplug"
 
+#include <linux/compile.h>
 #include <linux/sched.h>
 #include <linux/rwsem.h>
 #include <linux/mutex.h>
 #include <linux/completion.h>
+#include <linux/notifier.h>
 #include <linux/string.h>
 #include <linux/capability.h>
 #include <linux/limits.h>
@@ -369,6 +371,8 @@ static void krg_container_abort(struct krg_namespace *ns, int err)
 		put_krg_ns(cluster_init_helper_ns);
 	cluster_init_helper_ns = ERR_PTR(err);
 	complete(&cluster_init_helper_ready);
+
+	complete(&ns->root_task_continue_exit);
 }
 
 void krg_ns_root_exit(struct krg_namespace *ns)
@@ -382,15 +386,13 @@ void krg_ns_root_exit(struct krg_namespace *ns)
 	/* TODO: Make it race-free */
 	if (!IS_KERRIGHED_NODE(KRGFLAGS_STOPPING)
 	    && IS_KERRIGHED_NODE(KRGFLAGS_RUNNING))
-		if (self_remove(ns))
-			printk("kerrighed: "
-			       "Failed to automatically remove the node! "
-			       "Please retry manually.\n");
+		self_remove(ns);
 #else
 	printk(KERN_WARNING "kerrighed: Root task exiting! Leaking zombies.\n");
-	set_current_state(TASK_UNINTERRUPTIBLE);
-	schedule();
 #endif
+
+	complete_all(&ns->root_task_in_exit);
+	wait_for_completion(&ns->root_task_continue_exit);
 }
 
 /* ns->root_task must be blocked and alive to get a reliable result */
@@ -415,7 +417,7 @@ static bool krg_container_may_conflict(struct krg_namespace *ns)
 			continue;
 
 #ifdef CONFIG_KRG_PROC
-		if (task_active_pid_ns(t)->krg_ns_root == ns->root_nsproxy.pid_ns)
+		if (task_active_pid_ns(t)->krg_ns == ns)
 #else
 		nsp = task_nsproxy(t);
 		if (nsp && nsp->krg_ns == ns)
@@ -627,16 +629,95 @@ struct krg_namespace *create_krg_container(struct krg_namespace *ns)
 	return ns;
 }
 
+static int send_kernel_version(struct rpc_desc *desc)
+{
+	kerrighed_node_t node;
+	int len, err, ret;
+
+	len = strlen(UTS_VERSION) + 1;
+	err = rpc_pack_type(desc, len);
+	if (err)
+		goto error;
+
+	err = rpc_pack(desc, 0, UTS_VERSION, len);
+	if (err)
+		goto error;
+
+	for_each_krgnode_mask(node, desc->nodes) {
+		err = rpc_unpack_type_from(desc, node, ret);
+		if (err)
+			goto error;
+
+		if (ret)
+			goto bad_version;
+	}
+
+bad_version:
+	err = ret;
+error:
+	return err;
+}
+
+static int check_kernel_version(struct rpc_desc *desc)
+{
+	char *uts_version;
+	int len, err, ret;
+
+	err = rpc_unpack_type(desc, len);
+	if (err)
+		goto error;
+
+	if (len > 1024) {
+		err = -EINVAL;
+		goto error;
+	}
+
+	uts_version = kmalloc(len, GFP_KERNEL);
+	if (!uts_version) {
+		err = -ENOMEM;
+		goto error;
+	}
+
+	err = rpc_unpack(desc, 0, uts_version, len);
+	if (err)
+		goto err_free_version;
+
+	ret = 0;
+	if (strncmp(UTS_VERSION, uts_version, len)) {
+		pr_err("kerrighed: [ADD] Kernel version differs from "
+		       "other nodes\n");
+		ret = -EPERM;
+	}
+
+	err = rpc_pack_type(desc, ret);
+	if (err)
+		goto err_free_version;
+
+	err = ret;
+
+err_free_version:
+	kfree(uts_version);
+error:
+	return err;
+}
+
 static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 {
 	struct cluster_start_msg *msg = data;
 	struct hotplug_context *ctx = NULL;
-	int master = rpc_desc_get_client(desc) == kerrighed_node_id;
+	struct rpc_communicator *comm = desc->comm;
+	kerrighed_node_t master_id = rpc_desc_get_client(desc);
+	bool master = master_id == kerrighed_node_id;
 	char *page;
 	int ret = 0;
 	int err;
 
 	mutex_lock(&cluster_start_mutex);
+
+	/* Check Kernel version before attempting to start the node */
+	err = check_kernel_version(desc);
+	if (err)
+		goto cancel;
 
 	if (master) {
 		err = -EPIPE;
@@ -663,24 +744,35 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 	if (!master) {
 		struct krg_namespace *ns;
 
+		mutex_lock(&hotplug_mutex);
+
+		err = rpc_connect_mask(comm, &msg->node_set.v);
+		if (err) {
+			rpc_cancel(desc);
+			goto err_unlock;
+		}
+
 		init_completion(&krg_container_continue);
 		ns = create_krg_container(find_get_krg_ns());
 		if (!ns)
-			goto cancel;
+			goto err_close;
 
 		ctx = hotplug_ctx_alloc(ns);
 		put_krg_ns(ns);
 		if (!ctx)
-			goto cancel;
+			goto err_close;
 		ctx->node_set = msg->node_set;
+
+		rpc_communicator_get(comm);
+		ctx->ns->rpc_comm = comm;
 	}
 
 	err = rpc_pack_type(desc, ret);
 	if (err)
-		goto cancel;
+		goto err_check_comm;
 	err = rpc_unpack_type(desc, ret);
 	if (err)
-		goto cancel;
+		goto err_check_comm;
 
 	kerrighed_subsession_id = ctx->node_set.subclusterid;
 	__nodes_add(ctx);
@@ -711,6 +803,9 @@ static void handle_cluster_start(struct rpc_desc *desc, void *data, size_t size)
 		init_completion(&krg_container_done);
 		complete(&krg_container_continue);
 		wait_for_completion(&krg_container_done);
+
+		mutex_unlock(&hotplug_mutex);
+		local_add_done(desc);
 	}
 
 out:
@@ -722,13 +817,27 @@ out:
 cancel:
 	rpc_cancel(desc);
 	goto out;
+
+err_check_comm:
+	if (master)
+		goto cancel;
+	rpc_communicator_put(ctx->ns->rpc_comm);
+	ctx->ns->rpc_comm = NULL;
+err_close:
+	rpc_cancel(desc);
+	rpc_close_mask(comm, &msg->node_set.v);
+err_unlock:
+	mutex_unlock(&hotplug_mutex);
+	goto out;
 }
 
-static void cluster_start_worker(struct work_struct *work)
+static int cluster_start_worker(void)
 {
+	struct rpc_communicator *comm;
 	struct rpc_desc *desc;
 	char *page;
 	kerrighed_node_t node;
+	bool boot;
 	int ret;
 	int err = -ENOMEM;
 
@@ -743,16 +852,42 @@ static void cluster_start_worker(struct work_struct *work)
 
 	free_page((unsigned long)page);
 
-	desc = rpc_begin_m(CLUSTER_START, &cluster_start_ctx->node_set.v);
+	boot = krgnode_isset(kerrighed_node_id, cluster_start_ctx->node_set.v);
+	if (boot) {
+		BUG_ON(cluster_start_ctx->ns->rpc_comm);
+		comm = rpc_find_get_communicator(0);
+		if (!comm)
+			goto out;
+		cluster_start_ctx->ns->rpc_comm = comm;
+
+		err = rpc_connect_mask(comm, &cluster_start_ctx->node_set.v);
+		if (err)
+			goto out_check_comm;
+	} else {
+		comm = cluster_start_ctx->ns->rpc_comm;
+	}
+
+	err = -ENOMEM;
+	desc = rpc_begin_m(CLUSTER_START, comm, &cluster_start_ctx->node_set.v);
 	if (!desc)
-		goto out;
+		goto out_close;
 	err = rpc_pack_type(desc, cluster_start_msg);
 	if (err)
 		goto end;
+
+	err = send_kernel_version(desc);
+	if (err)
+		goto cancel;
+
 	for_each_krgnode_mask(node, cluster_start_ctx->node_set.v) {
 		err = rpc_unpack_type_from(desc, node, ret);
 		if (err)
 			goto cancel;
+
+		if (ret) {
+			err = ret;
+			goto cancel;
+		}
 	}
 	ret = 0;
 	err = rpc_pack_type(desc, ret);
@@ -765,6 +900,15 @@ static void cluster_start_worker(struct work_struct *work)
 	 */
 end:
 	rpc_end(desc, 0);
+
+out_close:
+	if (err && boot)
+		rpc_close_mask(comm, &cluster_start_ctx->node_set.v);
+out_check_comm:
+	if (err && boot) {
+		rpc_communicator_put(comm);
+		cluster_start_ctx->ns->rpc_comm = NULL;
+	}
 out:
 	if (err)
 		printk(KERN_ERR "kerrighed: [ADD] Setting up new nodes failed! err=%d\n",
@@ -775,15 +919,14 @@ out:
 	hotplug_ctx_put(cluster_start_ctx);
 	cluster_start_ctx = NULL;
 	spin_unlock(&cluster_start_lock);
-	return;
+
+	return err;
 cancel:
 	rpc_cancel(desc);
-	if (err > 0)
+	if (err == -ECANCELED)
 		err = -EPIPE;
 	goto end;
 }
-
-static DECLARE_WORK(cluster_start_work, cluster_start_worker);
 
 int do_cluster_start(struct hotplug_context *ctx)
 {
@@ -796,18 +939,19 @@ int do_cluster_start(struct hotplug_context *ctx)
 			printk(KERN_WARNING "kerrighed: [ADD] "
 					"Max number of add attempts "
 					"reached! You should reboot host.\n");
+			spin_unlock(&cluster_start_lock);
 		} else {
-			r = 0;
 			hotplug_ctx_get(ctx);
 			cluster_start_ctx = ctx;
 			cluster_start_msg.seq_id++;
 			krgnodes_or(cluster_start_msg.node_set.v,
 					ctx->node_set.v,
 					krgnode_online_map);
-			queue_work(krg_wq, &cluster_start_work);
+			spin_unlock(&cluster_start_lock);
+
+			r = cluster_start_worker();
 		}
 	}
-	spin_unlock(&cluster_start_lock);
 
 	return r;
 }
@@ -881,11 +1025,107 @@ static int cluster_restart(void *arg)
 	if (!capable(CAP_SYS_BOOT))
 		return -EPERM;
 
-	rpc_async_m(NODE_FAIL, &krgnode_online_map,
+	rpc_async_m(NODE_FAIL,
+		    current->nsproxy->krg_ns->rpc_comm, &krgnode_online_map,
 		    &unused, sizeof(unused));
 	
 	return 0;
 }
+
+void zap_local_krg_ns_processes(struct krg_namespace *ns, int min_exit_state)
+{
+	struct task_struct *g, *t;
+#ifndef CONFIG_KRG_PROC
+	struct nsproxy *nsp;
+#endif
+	bool backoff;
+
+	if (min_exit_state == EXIT_DEAD)
+		complete(&ns->root_task_continue_exit);
+
+	rcu_read_lock();
+	read_lock(&tasklist_lock);
+	do_each_thread(g, t) {
+#ifdef CONFIG_KRG_PROC
+		if (task_active_pid_ns(t)->krg_ns != ns)
+			continue;
+#else
+		nsp = rcu_dereference(t->nsproxy);
+		if (!nsp || nsp->krg_ns != ns)
+			continue;
+#endif
+
+		force_sig(SIGKILL, t);
+	} while_each_thread(g, t);
+	read_unlock(&tasklist_lock);
+	rcu_read_unlock();
+
+	wait_for_completion(&ns->root_task_in_exit);
+
+	for (;;) {
+		backoff = false;
+
+		rcu_read_lock();
+		read_lock(&tasklist_lock);
+		do_each_thread(g, t) {
+			if (min_exit_state < EXIT_DEAD && g == ns->root_task)
+				/*
+				 * We block a thread of init before it can
+				 * become a zombie.
+				 */
+				continue;
+			if (min_exit_state == EXIT_DEAD && t == ns->root_task)
+				/*
+				 * We don't need that init be reaped, only
+				 * that all threads but group leader be reaped.
+				 */
+				continue;
+
+#ifdef CONFIG_KRG_PROC
+			if (task_active_pid_ns(t)->krg_ns != ns)
+				continue;
+#else
+			nsp = rcu_dereference(t->nsproxy);
+			if (!nsp || nsp->krg_ns != ns)
+				continue;
+#endif
+
+			if (t->exit_state < min_exit_state
+			    || t != g
+			    || min_exit_state == EXIT_DEAD) {
+				backoff = true;
+				break;
+			}
+		} while_each_thread(g, t);
+		read_unlock(&tasklist_lock);
+		rcu_read_unlock();
+
+		if (!backoff)
+			break;
+
+		__set_current_state(TASK_UNINTERRUPTIBLE);
+		schedule_timeout(HZ);
+	}
+}
+
+#ifndef CONFIG_KRG_PROC
+static int proc_notification(struct notifier_block *nb, hotplug_event_t event,
+			     void *data)
+{
+	struct hotplug_context *ctx = data;
+
+	switch (event) {
+	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
+		zap_local_krg_ns_processes(ctx->ns, EXIT_ZOMBIE);
+		complete(&ctx->ns->root_task_continue_exit);
+		break;
+	default
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+#endif
 
 static int cluster_stop(void *arg)
 {
@@ -894,7 +1134,8 @@ static int cluster_stop(void *arg)
 	if (!capable(CAP_SYS_BOOT))
 		return -EPERM;
 
-	rpc_async_m(NODE_FAIL, &krgnode_online_map,
+	rpc_async_m(NODE_FAIL,
+		    current->nsproxy->krg_ns->rpc_comm, &krgnode_online_map,
 		    &unused, sizeof(unused));
 	
 	return 0;
@@ -975,6 +1216,11 @@ int hotplug_cluster_init(void)
 	for (bcl = 0; bcl < KERRIGHED_MAX_CLUSTERS; bcl++) {
 		clusters_status[bcl] = CLUSTER_UNDEF;
 	}
+
+#ifndef CONFIG_KRG_PROC
+	if (register_hotplug_notifier(proc_notification, HOTPLUG_PRIO_PROC))
+		panic("kerrighed: Couldn't register PROC hotplug notifier!\n");
+#endif
 
 	rpc_register_void(CLUSTER_START, handle_cluster_start, 0);
 

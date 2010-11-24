@@ -199,7 +199,10 @@ static ssize_t signalfd_read(struct file *file, char __user *buf, size_t count,
 	return total ? total: ret;
 }
 
-static const struct file_operations signalfd_fops = {
+#ifndef CONFIG_KRG_DVFS
+static
+#endif
+const struct file_operations signalfd_fops = {
 	.release	= signalfd_release,
 	.poll		= signalfd_poll,
 	.read		= signalfd_read,

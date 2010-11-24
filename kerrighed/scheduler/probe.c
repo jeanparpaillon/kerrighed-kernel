@@ -15,6 +15,10 @@
 #include <linux/jiffies.h>
 #include <linux/string.h>
 #include <kerrighed/krgflags.h>
+#include <net/krgrpc/rpcid.h>
+#include <net/krgrpc/rpc.h>
+#include <kerrighed/hotplug.h>
+#include <kerrighed/namespace.h>
 #include <kerrighed/scheduler/pipe.h>
 #include <kerrighed/scheduler/global_config.h>
 #include <kerrighed/scheduler/probe.h>
@@ -50,6 +54,12 @@ struct scheduler_probe {
 	struct global_config_item global_item; /** Used by global config
 						* subsystem */
 	struct global_config_attrs global_attrs;
+};
+
+struct node_pipe {
+	struct scheduler_probe_source *probe_source;
+	struct scheduler_pipe pipe;
+	kerrighed_node_t node;
 };
 
 static
@@ -102,6 +112,15 @@ to_scheduler_probe_source_attribute(struct configfs_attribute *attr)
 {
 	return container_of(attr,
 			    struct scheduler_probe_source_attribute, config);
+}
+
+static
+inline
+struct node_pipe *
+to_node_pipe(struct config_item *item)
+{
+	return container_of(to_scheduler_pipe(item),
+			   struct node_pipe, pipe);
 }
 
 /* a spinlock protecting access to the list of registered probes. */
@@ -433,6 +452,160 @@ static int probe_source_attribute_array_length(
 }
 
 /**
+ * Client function used to request remote probe source value.
+ * @param item The ConfigFS item we manipulate
+ * @param page Memory page where data will be copied.
+ *
+ * @author Alexandre Lissy, Louis Rilling
+ **/
+ssize_t scheduler_probe_source_attribute_show_remote(struct config_item *item,
+						     struct configfs_attribute *attr,
+						     char *page)
+{
+	kerrighed_node_t node;
+	struct node_pipe *pipe;
+	struct rpc_desc *desc;
+	struct config_item *target;
+	ssize_t r;
+	int err;
+
+	if (!current->nsproxy->krg_ns)
+		return -EPERM;
+
+	pipe = to_node_pipe(item);
+	node = pipe->node;
+
+	membership_online_hold();
+
+	r = -ENOENT;
+	if (!krgnode_online(node))
+		goto out;
+
+	target = &pipe->probe_source->pipe.config.cg_item;
+
+	r = -ENOMEM;
+	desc = rpc_begin(SCHED_PIPE_SHOW_REMOTE_VALUE,
+			 current->nsproxy->krg_ns->rpc_comm, node);
+	if (!desc)
+		goto out;
+
+	err = rpc_pack(desc, 0, NULL, 0); /* needed as trick */
+	if (err) { /* No other error than ENOMEM might arise at this time */
+#ifdef CONFIG_KRG_DEBUG
+		printk(KERN_ERR "Error on rpc_pack: %d\n", err);
+#endif
+		goto error_rpc;
+	}
+
+	err = global_config_pack_item(desc, target);
+	if (err) {
+#ifdef CONFIG_KRG_DEBUG
+		printk(KERN_ERR "Error on global_config_pack_item: %d\n", err);
+#endif
+		goto error_rpc;
+	}
+
+	err = rpc_unpack_type(desc, r);
+	if (err) {
+#ifdef CONFIG_KRG_DEBUG
+		printk(KERN_ERR "Error on rpc_unpack: %d\n", err);
+#endif
+		goto error_rpc;
+	}
+
+	if (r > 0) {
+		err = rpc_unpack(desc, 0, page, r);
+		if (err) {
+#ifdef CONFIG_KRG_DEBUG
+			printk(KERN_ERR "Error on rpc_unpack: %d\n", err);
+#endif
+			goto error_rpc;
+		}
+	}
+
+out_end:
+	rpc_end(desc, 0);
+
+out:
+	membership_online_release();
+
+	return r;
+
+error_rpc:
+	rpc_cancel(desc);
+	if (err > 0)
+		err = -EPIPE;
+	r = err;
+	goto out_end;
+}
+
+/**
+ * RPC handler used to request remote probe source value.
+ *
+ * @author Alexandre Lissy, Louis Rilling
+ **/
+void handle_scheduler_pipe_show_remote_value(struct rpc_desc *desc, void *msg, size_t size)
+{
+	struct config_item *item;
+	struct scheduler_probe_source *probe_source;
+	struct scheduler_source *source;
+	char *page = NULL;
+	ssize_t r;
+	int err;
+
+	item = global_config_unpack_get_item(desc);
+	if (IS_ERR(item)) {
+#ifdef CONFIG_KRG_DEBUG
+		printk(KERN_ERR "handle_scheduler_pipe_show_remote_value: Error while global_config_unpack_get_item: %ld\n", PTR_ERR(item));
+#endif
+		rpc_cancel(desc);
+		return;
+	}
+
+	probe_source = to_scheduler_probe_source(item);
+	source = &probe_source->source;
+	page = kmalloc(SCHEDULER_PROBE_SOURCE_ATTR_SIZE, GFP_KERNEL);
+	if (!page)
+		goto err_rpc_pack_type;
+
+	r = source->type->show_value(source, page);
+
+	err = rpc_pack_type(desc, r);
+	if (err) {
+#ifdef CONFIG_KRG_DEBUG
+		printk(KERN_ERR "handle_scheduler_pipe_show_remote_value: Error while rpc_pack_type: %d\n", err);
+#endif
+		goto err_rpc_pack_type;
+	}
+
+	if (r > 0) {
+		err = rpc_pack(desc, 0, page, r);
+		if (err) {
+#ifdef CONFIG_KRG_DEBUG
+			printk(KERN_ERR "handle_scheduler_pipe_show_remote_value: Error while rpc_pack_type: %d\n", err);
+#endif
+			goto err_rpc_pack;
+		}
+	}
+
+exit_put:
+	kfree(page);
+	config_item_put(item);
+	return;
+
+err_rpc_pack:
+err_rpc_pack_type:
+	rpc_cancel(desc);
+	goto exit_put;
+	return;
+}
+
+static struct configfs_item_operations scheduler_probe_source_remote_item_ops = {
+	.show_attribute = scheduler_probe_source_attribute_show_remote,
+	.store_attribute = NULL,
+};
+
+/**
  * This function allocates memory and initializes a probe source.
  * @author Marko Novak, Louis Rilling
  *
@@ -450,8 +623,17 @@ scheduler_probe_source_create(struct scheduler_probe_source_type *type,
 	struct scheduler_probe_source *tmp_ps = NULL;
 	struct module *owner = type->pipe_type.item_type.ct_owner;
 	struct configfs_attribute **tmp_attrs;
+	struct node_pipe *tmp_node_pipe = NULL;
+	struct scheduler_pipe_type *remote_pipe_type;
+	struct config_group **def_groups;
+	kerrighed_node_t node;
+	char str_node_id[16];
 	int nr_attrs;
 	int err;
+	int nr_possible_nodes;
+	int curnode, curnode_reverse;
+
+	nr_possible_nodes = num_possible_krgnodes();
 
 	/* fixup type */
 	type->pipe_type = (struct scheduler_pipe_type)
@@ -459,6 +641,14 @@ scheduler_probe_source_create(struct scheduler_probe_source_type *type,
 					 &probe_source_global_item_ops.config,
 					 NULL,
 					 &type->source_type, NULL);
+
+	remote_pipe_type = kmalloc(sizeof(struct scheduler_pipe_type), GFP_KERNEL);
+	if (!remote_pipe_type) {
+#ifdef CONFIG_KRG_DEBUG
+		printk(KERN_ERR "error allocating remote_pipe_type.\n");
+#endif
+		goto err_pipe_type;
+	}
 
 	nr_attrs = probe_source_attribute_array_length(type->attrs);
 	tmp_attrs = NULL;
@@ -478,16 +668,64 @@ scheduler_probe_source_create(struct scheduler_probe_source_type *type,
 	if (err)
 		goto err_pipe_type;
 
+	*remote_pipe_type = (struct scheduler_pipe_type)
+		SCHEDULER_PIPE_TYPE_INIT(owner,
+					 &scheduler_probe_source_remote_item_ops, NULL,
+					 &type->source_type, NULL);
+	if (!remote_pipe_type)
+		goto err_alloc_remote_pipe_type;
+
+	err = scheduler_pipe_type_init(remote_pipe_type, NULL);
+	if (err)
+		goto err_remote_pipe_type;
+
+	def_groups = kzalloc(sizeof(struct config_group *) * (nr_possible_nodes + 1), GFP_KERNEL);
+	if (!def_groups) {
+#ifdef CONFIG_KRG_DEBUG
+		printk(KERN_ERR "error allocating def_groups.\n");
+#endif
+		goto err_alloc_def_groups;
+	}
+
+	def_groups[nr_possible_nodes] = NULL;
+
 	tmp_ps = kmalloc(sizeof(*tmp_ps), GFP_KERNEL);
 	if (!tmp_ps)
-		goto err_source;
+		goto err_alloc_tmpps;
+
 	/* initialize scheduler_probe_source. */
 	memset(tmp_ps, 0, sizeof(*tmp_ps));
 
 	scheduler_source_init(&tmp_ps->source, &type->source_type);
+
+	curnode = 0;
+	for_each_possible_krgnode(node) {
+		sprintf(str_node_id, "%d", node);
+		tmp_node_pipe = kmalloc(sizeof(struct node_pipe), GFP_KERNEL);
+		if (!tmp_node_pipe) {
+#ifdef CONFIG_KRG_DEBUG
+			printk(KERN_ERR "error allocating tmp_node_pipe.\n");
+#endif
+			goto err_alloc_node_pipes;
+		}
+		tmp_node_pipe->node = node;
+		tmp_node_pipe->probe_source = tmp_ps;
+		err = scheduler_pipe_init(&tmp_node_pipe->pipe, str_node_id, remote_pipe_type, &tmp_ps->source, NULL, NULL);
+		if (err) {
+#ifdef CONFIG_KRG_DEBUG
+			printk(KERN_ERR "error while initializing node pipes #%d: %d\n", curnode, err);
+#endif
+			kfree(tmp_node_pipe);
+			goto err_alloc_node_pipes;
+		}
+		def_groups[curnode] = &tmp_node_pipe->pipe.config;
+		curnode++;
+	}
+
 	if (scheduler_pipe_init(&tmp_ps->pipe, name, &type->pipe_type,
-				&tmp_ps->source, NULL, NULL))
+				&tmp_ps->source, NULL, def_groups))
 		goto err_pipe;
+
 	INIT_WORK(&tmp_ps->notify_update_work,
 		  __scheduler_probe_source_notify_update);
 
@@ -495,16 +733,64 @@ scheduler_probe_source_create(struct scheduler_probe_source_type *type,
 
 err_pipe:
 	kfree(tmp_ps);
-err_source:
+
+err_alloc_node_pipes:
+	for(curnode_reverse = curnode - 1; curnode_reverse >= 0; curnode_reverse--) {
+		tmp_node_pipe = to_node_pipe(&def_groups[curnode_reverse]->cg_item);
+		scheduler_pipe_cleanup(&tmp_node_pipe->pipe);
+		kfree(tmp_node_pipe);
+	}
+
+err_alloc_tmpps:
+	kfree(def_groups);
+
+err_alloc_def_groups:
+	scheduler_pipe_type_cleanup(remote_pipe_type);
+
+err_remote_pipe_type:
+	kfree(remote_pipe_type);
+
+err_alloc_remote_pipe_type:
 	scheduler_pipe_type_cleanup(&type->pipe_type);
+
 err_pipe_type:
 	return NULL;
 }
 
+static void node_pipe_cleanup(struct node_pipe *node_pipe)
+{
+	scheduler_pipe_cleanup(&node_pipe->pipe);
+}
+
 void scheduler_probe_source_free(struct scheduler_probe_source *source)
 {
+	int i;
+	struct config_group *def_group;
+	struct config_item_type *conf_item_type = NULL;
 	struct scheduler_probe_source_type *type =
 		scheduler_probe_source_type_of(source);
+	struct node_pipe *node_pipe;
+	struct scheduler_pipe_type *remote_pipe_type;
+	struct config_group **def_groups = source->pipe.config.default_groups;
+
+	/* def_groups is not NULL since it contains at least node pipes */
+	for (i = 0; def_groups[i]; i++) {
+		def_group = def_groups[i];
+		conf_item_type = def_group->cg_item.ci_type;
+
+		/* We ensure that we're dealing with a remote_pipe. */
+		if (conf_item_type->ct_item_ops == &scheduler_probe_source_remote_item_ops) {
+			node_pipe = to_node_pipe(&def_group->cg_item);
+			node_pipe_cleanup(node_pipe);
+		}
+	}
+
+	/* Also free the remote_pipe_type that we allocated previously. */
+	if (conf_item_type) {
+		remote_pipe_type = to_scheduler_pipe_type(conf_item_type);
+		kfree(remote_pipe_type);
+	}
+	kfree(def_groups);
 	scheduler_pipe_cleanup(&source->pipe);
 	scheduler_source_cleanup(&source->source);
 	kfree(source);
@@ -898,8 +1184,14 @@ static struct config_group probes_group = {
  */
 struct config_group *scheduler_probe_start(void)
 {
+	int err;
 	/* initialize and register configfs subsystem. */
 	config_group_init(&probes_group);
+	err = rpc_register_void(SCHED_PIPE_SHOW_REMOTE_VALUE, handle_scheduler_pipe_show_remote_value, 0);
+	if (err) {
+		panic("kerrighed: Error while registering RPC SCHED_PIPE_SHOW_REMOTE_VALUE.\n");
+	}
+
 	return &probes_group;
 }
 

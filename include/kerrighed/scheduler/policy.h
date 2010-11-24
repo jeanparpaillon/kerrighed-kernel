@@ -57,6 +57,9 @@ struct scheduler_policy_attribute {
 	ssize_t (*show)(struct scheduler_policy *, char *);
 	/** function for storing attribute's value */
 	ssize_t (*store)(struct scheduler_policy *, const char *, size_t);
+
+	/** allow a parameter to be strictly local */
+	int local;
 };
 
 /*

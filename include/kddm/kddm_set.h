@@ -101,9 +101,10 @@ enum
     KDDM_TEST4096,                    // 27
     MM_STRUCT_KDDM_ID,                // 28
     PIDMAP_MAP_KDDM_ID,               // 29
-    CLUSTER_IP_KDDM_ID,		      // 30
-    CLUSTER_PORT_UDP_KDDM_ID,	      // 31
-    CLUSTER_PORT_TCP_KDDM_ID,	      // 32
+    UNIQUE_ID_KDDM_ID,		      // 30
+    CLUSTER_IP_KDDM_ID,		      // 31
+    CLUSTER_PORT_UDP_KDDM_ID,	      // 32
+    CLUSTER_PORT_TCP_KDDM_ID,	      // 33
     MIN_KDDM_ID,           /* MUST always be the last one */
   };
 
@@ -138,6 +139,12 @@ typedef struct {
 	int ns_id;                   /**< KDDM name space identifier */
 	kddm_set_id_t set_id;        /**< KDDM set identifier */
 } kddm_id_msg_t;
+
+struct kddm_lookup_msg {
+	int lock_free;
+	int ns_id;
+	kddm_set_id_t set_id;
+};
 
 
 
@@ -212,6 +219,9 @@ static inline struct kddm_set *_find_get_kddm_set(struct kddm_ns *ns,
 
 struct kddm_set *find_get_kddm_set(int ns_id,
 				   kddm_set_id_t set_id);
+
+struct kddm_set *find_get_kddm_set_lock_free(int ns_id,
+					     kddm_set_id_t set_id);
 
 struct kddm_set *generic_local_get_kddm_set(int ns_id,
 					     kddm_set_id_t set_id,

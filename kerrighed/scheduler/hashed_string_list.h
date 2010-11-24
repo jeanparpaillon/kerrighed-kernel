@@ -7,6 +7,7 @@ struct kddm_set;
 struct string_list_object;
 
 struct kddm_set *hashed_string_list_create(kddm_set_id_t kddm_set_id);
+int hashed_string_list_remove_local(struct kddm_set *set);
 
 struct string_list_object *
 hashed_string_list_lock_hash(struct kddm_set *kddm_set, const char *element);

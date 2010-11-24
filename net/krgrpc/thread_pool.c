@@ -152,7 +152,7 @@ void do_krgrpc_handler(struct rpc_desc* desc,
 	client = desc->client;
 	BUG_ON(!desc->desc_recv[0]);
 
-	if(test_bit(desc->rpcid, rpc_mask)){
+	if (test_bit(desc->rpcid, desc->comm->rpc_mask)) {
 		printk("need to move current desc in the waiting_desc queue\n");
 		BUG();
 	};
@@ -272,7 +272,7 @@ int thread_pool_run(void* _data){
 					 &waiting_desc,
 					 list_waiting_desc){
 
-			if(test_bit(wd->desc->rpcid, rpc_mask))
+			if (test_bit(wd->desc->rpcid, wd->desc->comm->rpc_mask))
 				continue;
 			
 			list_del(&wd->list_waiting_desc);
@@ -476,7 +476,7 @@ int rpc_handle_new(struct rpc_desc* desc){
 	}
 
 	// Is it a disabled rpc ?
-	if(unlikely(test_bit(desc->rpcid, rpc_mask))){
+	if (unlikely(test_bit(desc->rpcid, desc->comm->rpc_mask))) {
 		if (queue_waiting_desc(desc))
 			r = -ENOMEM;
 		return r;

@@ -18,6 +18,9 @@ int krg_ipc_get_this_id(struct ipc_ids *ids, int id);
 
 struct ipc_namespace *find_get_krg_ipcns(void);
 
+int ipc_hotplug_init(void);
+void ipc_hotplug_cleanup(void);
+
 void ipc_handler_finalize (void);
 void ipc_handler_init (void);
 

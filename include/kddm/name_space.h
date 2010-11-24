@@ -10,6 +10,7 @@
 
 #include <linux/unique_id.h>
 #include <linux/hashtable.h>
+#include <linux/semaphore.h>
 #include <kddm/kddm_types.h>
 
 
@@ -24,14 +25,23 @@
 
 struct kddm_ns;
 
+enum {
+	KDDM_NS_READY,
+	KDDM_NS_FROZEN,
+};
+
 typedef struct kddm_ns_ops {
 	struct kddm_set *(*kddm_set_lookup)(struct kddm_ns *ns,
 					    kddm_set_id_t set_id);
 } kddm_ns_ops_t;
 
+struct rpc_communicator;
+
 typedef struct kddm_ns {
+	int state;
 	atomic_t count;
-	struct semaphore table_sem;
+	struct rpc_communicator *rpc_comm;
+	struct rw_semaphore table_sem;
 	hashtable_t *kddm_set_table;
 	unique_id_root_t kddm_set_unique_id_root;
 	struct kddm_ns_ops *ops;

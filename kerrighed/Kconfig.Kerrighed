@@ -308,6 +308,30 @@ config KRG_SCHED_COMPAT_FORCE
 	select KRG_SCHED_MOSIX_LOAD_BALANCER
 	select KRG_SCHED_ROUND_ROBIN_BALANCER
 
+config KRG_SCHED_RBT
+	bool "Compile components needed to implement RBT algorithm."
+	depends on m
+	default y
+	select KRG_SCHED_CPUSPEED_PROBE
+	select KRG_SCHED_LOAD_PROBE
+	select KRG_SCHED_USER_PROBE
+	select KRG_SCHED_PROCESSSIZE_PROBE
+	select KRG_SCHED_MATTLOAD_PROBE
+	select KRG_SCHED_RBT_CACHE_FILTER
+	select KRG_SCHED_RBT_POLICY
+	help
+	  Enabling the RBT load balancer.
+
+	  This option selects the components needed to have the RBT scheduling
+	  algorithm, with a load taking care of modulate ressources usages
+	  regarding the presence of users on the physical machine hosting the
+	  virtual Kerrighed node.
+
+	  The RBT scheduling policy is described in [Perotin, 2008] :
+	  http://portail.scd.univ-tours.fr/search*frf/X?PEROTIN,%20MATTHIEU&m=t&m=u
+
+	  If unsure, say Y.
+
 config KRG_SCHED_CPU_PROBE
 	tristate "Sample CPU probe"
 	depends on m
@@ -347,6 +371,84 @@ config KRG_SCHED_MOSIX_PROBE
 
 	  If unsure, say N.
 
+config KRG_SCHED_CPUSPEED_PROBE
+	tristate "CPUSPEED probe"
+	depends on m
+	default n
+	help
+	  CPU Speed probe exposes local CPU speed number, and all local
+	  cpu speed (in kHz).
+
+	  If unsure, say N.
+
+config KRG_SCHED_LOAD_PROBE
+	tristate "LOAD probe"
+	depends on m
+	default n
+	help
+	  Load probe exports the number of active tasks in the runqueue of Linux
+	  kernel, and allows to measures the number of jiffies consumed by
+	  each running process.
+
+	  If unsure, say N.
+
+config KRG_SCHED_PROCESSSIZE_PROBE
+	tristate "Process size (numer of pages) probe"
+	depends on m
+	default n
+	help
+	  The process size probe exports process size in term of memory pages.
+	  It is simply the value of total_vm in the task_struct.
+
+	  If unsure, say N.
+
+config KRG_SCHED_LOCAL_USER_PRESENCE
+	tristate "Internal kernel local user counter"
+	depends on m
+	default n
+	help
+	  Local user presence implements a in-kernel counter with full API exported
+	  to manipulate it. It is used by the user probe.
+
+	  If unsure, say N.
+
+config KRG_SCHED_LOCAL_USER_NOTIFIER
+	tristate "Local User userspace notification interface"
+	depends on m && KRG_SCHED_LOCAL_USER_PRESENCE
+	default n
+	help
+	  Local user notifier is a /proc -based userspace notification interface
+	  plugged to the in-kernel user counter implemented by local_user_presence
+	  module. This allows one to be able to retrieve, in-kernel, the presence
+	  of a local user. Useful if Kerrighed node runs on virtual machine,
+	  to notify of host usage.
+
+	  If unsure, say N.
+
+config KRG_SCHED_USER_PROBE
+	tristate "Local user probe"
+	depends on m
+	select KRG_SCHED_LOCAL_USER_PRESENCE
+	default n
+	help
+	  The user probe exports the information of the presence of a local
+	  user on the machine. This is needed by the Mattload load.
+
+	  If unsure, say N.
+
+config KRG_SCHED_MATTLOAD_PROBE
+	tristate "Mattload load probe"
+	depends on m
+	default n
+	help
+	  Mattload probe implements the 'Mattload' load measure defined in
+	  [Perotin, 2008 http://portail.scd.univ-tours.fr/search*frf/X?PEROTIN,%20MATTHIEU&m=t&m=u].
+	  This load allows one to run Kerrighed as virtual node on physical machines
+	  used by regular users, and adapt load according to the presence or
+	  absence of physical user.
+
+	  If unsure, say N.
+
 config KRG_SCHED_THRESHOLD_FILTER
 	tristate "Threshold filter"
 	depends on m
@@ -378,6 +480,15 @@ config KRG_SCHED_REMOTE_CACHE_FILTER
 
 	  If unsure, say N.
 
+config KRG_SCHED_RBT_CACHE_FILTER
+	tristate "RBT remote cache filter"
+	depends on m
+	default n
+	help
+	  Filter caching values from the other nodes, for RBT algorithm.
+
+	  If unsure, say N.
+
 config KRG_SCHED_ECHO_POLICY
 	tristate "Sample echo policy"
 	depends on m
@@ -404,6 +515,15 @@ config KRG_SCHED_ROUND_ROBIN_BALANCER
 	default n
 	help
 	  Policy that selects target nodes in a round robin manner when called
+
+	  If unsure, say N.
+
+config KRG_SCHED_RBT_POLICY
+	tristate "RBT load balancing policy"
+	depends on m
+	default n
+	help
+	  RBT Load balancing algorithm
 
 	  If unsure, say N.
 

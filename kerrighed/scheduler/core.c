@@ -31,6 +31,26 @@ static int add(struct hotplug_context *ctx)
 	return global_config_add(ctx);
 }
 
+static int remove_local(struct hotplug_context *ctx)
+{
+	int err;
+
+	err = scheduler_remove(ctx);
+	if (err)
+		return err;
+	return global_config_remove_local(ctx);
+}
+
+static int remove_distant(struct hotplug_context *ctx)
+{
+	return global_config_remove(ctx);
+}
+
+static int remove_advert(struct hotplug_context *ctx)
+{
+	return scheduler_remove(ctx);
+}
+
 static int hotplug_notifier(struct notifier_block *nb,
 			    hotplug_event_t event,
 			    void *data)
@@ -41,6 +61,15 @@ static int hotplug_notifier(struct notifier_block *nb,
 	switch(event){
 	case HOTPLUG_NOTIFY_ADD:
 		err = add(ctx);
+		break;
+	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
+		err = remove_local(ctx);
+		break;
+	case HOTPLUG_NOTIFY_REMOVE_DISTANT:
+		err = remove_distant(ctx);
+		break;
+	case HOTPLUG_NOTIFY_REMOVE_ADVERT:
+		err = remove_advert(ctx);
 		break;
 	default:
 		err = 0;
@@ -94,9 +123,6 @@ int init_scheduler(void)
 		goto err_krg_sched_info;
 
 	/* initialize global mechanisms to replicate configfs operations */
-	ret = global_lock_start();
-	if (ret)
-		goto err_global_lock;
 	ret = string_list_start();
 	if (ret)
 		goto err_string_list;
@@ -177,9 +203,6 @@ err_global_config:
 
 	string_list_exit();
 err_string_list:
-
-	global_lock_exit();
-err_global_lock:
 
 	krg_sched_info_exit();
 err_krg_sched_info:

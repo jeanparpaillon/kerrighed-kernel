@@ -1,15 +1,25 @@
 #ifndef __HOTPLUG__
 #define __HOTPLUG__
 
+#include <linux/list.h>
+#include <linux/workqueue.h>
+#include <linux/completion.h>
 #include <linux/kref.h>
 #include <kerrighed/krgnodemask.h>
 
 enum {
 	HOTPLUG_PRIO_SCHED_POST,
 	HOTPLUG_PRIO_MEMBERSHIP_ONLINE, // should be done after distributed services management
+	HOTPLUG_PRIO_HOTPLUG_COORDINATOR,
 	HOTPLUG_PRIO_SCHED,
 	HOTPLUG_PRIO_EPM,
+	HOTPLUG_PRIO_IPC,
+	HOTPLUG_PRIO_MM,
+	HOTPLUG_PRIO_FS,
+	HOTPLUG_PRIO_PROC,
 	HOTPLUG_PRIO_PROCFS,
+	HOTPLUG_PRIO_GLOBAL_LOCK,
+	HOTPLUG_PRIO_UNIQUE_ID,
 	HOTPLUG_PRIO_KDDM,
 	HOTPLUG_PRIO_BARRIER,
 	HOTPLUG_PRIO_RPC,
@@ -42,6 +52,12 @@ struct hotplug_node_set {
 struct hotplug_context {
 	struct krg_namespace *ns;
 	struct hotplug_node_set node_set;
+	struct list_head list;
+	struct work_struct work;
+	struct completion ready;
+	struct completion done;
+	int id;
+	int ret;
 	struct kref kref;
 };
 
@@ -87,5 +103,7 @@ void krg_node_departure(kerrighed_node_t nodeid);
 void membership_online_hold(void);
 int membership_online_try_hold(void);
 void membership_online_release(void);
+
+void zap_local_krg_ns_processes(struct krg_namespace *ns, int min_exit_state);
 
 #endif

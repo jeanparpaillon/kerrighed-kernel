@@ -111,10 +111,9 @@ static struct file *import_regular_file_from_krg_desc(
 			file = reopen_file_entry_from_krg_desc(task, desc);
 
 		if (IS_ERR(file))
-			ckpt_err(action, PTR_ERR(file),
-				 "App %ld - Fail to import file %s",
-				 action->restart.app->app_id,
-				 desc->file.filename);
+			epm_error(action, PTR_ERR(file), task,
+				  "Fail to import file %s",
+				  desc->file.filename);
 	}
 
 	return file;
@@ -130,6 +129,7 @@ int check_flush_file (struct epm_action *action,
 	case EPM_REMOTE_CLONE:
 	case EPM_MIGRATE:
 	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		  if (file->f_dentry) {
 			  if (file->f_op && file->f_op->flush)
 				  err = file->f_op->flush(file, id);
@@ -226,6 +226,24 @@ exit:
 	return r;
 }
 
+static void epm_error_saving_file(struct epm_action *action, int error,
+				  struct task_struct *task, struct file *file,
+				  int index)
+{
+	char *buffer, *filename;
+	filename = alloc_filename(file, &buffer);
+	if (!IS_ERR(filename)) {
+		epm_error(action, error, task,
+			  "Fail to save information about file %s "
+			  "as fd %d", filename, index);
+		free_filename(buffer);
+	} else {
+		epm_error(action, error, task,
+			  "Fail to save information about fd %d",
+			  index);
+	}
+}
+
 /*****************************************************************************/
 
 int ghost_read_file_krg_desc(ghost_t *ghost, void **desc, int *desc_size)
@@ -315,7 +333,7 @@ int end_import_dvfs_file(unsigned long dvfs_objid,
 		*/
 		BUG_ON(dvfs_file->file);
 		file->f_objid = dvfs_objid;
-		dvfs_file->file = file;
+		dvfs_file_link(dvfs_file, file);
 
 		dvfs_file->count++;
 	}
@@ -413,7 +431,7 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 	enum shared_obj_type type;
 	struct cr_file_link *file_link;
 
-	BUG_ON(action->type != EPM_CHECKPOINT);
+	BUG_ON(action->type != EPM_RESTART);
 
 	/* files are linked while loading files_struct or mm_struct */
 	BUG_ON(action->restart.shared != CR_LOAD_NOW);
@@ -445,11 +463,9 @@ int cr_link_to_file(struct epm_action *action, ghost_t *ghost,
 
 error:
 	if (r)
-		ckpt_err(NULL, r,
-			 "Fail to relink process %d of application %ld"
-			 " to file %d:%lu",
-			 task_pid_knr(task), action->restart.app->app_id,
-			 type, key);
+		epm_error(action, r, task,
+			  "Fail to relink process to file %d:%lu",
+			  type, key);
 
 	return r;
 
@@ -487,6 +503,8 @@ int regular_file_export (struct epm_action *action,
 	check_flush_file(action, task->files, file);
 
 	r = ghost_write_regular_file_krg_desc(ghost, file);
+	if (r)
+		epm_error_saving_file(action, r, task, file, index);
 
 	return r;
 }
@@ -530,7 +548,7 @@ int regular_file_import(struct epm_action *action,
 	struct regular_file_krg_desc *desc;
 	int desc_size, r = 0;
 
-	BUG_ON(action->type == EPM_CHECKPOINT);
+	BUG_ON(action->type == EPM_RESTART);
 
 	r = ghost_read_file_krg_desc(ghost, (void **)(&desc), &desc_size);
 	if (r)
@@ -559,8 +577,12 @@ static int cr_export_now_file(struct epm_action *action, ghost_t *ghost,
 	supported = can_checkpoint_file(args->file_args.file);
 
 	r = ghost_write(ghost, &supported, sizeof(supported));
-	if (r)
+	if (r) {
+		epm_error_saving_file(action, r, task,
+				      args->file_args.file,
+				      args->file_args.index);
 		goto error;
+	}
 
 	if (supported)
 		r = regular_file_export(action, ghost, task,
@@ -568,25 +590,6 @@ static int cr_export_now_file(struct epm_action *action, ghost_t *ghost,
 					args->file_args.file);
 
 error:
-	if (r) {
-		char *buffer, *filename;
-		filename = alloc_filename(args->file_args.file, &buffer);
-		if (!IS_ERR(filename)) {
-			ckpt_err(action, r,
-				 "Fail to save information needed to reopen "
-				 "file %s as fd %d of process %d (%s)",
-				 filename, args->file_args.index,
-				 task_pid_knr(task), task->comm);
-			free_filename(buffer);
-		} else {
-			ckpt_err(action, r,
-				 "Fail to save information needed to reopen "
-				 "fd %d of process %d (%s)",
-				 args->file_args.index,
-				 task_pid_knr(task), task->comm);
-		}
-	}
-
 	return r;
 }
 
@@ -891,9 +894,8 @@ err_free_desc:
 	kfree(desc);
 error:
 	if (r)
-		ckpt_err(action, r,
-			 "App %ld - Fail to restore a file",
-			 action->restart.app->app_id);
+		epm_error(action, r, fake,
+			  "Fail to restore a file");
 	return r;
 }
 

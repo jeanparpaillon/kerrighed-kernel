@@ -15,6 +15,26 @@
 #include <kddm/object_server.h>
 #include "protocol_action.h"
 
+struct rpc_synchro *object_server;
+struct rpc_synchro *object_server_may_block;
+
+static inline struct kddm_obj *get_alloc_kddm_obj_entry_lock_free (int ns_id,
+                                                   kddm_set_id_t set_id,
+                                                   objid_t objid,
+                                                   struct kddm_set **kddm_set)
+{
+	struct kddm_obj *obj = NULL;
+
+	*kddm_set = find_get_kddm_set_lock_free(ns_id, set_id);
+
+	if (*kddm_set) {
+		BUG_ON(!kddm_frozen(*kddm_set));
+		obj = ___get_alloc_kddm_obj_entry (*kddm_set, objid,
+						   KDDM_LOCK_FREE);
+		put_kddm_set(*kddm_set);
+	}
+	return obj;
+}
 
 /** Forward a message to the supposed correct prob Owner.
  *  @author Renaud Lottiaux
@@ -35,9 +55,9 @@ static inline void forward_object_server_msg (struct kddm_obj * obj_entry,
 	BUG_ON(prob_owner == kerrighed_node_id);
 
 	msg->req_id = 0;
-	rpc_async(msg_type, prob_owner, _msg, sizeof(msg_server_t));
+	rpc_async(msg_type, set->ns->rpc_comm, prob_owner,
+		  _msg, sizeof(msg_server_t));
 }
-
 
 
 
@@ -107,7 +127,8 @@ static inline int __handle_invalidation_ack (kerrighed_node_t sender,
 		  BUG_ON(SET_IS_EMPTY (COPYSET(obj_entry)));
 
 		  if (OBJ_EXCLUSIVE (obj_entry)) {
-			  dest = choose_injection_node ();
+			  CLEAR_OBJECT_RM_SO_ACK(obj_entry);
+			  dest = sender;
 
 			  BUG_ON (dest == 1);
 
@@ -443,7 +464,7 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 						 WAIT_OBJ_RM_ACK2);
 
 			  kddm_io_remove_object_and_unlock(obj_entry, set,
-							   msg->objid);
+							   msg->objid, NULL);
 
 			  send_remove_ack (set, msg->objid, msg->reply_node,
 					   flag);
@@ -460,7 +481,7 @@ static inline int __handle_object_remove_req (kerrighed_node_t sender,
 		  BUG_ON(TEST_OBJECT_PINNED(obj_entry));
 
 		  kddm_io_remove_object_and_unlock (obj_entry, set,
-						    msg->objid);
+						    msg->objid, NULL);
 
 		  send_remove_ack (set, msg->objid, msg->reply_node, flag);
 		  goto exit_no_unlock;
@@ -568,8 +589,14 @@ void handle_change_ownership_ack (struct rpc_desc* desc,
 	{
 		change_prob_owner(obj_entry, msg->new_owner);
 
-		/* Wake up the set_flush_object function */
-		wake_up_on_wait_object (obj_entry, set);
+		if (TEST_OBJECT_RM_SO_ACK(obj_entry)) {
+			CLEAR_OBJECT_RM_SO_ACK(obj_entry);
+			destroy_kddm_obj_entry(set, obj_entry, msg->objid, 0);
+			return;
+		}
+		else
+			/* Wake up the set_flush_object function */
+			wake_up_on_wait_object (obj_entry, set);
 	}
 	else
 		STATE_MACHINE_ERROR (msg->set_id, msg->objid, obj_entry);
@@ -757,7 +784,7 @@ int __handle_no_object (kerrighed_node_t sender,
 		  wake_up_on_wait_object (obj_entry, set);
 
 		  kddm_io_remove_object_and_unlock (obj_entry, set,
-						    msg->objid);
+						    msg->objid, NULL);
 		  goto exit_no_unlock;
 
 	  case INV_OWNER:
@@ -1208,17 +1235,12 @@ static int handle_change_prob_owner_req(struct rpc_desc* desc,
 	msg_server_t *msg = _msg;
 	struct kddm_obj *obj_entry;
 	struct kddm_set *set;
-	struct kddm_ns *ns;
 
 	BUG_ON (desc->client < 0 || desc->client > KERRIGHED_MAX_NODES);
 
-	ns = kddm_ns_get (msg->ns_id);
-	set = __find_get_kddm_set(ns, msg->set_id, KDDM_LOCK_FREE);
-
-	obj_entry = __get_alloc_kddm_obj_entry (set, msg->objid);
-
-	put_kddm_set(set);
-	kddm_ns_put(ns);
+	obj_entry = get_alloc_kddm_obj_entry_lock_free (msg->ns_id,
+							msg->set_id,
+							msg->objid, &set);
 
 	change_prob_owner(obj_entry, msg->new_owner);
 
@@ -1230,13 +1252,11 @@ static int handle_change_prob_owner_req(struct rpc_desc* desc,
 	return 0;
 };
 
+
 /* Object Server Initialisation */
 
 void object_server_init ()
 {
-        struct rpc_synchro* object_server;
-	struct rpc_synchro* object_server_may_block;
-
 	object_server = rpc_synchro_new(1, "object server", 1);
 	object_server_may_block = rpc_synchro_new(1, "object srv may block", 1);
 

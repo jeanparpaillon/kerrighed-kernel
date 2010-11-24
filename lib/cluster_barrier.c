@@ -9,6 +9,7 @@
 #include <linux/cluster_barrier.h>
 #include <linux/hashtable.h>
 #include <linux/unique_id.h>
+#include <kddm/name_space.h>
 #include <net/krgrpc/rpc.h>
 
 #include <kerrighed/types.h>
@@ -76,7 +77,7 @@ void free_cluster_barrier(struct cluster_barrier *barrier)
 }
 
 int cluster_barrier(struct cluster_barrier *barrier,
-		    krgnodemask_t *nodes,
+		    const krgnodemask_t *nodes,
 		    kerrighed_node_t master)
 {
 	struct cluster_barrier_core *core_bar;
@@ -98,7 +99,7 @@ int cluster_barrier(struct cluster_barrier *barrier,
 	if (err)
 		return err;
 
-	desc = rpc_begin(RPC_ENTER_BARRIER, master);
+	desc = rpc_begin(RPC_ENTER_BARRIER, kddm_def_ns->rpc_comm, master);
 
 	rpc_pack_type (desc, id);
 	rpc_pack(desc, 0, nodes, sizeof(krgnodemask_t));
@@ -144,7 +145,8 @@ static int handle_enter_barrier(struct rpc_desc* desc,
 	krgnode_clear(desc->client, core_bar->nodes_to_wait);
 
 	if (krgnodes_empty(core_bar->nodes_to_wait)) {
-                rpc_async_m(RPC_EXIT_BARRIER, &core_bar->nodes_in_barrier,
+                rpc_async_m(RPC_EXIT_BARRIER, kddm_def_ns->rpc_comm,
+			    &core_bar->nodes_in_barrier,
 			    id, sizeof (struct cluster_barrier_id));
 	}
 
@@ -187,13 +189,26 @@ static int barrier_notification(struct notifier_block *nb,
 		rpc_enable(RPC_EXIT_BARRIER);
 		break;
 
-	case HOTPLUG_NOTIFY_REMOVE:
-		/* TODO */
+	case HOTPLUG_NOTIFY_REMOVE_LOCAL:
+		/* Nothing to do */
+		break;
+
+	case HOTPLUG_NOTIFY_REMOVE_DISTANT:
+		rpc_disable(RPC_ENTER_BARRIER);
+		rpc_disable(RPC_EXIT_BARRIER);
+		break;
+
+	case HOTPLUG_NOTIFY_REMOVE_ADVERT:
+		/* Nothing to do */
+		break;
+
+	case HOTPLUG_NOTIFY_REMOVE_ACK:
+		/* Nothing to do */
 		break;
 
 	case HOTPLUG_NOTIFY_FAIL:
-		/* TODO */
-		break;
+		/* Not yet managed */
+		BUG();
 
 	default:
 		BUG();
@@ -204,7 +219,8 @@ static int barrier_notification(struct notifier_block *nb,
 
 void init_cluster_barrier(void)
 {
-	init_and_set_unique_id_root(&barrier_id_root, CLUSTER_BARRIER_MAX);
+	init_and_set_unique_id_root(UNIQUE_ID_CLUSTER_BARRIER, &barrier_id_root,
+				    CLUSTER_BARRIER_MAX);
 	barrier_table = hashtable_new(TABLE_SIZE);
 
 	rpc_register_int (RPC_ENTER_BARRIER, handle_enter_barrier, 0);

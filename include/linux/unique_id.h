@@ -53,6 +53,17 @@ typedef struct unique_id_root {
 	atomic_long_t local_unique_id;   /**< Local unique id */
 } unique_id_root_t;
 
+enum unique_id_type {
+	UNIQUE_ID_SIGHAND,
+	UNIQUE_ID_SEMUNDO,
+	UNIQUE_ID_FILE,
+	UNIQUE_ID_MM_STRUCT,
+	UNIQUE_ID_MM,
+	UNIQUE_ID_KDDM,
+	UNIQUE_ID_CLUSTER_BARRIER,
+	NR_UNIQUE_IDS,
+};
+
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -61,6 +72,9 @@ typedef struct unique_id_root {
  *--------------------------------------------------------------------------*/
 
 
+
+struct kddm_set;
+extern struct kddm_set *unique_id_set;
 
 extern unique_id_root_t mm_unique_id_root;
 
@@ -81,7 +95,7 @@ extern unique_id_root_t mm_unique_id_root;
  *  @return       0 if everything ok.
  *                Negative value otherwise.
  */
-int init_unique_id_root(unique_id_root_t *root);
+int init_unique_id_root(enum unique_id_type type, unique_id_root_t *root);
 
 
 
@@ -93,9 +107,16 @@ int init_unique_id_root(unique_id_root_t *root);
  *  @return       0 if everything ok.
  *                Negative value otherwise.
  */
-int init_and_set_unique_id_root(unique_id_root_t *root, int base);
+int init_and_set_unique_id_root(enum unique_id_type type,
+				unique_id_root_t *root, int base);
 
-
+#ifdef CONFIG_KRG_HOTPLUG
+void unregister_unique_id_root(enum unique_id_type type);
+#else
+static inline void unregister_unique_id_root(enum unique_id_type type)
+{
+}
+#endif
 
 /** Generate a unique id from a given root.
  *  @author Renaud Lottiaux

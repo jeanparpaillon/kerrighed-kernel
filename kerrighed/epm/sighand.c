@@ -437,6 +437,8 @@ int export_sighand_struct(struct epm_action *action,
 {
 	int r;
 
+	BUG_ON(action->type == EPM_RESTART);
+
 	if (action->type == EPM_CHECKPOINT
 	    && action->checkpoint.shared == CR_SAVE_LATER) {
 		r = cr_export_later_sighand_struct(action, ghost, tsk);
@@ -454,6 +456,10 @@ int export_sighand_struct(struct epm_action *action,
 				sizeof(tsk->sighand->action));
 
 err_write:
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to save struct sighand_struct");
+
 	return r;
 }
 
@@ -493,7 +499,9 @@ int import_sighand_struct(struct epm_action *action,
 	unsigned long krg_objid;
 	int r;
 
-	if (action->type == EPM_CHECKPOINT
+	BUG_ON(action->type == EPM_CHECKPOINT);
+
+	if (action->type == EPM_RESTART
 	    && action->restart.shared == CR_LINK_ONLY) {
 		r = cr_link_to_sighand_struct(action, ghost, tsk);
 		return r;
@@ -518,7 +526,7 @@ int import_sighand_struct(struct epm_action *action,
 		BUG_ON(!tsk->sighand);
 		krg_sighand_unlock(krg_objid);
 		break;
-	case EPM_CHECKPOINT:
+	case EPM_RESTART:
 		tsk->sighand = cr_sighand_alloc();
 		krg_objid = tsk->sighand->krg_objid;
 
@@ -534,10 +542,15 @@ int import_sighand_struct(struct epm_action *action,
 		krg_sighand_unlock(krg_objid);
 		break;
 	default:
-		PANIC("Case not supported: %d\n", action->type);
+		BUG();
+		r = -EINVAL;
 	}
 
 err_read:
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to restore struct sighand_struct");
+
 	return r;
 }
 
@@ -550,14 +563,7 @@ static int cr_export_now_sighand_struct(struct epm_action *action,
 					struct task_struct *task,
 					union export_args *args)
 {
-	int r;
-	r = export_sighand_struct(action, ghost, task);
-	if (r)
-		ckpt_err(action, r,
-			 "Fail to save struct sighand_struct "
-			 "of process %d (%s)",
-			 task_pid_knr(task), task->comm);
-	return r;
+	return export_sighand_struct(action, ghost, task);
 }
 
 
@@ -572,13 +578,8 @@ static int cr_import_now_sighand_struct(struct epm_action *action,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_sighand_struct(action, ghost, fake);
-	if (r) {
-		ckpt_err(action, r,
-			 "App %d - Fail to restore a struct sighand_struct",
-			 action->restart.app->app_id);
+	if (r)
 		goto err;
-	}
-
 	*returned_data = fake->sighand;
 err:
 	return r;
@@ -621,6 +622,18 @@ struct shared_object_operations cr_shared_sighand_struct_ops = {
 	.delete            = cr_delete_sighand_struct,
 };
 
+static int sighand_flusher(struct kddm_set *set, objid_t objid,
+			   struct kddm_obj *obj_entry, void *data)
+{
+	BUG();
+	return KERRIGHED_NODE_ID_NONE;
+}
+
+void sighand_remove_local(void)
+{
+	_kddm_flush_set(sighand_struct_kddm_set, sighand_flusher, NULL);
+}
+
 int epm_sighand_start(void)
 {
 	unsigned long cache_flags = SLAB_PANIC;
@@ -635,7 +648,8 @@ int epm_sighand_start(void)
 	 * Objid 0 is reserved to mark a sighand_struct having not been
 	 * linked to a kddm object yet.
 	 */
-	init_and_set_unique_id_root(&sighand_struct_id_root, 1);
+	init_and_set_unique_id_root(UNIQUE_ID_SIGHAND,
+				    &sighand_struct_id_root, 1);
 
 	register_io_linker(SIGHAND_STRUCT_LINKER, &sighand_struct_io_linker);
 
@@ -644,7 +658,7 @@ int epm_sighand_start(void)
 				    SIGHAND_STRUCT_KDDM_ID,
 				    SIGHAND_STRUCT_LINKER,
 				    KDDM_UNIQUE_ID_DEF_OWNER,
-				    0, 0);
+				    0, KDDM_NEED_SAFE_WALK);
 	if (IS_ERR(sighand_struct_kddm_set))
 		OOM;
 

@@ -3,25 +3,50 @@
  *
  *  Copyright (C) 2010 Louis Rilling - Kerlabs
  */
+#include <linux/remote_sleep.h>
 #include <linux/sched.h>
 #include <linux/signal.h>
 #include <linux/errno.h>
 #include <net/krgrpc/rpc.h>
 
-int remote_sleep_prepare(struct rpc_desc *desc)
+int remote_sleepers_wake_function(wait_queue_t *curr, unsigned mode, int sync,
+				  void *key)
+{
+	int ret = default_wake_function(curr, mode, sync, key);
+
+	if (ret)
+		force_sig(SIGINT, curr->private);
+	return ret;
+}
+
+int remote_sleep_prepare(struct rpc_desc *desc, struct remote_sleepers_queue *q,
+			 wait_queue_t *wq)
 {
 	int dummy, err;
 
 	current->sighand->action[SIGINT - 1].sa.sa_handler = SIG_DFL;
 	err = rpc_pack_type(desc, dummy);
 	if (err)
-		ignore_signals(current);
+		goto err_pack;
 
+	add_wait_queue(&q->wqh, wq);
+	if (q->abort) {
+		err = -ERESTARTSYS;
+		goto err_abort;
+	}
+
+	return 0;
+
+err_abort:
+	remove_wait_queue(&q->wqh, wq);
+err_pack:
+	ignore_signals(current);
 	return err;
 }
 
-void remote_sleep_finish(void)
+void remote_sleep_finish(struct remote_sleepers_queue *q, wait_queue_t *wq)
 {
+	remove_wait_queue(&q->wqh, wq);
 	ignore_signals(current);
 }
 
@@ -53,9 +78,10 @@ int unpack_remote_sleep_res(struct rpc_desc *desc, void *res, size_t size)
 	for (;;) {
 		err = rpc_unpack(desc, flags, res, size);
 		switch (err) {
-			case RPC_EOK:
-				return 0;
-			case RPC_EINTR:
+			case 0:
+			case -ECANCELED:
+				return err;
+			case -EINTR:
 				BUG_ON(flags != RPC_FLAGS_INTR);
 				rpc_signal(desc, SIGINT);
 				/*
@@ -65,8 +91,6 @@ int unpack_remote_sleep_res(struct rpc_desc *desc, void *res, size_t size)
 				 */
 				flags = 0;
 				break;
-			case RPC_EPIPE:
-				return -EPIPE;
 			default:
 				BUG();
 		}

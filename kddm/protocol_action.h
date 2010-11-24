@@ -149,7 +149,6 @@ void freeze_kddm_event(struct kddm_set *set);
 void unfreeze_kddm_event(struct kddm_set *set);
 
 kerrighed_node_t choose_injection_node_in_copyset (struct kddm_obj * object);
-kerrighed_node_t choose_injection_node (void);
 
 
 int request_sync_object_and_unlock (struct kddm_set * set,
@@ -157,9 +156,14 @@ int request_sync_object_and_unlock (struct kddm_set * set,
 				    kddm_obj_state_t new_state);
 
 
-void request_change_prob_owner(struct kddm_set * set, objid_t objid,
-			       kerrighed_node_t dest_node,
+void request_change_prob_owner(struct kddm_set *set, struct kddm_obj *obj_entry,
+			       objid_t objid, kerrighed_node_t dest_node,
 			       kerrighed_node_t new_owner);
+
+void request_force_update_def_owner_prob(struct kddm_set * set,
+					 struct kddm_obj * obj_entry,
+					 objid_t objid,
+					 kerrighed_node_t new_def_owner);
 
 void start_run_queue_thread (void);
 void stop_run_queue_thread (void);

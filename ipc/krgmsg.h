@@ -69,4 +69,7 @@ long __do_msgrcv(int msqid, long *pmtype, void __user *mtext,
 
 void local_master_freeque(struct ipc_namespace *ns, struct kern_ipc_perm *ipcp);
 
+/* used to block IPC reconfiguration */
+extern struct rw_semaphore krgipcmsg_rwsem;
+
 #endif // __KKRG_MSG__

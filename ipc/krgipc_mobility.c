@@ -301,7 +301,11 @@ int export_sysv_sem(struct epm_action *action,
 	int r;
 	unique_id_t undo_list_id = UNIQUE_ID_NONE;
 
+	if (task->exit_state)
+		return 0;
+
 	BUG_ON(task->sysvsem.undo_list);
+	BUG_ON(action->type == EPM_RESTART);
 
 	if (action->type == EPM_CHECKPOINT) {
 		BUG_ON(action->checkpoint.shared != CR_SAVE_LATER);
@@ -466,7 +470,12 @@ int import_sysv_sem(struct epm_action *action,
 	int r;
 	unique_id_t undo_list_id;
 
-	if (action->type == EPM_CHECKPOINT) {
+	BUG_ON(action->type == EPM_CHECKPOINT);
+
+	if (task->exit_state)
+		return 0;
+
+	if (action->type == EPM_RESTART) {
 		BUG_ON(action->restart.shared != CR_LINK_ONLY);
 		r = cr_link_to_sysv_sem(action, ghost, task);
 		return r;
@@ -508,9 +517,8 @@ static int cr_export_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 	r = cr_export_semundos(ghost, task);
 err:
 	if (r)
-		ckpt_err(action, r,
-			 "Fail to save semundos of process %d (%s)",
-			 task_pid_knr(task), task->comm);
+		epm_error(action, r, task,
+			  "Fail to save semundos");
 
 	return r;
 }
@@ -546,9 +554,8 @@ static int cr_import_now_sysv_sem(struct epm_action *action, ghost_t *ghost,
 	*returned_data = (void*)fake->sysvsem.undo_list_id;
 err:
 	if (r)
-		ckpt_err(action, r,
-			 "App %ld - Fail to restore semundos",
-			 action->restart.app->app_id);
+		epm_error(action, r, fake,
+			  "Fail to restore semundos");
 	return r;
 }
 
@@ -633,7 +640,7 @@ out:
 	return r;
 }
 
-static int export_full_all_msgs(ghost_t * ghost, struct msg_queue *msq)
+int export_full_all_msgs(ghost_t * ghost, struct msg_queue *msq)
 {
 	int r = 0;
 	struct msg_msg *msg;
@@ -667,7 +674,7 @@ static int export_full_local_sysv_msgq(ghost_t *ghost, int msgid)
 		goto out;
 	}
 
-	if (!msq->is_master) {
+	if (msq->master_node != kerrighed_node_id) {
 		r = -EPERM;
 		goto out_unlock;
 	}
@@ -798,7 +805,7 @@ int __sys_msgq_checkpoint(int msqid, int fd)
 
 	file = fget(fd);
 
-	desc = rpc_begin(IPC_MSG_CHKPT, *master_node);
+	desc = rpc_begin(IPC_MSG_CHKPT, master_set->ns->rpc_comm, *master_node);
 	_kddm_put_object(master_set, index);
 
 	msg.msqid = msqid;
@@ -894,8 +901,8 @@ out_err:
 	return ERR_PTR(r);
 }
 
-static int import_full_all_msgs(ghost_t *ghost, struct ipc_namespace *ns,
-				struct msg_queue *msq)
+int import_full_all_msgs(ghost_t *ghost, struct ipc_namespace *ns,
+			 struct msg_queue *msq)
 {
 	int i;
 	int r = 0;

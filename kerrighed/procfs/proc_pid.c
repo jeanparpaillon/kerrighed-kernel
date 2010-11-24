@@ -726,7 +726,8 @@ static int fill_next_remote_tgids(kerrighed_node_t node,
 		iter.tgid = GLOBAL_PID_MASK;
 	msg.next_tgid = iter.tgid;
 
-	desc = rpc_begin(REQ_AVAILABLE_TGIDS, host_node);
+	desc = rpc_begin(REQ_AVAILABLE_TGIDS,
+			 current->nsproxy->krg_ns->rpc_comm, host_node);
 	if (!desc)
 		goto out_unlock;
 

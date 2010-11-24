@@ -184,14 +184,12 @@ static int krg_set_father_cap(struct task_struct *tsk,
 #ifdef CONFIG_KRG_EPM
 	} else {
 		struct children_kddm_object *parent_children_obj;
-		pid_t real_parent_tgid;
 		pid_t parent_pid, real_parent_pid;
 		int retval;
 
 		read_unlock(&tasklist_lock);
 
-		parent_children_obj =
-			krg_parent_children_readlock(tsk, &real_parent_tgid);
+		parent_children_obj = krg_parent_children_readlock(tsk);
 		if (!parent_children_obj)
 			/* Parent is init. Do not change init's capabilities! */
 			return -EPERM;
@@ -290,18 +288,20 @@ static int krg_get_father_cap(struct task_struct *son,
 #ifdef CONFIG_KRG_EPM
 	} else {
 		struct children_kddm_object *parent_children_obj;
-		pid_t real_parent_tgid;
 		pid_t parent_pid, real_parent_pid;
 		int retval;
 
 		read_unlock(&tasklist_lock);
 
-		parent_children_obj =
-			krg_parent_children_readlock(son, &real_parent_tgid);
-		if (!parent_children_obj)
-			/* Parent is init. */
-			return krg_get_cap(task_active_pid_ns(son)->child_reaper,
-					   resulting_cap);
+		parent_children_obj = krg_parent_children_readlock(son);
+		if (!parent_children_obj) {
+			read_lock(&tasklist_lock);
+			/* Parent is (container or global) init. */
+			retval = krg_get_cap(task_active_pid_ns(son)->child_reaper,
+					     resulting_cap);
+			read_unlock(&tasklist_lock);
+			return retval;
+		}
 		krg_get_parent(parent_children_obj, son,
 			       &parent_pid, &real_parent_pid);
 		retval = remote_get_pid_cap(real_parent_pid, resulting_cap);

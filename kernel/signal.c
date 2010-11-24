@@ -36,6 +36,7 @@
 #include <kerrighed/krgnodemask.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/remote_syscall.h>
+#include <kerrighed/hotplug.h>
 #endif
 #ifdef CONFIG_KRG_EPM
 #include <kerrighed/krg_exit.h>
@@ -1181,7 +1182,7 @@ int krg_group_send_sig_info(int sig, struct siginfo *info,
 	int ret;
 
 	ret = __check_kill_permission(sig, info, p,
-				      task_active_pid_ns(p)->krg_ns_root,
+				      krg_pid_ns_root(task_active_pid_ns(p)),
 				      session);
 
 	if (!ret && sig) {
@@ -1393,12 +1394,15 @@ static int krg_kill_pg_info(int sig, struct siginfo *info, pid_t pgid)
 	if (!(pgid & GLOBAL_PID_MASK))
 		goto out;
 
+	membership_online_hold();
+
 	krgnodes_copy(nodes, krgnode_online_map);
 	krgnode_clear(kerrighed_node_id, nodes);
 	if (krgnodes_empty(nodes))
-		goto out;
+		goto out_release;
 
-	desc = rpc_begin_m(PROC_KILL_PG_INFO, &nodes);
+	desc = rpc_begin_m(PROC_KILL_PG_INFO,
+			   current->nsproxy->krg_ns->rpc_comm, &nodes);
 
 	make_kill_info_msg(&msg, sig, info, pgid);
 	retval = rpc_pack_type(desc, msg);
@@ -1409,15 +1413,15 @@ static int krg_kill_pg_info(int sig, struct siginfo *info, pid_t pgid)
 		goto err_cancel;
 
 	retval = -ESRCH;
-	for_each_krgnode_mask(node, nodes) {
-		retval = rpc_wait_return_from(desc, node);
-		if (!retval)
+	for_each_krgnode_mask(node, nodes)
+		if (!rpc_unpack_type_from(desc, node, retval) && !retval)
 			break;
-	}
 
 out_end:
 	rpc_end(desc, 0);
 
+out_release:
+	membership_online_release();
 out:
 	return retval;
 
@@ -1672,9 +1676,6 @@ int send_kerrighed_signal(int sig, struct siginfo *info, struct task_struct *t)
 	q = __sigqueue_alloc(t, GFP_ATOMIC, 1);
 	if (!q)
 		return -ENOMEM;
-
-	printk("send_kerrighed_signal: %d (%s) -> %d (%s)\n",
-	       current->pid, current->comm, t->pid, t->comm);
 
 	info->si_signo = sig;
 	info->si_code = SI_KERRIGHED;

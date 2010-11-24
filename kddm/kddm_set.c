@@ -32,6 +32,8 @@ struct kmem_cache *kddm_set_cachep;
 extern struct kmem_cache *kddm_tree_cachep;
 extern struct kmem_cache *kddm_tree_lvl_cachep;
 
+struct rpc_synchro *kddm_server;
+
 kerrighed_node_t __kddm_set_mgr(struct kddm_set * set,
 				const krgnodemask_t *nodes,
 				int nr_nodes)
@@ -40,7 +42,7 @@ kerrighed_node_t __kddm_set_mgr(struct kddm_set * set,
 
 	node = ((kerrighed_node_t)(set->id >> UNIQUE_ID_NODE_SHIFT));
 	if (unlikely(!__krgnode_isset(node, nodes)))
-		node = __nth_krgnode(node, nodes);
+		node = __nth_krgnode((node % nr_nodes), nodes);
 
 	return node;
 }
@@ -142,9 +144,10 @@ exit:
 }
 
 
-static int __free_kddm_obj_entry(unsigned long index,
+static int __free_kddm_obj_entry(objid_t index,
+				 struct kddm_obj *obj_entry,
 				 void *data,
-				 void *priv_data)
+				 struct kddm_obj_list **dead_list)
 {
 	return KDDM_OBJ_REMOVED;
 }
@@ -153,6 +156,8 @@ static int __free_kddm_obj_entry(unsigned long index,
 
 void free_kddm_set_struct(struct kddm_set * kddm_set)
 {
+	struct kddm_obj_iterator iterator;
+
 	{   /// JUST FOR DEBUGGING: BEGIN
 		struct kddm_set *_kddm_set;
 		_kddm_set = _local_get_kddm_set(kddm_set->ns,
@@ -162,7 +167,10 @@ void free_kddm_set_struct(struct kddm_set * kddm_set)
 
 	/*** Free object struct and objects content ***/
 
-	kddm_set->ops->obj_set_free(kddm_set, __free_kddm_obj_entry, kddm_set);
+	iterator.f = __free_kddm_obj_entry;
+	iterator.data = kddm_set;
+	iterator.dead_list = NULL;
+	kddm_set->ops->obj_set_free(kddm_set, &iterator);
 
 	/*** Get rid of the IO linker ***/
 
@@ -205,7 +213,7 @@ struct kddm_set *_generic_local_get_kddm_set(struct kddm_ns *ns,
 	struct kddm_set *kddm_set;
 
 	if (!(flags & KDDM_LOCK_FREE))
-		down (&ns->table_sem);
+		down_read (&ns->table_sem);
 	kddm_set = __hashtable_find (ns->kddm_set_table, set_id);
 
 	if ( (kddm_set != NULL) && (flags & KDDM_CHECK_UNIQUE)) {
@@ -215,7 +223,13 @@ struct kddm_set *_generic_local_get_kddm_set(struct kddm_ns *ns,
 
 	if ( (kddm_set == NULL) && (flags & KDDM_ALLOC_STRUCT)) {
 		kddm_set = alloc_kddm_set_struct(ns, set_id, init_state);
+		if (!(flags & KDDM_LOCK_FREE)) {
+			up_read (&ns->table_sem);
+			down_write (&ns->table_sem);
+		}
 		__hashtable_add (ns->kddm_set_table, set_id, kddm_set);
+		if (!(flags & KDDM_LOCK_FREE))
+			downgrade_write(&ns->table_sem);
 	}
 
 	if (likely(kddm_set != NULL))
@@ -223,7 +237,7 @@ struct kddm_set *_generic_local_get_kddm_set(struct kddm_ns *ns,
 
 found:
 	if (!(flags & KDDM_LOCK_FREE))
-		up (&ns->table_sem);
+		up_read (&ns->table_sem);
 
 	return kddm_set;
 }
@@ -269,7 +283,7 @@ struct kddm_set *generic_local_get_kddm_set(int ns_id,
 int find_kddm_set_remotely(struct kddm_set *kddm_set)
 {
 	kerrighed_node_t kddm_set_mgr_node_id ;
-	kddm_id_msg_t kddm_id;
+	struct kddm_lookup_msg req;
 	msg_kddm_set_t *msg;
 	int msg_size;
 	int err = -ENOMEM;
@@ -280,11 +294,13 @@ int find_kddm_set_remotely(struct kddm_set *kddm_set)
 
 	kddm_set_mgr_node_id = KDDM_SET_MGR(kddm_set);
 
-	kddm_id.set_id = kddm_set->id;
-	kddm_id.ns_id = kddm_set->ns->id;
+	req.lock_free = (kddm_set->ns->state == KDDM_NS_FROZEN);
+	req.set_id = kddm_set->id;
+	req.ns_id = kddm_set->ns->id;
 
-	desc = rpc_begin(REQ_KDDM_SET_LOOKUP, kddm_set_mgr_node_id);
-	rpc_pack_type(desc, kddm_id);
+	desc = rpc_begin(REQ_KDDM_SET_LOOKUP,
+			 kddm_set->ns->rpc_comm, kddm_set_mgr_node_id);
+	rpc_pack_type(desc, req);
 
 	msg_size = sizeof(msg_kddm_set_t) + MAX_PRIVATE_DATA_SIZE;
 
@@ -325,9 +341,11 @@ check_err:
 
 	spin_lock(&kddm_set->lock);
 
-	if (err == 0)
+	if (err == 0) {
 		kddm_set->state = KDDM_SET_READY;
-	else
+		if (kddm_set->ns->state == KDDM_NS_FROZEN)
+			set_kddm_frozen(kddm_set);
+	} else
 		kddm_set->state = KDDM_SET_INVALID;
 
 	wake_up(&kddm_set->create_wq);
@@ -373,12 +391,12 @@ check_no_lock:
 		wait_event (kddm_set->frozen_wq, (!kddm_frozen(kddm_set)));
 		goto recheck_state;
 	}
-	/* Make sure we only use bypass_frozen when KDDM are frozen (i.e.
-	   hotplug cases) */
-	BUG_ON ((flags & KDDM_LOCK_FREE) && !kddm_frozen(kddm_set));
 
 	switch (kddm_set->state) {
 	  case KDDM_SET_READY:
+		  /* Make sure we only use bypass_frozen when KDDM are frozen (i.e.
+		     hotplug cases) */
+		  BUG_ON ((flags & KDDM_LOCK_FREE) && !kddm_frozen(kddm_set));
 		  spin_unlock(&kddm_set->lock);
 		  break;
 
@@ -427,7 +445,17 @@ struct kddm_set *find_get_kddm_set(int ns_id,
 }
 EXPORT_SYMBOL(find_get_kddm_set);
 
+struct kddm_set *find_get_kddm_set_lock_free(int ns_id, kddm_set_id_t set_id)
+{
+	struct kddm_ns *ns;
+	struct kddm_set *kddm_set;
 
+	ns = kddm_ns_get(ns_id);
+	kddm_set = __find_get_kddm_set(ns, set_id, KDDM_LOCK_FREE);
+	kddm_ns_put(ns);
+
+	return kddm_set;
+}
 
 /** High level function to create a new kddm set.
  *  @author Renaud Lottiaux
@@ -530,16 +558,18 @@ static void do_unfreeze_kddm_set(void *_set, void *_data)
 
 void freeze_kddm(void)
 {
-	down (&kddm_def_ns->table_sem);
+	down_read (&kddm_def_ns->table_sem);
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
 				 do_freeze_kddm_set, NULL);
+	kddm_def_ns->state = KDDM_NS_FROZEN;
 }
 
 void unfreeze_kddm(void)
 {
+	kddm_def_ns->state = KDDM_NS_READY;
 	__hashtable_foreach_data(kddm_def_ns->kddm_set_table,
 				 do_unfreeze_kddm_set, NULL);
-	up (&kddm_def_ns->table_sem);
+	up_read (&kddm_def_ns->table_sem);
 }
 
 
@@ -558,14 +588,13 @@ void unfreeze_kddm(void)
 int handle_req_kddm_set_lookup(struct rpc_desc* desc,
 			       void *_msg, size_t size)
 {
-	kddm_id_msg_t kddm_id = *((kddm_id_msg_t *) _msg);
+	struct kddm_lookup_msg req = *((struct kddm_lookup_msg *) _msg);
 	struct kddm_set *kddm_set;
 	msg_kddm_set_t *msg;
 	int msg_size = sizeof(msg_kddm_set_t);
 
-	BUG_ON(!krgnode_online(rpc_desc_get_client(desc)));
-
-	kddm_set = local_get_kddm_set(kddm_id.ns_id, kddm_id.set_id);
+	kddm_set = generic_local_get_kddm_set(req.ns_id, req.set_id,
+					      0, req.lock_free ? KDDM_LOCK_FREE : 0);
 
 	if (kddm_set)
 		msg_size += kddm_set->private_data_size;
@@ -581,7 +610,7 @@ int handle_req_kddm_set_lookup(struct rpc_desc* desc,
 		goto done;
 	}
 
-	msg->kddm_set_id = kddm_id.set_id;
+	msg->kddm_set_id = req.set_id;
 	msg->linker_id = kddm_set->iolinker->linker_id;
 	msg->flags = kddm_set->flags;
 	msg->link = kddm_set->def_owner;
@@ -604,6 +633,37 @@ done:
 }
 
 
+/** kddm set manager change.
+ *  @author Renaud Lottiaux
+ *
+ *  @param sender    Identifier of the remote requesting machine.
+ *  @param msg       Identifier of the kddm set to lookup for.
+ */
+int handle_req_kddm_set_change_mgr(struct rpc_desc* desc,
+				   void *_msg, size_t size)
+{
+	kddm_id_msg_t *kddm_id = (kddm_id_msg_t *) _msg;
+	struct kddm_set *kddm_set;
+	bool tweak_map = !krgnode_online(kerrighed_node_id);
+
+	if (tweak_map) {
+		/*
+		 * This node is being added and should recover the management of
+		 * a KDDM set.
+		 */
+		BUG_ON(kddm_nb_nodes != 1);
+		krgnode_kddm_map = krgnodemask_of_node(desc->client);
+	}
+
+	kddm_set = find_get_kddm_set_lock_free(kddm_id->ns_id, kddm_id->set_id);
+	put_kddm_set(kddm_set);
+
+	if (tweak_map)
+		krgnode_kddm_map = krgnodemask_of_node(kerrighed_node_id);
+
+	return 0;
+}
+
 
 /** kddm set destroy handler.
  *  @author Renaud Lottiaux
@@ -611,25 +671,22 @@ done:
  *  @param sender    Identifier of the remote requesting machine.
  *  @param msg       Identifier of the kddm set to destroy.
  */
-static inline
-int __handle_req_kddm_set_destroy(kerrighed_node_t sender,
-				void *msg)
+static int do_kddm_set_destroy(kddm_id_msg_t *kddm_id)
 {
-	kddm_id_msg_t kddm_id = *((kddm_id_msg_t *) msg);
 	struct kddm_ns *ns;
 	struct kddm_set *kddm_set;
 
-	BUG_ON(!krgnode_online(sender));
+	BUG_ON(!krgnode_isset(kerrighed_node_id, krgnode_kddm_map));
 
 	/* Remove the kddm set from the name space */
 
-	ns = kddm_ns_get (kddm_id.ns_id);
+	ns = kddm_ns_get (kddm_id->ns_id);
 	if (ns == NULL)
 		return -EINVAL;
 
-	down (&ns->table_sem);
-	kddm_set = __hashtable_remove(ns->kddm_set_table, kddm_id.set_id);
-	up (&ns->table_sem);
+	down_write (&ns->table_sem);
+	kddm_set = __hashtable_remove(ns->kddm_set_table, kddm_id->set_id);
+	up_write (&ns->table_sem);
 
 	kddm_ns_put (ns);
 
@@ -644,8 +701,11 @@ int __handle_req_kddm_set_destroy(kerrighed_node_t sender,
 }
 
 int handle_req_kddm_set_destroy(struct rpc_desc* desc,
-				void *msg, size_t size){
-	return __handle_req_kddm_set_destroy(rpc_desc_get_client(desc), msg);
+				void *msg, size_t size)
+{
+	kddm_id_msg_t *kddm_id = (kddm_id_msg_t *) msg;
+
+	return do_kddm_set_destroy(kddm_id);
 }
 
 /*****************************************************************************/
@@ -664,7 +724,10 @@ int _destroy_kddm_set(struct kddm_set * kddm_set)
 	kddm_id.set_id = kddm_set->id;
 	kddm_id.ns_id = kddm_set->ns->id;
 
-	rpc_async_m(REQ_KDDM_SET_DESTROY, &krgnode_online_map,
+	if (kddm_nb_nodes == 1)
+		return do_kddm_set_destroy(&kddm_id);
+
+	rpc_async_m(REQ_KDDM_SET_DESTROY, kddm_set->ns->rpc_comm, &krgnode_kddm_map,
 		    &kddm_id, sizeof(kddm_id_msg_t));
 	return 0;
 }
@@ -711,8 +774,6 @@ void __kddm_set_destroy(void *_kddm_set,
 
 void kddm_set_init()
 {
-	struct rpc_synchro* kddm_server;
-
 	printk ("KDDM set init\n");
 
 	kddm_server = rpc_synchro_new(1, "kddm server", 0);
@@ -726,6 +787,10 @@ void kddm_set_init()
 	__rpc_register(REQ_KDDM_SET_LOOKUP,
 		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_VOID,
 		       kddm_server, handle_req_kddm_set_lookup, 0);
+
+	__rpc_register(REQ_KDDM_CHANGE_MGR,
+		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_INT,
+		       kddm_server, handle_req_kddm_set_change_mgr, 0);
 
 	__rpc_register(REQ_KDDM_SET_DESTROY,
 		       RPC_TARGET_NODE, RPC_HANDLER_KTHREAD_VOID,

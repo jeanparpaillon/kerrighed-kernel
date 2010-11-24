@@ -465,9 +465,13 @@ SYSCALL_DEFINE5(mremap, unsigned long, addr, unsigned long, old_len,
 	unsigned long _new_addr = 0;
 
 	down_write(&current->mm->mmap_sem);
+#ifdef CONFIG_KRG_MM
 	ret = __do_mremap(current->mm, addr, old_len, new_len, flags, new_addr,
 			  &_new_addr,
 			  current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur);
+#else
+	ret = do_mremap(addr, old_len, new_len, flags, new_addr);
+#endif
 	up_write(&current->mm->mmap_sem);
 
 #ifdef CONFIG_KRG_MM

@@ -163,10 +163,8 @@ static int checkpoint_task(struct epm_action *action,
 	unset_ghost_fs(&oldfs);
 
 	if (r)
-		ckpt_err(action, r,
-			 "Fail to checkpoint process %d (%s)",
-			 task_pid_knr(task_to_checkpoint),
-			 task_to_checkpoint->comm);
+		epm_error(action, r, task_to_checkpoint,
+			  "Fail to checkpoint process");
 out:
 	return r;
 }
@@ -185,6 +183,9 @@ static void krg_task_checkpoint(int sig, struct siginfo *info,
 	task_state_t *current_state;
 	int r = 0;
 
+	action.type = EPM_CHECKPOINT;
+	action.checkpoint.appid = current->application->app_id;
+
 	/*
 	 * process must not be frozen while its father
 	 * waiting in vfork
@@ -192,12 +193,11 @@ static void krg_task_checkpoint(int sig, struct siginfo *info,
 	if (current->vfork_done) {
 		mutex_lock(&current->application->mutex);
 		r = -EAGAIN;
-		ckpt_err(NULL, r,
-			 "Application %ld can not be frozen because process "
-			 "%d (%s) has been created by vfork() and has not yet "
-			 "called exec(). Thus, its parent process is blocked.",
-			 current->application->app_id,
-			 task_pid_knr(current), current->comm);
+		app_error("freeze", r, current->application->app_id,
+			  "Process %d (%s) has been created by vfork() and has "
+			  "not yet called exec(). Thus, its parent process is "
+			  "blocked.",
+			  task_pid_knr(current), current->comm);
 		__set_task_result(current, r);
 		mutex_unlock(&current->application->mutex);
 		goto out;
@@ -213,7 +213,6 @@ static void krg_task_checkpoint(int sig, struct siginfo *info,
 	 * application is frozen.
 	 */
 	while (current_state->checkpoint.ghost) {
-		action.type = EPM_CHECKPOINT;
 		action.checkpoint.shared = CR_SAVE_LATER;
 		r = checkpoint_task(&action, current, regs);
 

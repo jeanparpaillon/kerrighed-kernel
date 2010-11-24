@@ -8,6 +8,7 @@
 #define __FAF_SERVER__
 
 #include <linux/socket.h>
+#include <linux/time.h>
 
 /*--------------------------------------------------------------------------*
  *                                                                          *
@@ -79,6 +80,53 @@ struct faf_llseek_msg {
 	unsigned int origin;
 };
 
+struct faf_truncate_msg {
+	int server_fd;
+	loff_t length;
+	int small;
+};
+
+struct faf_chmod_msg {
+	int server_fd;
+	mode_t mode;
+};
+
+struct faf_chown_msg {
+	int server_fd;
+	uid_t user;
+	gid_t group;
+};
+
+struct faf_allocate_msg {
+	int server_fd;
+	int mode;
+	loff_t offset;
+	loff_t len;
+};
+
+struct faf_setxattr_msg {
+	int server_fd;
+	size_t name_len;
+	size_t size;
+	int flags;
+};
+
+struct faf_getxattr_msg {
+	int server_fd;
+	size_t name_len;
+	size_t size;
+};
+
+struct faf_listxattr_msg {
+	int server_fd;
+	size_t size;
+};
+
+struct faf_removexattr_msg {
+	int server_fd;
+	size_t name_len;
+};
+
 struct faf_bind_msg {
 	int server_fd;
 	int addrlen;
@@ -130,6 +178,13 @@ struct faf_poll_wait_msg {
 	int server_fd;
 	unsigned long objid;
 	int wait;
+};
+
+struct faf_utimes_msg {
+	int server_fd;
+	int flags;
+	bool times_not_null;
+	struct timespec times[2];
 };
 
 struct old_linux_dirent;

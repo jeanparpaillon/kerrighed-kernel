@@ -226,10 +226,10 @@ void free_kddm_obj_entry(struct kddm_set *set,
 			 struct kddm_obj *obj_entry,
 			 objid_t objid)
 {
+	BUG_ON(is_locked_obj_entry(obj_entry));
 	BUG_ON(object_frozen(obj_entry));
 	BUG_ON(obj_entry_mapcount(obj_entry) != 0);
 	BUG_ON(obj_entry_refcount(obj_entry) != 0);
-	BUG_ON(is_locked_obj_entry(obj_entry));
 	BUG_ON(atomic_read(&obj_entry->sleeper_count) != 0);
 	BUG_ON(TEST_OBJECT_PINNED(obj_entry));
 
@@ -242,14 +242,34 @@ void free_kddm_obj_entry(struct kddm_set *set,
 	free_obj_entry_struct(obj_entry);
 }
 
+int do_destroy_kddm_obj_entry(struct kddm_set *set,
+			      struct kddm_obj *obj_entry,
+			      objid_t objid)
+{
+	if (I_AM_OWNER(obj_entry)) {
+		atomic_dec(&nr_master_objects);
+		atomic_dec(&set->nr_masters);
+	} else {
+		atomic_dec(&nr_copy_objects);
+		atomic_dec(&set->nr_copies);
+	}
 
+	/* Unmap the object */
+	dec_obj_entry_mapcount(set, obj_entry, objid);
+
+	/* Put the reference taken by the called */
+	put_kddm_obj_entry(set, obj_entry, objid);
+
+	return 0;
+}
 
 /*** Remove an object entry from a kddm set object table. ***/
 
-int destroy_kddm_obj_entry (struct kddm_set *set,
-			    struct kddm_obj *obj_entry,
-			    objid_t objid,
-			    int cluster_wide_remove)
+int __destroy_kddm_obj_entry(struct kddm_set *set,
+			     struct kddm_obj *obj_entry,
+			     objid_t objid,
+			     struct kddm_obj_list **dead_list,
+			     int cluster_wide_remove)
 {
 	kerrighed_node_t default_owner = kddm_io_default_owner(set, objid);
 
@@ -270,29 +290,16 @@ int destroy_kddm_obj_entry (struct kddm_set *set,
 		}
 
 		wake_up (&obj_entry->waiting_tsk);
-		kddm_io_remove_object_and_unlock (obj_entry, set, objid);
-		goto exit;
+		kddm_io_remove_object_and_unlock (obj_entry, set, objid, dead_list);
+	}
+	else {
+		kddm_lock_obj_table(set);
+		set->ops->remove_obj_entry(set, objid);
+		kddm_unlock_obj_table(set);
+
+		do_destroy_kddm_obj_entry (set, obj_entry, objid);
 	}
 
-	if (I_AM_OWNER(obj_entry)) {
-		atomic_dec(&nr_master_objects);
-		atomic_dec(&set->nr_masters);
-	} else {
-		atomic_dec(&nr_copy_objects);
-		atomic_dec(&set->nr_copies);
-	}
-
-	/* Remove the object from the KDDM object table */
-	kddm_lock_obj_table(set);
-	set->ops->remove_obj_entry(set, objid);
-	kddm_unlock_obj_table(set);
-
-	/* Unmap the object */
-	dec_obj_entry_mapcount(set, obj_entry, objid);
-
-	/* Put the reference taken by the called */
-	put_kddm_obj_entry(set, obj_entry, objid);
-exit:
 	return 0;
 }
 
@@ -322,10 +329,15 @@ retry:
 
 /*** Get or alloc an object entry from a kddm set. ***/
 
-struct kddm_obj *__get_alloc_kddm_obj_entry (struct kddm_set *set,
-					     objid_t objid)
+struct kddm_obj *___get_alloc_kddm_obj_entry (struct kddm_set *set,
+					      objid_t objid,
+					      int lock_free)
 {
 	struct kddm_obj *obj_entry, *new_obj;
+	struct kddm_set *_set = NULL;
+
+	if (!lock_free)
+		_set = set;
 
 	/* Since we cannot allocate in a lock section, we need to
 	 * pre-allocate an obj_entry and free it after the lock section if an
@@ -335,7 +347,8 @@ struct kddm_obj *__get_alloc_kddm_obj_entry (struct kddm_set *set,
 retry:
 	new_obj = alloc_kddm_obj_entry(set, objid);
 
-	kddm_lock_obj_table(set);
+	if (!lock_free)
+		kddm_lock_obj_table(set);
 
 	obj_entry = set->ops->get_obj_entry(set, objid, new_obj);
 	if (obj_entry != new_obj)
@@ -343,10 +356,11 @@ retry:
 	else
 		inc_obj_entry_mapcount(obj_entry);
 
-	if (do_get_kddm_obj_entry(set, obj_entry, objid) == -EAGAIN)
+	if (do_get_kddm_obj_entry(_set, obj_entry, objid) == -EAGAIN)
 		goto retry;
 
-	kddm_unlock_obj_table(set);
+	if (!lock_free)
+		kddm_unlock_obj_table(set);
 
 	return obj_entry;
 }
@@ -553,11 +567,17 @@ void object_clear_frozen(struct kddm_obj * obj_entry,
 
 
 void __for_each_kddm_object(struct kddm_set *set,
-			    int(*f)(unsigned long, void *, void*),
+			    int (*f)(objid_t, struct kddm_obj *, void *, struct kddm_obj_list **),
 			    void *data)
 {
+	struct kddm_obj_iterator iterator;
+
+	iterator.f = f;
+	iterator.data = data;
+	iterator.dead_list = NULL;
+
 	kddm_lock_obj_table(set);
-	set->ops->for_each_obj_entry(set, f, data);
+	set->ops->for_each_obj_entry(set, &iterator);
 	kddm_unlock_obj_table(set);
 }
 
@@ -566,7 +586,7 @@ void __for_each_kddm_object(struct kddm_set *set,
 
 void for_each_kddm_object(int ns_id,
 			  kddm_set_id_t set_id,
-			  int(*f)(unsigned long, void*, void*),
+			  int (*f)(objid_t, struct kddm_obj *, void *, struct kddm_obj_list **),
 			  void *data)
 {
 	struct kddm_set *set;
@@ -580,6 +600,33 @@ void for_each_kddm_object(int ns_id,
 	put_kddm_set(set);
 }
 EXPORT_SYMBOL(for_each_kddm_object);
+
+
+void __for_each_kddm_object_safe(struct kddm_set *set,
+				 int (*f)(objid_t, struct kddm_obj *, void *, struct kddm_obj_list **),
+				 void *data)
+{
+	struct kddm_obj_list *dead_list = NULL;
+	struct kddm_obj_list *next;
+	struct kddm_obj_iterator iterator;
+
+	iterator.f = f;
+	iterator.data = data;
+	iterator.dead_list = kddm_need_safe_walk(set) ? &dead_list : NULL;
+
+	kddm_lock_obj_table(set);
+	set->ops->for_each_obj_entry(set, &iterator);
+	kddm_unlock_obj_table(set);
+
+	while (dead_list) {
+		next = dead_list->next;
+
+		kddm_io_remove_object(dead_list->object, set, dead_list->objid);
+		kfree(dead_list);
+
+		dead_list = next;
+	}
+}
 
 
 int init_kddm_objects (void)

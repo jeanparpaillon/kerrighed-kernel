@@ -321,13 +321,41 @@ int import_process_set_links(struct epm_action *action, ghost_t *ghost,
 
 #endif /* CONFIG_KRG_SCHED */
 
-void do_ckpt_msg(int err, char *fmt, ...);
+void print_app_error(const char *action_str, long appid, int error,
+		     char *fmt, ...);
 
-#define ckpt_err(ctx, err, fmt, args...) do {				\
-	struct epm_action *_action = ctx;				\
-	if (!_action || _action->type == EPM_CHECKPOINT)		\
-		do_ckpt_msg(err, "[E @ %s:%d : %d] " fmt, __func__,	\
-			    __LINE__, err, ##args);			\
-} while (0)
+#ifdef CONFIG_KRG_DEBUG
+#define app_error(action_str, error, appid, fmt, args...)		\
+	do {								\
+		print_app_error(action_str, appid, error,		\
+				"%s:%d: " fmt,				\
+				__func__, __LINE__, ##args);		\
+	} while (0)
+#else
+#define app_error(action_str, error, appid, fmt, args...)		\
+	do {								\
+		print_app_error(action_str, appid, error,		\
+				fmt, ##args);				\
+	} while (0)
+#endif
+
+
+void print_epm_error(struct epm_action *action, int error,
+		     struct task_struct *task,
+		     char *fmt, ...);
+
+#ifdef CONFIG_KRG_DEBUG
+#define epm_error(action, error, task, fmt, args...)			\
+	do {								\
+		print_epm_error(action, error, task,			\
+				"%s:%d: " fmt,				\
+				__func__, __LINE__, ##args);		\
+	} while (0)
+#else
+#define epm_error(action, error, task, fmt, args...)			\
+	do {								\
+		print_epm_error(action, error, task, fmt, ##args);	\
+	} while (0)
+#endif
 
 #endif /* __GHOST_HELPERS_H__ */

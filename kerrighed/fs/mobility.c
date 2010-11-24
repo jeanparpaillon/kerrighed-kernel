@@ -51,6 +51,9 @@ void free_ghost_files (struct task_struct *ghost)
 {
 	struct fdtable *fdt;
 
+	if (ghost->exit_state)
+		return;
+
 	BUG_ON (ghost->files == NULL);
 
 	fdt = files_fdtable(ghost->files);
@@ -68,14 +71,15 @@ void free_ghost_files (struct task_struct *ghost)
 /*                                                                           */
 /*****************************************************************************/
 
-static inline int populate_fs_struct (ghost_t * ghost,
-				      char *buffer,
-				      struct path *path)
+static inline int populate_fs_struct(struct epm_action *action,
+				     struct task_struct *task,
+				     ghost_t * ghost, char *buffer,
+				     struct path *path)
 {
 	struct prev_root root;
 	int len, r;
 
-	r = ghost_read (ghost, &len, sizeof (int));
+	r = ghost_read(ghost, &len, sizeof (int));
 	if (r)
 		goto error;
 
@@ -93,7 +97,7 @@ static inline int populate_fs_struct (ghost_t * ghost,
 	r = kern_path(buffer, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, path);
 	chroot_to_prev_root(&root);
 	if (r)
-		goto error;
+		epm_error(action, r, task, "Fail to open directory %s", buffer);
 
 error:
 	return r;
@@ -145,8 +149,7 @@ int export_one_open_file (struct epm_action *action,
 		goto err;
 	}
 
-	if (action->type != EPM_CHECKPOINT
-	    && index != MMAPPED_FILE) {
+	if (index != MMAPPED_FILE) {
 		if (!file->f_objid)
 			create_kddm_file_object(file);
 		check_file_struct_sharing (index, file, action);
@@ -630,6 +633,9 @@ int export_files_struct (struct epm_action *action,
 	struct fdtable *fdt;
 	struct files_struct *exported_files;
 
+	if (tsk->exit_state)
+		return 0;
+
 	BUG_ON (!tsk);
 
 	{
@@ -710,6 +716,10 @@ exit_put_files:
 	put_files_struct (exported_files);
 
 err:
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to save struct files_struct");
+
 	return r;
 }
 
@@ -754,6 +764,9 @@ int export_fs_struct (struct epm_action *action,
 {
 	char *tmp, *file_name;
 	int r, len;
+
+	if (tsk->exit_state)
+		return 0;
 
 	if (action->type == EPM_CHECKPOINT &&
 	    action->checkpoint.shared == CR_SAVE_LATER) {
@@ -822,6 +835,10 @@ int export_fs_struct (struct epm_action *action,
 err_write:
 	free_page ((unsigned long) tmp);
 
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to save struct fs_struct");
+
 	return r;
 }
 
@@ -865,7 +882,7 @@ int import_one_open_file (struct epm_action *action,
 	int first_import = 0;
 	int r = 0;
 
-	BUG_ON(action->type == EPM_CHECKPOINT);
+	BUG_ON(action->type == EPM_RESTART);
 
 	*returned_file = NULL;
 
@@ -946,7 +963,7 @@ int import_open_files (struct epm_action *action,
 {
 	int i, j, r = 0;
 
-	BUG_ON(action->type == EPM_CHECKPOINT);
+	BUG_ON(action->type == EPM_RESTART);
 
 	/* Reception of the files list and their names */
 	for (i = 0; i < last_open_fd; i++) {
@@ -981,7 +998,7 @@ static int cr_link_to_open_files(struct epm_action *action,
 {
 	int i, r = 0;
 
-	BUG_ON(action->type == EPM_CHECKPOINT
+	BUG_ON(action->type == EPM_RESTART
 	       && action->restart.shared == CR_LINK_ONLY);
 
 	/* Linking the files in the files_struct */
@@ -1053,6 +1070,9 @@ int import_files_struct (struct epm_action *action,
 	struct files_struct *files;
 	struct fdtable *fdt;
 
+	if (tsk->exit_state)
+		return 0;
+
 	{
 		int magic = 0;
 
@@ -1061,7 +1081,7 @@ int import_files_struct (struct epm_action *action,
 		BUG_ON (!r && magic != 780574);
 	}
 
-	if (action->type == EPM_CHECKPOINT
+	if (action->type == EPM_RESTART
 	    && action->restart.shared == CR_LINK_ONLY) {
 		r = cr_link_to_files_struct(action, ghost, tsk);
 		return r;
@@ -1134,7 +1154,7 @@ int import_files_struct (struct epm_action *action,
 		BUG_ON (!r && magic != 280574);
 	}
 
-	if (action->type == EPM_CHECKPOINT)
+	if (action->type == EPM_RESTART)
 		r = cr_link_to_open_files(action, ghost, tsk, files,
 					  fdt, last_open_fd);
 	else
@@ -1160,6 +1180,9 @@ exit_free_fdt:
 
 exit_free_files:
 	kmem_cache_free(files_cachep, files);
+	epm_error(action, r, tsk,
+		  "Fail to restore struct files_struct");
+
 	return r;
 }
 
@@ -1225,7 +1248,7 @@ int import_vma_phys_file(struct epm_action *action,
 	int import_file;
 	int r;
 
-	if (action->type == EPM_CHECKPOINT) {
+	if (action->type == EPM_RESTART) {
 		r = cr_link_to_vma_phys_file(action, ghost, tsk, vma, &file);
 		if (r || is_anon_shared_mmap(file))
 			goto err;
@@ -1322,7 +1345,7 @@ int import_mm_exe_file(struct epm_action *action, ghost_t *ghost,
 {
 	int dump, r = 0;
 
-	BUG_ON(action->type == EPM_CHECKPOINT
+	BUG_ON(action->type == EPM_RESTART
 	       && action->restart.shared == CR_LINK_ONLY);
 
 #ifdef CONFIG_PROC_FS
@@ -1331,7 +1354,7 @@ int import_mm_exe_file(struct epm_action *action, ghost_t *ghost,
 		goto exit;
 
 	if (dump) {
-		if (action->type == EPM_CHECKPOINT)
+		if (action->type == EPM_RESTART)
 			r = cr_link_to_file(action, ghost, tsk,
 					    &tsk->mm->exe_file);
 		else
@@ -1387,7 +1410,10 @@ int import_fs_struct (struct epm_action *action,
 	char *buffer;
 	int r;
 
-	if (action->type == EPM_CHECKPOINT
+	if (tsk->exit_state)
+		return 0;
+
+	if (action->type == EPM_RESTART
 	    && action->restart.shared == CR_LINK_ONLY) {
 		r = cr_link_to_fs_struct(action, ghost, tsk);
 		return r;
@@ -1421,13 +1447,13 @@ int import_fs_struct (struct epm_action *action,
 
 	/* Import the root path name */
 
-	r = populate_fs_struct(ghost, buffer, &fs->root);
+	r = populate_fs_struct(action, tsk, ghost, buffer, &fs->root);
 	if (r)
 		goto exit_free_fs;
 
 	/* Import the pwd path name */
 
-	r = populate_fs_struct(ghost, buffer, &fs->pwd);
+	r = populate_fs_struct(action, tsk, ghost, buffer, &fs->pwd);
 	if (r)
 		goto exit_put_root;
 
@@ -1442,7 +1468,9 @@ int import_fs_struct (struct epm_action *action,
 
 exit:
 	free_page ((unsigned long) buffer);
-
+	if (r)
+		epm_error(action, r, tsk,
+			  "Fail to restore struct fs_struct");
 	return r;
 
 exit_put_root:
@@ -1509,14 +1537,7 @@ static int cr_export_now_files_struct(struct epm_action *action, ghost_t *ghost,
 				      struct task_struct *task,
 				      union export_args *args)
 {
-	int r;
-	r = export_files_struct(action, ghost, task);
-	if (r)
-		ckpt_err(action, r,
-			 "Fail to save struct files_struct of process %d (%s)",
-			 task_pid_knr(task), task->comm);
-
-	return r;
+	return export_files_struct(action, ghost, task);
 }
 
 static int cr_import_now_files_struct(struct epm_action *action, ghost_t *ghost,
@@ -1527,12 +1548,8 @@ static int cr_import_now_files_struct(struct epm_action *action, ghost_t *ghost,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_files_struct(action, ghost, fake);
-	if (r) {
-		ckpt_err(action, r,
-			 "Fail to restore a struct files_struct",
-			 action->restart.app->app_id);
+	if (r)
 		goto err;
-	}
 
 	*returned_data = fake->files;
 err:
@@ -1572,14 +1589,7 @@ static int cr_export_now_fs_struct(struct epm_action *action, ghost_t *ghost,
 				   struct task_struct *task,
 				   union export_args *args)
 {
-	int r;
-	r = export_fs_struct(action, ghost, task);
-	if (r)
-		ckpt_err(action, r,
-			 "Fail to save struct fs_struct of process %d (%s)",
-			 task_pid_knr(task), task->comm);
-
-	return r;
+	return export_fs_struct(action, ghost, task);
 }
 
 static int cr_import_now_fs_struct(struct epm_action *action, ghost_t *ghost,
@@ -1590,13 +1600,8 @@ static int cr_import_now_fs_struct(struct epm_action *action, ghost_t *ghost,
 	BUG_ON(*returned_data != NULL);
 
 	r = import_fs_struct(action, ghost, fake);
-	if (r) {
-		ckpt_err(action, r,
-			 "App %ld - Fail to restore a struct fs_struct",
-			 action->restart.app->app_id);
+	if (r)
 		goto err;
-	}
-
 	*returned_data = fake->fs;
 err:
 	return r;

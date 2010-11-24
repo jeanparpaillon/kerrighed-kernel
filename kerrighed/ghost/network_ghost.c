@@ -24,9 +24,6 @@ int network_ghost_read(struct ghost *ghost, void *buff, size_t length)
 	int retval;
 
 	retval = rpc_unpack(desc, 0, buff, length);
-	if (retval == RPC_EPIPE)
-		retval = -EPIPE;
-	BUG_ON(retval > 0);
 
 	return retval;
 }

@@ -50,9 +50,6 @@ static inline int nr_def_groups(struct config_group *def_groups[])
 int krg_sched_info_start(void);
 void krg_sched_info_exit(void);
 
-int global_lock_start(void);
-void global_lock_exit(void);
-
 int string_list_start(void);
 void string_list_exit(void);
 
@@ -60,6 +57,8 @@ int global_config_start(void);
 void global_config_exit(void);
 int global_config_add(struct hotplug_context *ctx);
 int global_config_post_add(struct hotplug_context *ctx);
+int global_config_remove_local(struct hotplug_context *ctx);
+int global_config_remove(struct hotplug_context *ctx);
 
 int remote_pipe_start(void);
 void remote_pipe_exit(void);
@@ -70,5 +69,6 @@ void scheduler_probe_exit(void);
 struct config_group *scheduler_start(void);
 void scheduler_exit(void);
 int scheduler_post_add(struct hotplug_context *ctx);
+int scheduler_remove(struct hotplug_context *ctx);
 
 #endif /* __SCHEDULER_INTERNAL_H__ */
