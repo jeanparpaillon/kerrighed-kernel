@@ -233,25 +233,32 @@ void free_filename(char *buffer)
 int can_checkpoint_file(const struct file *file)
 {
 	if (is_socket(file)) {
-		printk("Checkpoint of socket file is not supported\n");
+		pr_kerrighed("Checkpoint of socket file "
+			     "is not supported\n");
 		return 0;
 	} else if (is_named_pipe(file)) {
-		printk("Checkpoint of FIFO file (nammed pipe) is not supported\n");
+		pr_kerrighed("Checkpoint of FIFO file (nammed pipe) "
+			     "is not supported\n");
 		return 0;
 	} else if (is_posix_mqueue(file)) {
-		printk("Checkpoint of posix message queue is not supported\n");
+		pr_kerrighed("Checkpoint of posix message queue "
+			     "is not supported\n");
 		return 0;
 	} else if (is_anon_shared_mmap(file)) {
-		printk("Checkpoint of anonymous shared mmap file is not supported\n");
+		pr_kerrighed("Checkpoint of anonymous shared mmap file "
+			     "is not supported\n");
 		return 0;
 	} else if (is_eventpoll(file)) {
-		printk("Checkpoint of eventpoll file is not supported\n");
+		pr_kerrighed("Checkpoint of eventpoll file "
+			     "is not supported\n");
 		return 0;
 	} else if (is_timer(file)) {
-		printk("Checkpoint of timerfd file is not supported\n");
+		pr_kerrighed("Checkpoint of timerfd file "
+			     "is not supported\n");
 		return 0;
 	} else if (is_signal(file)) {
-		printk("Checkopint of signalfd file is not supported\n");
+		pr_kerrighed("Checkpoint of signalfd file "
+			     "is not supported\n");
 		return 0;
 	}
 
