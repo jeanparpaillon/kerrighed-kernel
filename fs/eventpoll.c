@@ -36,6 +36,9 @@
 #ifdef CONFIG_KRG_FAF
 #include <kerrighed/faf.h>
 #endif
+#ifdef CONFIG_KRG_EPM
+#include <kerrighed/action.h>
+#endif
 #include <asm/uaccess.h>
 #include <asm/system.h>
 #include <asm/io.h>
@@ -1179,6 +1182,15 @@ retry:
 			set_current_state(TASK_INTERRUPTIBLE);
 			if (!list_empty(&ep->rdllist) || !jtimeout)
 				break;
+#ifdef CONFIG_KRG_EPM
+			if (krg_action_any_pending(current)) {
+				pr_kerrighed("%s - kerrighed action in progress"
+					     " --> need replay!\n",
+					     __PRETTY_FUNCTION__);
+				res = -ERESTARTSYS;
+				break;
+			}
+#endif
 			if (signal_pending(current)) {
 				res = -EINTR;
 				break;
