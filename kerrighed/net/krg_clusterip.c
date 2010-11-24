@@ -281,7 +281,7 @@ int krgip_cluster_ip_unused(__be32 addr)
 
 	err = -ENOMEM;
 	krgnodes_copy(nodes, krgnode_online_map);
-	desc = rpc_begin_m(CLUSTER_IP_UNUSED, &nodes);
+	desc = rpc_begin_m(CLUSTER_IP_UNUSED, kddm_def_ns->rpc_comm, &nodes);
 	if (!desc)
 		goto out;
 
