@@ -347,9 +347,6 @@ struct page *anon_memory_wppage (struct vm_area_struct *vma,
 
 	page = _kddm_grab_object_cow (set, objid);
 
-	if (old_page && old_page != page)
-		copy_user_highpage(page, old_page, address, vma);
-
 	map_kddm_page(vma, objid * PAGE_SIZE, page, 1);
 
 	_kddm_put_object (set, objid);
