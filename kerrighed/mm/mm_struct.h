@@ -10,6 +10,7 @@
 
 #include <kddm/kddm_get_object.h>
 #include <kddm/kddm_grab_object.h>
+#include <kddm/kddm_find_object.h>
 #include <kddm/kddm_put_object.h>
 
 struct anon_vma_kddm_set_private {
@@ -44,6 +45,14 @@ int init_anon_vma_kddm_set(struct task_struct *tsk,
 			   struct mm_struct *mm);
 
 struct mm_struct *krg_dup_mm(struct task_struct *tsk,struct mm_struct *src_mm);
+
+static inline struct mm_struct *krg_find_mm(unique_id_t mm_id)
+{
+	if (mm_id)
+		return _kddm_find_object_raw (mm_struct_kddm_set, mm_id);
+	else
+		return NULL;
+}
 
 static inline struct mm_struct *krg_get_mm(unique_id_t mm_id)
 {
