@@ -705,6 +705,10 @@ static int handle_notify_remote_child_reaper(struct rpc_desc *desc,
 	zombie = find_task_by_kpid(msg->zombie_pid);
 	BUG_ON(!zombie);
 
+	/* zombie being auto-reaped? reaped by another thread than parent one? */
+	if (zombie->real_parent != baby_sitter)
+		goto unlock;
+
 	/* Real parent died and let us reparent zombie to local init. */
 	krg_reparent_to_local_child_reaper(zombie);
 
@@ -718,6 +722,7 @@ static int handle_notify_remote_child_reaper(struct rpc_desc *desc,
 		}
 	}
 
+unlock:
 	write_unlock_irq(&tasklist_lock);
 	krg_task_unlock(msg->zombie_pid);
 
