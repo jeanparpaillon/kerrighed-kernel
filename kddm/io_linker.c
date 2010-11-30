@@ -190,9 +190,18 @@ int kddm_io_insert_object (struct kddm_obj * obj_entry,
 {
 	int res = 0;
 
-	if (set->iolinker && set->iolinker->insert_object)
-		res = set->iolinker->insert_object (obj_entry, set,
-						    objid);
+	BUG_ON(!is_locked_obj_entry(obj_entry));
+
+	if (!set->iolinker || !set->iolinker->insert_object)
+		return res;
+
+	set_object_frozen(obj_entry);
+	unlock_obj_entry(obj_entry);
+
+	res = set->iolinker->insert_object (obj_entry, set, objid);
+
+	lock_obj_entry(obj_entry);
+	object_clear_frozen(obj_entry, set);
 
 	return res;
 }
