@@ -297,6 +297,9 @@ int setup_faf_file_if_needed(struct file *file)
 	if (file->f_flags & (O_FAF_CLT | O_FAF_SRV))
 		goto exit;
 
+	if (is_socket(file))
+		goto exit;
+
 	/* Check if we can re-open the file */
 	if (file->f_dentry) {
 		umode_t i_mode = file->f_dentry->d_inode->i_mode;
