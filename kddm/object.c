@@ -381,14 +381,7 @@ void kddm_insert_object(struct kddm_set * set,
 		kddm_unlock_obj_table(set);
 	}
 
-	set_object_frozen(obj_entry);
-	unlock_obj_entry(obj_entry);
-
 	kddm_io_insert_object(obj_entry, set, objid);
-
-	lock_obj_entry(obj_entry);
-	object_clear_frozen(obj_entry, set);
-
 	kddm_change_obj_state(set, obj_entry, objid, objectState);
 
 	if (objectState & KDDM_OWNER_OBJ) {
