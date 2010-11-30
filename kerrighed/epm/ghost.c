@@ -2132,6 +2132,7 @@ struct task_struct *import_process(struct epm_action *action,
 	unhide_process(active_task);
 	/* Zombie tasks can be released from now on */
 
+	printk("active task : %i\n", active_task->pid);
 	return active_task;
 
 err_application:
@@ -2140,5 +2141,6 @@ err_application:
 err_active_task:
 	unimport_task(action, ghost_task);
 err_task:
+	printk("error : %i\n", err);
 	return ERR_PTR(err);
 }

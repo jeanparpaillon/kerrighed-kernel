@@ -313,6 +313,7 @@ static int do_task_migrate(struct task_struct *tsk, struct pt_regs *regs,
 	if (retval < 0) {
 		rpc_cancel_sync(desc);
 	} else {
+		printk("remote_pid : %i, task_pid_knr : %i\n", retval, task_pid_knr(tsk));
 		BUG_ON(retval != task_pid_knr(tsk));
 		retval = 0;
 	}
@@ -329,7 +330,6 @@ out:
 	membership_online_release();
 
 	return retval;
-
 err_undo:
 	undo_migrate(tsk);
 	goto out;
@@ -380,6 +380,7 @@ static void handle_migrate(struct rpc_desc *desc, void *msg, size_t size)
 		rpc_cancel(desc);
 		return;
 	}
+	printk("migrated");
 
 #ifdef CONFIG_KRG_SCHED
 	action->migrate.end_date = current_kernel_time();

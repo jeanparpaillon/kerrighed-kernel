@@ -36,6 +36,7 @@ pid_t send_task(struct rpc_desc *desc,
 		goto out_close;
 
 	err = rpc_unpack_type(desc, pid_remote_task);
+	printk("err : %i, pid_remote_task : %i\n", err, (int) pid_remote_task);
 	post_export_process(action, ghost, tsk);
 
 out_close:
@@ -64,6 +65,7 @@ struct task_struct *recv_task(struct rpc_desc *desc, struct epm_action *action)
 
 	pid = task_pid_knr(new_tsk);
 	err = rpc_pack_type(desc, pid);
+	printk("err : %i, pid : %i\n", err, (int) pid);
 	if (err)
 		goto err_close;
 

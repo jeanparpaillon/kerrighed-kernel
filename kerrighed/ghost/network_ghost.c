@@ -8,6 +8,29 @@
 #include <kerrighed/ghost.h>
 #include <kerrighed/network_ghost.h>
 
+
+void print_buf(int n, const char *buff, int length)
+{
+	switch(length) {
+		case 1:
+		case 2:
+			printk("%i) buflen = %i, buffer = %#.4hx\n", n, length,
+			       ((short int) *buff) & (length == 1 ? 0xff00 : 0xffff));
+			break;
+		case 3:
+		case 4:
+			printk("%i) buflen = %i, buffer = %#.8x\n", n, length,
+			       ((int) *buff) & (length == 3 ? 0xffffff00 : 0xffffffff));
+			break;
+		case 8:
+			printk("%i) buflen = 8, buffer = %#.16llx\n", n, (long long int) *buff);
+			break;
+		default:
+			printk("%i) buflen = %i, buffer = %#.8x...\n", n, length, (int) *buff);
+			break;
+	};
+}
+
 /** Read data from a network ghost.
  *  @author Renaud Lottiaux, Geoffroy Vallée
  *
@@ -20,10 +43,14 @@
  */
 int network_ghost_read(struct ghost *ghost, void *buff, size_t length)
 {
+	static int n = 1;
+
 	struct rpc_desc *desc = ghost->data;
 	int retval;
 
 	retval = rpc_unpack(desc, 0, buff, length);
+
+	print_buf(n++, buff, length);
 
 	return retval;
 }
@@ -40,10 +67,14 @@ int network_ghost_read(struct ghost *ghost, void *buff, size_t length)
  */
 int network_ghost_write(struct ghost *ghost, const void *buff, size_t length)
 {
+	static int n = 1;
+
 	struct rpc_desc *desc = ghost->data;
 	int retval;
 
 	retval = rpc_pack(desc, 0, buff, length);
+
+	print_buf(n++, buff, length);
 
 	return retval;
 }
