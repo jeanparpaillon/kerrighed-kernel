@@ -32,6 +32,7 @@
 #include <kerrighed/file_stat.h>
 #include "mobility.h"
 #include <kerrighed/regular_file_mgr.h>
+#include <kerrighed/socket_file_mgr.h>
 #include <kerrighed/physical_fs.h>
 #include <kerrighed/pid.h>
 #include "file_struct_io_linker.h"
@@ -110,6 +111,8 @@ static struct dvfs_mobility_operations *get_dvfs_mobility_ops(struct file *file)
 	if (file->f_flags & (O_FAF_SRV | O_FAF_CLT))
 		return &dvfs_mobility_faf_ops;
 #endif
+	if (is_socket(file))
+		return &dvfs_mobility_sock_ops;
 
 	return &dvfs_mobility_regular_ops;
 }
@@ -1519,6 +1522,8 @@ int dvfs_mobility_init(void)
 	krgsyms_register(KRGSYMS_DVFS_MOBILITY_FAF_OPS,
 			 &dvfs_mobility_faf_ops);
 #endif
+	krgsyms_register(KRGSYMS_DVFS_MOBILITY_SOCK_OPS,
+			 &dvfs_mobility_sock_ops);
 	krgsyms_register(KRGSYMS_DVFS_MOBILITY_REGULAR_OPS,
 			 &dvfs_mobility_regular_ops);
 
@@ -1528,6 +1533,7 @@ int dvfs_mobility_init(void)
 void dvfs_mobility_finalize (void)
 {
 	krgsyms_unregister(KRGSYMS_DVFS_MOBILITY_REGULAR_OPS);
+	krgsyms_unregister(KRGSYMS_DVFS_MOBILITY_SOCK_OPS);
 #ifdef CONFIG_KRG_FAF
 	krgsyms_unregister(KRGSYMS_DVFS_MOBILITY_FAF_OPS);
 #endif

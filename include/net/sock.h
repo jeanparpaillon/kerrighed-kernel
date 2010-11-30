@@ -997,6 +997,14 @@ extern ssize_t			sock_no_sendpage(struct socket *sock,
 						int offset, size_t size, 
 						int flags);
 
+#ifdef CONFIG_KERRIGHED
+#if 0
+extern int krgip_sock_alloc(struct file *file, int flags, struct socket **returned_sock);
+#endif
+extern int krgip_sock_create_and_attach(int family, int type, int protocol,
+					struct file *file, int flags);
+#endif
+
 /*
  * Functions to fill in entries in struct proto_ops when a protocol
  * uses the inet style.

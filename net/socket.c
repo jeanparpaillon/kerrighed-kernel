@@ -98,6 +98,9 @@
 #ifdef CONFIG_KRG_FAF
 #include <kerrighed/faf.h>
 #endif
+#ifdef CONFIG_KERRIGHED
+#include <kerrighed/namespace.h>
+#endif
 
 static int sock_no_open(struct inode *irrelevant, struct file *dontcare);
 static ssize_t sock_aio_read(struct kiocb *iocb, const struct iovec *iov,
@@ -518,6 +521,35 @@ static struct socket *sock_alloc(void)
 	percpu_add(sockets_in_use, 1);
 	return sock;
 }
+
+#if 0
+#ifdef CONFIG_KERRIGHED
+/* Ugly to do that here, isn't it ? */
+int krgip_sock_alloc(struct file *file, int flags, struct socket **returned_sock)
+{
+	struct socket *sock;
+	int ret = 0;
+
+	BUG_ON(!file);
+	BUG_ON(!returned_sock);
+
+	sock = sock_alloc();
+	if (!sock) {
+		ret = -ENOMEM;
+		goto out_err;
+	}
+
+	ret = sock_attach_fd(sock, file, flags);
+        if (ret)
+                goto out_err;
+
+	*returned_sock = sock;
+out_err:
+	sock_release(sock);
+	return ret;
+}
+#endif
+#endif
 
 /*
  *	In theory you can't get an open on this inode, but /proc provides
@@ -1274,6 +1306,31 @@ out_release:
 	rcu_read_unlock();
 	goto out_sock_release;
 }
+
+#ifdef CONFIG_KERRIGHED
+/* Ugly to do that here, isn't it ? */
+int krgip_sock_create_and_attach(int family, int type, int protocol,
+				 struct file *file, int flags)
+{
+	struct krg_namespace *krg_ns;
+	struct socket *new_sock;
+	int ret;
+
+	krg_ns = find_get_krg_ns();
+	BUG_ON(!krg_ns);
+
+	ret = __sock_create(krg_ns->root_nsproxy.net_ns, family, type, protocol, &new_sock, 1);
+	if (ret)
+		goto out;
+
+	ret = sock_attach_fd(new_sock, file, flags);
+
+out:
+	put_krg_ns(krg_ns);
+	return ret;
+}
+#endif
+
 
 int sock_create(int family, int type, int protocol, struct socket **res)
 {
