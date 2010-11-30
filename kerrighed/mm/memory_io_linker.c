@@ -124,24 +124,6 @@ int memory_first_touch (struct kddm_obj * obj_entry,
 	return res;
 }
 
-/** Insert a new kddm set page in the file cache.
- *  @author Renaud Lottiaux
- *
- *  @param  obj_entry  Descriptor of the page to insert.
- *  @param  set        Kddm Set descriptor
- *  @param  padeid     Id of the page to insert.
- */
-int memory_insert_page (struct kddm_obj * obj_entry,
-                        struct kddm_set * set,
-                        objid_t objid)
-{
-	struct page *page;
-
-	page = obj_entry->object;
-
-	return 0;
-}
-
 /** Invalidate a kddm set memory page.
  *  @author Renaud Lottiaux
  *
@@ -254,7 +236,6 @@ struct iolinker_struct memory_linker = {
 	remove_object:     memory_remove_page,
 	invalidate_object: memory_invalidate_page,
 	change_state:      memory_change_state,
-	insert_object:     memory_insert_page,
 	linker_name:       "mem ",
 	linker_id:         MEMORY_LINKER,
 	alloc_object:      memory_alloc_object,
