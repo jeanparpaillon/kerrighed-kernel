@@ -98,20 +98,13 @@ static inline void put_pid_ns(struct pid_namespace *ns)
 {
 }
 
-
 static inline void zap_pid_ns_processes(struct pid_namespace *ns)
 {
 	BUG();
 }
 
 #ifdef CONFIG_KRG_PROC
-static inline struct pid_namespace *krg_pid_ns_root(struct pid_namespace *ns)
-{
-	return ns;
-}
-
-static inline bool is_krg_pid_ns_root(struct pid_namespace *ns)
-{
+static inline bool is_krg_pid_ns_root(struct pid_namespace *ns) {
 	return true;
 }
 

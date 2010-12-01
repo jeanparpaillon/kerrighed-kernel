@@ -23,7 +23,6 @@ struct krgip_sockinfo {
 /*                                                                           */
 /*****************************************************************************/
 
-
 static int krgip_export_sockfile(struct epm_action *action,
 				 ghost_t *ghost, struct file *file)
 {
@@ -36,20 +35,12 @@ static int krgip_export_sockfile(struct epm_action *action,
 		.protocol = sock->sk->sk_protocol,
 	};
 
-/*	int flags = file->f_flags;
-	ret = ghost_write(ghost, &flags, sizeof(flags));
-	if (ret)
-		goto out;
-*/
-
 	ret = ghost_write(ghost, &sockinfo, sizeof(sockinfo));
 	if (ret)
 		goto out;
-
 	ret = krgip_export_sock(action, ghost, sock);
-
 out:
-	sock_release(sock);
+	/*sock_release(sock);*/
 	/*fputs(file);*/
 
 	return ret;
@@ -60,14 +51,7 @@ static int krgip_import_sockfile(struct epm_action *action,
 {
 	int ret;
 	struct file *sockfile;
-/*	struct socket *sock;*/
 	struct krgip_sockinfo sockinfo;
-
-/*	int flags;
-	ret = ghost_read(ghost, &flags, sizeof(flags));
-	if (ret)
-		goto out;
-*/
 
 	ret = ghost_read(ghost, &sockinfo, sizeof(sockinfo));
 	if (ret)
@@ -78,17 +62,11 @@ static int krgip_import_sockfile(struct epm_action *action,
 		ret = -ENOMEM;
 		goto out;
 	}
-/*
-	ret = krgip_sock_alloc(sockfile, flags, &sock);
-	if (ret)
-		goto out_err;
-*/
 
 	ret = krgip_sock_create_and_attach(sockinfo.family, sockinfo.type, sockinfo.protocol,
 					   sockfile, sockinfo.flags);
 	if (ret)
 		goto out_err;
-
 	ret = krgip_import_sock(action, ghost, sockfile->private_data);
 	if (ret)
 		goto out_err;
@@ -103,11 +81,10 @@ out_err:
 	goto out;
 }
 
-
 int socket_file_export(struct epm_action *action, ghost_t *ghost,
 		       struct task_struct *task, int index, struct file *file)
 {
-	int ret;
+	int ret = 0;
 
 	BUG_ON(action->type == EPM_CHECKPOINT);
 
@@ -123,12 +100,13 @@ int socket_file_export(struct epm_action *action, ghost_t *ghost,
 int socket_file_import(struct epm_action *action, ghost_t *ghost,
 		       struct task_struct *task, struct file **returned_file)
 {
-	int ret;
+	int ret = 0;
 
 	BUG_ON(action->type == EPM_CHECKPOINT);
 
 	/* Puts checks and branches here */
 	pr_debug("Importing socket file\n");
+
 
 	ret = krgip_import_sockfile(action, ghost, returned_file);
 	if (ret)

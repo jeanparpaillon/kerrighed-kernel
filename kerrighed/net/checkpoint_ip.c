@@ -84,11 +84,11 @@ out:
 
 int krgip_import_ip(struct epm_action *action, ghost_t *ghost, struct socket *sock)
 {
-	struct sockaddr_in peeraddr = {
+/*	struct sockaddr_in peeraddr = {
 		.sin_family = AF_INET,
 		.sin_addr = {inet_sk(sock->sk)->daddr},
 		.sin_port = inet_sk(sock->sk)->dport
-	};
+	};*/
 	int ret = 0;
 
 
@@ -96,7 +96,7 @@ int krgip_import_ip(struct epm_action *action, ghost_t *ghost, struct socket *so
 	if (ret)
 		goto out;
 
-	if (inet_sk(sock->sk)->num) {
+	if (inet_sk(sock->sk)->sport) {
 		if (sock->sk->sk_state == TCP_CLOSE || sock->sk->sk_state == TCP_LISTEN) {
 			sock->sk->sk_reuse = 2;
 			inet_sk(sock->sk)->freebind = 1;
@@ -105,15 +105,24 @@ int krgip_import_ip(struct epm_action *action, ghost_t *ghost, struct socket *so
 		if (KRGIP_CKPT_ISDST(action))
 			sock->sk->sk_gso_type = SKB_GSO_UDP;
 
-		udp_v4_get_port(sock->sk, inet_sk(sock->sk)->num);
+		pr_debug("binding on %d.%d.%d.%d:%d <=> %d.%d.%d.%d:%d\n",
+			 SPLIT_IP4_ADDR(inet_sk(sock->sk)->saddr),
+			 ntohs(inet_sk(sock->sk)->sport),
+			 SPLIT_IP4_ADDR(inet_sk(sock->sk)->daddr),
+			 ntohs(inet_sk(sock->sk)->dport));
 
-		if (sock->sk->sk_state == TCP_ESTABLISHED)
-			ip4_datagram_connect(sock->sk, (struct sockaddr *) &peeraddr, sizeof(peeraddr));
+		pr_debug("binding on %d\n", htons(inet_sk(sock->sk)->sport));
+		ret = udp_v4_get_port(sock->sk, htons(inet_sk(sock->sk)->sport));
+		if (ret)
+			goto out;
+		pr_debug("bound on %d\n", htons(inet_sk(sock->sk)->sport));
 
 /*
-		pr_debug("binding on %d.%d.%d.%d:%d",
-			 SPLIT_IP4_ADDR((bindaddr.sin_addr.s_addr)),
-			 ntohs(bindaddr.sin_port));
+		if (sock->sk->sk_state == TCP_ESTABLISHED) {
+			pr_debug("binding on %d\n", htons(inet_sk(sock->sk)->sport));
+			ret = ip4_datagram_connect(sock->sk, (struct sockaddr *) &peeraddr, sizeof(peeraddr));
+*/
+/*
 
 		ret = sock->ops->bind(sock, (struct sockaddr *) &bindaddr, sizeof(bindaddr));
 		if (ret < 0) {

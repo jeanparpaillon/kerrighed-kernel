@@ -327,10 +327,14 @@ int handle_cluster_ip_unused(struct rpc_desc *desc, void *msg, size_t size)
 
 int krgip_cluster_ip_unused(__be32 addr)
 {
+	struct krg_namespace *krg_ns;
 	struct rpc_desc *desc;
 	krgnodemask_t nodes;
 	kerrighed_node_t node;
 	int err = 0;
+
+	krg_ns = find_get_krg_ns();
+	BUG_ON(!krg_ns);
 
 	membership_online_hold();
 	if (!krgnode_online(kerrighed_node_id))
@@ -338,7 +342,7 @@ int krgip_cluster_ip_unused(__be32 addr)
 
 	err = -ENOMEM;
 	krgnodes_copy(nodes, krgnode_online_map);
-	desc = rpc_begin_m(CLUSTER_IP_UNUSED, &nodes);
+	desc = rpc_begin_m(CLUSTER_IP_UNUSED, krg_ns->rpc_comm, &nodes);
 	if (!desc)
 		goto out;
 
@@ -358,6 +362,8 @@ out_end:
 
 out:
 	membership_online_release();
+	put_krg_ns(krg_ns);
+
 	return err;
 }
 EXPORT_SYMBOL(krgip_cluster_ip_unused);
@@ -461,6 +467,7 @@ out_cancel:
 static
 int krgip_cluster_rpc_delete_established(kerrighed_node_t owner, __be32 laddr, __be16 lport, __be32 daddr, __be16 dport)
 {
+	struct krg_namespace *krg_ns;
 	struct rpc_desc *desc;
 	int err = -EIO;
 
@@ -474,11 +481,13 @@ int krgip_cluster_rpc_delete_established(kerrighed_node_t owner, __be32 laddr, _
 		 SPLIT_IP4_ADDR(daddr),
 		 ntohs(dport));
 
+	krg_ns = find_get_krg_ns();
+	BUG_ON(!krg_ns);
 
 	if (!krgnode_online(owner))
 		goto out;
 
-	desc = rpc_begin(CLUSTER_DELETE_ESTABLISHED, owner);
+	desc = rpc_begin(CLUSTER_DELETE_ESTABLISHED, krg_ns->rpc_comm, owner);
 	if (!desc)
 		goto out;
 
@@ -506,6 +515,7 @@ int krgip_cluster_rpc_delete_established(kerrighed_node_t owner, __be32 laddr, _
 out:
 	if (err)
 		pr_debug("rpc request caused an error\n");
+	put_krg_ns(krg_ns);
 
 	return err;
 

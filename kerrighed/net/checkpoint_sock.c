@@ -87,7 +87,7 @@ static int krgip_checkpoint_sockflags(struct epm_action *action, ghost_t *ghost,
 		int v = 1;
 
 		if (test_and_clear_bit(flag, &sk_flags))
-			ret = sock_setsockopt(sock, SOL_SOCKET, opt, (char *)&v, sizeof(v));
+			ret = kernel_setsockopt(sock, SOL_SOCKET, opt, (char *)&v, sizeof(v));
 
 		if (ret) {
 			printk("Failed to set skopt %i: %i\n", opt, ret);
@@ -101,7 +101,7 @@ static int krgip_checkpoint_sockflags(struct epm_action *action, ghost_t *ghost,
 		int v = 1;
 
 		if (test_and_clear_bit(flag, &sock_flags))
-			ret = sock_setsockopt(sock, SOL_SOCKET, opt, (char *)&v, sizeof(v));
+			ret = kernel_setsockopt(sock, SOL_SOCKET, opt, (char *)&v, sizeof(v));
 
 		if (ret) {
 			printk("Failed to set sockopt %i: %i\n", opt, ret);
@@ -226,7 +226,7 @@ static int krgip_checkpoint_sock(struct epm_action *action, ghost_t *ghost,
 	KRGIP_CKPT_COPY(action, ghost, sk->sk_max_ack_backlog, ret);
 
 	/* May not be directly copied */
-	if (KRGIP_CKPT_ISDST(action)) {
+	if (KRGIP_CKPT_ISSRC(action)) {
 		state = sk->sk_state;
 		shutdown = sk->sk_shutdown;
 		userlocks = sk->sk_userlocks;
@@ -236,7 +236,7 @@ static int krgip_checkpoint_sock(struct epm_action *action, ghost_t *ghost,
 	KRGIP_CKPT_COPY(action, ghost, shutdown, ret);
 	KRGIP_CKPT_COPY(action, ghost, userlocks, ret);
 	KRGIP_CKPT_COPY(action, ghost, no_check, ret);
-	if (KRGIP_CKPT_ISSRC(action)) {
+	if (KRGIP_CKPT_ISDST(action)) {
 		sk->sk_state = state;
 		sk->sk_shutdown = shutdown;
 		sk->sk_userlocks = userlocks;
@@ -269,6 +269,7 @@ out:
 	return ret;
 }
 
+
 int krgip_export_sock(struct epm_action *action, ghost_t *ghost, struct socket *sock)
 {
 	int ret = 0;
@@ -292,11 +293,10 @@ int krgip_export_sock(struct epm_action *action, ghost_t *ghost, struct socket *
 		goto out;
 
 	sock_orphan(sock->sk);
+out:
 	sock_put(sock->sk);
 	sock->sk = NULL;
-out:
-	if (sock->sk)
-		sock_put(sock->sk);
+
 	if (ret)
 		pr_debug("export_sock() returned error %d\n", ret);
 	return ret;
@@ -304,6 +304,7 @@ out:
 
 int krgip_import_sock(struct epm_action *action, ghost_t *ghost, struct socket *sock)
 {
+
 	int ret = 0;
 
 	sock_hold(sock->sk);
@@ -312,10 +313,10 @@ int krgip_import_sock(struct epm_action *action, ghost_t *ghost, struct socket *
 	if (ret)
 		goto out_err;
 
-	if (sock->sk->sk_family != PF_INET)
+	if (sock->sk->sk_family != PF_INET) {
 		ret = -ENOTSUPP;
-	if (ret)
 		goto out_err;
+	}
 
 	ret = krgip_import_ip(action, ghost, sock);
 	if (ret)
@@ -326,6 +327,7 @@ int krgip_import_sock(struct epm_action *action, ghost_t *ghost, struct socket *
 		goto out_err;
 
 	sock_put(sock->sk);
+
 	return 0;
 
 out_err:
@@ -334,5 +336,6 @@ out_err:
 	sock->sk = NULL;
 	pr_debug("import_sock() returned error %d\n", ret);
 	return ret;
+
 }
 

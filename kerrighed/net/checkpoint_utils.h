@@ -9,14 +9,15 @@
 #define KRGIP_CKPT_COPY(action, ghost, data, error) \
 { \
 	if (!error) { \
-		if (KRGIP_CKPT_ISDST(action)) \
+		if (KRGIP_CKPT_ISDST(action)) { \
 			error = ghost_read(ghost, &data, sizeof(data)); \
 			if (error) \
 				printk("Error when reading var " #data ", errno %d\n", error); \
-		else \
+		} else { \
 			error = ghost_write(ghost, &data, sizeof(data)); \
 			if (error) \
 				printk("Error when writing var " #data ", errno %d\n", error); \
+		} \
 	} \
 }
 

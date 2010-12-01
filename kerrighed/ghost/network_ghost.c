@@ -9,24 +9,28 @@
 #include <kerrighed/network_ghost.h>
 
 
-void print_buf(int n, const char *buff, int length)
+void print_buf(int n, const char *buff, int length, int is_write)
 {
 	switch(length) {
 		case 1:
 		case 2:
-			printk("%i) buflen = %i, buffer = %#.4hx\n", n, length,
+			printk("%s : %i) buflen = %i, buffer = %#.4hx\n",
+			       is_write ? "write : " : "read : ", n, length,
 			       ((short int) *buff) & (length == 1 ? 0xff00 : 0xffff));
 			break;
 		case 3:
 		case 4:
-			printk("%i) buflen = %i, buffer = %#.8x\n", n, length,
+			printk("%s : %i) buflen = %i, buffer = %#.8x\n",
+			       is_write ? "write : " : "read : ", n, length,
 			       ((int) *buff) & (length == 3 ? 0xffffff00 : 0xffffffff));
 			break;
 		case 8:
-			printk("%i) buflen = 8, buffer = %#.16llx\n", n, (long long int) *buff);
+			printk("%s : %i) buflen = 8, buffer = %#.16llx\n",
+			       is_write ? "write : " : "read : ", n, (long long int) *buff);
 			break;
 		default:
-			printk("%i) buflen = %i, buffer = %#.8x...\n", n, length, (int) *buff);
+			printk("%s : %i) buflen = %i, buffer = %#.8x...\n",
+			       is_write ? "write : " : "read : ", n, length, (int) *buff);
 			break;
 	};
 }
@@ -50,7 +54,7 @@ int network_ghost_read(struct ghost *ghost, void *buff, size_t length)
 
 	retval = rpc_unpack(desc, 0, buff, length);
 
-	print_buf(n++, buff, length);
+	print_buf(n++, buff, length, 0);
 
 	return retval;
 }
@@ -74,7 +78,7 @@ int network_ghost_write(struct ghost *ghost, const void *buff, size_t length)
 
 	retval = rpc_pack(desc, 0, buff, length);
 
-	print_buf(n++, buff, length);
+	print_buf(n++, buff, length, 1);
 
 	return retval;
 }
