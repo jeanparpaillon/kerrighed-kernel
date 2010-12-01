@@ -994,12 +994,12 @@ regular_case:
 	  case WAIT_OBJ_READ:
 	  case INV_COPY:
 	  case READ_COPY:
-		  /* Shorten the prob owner chain on a write request */
-/*		  if (request_type == KDDM_OBJ_COPY_ON_WRITE) */
-/*			  change_prob_owner(obj_entry, msg->new_owner); */
-
 		  forward_object_server_msg (obj_entry, set,
 					     REQ_OBJECT_COPY, msg);
+
+		  /* Shorten the prob owner chain on a write request */
+		  if (request_type == KDDM_OBJ_COPY_ON_WRITE)
+			  change_prob_owner(obj_entry, msg->new_owner);
 		  break;
 
 	  case INV_OWNER:
