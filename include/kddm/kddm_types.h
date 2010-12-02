@@ -4,6 +4,7 @@
 #include <kddm/kddm_tree.h>
 #include <linux/wait.h>
 #include <linux/mutex.h>
+#include <linux/jiffies.h>
 #include <kerrighed/types.h>
 
 
@@ -80,7 +81,7 @@
 #define CLEAR_OBJECT_PINNED(obj_entry) \
         clear_bit (OBJECT_PINNED, &(obj_entry)->flags)
 #define TEST_OBJECT_PINNED(obj_entry) \
-        test_bit (OBJECT_PINNED, &(obj_entry)->flags)
+        (test_bit (OBJECT_PINNED, &(obj_entry)->flags) || ((obj_entry)->jiffie == jiffies))
 
 #ifndef CONFIG_DEBUG_SPINLOCK
 #define SET_OBJECT_LOCKED(obj_entry) \
@@ -158,6 +159,7 @@ typedef struct kddm_obj {
 	atomic_t sleeper_count;        /* Nunmber of task waiting on the
 					  object */
 	wait_queue_head_t waiting_tsk; /* Process waiting for the object */
+	long jiffie;
 #ifdef CONFIG_DEBUG_SPINLOCK
 	spinlock_t lock;
 #endif
