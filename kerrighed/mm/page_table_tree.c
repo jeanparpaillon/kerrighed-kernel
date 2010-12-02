@@ -575,6 +575,7 @@ static void kddm_pt_insert_object(struct kddm_set * set,
 {
 	struct mm_struct *mm = set->obj_set;
 	unsigned long addr = objid * PAGE_SIZE;
+	struct vm_area_struct *vma;
 	spinlock_t *ptl;
 	pte_t *ptep;
 	struct page *page = obj_entry->object;
@@ -582,16 +583,21 @@ static void kddm_pt_insert_object(struct kddm_set * set,
 	BUG_ON(!page);
 	BUG_ON(page->obj_entry && page->obj_entry != obj_entry);
 
+	vma = find_vma(mm, addr);
+	BUG_ON(!vma);
+	if ((vma->anon_vma == NULL) && unlikely(anon_vma_prepare(vma)))
+		BUG();
+
 	/* Insert the object in the page table */
 	ptep = get_locked_pte(mm, addr, &ptl);
 	if (!ptep)
 		BUG();
 
+	page_add_new_anon_rmap(page, vma, addr);
+
 	__kddm_pt_insert_object (mm, page, addr, ptep, obj_entry);
 
 	pte_unmap_unlock(ptep, ptl);
-
-	add_page_anon_rmap (mm, page, addr);
 }
 
 struct kddm_obj *kddm_pt_break_cow_object(struct kddm_set *set,
