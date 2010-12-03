@@ -10,6 +10,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/spinlock.h>
+#include <linux/jiffies.h>
 #include <kerrighed/sys/types.h>
 #include <kerrighed/krginit.h>
 #include <kerrighed/krgflags.h>
@@ -20,6 +21,7 @@
 
 
 struct iolinker_struct *iolinker_list[MAX_IO_LINKER];
+extern struct iolinker_struct memory_linker;
 
 krgnodemask_t krgnode_kddm_map;
 kerrighed_node_t kddm_nb_nodes;
@@ -191,6 +193,10 @@ int kddm_io_insert_object (struct kddm_obj * obj_entry,
 	int res = 0;
 
 	BUG_ON(!is_locked_obj_entry(obj_entry));
+
+	obj_entry->jiffie = 0;
+	if (set->iolinker == &memory_linker)
+		obj_entry->jiffie = jiffies;
 
 	if (!set->iolinker || !set->iolinker->insert_object)
 		return res;

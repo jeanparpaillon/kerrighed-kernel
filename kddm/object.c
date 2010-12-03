@@ -162,6 +162,7 @@ struct kddm_obj *alloc_kddm_obj_entry(struct kddm_set *set,
 
 	obj_entry->flags = 0;
 	obj_entry->object = NULL;
+	obj_entry->jiffie = 0;
 	atomic_set(&obj_entry->mapcount, 0);
 	atomic_set(&obj_entry->refcount, 0);
 

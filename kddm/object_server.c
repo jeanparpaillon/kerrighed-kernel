@@ -384,7 +384,8 @@ int __handle_object_invalidation (kerrighed_node_t sender,
 	obj_entry = get_kddm_obj_entry (msg->ns_id, msg->set_id, msg->objid,
 					&set);
 
-	if (object_frozen_or_pinned (obj_entry)) {
+	if (object_frozen_or_pinned (obj_entry) ||
+	    OBJECT_UNDER_GP(obj_entry)) {
 		queue_event (__handle_object_invalidation, sender, set,
 			     obj_entry, msg->objid, msg,
 			     sizeof (msg_server_t));
@@ -923,7 +924,8 @@ static inline int __handle_object_copy_req (kerrighed_node_t sender,
 						      msg->objid, &set);
 	}
 
-	if (object_frozen_or_pinned (obj_entry)) {
+	if (object_frozen_or_pinned (obj_entry)
+	    || OBJECT_UNDER_GP(obj_entry)) {
 		if (msg->flags & KDDM_TRY_GRAB)
 			send_no_object (set, obj_entry, msg->objid,
 					msg->reply_node, send_ownership);
