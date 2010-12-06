@@ -104,7 +104,7 @@ void krg_check_vma_link(struct vm_area_struct *vma);
 
 static inline void krg_lock_mm(struct mm_struct *mm)
 {
-	_kddm_grab_object (mm_struct_kddm_set, mm->mm_id);
+	_kddm_grab_object_no_ft (mm_struct_kddm_set, mm->mm_id);
 }
 
 static inline void krg_unlock_mm(struct mm_struct *mm)
