@@ -515,7 +515,7 @@ int export_vmas (struct epm_action *action,
 	struct vm_area_struct *vma;
 	hashtable_t *file_table;
 
-	int r;
+	int r, dummy;
 
 	BUG_ON (tsk == NULL);
 	BUG_ON (tsk->mm == NULL);
@@ -523,6 +523,9 @@ int export_vmas (struct epm_action *action,
 	file_table = hashtable_new (FILE_TABLE_SIZE);
 	if (!file_table)
 		return -ENOMEM;
+
+	/* Synchronize with import_vmas. Check the comment in this function. */
+	r = ghost_read(ghost, &dummy, sizeof(int));
 
 	/* Export process VMAs */
 
@@ -1146,7 +1149,7 @@ static int import_vmas (struct epm_action *action,
 	hashtable_t *file_table;
 	struct mm_struct *mm;
 	int nr_vma = -1;
-	int i, r;
+	int i, r, dummy;
 
 	BUG_ON (tsk == NULL);
 
@@ -1155,6 +1158,13 @@ static int import_vmas (struct epm_action *action,
 		return -ENOMEM;
 
 	mm = tsk->mm;
+
+	/* Synchronize with export_vmas to make sure we export VMAs inside
+	 * a kddm read lock on the mm_struct object. The read lock is done
+	 * in do_import_mm_struct function. This avoid the modification of
+	 * the address space during the export/import phase.
+	 */
+	r = ghost_write(ghost, &dummy, sizeof(int));
 
 	r = ghost_read(ghost, &nr_vma, sizeof(int));
 	if (r)
