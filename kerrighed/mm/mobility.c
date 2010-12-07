@@ -1002,14 +1002,14 @@ int reconcile_vmas(struct mm_struct *mm, struct vm_area_struct *vma,
 
 #ifdef CONFIG_KRG_DEBUG
 	/* Paranoia checks */
-	BUG_ON ((old->vm_start != vma->vm_start) ||
-		(old->vm_end != vma->vm_end));
-	BUG_ON (old->vm_flags != vma->vm_flags);
-	BUG_ON (old->vm_ops != vma->vm_ops);
-	BUG_ON (old->vm_file && !vma->vm_file);
-	BUG_ON (old->vm_file && vma->vm_file &&
-		(old->vm_file->f_dentry != vma->vm_file->f_dentry));
-	BUG_ON ((old->vm_pgoff != vma->vm_pgoff) && vma->vm_file);
+	WARN_ON ((old->vm_start != vma->vm_start) ||
+		 (old->vm_end != vma->vm_end));
+	WARN_ON (old->vm_flags != vma->vm_flags);
+	WARN_ON (old->vm_ops != vma->vm_ops);
+	WARN_ON (old->vm_file && !vma->vm_file);
+	WARN_ON (old->vm_file && vma->vm_file &&
+		 (old->vm_file->f_dentry != vma->vm_file->f_dentry));
+	WARN_ON ((old->vm_pgoff != vma->vm_pgoff) && vma->vm_file);
 #endif
 	if (vma->vm_file && !old->vm_file) {
 		struct file *file = vma->vm_file;
