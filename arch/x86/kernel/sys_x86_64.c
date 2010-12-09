@@ -38,15 +38,13 @@ asmlinkage long sys_mmap(unsigned long addr, unsigned long len,
 			goto out;
 	}
 #ifdef CONFIG_KRG_MM
-	if (current->mm->anon_vma_kddm_set)
-		krg_lock_mm(current->mm);
+	krg_lock_mm(current->mm);
 #endif
 	down_write(&current->mm->mmap_sem);
 	error = do_mmap_pgoff(file, addr, len, prot, flags, off >> PAGE_SHIFT);
 	up_write(&current->mm->mmap_sem);
 #ifdef CONFIG_KRG_MM
-	if (current->mm->anon_vma_kddm_set)
-		krg_unlock_mm(current->mm);
+	krg_unlock_mm(current->mm);
 #endif
 
 	if (file)

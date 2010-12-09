@@ -465,8 +465,7 @@ SYSCALL_DEFINE5(mremap, unsigned long, addr, unsigned long, old_len,
 	unsigned long _new_addr = 0;
 
 #ifdef CONFIG_KRG_MM
-	if (current->mm->anon_vma_kddm_set)
-		krg_lock_mm(current->mm);
+	krg_lock_mm(current->mm);
 
 	down_write(&current->mm->mmap_sem);
 
@@ -481,8 +480,7 @@ SYSCALL_DEFINE5(mremap, unsigned long, addr, unsigned long, old_len,
 			      new_addr, _new_addr,
 			      current->signal->rlim[RLIMIT_MEMLOCK].rlim_cur);
 
-	if (current->mm->anon_vma_kddm_set)
-		krg_unlock_mm(current->mm);
+	krg_unlock_mm(current->mm);
 #else
 	down_write(&current->mm->mmap_sem);
 	ret = do_mremap(addr, old_len, new_len, flags, new_addr);
