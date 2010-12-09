@@ -80,6 +80,33 @@ static inline struct page *replace_zero_page(struct mm_struct *mm,
 	return new_page;
 }
 
+static inline struct page *pt_copy_page(struct mm_struct *mm,
+					struct vm_area_struct *vma,
+					struct page *page,
+					pte_t *ptep,
+					unsigned long addr)
+{
+	struct page *new_page;
+
+	new_page = alloc_page (GFP_ATOMIC);
+	if (!new_page)
+		return NULL;
+
+	BUG_ON (TestSetPageLockedKDDM(new_page));
+	lock_page(new_page);
+
+	copy_user_highpage(new_page, page, addr, NULL);
+
+	unmap_page (mm, addr, page, ptep);
+
+	set_pte (ptep, mk_pte (new_page, vma->vm_page_prot));
+	page_add_anon_rmap(new_page, vma, addr);
+	unlock_page(new_page);
+
+	inc_mm_counter(mm, anon_rss);
+
+	return new_page;
+}
 
 static inline struct kddm_obj *init_pte_alloc_obj_entry(struct kddm_set *set,
 						objid_t objid,
@@ -170,6 +197,15 @@ static inline struct kddm_obj *init_pte(struct mm_struct *mm,
 		/* new_page is returned locked */
 		unlock_kddm_page(page);
 		page = new_page;
+	}
+	else {
+		/* Early break cow */
+		if (page->obj_entry) {
+			new_page = pt_copy_page(mm, vma, page, ptep, addr);
+			/* new_page is returned locked */
+			unlock_kddm_page(page);
+			page = new_page;
+		}
 	}
 
 	atomic_inc (&page->_kddm_count);
