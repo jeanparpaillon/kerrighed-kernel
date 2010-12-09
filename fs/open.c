@@ -1105,6 +1105,10 @@ long do_sys_open(int dfd, const char __user *filename, int flags, int mode)
 		}
 		putname(tmp);
 	}
+
+	if (current->comm[0] == 'a' && current->comm[1] == 's')
+		printk ("%d: open %s in fd[%d]\n", current->pid, tmp, fd);
+
 	return fd;
 }
 

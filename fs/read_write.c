@@ -428,6 +428,9 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 	ssize_t ret = -EBADF;
 	int fput_needed;
 
+	if (current->comm[0] == 'a' && current->comm[1] == 's')
+		printk ("%d: read in fd[%d]\n", current->pid, fd);
+
 	file = fget_light(fd, &fput_needed);
 	if (file) {
 		loff_t pos = file_pos_read(file);
@@ -435,6 +438,9 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 		file_pos_write(file, pos);
 		fput_light(file, fput_needed);
 	}
+
+	if (current->comm[0] == 'a' && current->comm[1] == 's')
+		printk ("%d: read in fd[%d]: got %d\n", current->pid, fd, ret);
 
 	return ret;
 }
@@ -446,6 +452,9 @@ SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 	ssize_t ret = -EBADF;
 	int fput_needed;
 
+	if (current->comm[0] == 'a' && current->comm[1] == 's')
+		printk ("%d: write in fd[%d]\n", current->pid, fd);
+
 	file = fget_light(fd, &fput_needed);
 	if (file) {
 		loff_t pos = file_pos_read(file);
@@ -453,6 +462,9 @@ SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 		file_pos_write(file, pos);
 		fput_light(file, fput_needed);
 	}
+
+	if (current->comm[0] == 'a' && current->comm[1] == 's')
+		printk ("%d: write in fd[%d]: got %d\n", current->pid, fd, ret);
 
 	return ret;
 }
