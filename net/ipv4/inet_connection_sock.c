@@ -24,6 +24,7 @@
 #include <net/tcp_states.h>
 #include <net/xfrm.h>
 #ifdef CONFIG_KRG_CLUSTERIP
+#include <kddm/kddm.h>
 #include <kerrighed/krg_clusterip.h>
 #endif
 
@@ -337,6 +338,11 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct sock *newsk;
 	int error;
+#ifdef CONFIG_KRG_CLUSTERIP
+	struct netns_krgip *krgip = &sock_net(sk)->krgip;
+	struct kddm_set *ip_set = krgip->cluster_ips;
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+#endif
 
 	lock_sock(sk);
 
@@ -364,6 +370,23 @@ struct sock *inet_csk_accept(struct sock *sk, int flags, int *err)
 	newsk = reqsk_queue_get_child(&icsk->icsk_accept_queue, sk);
 	WARN_ON(newsk->sk_state == TCP_SYN_RECV);
 
+#ifdef CONFIG_KRG_CLUSTERIP
+	/* is_krgip is ok, because the child inherits its parent socket address */
+	if (inet_sk(sk)->rcv_saddr)
+		goto out;
+
+	/* The parent sock is bound on IN_ADDR_ANY, we must check that the address
+	 * is a kerrighed ip */
+	inet_sk(sk)->is_krgip = 0;
+	if (ip_set) {
+		ip_obj = _kddm_get_object(ip_set, inet_sk(newsk)->rcv_saddr);
+		if (!IS_ERR(ip_obj)) {
+			if (ip_obj->nr_nodes)
+				inet_sk(sk)->is_krgip = 1;
+			krgip_cluster_ip_put_or_remove(ip_set, ip_obj);
+		}
+	}
+#endif
 out:
 	release_sock(sk);
 	return newsk;
@@ -623,7 +646,7 @@ struct sock *inet_csk_clone(struct sock *sk, const struct request_sock *req,
 		inet_sk(newsk)->num = ntohs(inet_rsk(req)->loc_port);
 		inet_sk(newsk)->sport = inet_rsk(req)->loc_port;
 #ifdef CONFIG_KRG_CLUSTERIP
-		inet_sk(newsk)->is_krgip = 0;
+		/*inet_sk(newsk)->is_krgip = 0;*/
 #endif
 		newsk->sk_write_space = sk_stream_write_space;
 

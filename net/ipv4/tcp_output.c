@@ -34,6 +34,8 @@
  *
  */
 
+#include <kerrighed/socket_file_mgr.h>
+
 #include <net/tcp.h>
 
 #include <linux/compiler.h>
@@ -1525,6 +1527,8 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 	sent_pkts = 0;
 
+	pr_debug("Entering tcp_write_xmit\n");
+
 	if (!push_one) {
 		/* Do MTU probing. */
 		result = tcp_mtu_probe(sk);
@@ -1585,9 +1589,12 @@ static int tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	}
 
 	if (likely(sent_pkts)) {
+		pr_debug("Packets sent\n");
 		tcp_cwnd_validate(sk);
 		return 0;
 	}
+
+	pr_debug("Packets out %u\n", tp->packets_out);
 	return !tp->packets_out && tcp_send_head(sk);
 }
 

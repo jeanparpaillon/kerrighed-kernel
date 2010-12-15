@@ -1,16 +1,20 @@
 
-
 #include <linux/socket.h>
 #include <linux/file.h>
 #include <linux/namei.h>
 #include <linux/sched.h>
 #include <linux/fs_struct.h>
+#include <linux/nsproxy.h>
 
+#include <net/net_namespace.h>
+#include <net/inet_sock.h>
+#include <net/sock.h>
 #include <net/tcp_states.h>
 #include <net/tcp.h>
 #include <net/udp.h>
 
 #include <kerrighed/checkpoint_sock.h>
+#include <kerrighed/namespace.h>
 #include "checkpoint_skbuff.h"
 #include "checkpoint_ip.h"
 #include "checkpoint_utils.h"
@@ -43,19 +47,19 @@ static int krgip_checkpoint_data(struct epm_action *action, ghost_t *ghost,
 	struct sock *sk = sock->sk;
 
 	if (KRGIP_CKPT_ISDST(action)) {
-		ret = krgip_import_buffers(action, ghost, &sk->sk_receive_queue);
+		ret = krgip_import_buffers(action, ghost, &sk->sk_receive_queue, NULL);
 		if (ret)
 			goto out;
 
-		ret = krgip_import_buffers(action, ghost, &sk->sk_write_queue);
+		ret = krgip_import_buffers(action, ghost, &sk->sk_write_queue, &sk->sk_send_head);
 		if (ret)
 			goto out;
 	} else {
-		ret = krgip_export_buffers(action, ghost, &sk->sk_receive_queue);
+		ret = krgip_export_buffers(action, ghost, &sk->sk_receive_queue, NULL);
 		if (ret)
 			goto out;
 
-		ret = krgip_export_buffers(action, ghost, &sk->sk_write_queue);
+		ret = krgip_export_buffers(action, ghost, &sk->sk_write_queue, &sk->sk_send_head);
 		if (ret)
 			goto out;
 	}
@@ -90,7 +94,7 @@ static int krgip_checkpoint_sockflags(struct epm_action *action, ghost_t *ghost,
 			ret = kernel_setsockopt(sock, SOL_SOCKET, opt, (char *)&v, sizeof(v));
 
 		if (ret) {
-			printk("Failed to set skopt %i: %i\n", opt, ret);
+			pr_debug("Failed to set skopt %i: %i\n", opt, ret);
 			goto out;
 		}
 	}
@@ -104,7 +108,7 @@ static int krgip_checkpoint_sockflags(struct epm_action *action, ghost_t *ghost,
 			ret = kernel_setsockopt(sock, SOL_SOCKET, opt, (char *)&v, sizeof(v));
 
 		if (ret) {
-			printk("Failed to set sockopt %i: %i\n", opt, ret);
+			pr_debug("Failed to set sockopt %i: %i\n", opt, ret);
 			goto out;
 		}
 	}
@@ -117,7 +121,7 @@ static int krgip_checkpoint_sockflags(struct epm_action *action, ghost_t *ghost,
 	    test_bit(SOCK_TIMESTAMPING_SOFTWARE, &sk_flags) ||
 	    test_bit(SOCK_TIMESTAMPING_RAW_HARDWARE, &sk_flags) ||
 	    test_bit(SOCK_TIMESTAMPING_SYS_HARDWARE, &sk_flags)) {
-		printk("SOF_TIMESTAMPING_* flags are not supported\n");
+		pr_debug("SOF_TIMESTAMPING_* flags are not supported\n");
 		ret = -ENOSYS;
 		goto out;
 	}
@@ -130,7 +134,7 @@ static int krgip_checkpoint_sockflags(struct epm_action *action, ghost_t *ghost,
 	 * our protocol's default set, indicates an error
 	 */
 	if (sk_flags & ~sock->sk->sk_flags) {
-		printk("Unhandled sock flags: %lx\n", sk_flags);
+		pr_debug("Unhandled sock flags: %lx\n", sk_flags);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -181,31 +185,59 @@ out:
 static int krgip_check_state(struct socket *sock)
 {
 	if (sock->sk->sk_family != PF_INET) {
-		printk("socket type %i is unsupported\n", sock->sk->sk_family);
+		pr_debug("socket type %i is unsupported\n", sock->sk->sk_family);
 		return -ENOTSUPP;
 	} else if ((sock->state == SS_CONNECTED) && (sock->sk->sk_state != TCP_ESTABLISHED)) {
-		printk("sock/et in inconsistent state: %i/%i\n", sock->state, sock->sk->sk_state);
+		pr_debug("sock/et in inconsistent state: %i/%i\n", sock->state, sock->sk->sk_state);
 		return -EINVAL;
 	} else if ((sock->sk->sk_state < TCP_ESTABLISHED) || (sock->sk->sk_state >= TCP_MAX_STATES)) {
-		printk("sock in invalid state: %i\n", sock->sk->sk_state);
+		pr_debug("sock in invalid state: %i\n", sock->sk->sk_state);
 		return -EINVAL;
 	} else if (sock->state > SS_DISCONNECTING) {
-		printk("socket in invalid state: %i", sock->sk->sk_state);
+		pr_debug("socket in invalid state: %i", sock->sk->sk_state);
 		return -EINVAL;
 	}
 
 	return 0;
 }
 
+static void krgip_drop_responsibility(struct net *net, __be32 addr, __be16 port)
+{
+	struct krgip_local_ports *local_ports;
+	struct krgip_established_resp *established_resp;
+
+	/* Perhaps should remove owner from established obj ? */
+	local_ports = krgip_local_ports_find(&net->krgip, addr);
+	established_resp = krgip_responsible_find(&local_ports->established_tcp_resp, port);
+	established_resp->responsible = 1;
+}
+
 static int krgip_pre_close(struct socket *sock)
 {
-	if (sock->sk->sk_protocol == IPPROTO_UDP)
-		udp_lib_unhash(sock->sk);
-	else
+	struct inet_sock *inet = inet_sk(sock->sk);
+	struct krgip_cluster_ip_kddm_object *ip_obj = NULL;
+	struct krgip_cluster_port_kddm_object *port_obj = NULL;
+
+	if (sock->sk->sk_protocol != IPPROTO_UDP && sock->sk->sk_protocol != IPPROTO_TCP)
 		return -ENOTSUPP;
+
+	if (sock->sk->sk_protocol == IPPROTO_TCP) {
+		if (sock->sk->sk_state == TCP_ESTABLISHED) {
+			/* Reserve the connection if its not already done */
+			krgip_cluster_add_established(inet->saddr, inet->sport,
+						      inet->daddr, inet->dport);
+			inet_unhash(sock->sk);
+		} else {
+			krgip_drop_responsibility(sock_net(sock->sk), inet->saddr, inet->sport);
+			krgip_cluster_ip_tcp_unhash_prepare(sock->sk, &ip_obj, &port_obj);
+			inet_unhash(sock->sk);
+			krgip_cluster_ip_tcp_unhash_finish(sock->sk, ip_obj, port_obj);
+		}
+	}
 
 	return 0;
 }
+
 
 static int krgip_checkpoint_sock(struct epm_action *action, ghost_t *ghost,
 				 struct socket *sock)
@@ -218,12 +250,16 @@ static int krgip_checkpoint_sock(struct epm_action *action, ghost_t *ghost,
 	KRGIP_CKPT_COPY(action, ghost, sock->state, ret);
 
 	KRGIP_CKPT_COPY(action, ghost, sk->sk_bound_dev_if, ret);
-	KRGIP_CKPT_COPY(action, ghost, sk->sk_family, ret);
-	KRGIP_CKPT_COPY(action, ghost, sk->sk_protocol, ret);
 	KRGIP_CKPT_COPY(action, ghost, sk->sk_err, ret);
 	KRGIP_CKPT_COPY(action, ghost, sk->sk_err_soft, ret);
 	KRGIP_CKPT_COPY(action, ghost, sk->sk_type, ret);
 	KRGIP_CKPT_COPY(action, ghost, sk->sk_max_ack_backlog, ret);
+
+	KRGIP_CKPT_COPY(action, ghost, sk->sk_sndbuf, ret);
+	KRGIP_CKPT_COPY(action, ghost, sk->sk_rmem_alloc, ret);
+	KRGIP_CKPT_COPY(action, ghost, sk->sk_wmem_alloc, ret);
+	KRGIP_CKPT_COPY(action, ghost, sk->sk_forward_alloc, ret);
+	KRGIP_CKPT_COPY(action, ghost, sk->sk_wmem_queued, ret);
 
 	/* May not be directly copied */
 	if (KRGIP_CKPT_ISSRC(action)) {
@@ -276,11 +312,14 @@ int krgip_export_sock(struct epm_action *action, ghost_t *ghost, struct socket *
 
 	sock_hold(sock->sk);
 
-	ret = krgip_check_state(sock);
+	ret = krgip_pre_close(sock);
 	if (ret)
 		goto out;
 
-	ret = krgip_pre_close(sock);
+	if (sock->sk->sk_protocol == IPPROTO_TCP)
+		pr_debug("exporter : tp->rx_opt.ts_recent %u\n", tcp_sk(sock->sk)->rx_opt.ts_recent);
+
+	ret = krgip_check_state(sock);
 	if (ret)
 		goto out;
 
@@ -318,6 +357,9 @@ int krgip_import_sock(struct epm_action *action, ghost_t *ghost, struct socket *
 		goto out_err;
 	}
 
+	if (sock->sk->sk_protocol == IPPROTO_TCP)
+		pr_debug("importer before : tp->rx_opt.ts_recent %u\n", tcp_sk(sock->sk)->rx_opt.ts_recent);
+
 	ret = krgip_import_ip(action, ghost, sock);
 	if (ret)
 		goto out_err;
@@ -325,6 +367,9 @@ int krgip_import_sock(struct epm_action *action, ghost_t *ghost, struct socket *
 	ret = krgip_check_state(sock);
 	if (ret)
 		goto out_err;
+
+	if (sock->sk->sk_protocol == IPPROTO_TCP)
+		pr_debug("importer after : tp->rx_opt.ts_recent %u\n", tcp_sk(sock->sk)->rx_opt.ts_recent);
 
 	sock_put(sock->sk);
 

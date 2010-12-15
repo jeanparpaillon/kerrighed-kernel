@@ -8,7 +8,7 @@
 #include <kerrighed/action.h>
 #include <kerrighed/ghost.h>
 
-int krgip_import_buffers(struct epm_action *action, ghost_t *ghost, struct sk_buff_head *skblist);
-int krgip_export_buffers(struct epm_action *action, ghost_t *ghost, struct sk_buff_head *skblist);
+int krgip_import_buffers(struct epm_action *action, ghost_t *ghost, struct sk_buff_head *skblist, struct sk_buff **qpointer);
+int krgip_export_buffers(struct epm_action *action, ghost_t *ghost, struct sk_buff_head *skblist, struct sk_buff **qpointer);
 
 #endif

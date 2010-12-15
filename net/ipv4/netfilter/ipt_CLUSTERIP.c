@@ -479,14 +479,17 @@ static unsigned int
 clusterip_tg(struct sk_buff *skb, const struct xt_target_param *par)
 {
 	const struct ipt_clusterip_tgt_info *cipinfo = par->targinfo;
+#if 0
 	struct nf_conn *ct;
 	enum ip_conntrack_info ctinfo;
+#endif
 	u_int32_t hash;
 
 	/* don't need to clusterip_config_get() here, since refcount
 	 * is only decremented by destroy() - and ip_tables guarantees
 	 * that the ->target() function isn't called after ->destroy() */
 
+#if 0
 	ct = nf_ct_get(skb, &ctinfo);
 	if (ct == NULL) {
 		printk(KERN_ERR "CLUSTERIP: no conntrack!\n");
@@ -495,12 +498,15 @@ clusterip_tg(struct sk_buff *skb, const struct xt_target_param *par)
 			 * marked as INVALID */
 		return NF_DROP;
 	}
-
 	/* special case: ICMP error handling. conntrack distinguishes between
 	 * error messages (RELATED) and information requests (see below) */
 	if (ip_hdr(skb)->protocol == IPPROTO_ICMP
 	    && (ctinfo == IP_CT_RELATED
 		|| ctinfo == IP_CT_RELATED+IP_CT_IS_REPLY))
+		return XT_CONTINUE;
+#endif
+
+	if (ip_hdr(skb)->protocol == IPPROTO_ICMP)
 		return XT_CONTINUE;
 
 	/* ip_conntrack_icmp guarantees us that we only have ICMP_ECHO,
@@ -508,7 +514,7 @@ clusterip_tg(struct sk_buff *skb, const struct xt_target_param *par)
 	 * on, which all have an ID field [relevant for hashing]. */
 
 	hash = clusterip_hashfn(skb, cipinfo->config);
-
+#if 0
 	switch (ctinfo) {
 		case IP_CT_NEW:
 			ct->mark = hash;
@@ -528,7 +534,7 @@ clusterip_tg(struct sk_buff *skb, const struct xt_target_param *par)
 #ifdef DEBUG
 	nf_ct_dump_tuple_ip(&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple);
 #endif
-	pr_debug("hash=%u ct_hash=%u ", hash, ct->mark);
+#endif
 	if (!clusterip_responsible(cipinfo->config, hash)) {
 		pr_debug("not responsible\n");
 		return NF_DROP;

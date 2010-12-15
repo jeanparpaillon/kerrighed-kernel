@@ -25,7 +25,8 @@ static int krgip_checkpoint_skbfrag(struct epm_action *action, ghost_t *ghost,
 	}
 
 	KRGIP_CKPT_COPY(action, ghost, frag->page_offset, ret);
-	KRGIP_CKPT_DATA(action, ghost, page_addr, frag->size, ret);
+	KRGIP_CKPT_COPY(action, ghost, frag->size, ret);
+	KRGIP_CKPT_DATA(action, ghost, page_addr, PAGE_SIZE, ret);
 
         kunmap(frag->page);
 out:
@@ -40,7 +41,7 @@ static int krgip_export_skbfrag(struct epm_action *action, ghost_t *ghost,
 
 	ret = krgip_checkpoint_skbfrag(action, ghost, skb, frag);
 
-	put_page(frag->page);
+	/*put_page(frag->page);*/
 
 	return ret;
 }
@@ -68,12 +69,17 @@ static int krgip_checkpoint_skbinfo(struct epm_action *action,
 				    ghost_t *ghost, struct sk_buff *skb)
 {
 #ifndef NET_SKBUFF_DATA_USES_OFFSET
-	unsigned int transport_header, network_header, mac_header, tail;
+	unsigned int transport_header, network_header, mac_header;
+	unsigned long tail;
 #endif
 	unsigned int header_len;
 	int ret = 0;
 
+	pr_debug("before : head : %lx, data : %lx, tail : %lx\n",
+		 (unsigned long) skb->head, (unsigned long) skb->data, (unsigned long) skb->tail);
+
 	KRGIP_CKPT_COPY(action, ghost, skb->mac_len, ret);
+	KRGIP_CKPT_COPY(action, ghost, skb->hdr_len, ret);
 	KRGIP_CKPT_COPY(action, ghost, skb->len, ret);
 	KRGIP_CKPT_COPY(action, ghost, skb->data_len, ret);
 
@@ -102,15 +108,22 @@ static int krgip_checkpoint_skbinfo(struct epm_action *action,
 	KRGIP_CKPT_COPY(action, ghost, mac_header, ret);
 	KRGIP_CKPT_COPY(action, ghost, tail, ret);
 	if (KRGIP_CKPT_ISDST(action)) {
-		skb->transport_header = skb->head + transport_header;
-		skb->network_header = skb->head + network_header;
-		skb->mac_header = skb->head + mac_header;
+		skb_set_transport_header(skb, transport_header);
+		skb_set_network_header(skb, network_header);
+		skb_set_mac_header(skb, mac_header);
 		skb->tail = skb->head + tail;
 	}
 #endif
 	KRGIP_CKPT_COPY(action, ghost, skb->cb, ret);
 
 	KRGIP_CKPT_COPY(action, ghost, skb_shinfo(skb)->nr_frags, ret);
+	KRGIP_CKPT_COPY(action, ghost, skb_shinfo(skb)->gso_segs, ret);
+	KRGIP_CKPT_COPY(action, ghost, skb_shinfo(skb)->gso_type, ret);
+	KRGIP_CKPT_COPY(action, ghost, skb_shinfo(skb)->gso_size, ret);
+
+
+	pr_debug("after : head : %lx, data : %lx, tail : %lx\n",
+		 (unsigned long) skb->head, (unsigned long) skb->data, (unsigned long) skb->tail);
 
 	return ret;
 }
@@ -129,23 +142,20 @@ static int krgip_import_skbinfo(struct epm_action *action,
 	    (skb->network_header > skb->tail) ||
 	    (skb->transport_header > skb->tail) ||
 #ifdef NET_SKBUFF_DATA_USES_OFFSET
-	    (skb->data > skb->head + skb->tail) ||
+	    (skb->data > skb->head + skb->tail)
 #else
-	    (skb->data > skb->tail) ||
+	    (skb->data > skb->tail)
 #endif
-	    (skb->len > SKB_MAX_ALLOC)
+	 /* SKB_MAX_ALLOC is used nowhere !!! */
+	 /* (skb->len > SKB_MAX_ALLOC)*/
 	) {
 		printk("Bad lengths in skb structure\n");
 		ret = -EINVAL;
 		goto out_err;
 	}
 
-/*	skb_set_transport_header(skb, h->transport_header);
-	skb_set_network_header(skb, h->network_header);
-	skb_set_mac_header(skb, h->mac_header);*/
-
 out_err:
-	return 0;
+	return ret;
 }
 
 static int krgip_export_skbinfo(struct epm_action *action,
@@ -205,20 +215,29 @@ out:
 }
 
 int krgip_import_buffers(struct epm_action *action, ghost_t *ghost,
-			 struct sk_buff_head *skblist)
+			 struct sk_buff_head *skblist,
+			 struct sk_buff **qpointer)
 {
 	int ret = 0;
 	unsigned int count = 0;
 	unsigned int skb_truesize = 0;
 	struct sk_buff *new_skb;
+	unsigned int pointed = 0;
 
 	ret = ghost_read(ghost, &count, sizeof(count));
 	if (ret)
 		goto out;
 
+	if (qpointer) {
+		ret = ghost_read(ghost, &pointed, sizeof(pointed));
+		if (ret)
+			goto out;
+		if (qpointer) *qpointer = NULL;
+	}
+
 	for (;count>0;count--) {
 		ret = ghost_read(ghost, &skb_truesize, sizeof(skb_truesize));
-		if (!ret)
+		if (ret)
 			goto out;
 
 		new_skb = alloc_skb(skb_truesize - sizeof(struct sk_buff), GFP_KERNEL);
@@ -230,6 +249,11 @@ int krgip_import_buffers(struct epm_action *action, ghost_t *ghost,
 		ret = krgip_import_buff(action, ghost, new_skb);
 		if (ret)
 			goto out_free;
+
+		if (qpointer && pointed && (pointed-- == 1))
+			*qpointer = new_skb;
+
+		skb_queue_tail(skblist, new_skb);
 	}
 
 out:
@@ -242,25 +266,37 @@ out_free:
 }
 
 int krgip_export_buffers(struct epm_action *action, ghost_t *ghost,
-			 struct sk_buff_head *skblist)
+			 struct sk_buff_head *skblist,
+			 struct sk_buff **qpointer)
 {
 	int ret = 0;
 	unsigned int count = 0;
 	struct sk_buff *pos;
+	unsigned int pointed = 0;
 
-	spin_lock_bh(&skblist->lock);
-	skb_queue_walk(skblist, pos)
+	skb_queue_walk(skblist, pos) {
 		count++;
+
+		if (qpointer && (*qpointer == pos))
+			pointed = count;
+	}
 
 	ret = ghost_write(ghost, &count, sizeof(count));
 	if (ret)
 		goto out;
 
+	if (qpointer) {
+		ret = ghost_write(ghost, &pointed, sizeof(pointed));
+		if (ret)
+			goto out;
+	}
+
 	skb_queue_walk(skblist, pos) {
 		BUG_ON(!count);
 		count--;
-		ret = ghost_read(ghost, &pos->truesize, sizeof(pos->truesize));
-		if (!ret)
+
+		ret = ghost_write(ghost, &pos->truesize, sizeof(pos->truesize));
+		if (ret)
 			goto out;
 
 		ret = krgip_export_buff(action, ghost, pos);
@@ -271,7 +307,6 @@ int krgip_export_buffers(struct epm_action *action, ghost_t *ghost,
 	BUG_ON(count);
 
 out:
-	spin_unlock_bh(&skblist->lock);
 	if (ret)
 		pr_debug("export_buffers() returned error %d\n", ret);
 	return ret;

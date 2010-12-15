@@ -3189,10 +3189,16 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 	s32 ca_seq_rtt = -1;
 	ktime_t last_ackt = net_invalid_timestamp();
 
+	pr_debug("tcp_write_queue_head : %x, tcp_send_head : %x",
+		 tcp_write_queue_head(sk), tcp_send_head(sk));
+
 	while ((skb = tcp_write_queue_head(sk)) && skb != tcp_send_head(sk)) {
 		struct tcp_skb_cb *scb = TCP_SKB_CB(skb);
 		u32 acked_pcount;
 		u8 sacked = scb->sacked;
+
+		pr_debug("scb->end_seq : %u, tp->snd_una : %u\n",
+			 TCP_SKB_CB(skb)->end_seq, tp->snd_una);
 
 		/* Determine how many packets and what bytes were acked, tso and else */
 		if (after(scb->end_seq, tp->snd_una)) {
@@ -3208,6 +3214,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		} else {
 			acked_pcount = tcp_skb_pcount(skb);
 		}
+
+		pr_debug("count acked : %u\n", acked_pcount);
 
 		if (sacked & TCPCB_RETRANS) {
 			if (sacked & TCPCB_SACKED_RETRANS)
@@ -3578,6 +3586,9 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	int prior_packets;
 	int frto_cwnd = 0;
 
+	pr_debug("ack %u.%u.%u.%u:%u with %u\n",
+		 SPLIT_IP4_ADDR(inet_sk(sk)->saddr), htons(inet_sk(sk)->sport), ack);
+
 	/* If the ack is older than previous acks
 	 * then we can probably ignore it.
 	 */
@@ -3606,6 +3617,7 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	prior_in_flight = tcp_packets_in_flight(tp);
 
 	if (!(flag & FLAG_SLOWPATH) && after(ack, prior_snd_una)) {
+		pr_debug("fast path\n");
 		/* Window is constant, pure forward advance.
 		 * No more checks are required.
 		 * Note, we use the fact that SND.UNA>=SND.WL2.
@@ -3618,6 +3630,7 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPHPACKS);
 	} else {
+		pr_debug("slow path\n");
 		if (ack_seq != TCP_SKB_CB(skb)->end_seq)
 			flag |= FLAG_DATA;
 		else
@@ -3668,9 +3681,11 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 	if ((flag & FLAG_FORWARD_PROGRESS) || !(flag & FLAG_NOT_DUP))
 		dst_confirm(sk->sk_dst_cache);
 
+	pr_debug("acked\n");
 	return 1;
 
 no_queue:
+	pr_debug("no queue\n");
 	/* If this ack opens up a zero window, clear backoff.  It was
 	 * being used to time the probes, and is probably far higher than
 	 * it needs to be for normal retransmission.

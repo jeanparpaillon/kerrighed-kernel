@@ -68,7 +68,7 @@
 /* Define this to get the SOCK_DBG debugging facility. */
 #define SOCK_DEBUGGING
 #ifdef SOCK_DEBUGGING
-#define SOCK_DEBUG(sk, msg...) do { if ((sk) && sock_flag((sk), SOCK_DBG)) \
+#define SOCK_DEBUG(sk, msg...) do { /*if ((sk) && sock_flag((sk), SOCK_DBG)) */\
 					printk(KERN_DEBUG msg); } while (0)
 #else
 /* Validate arguments and do nothing */
@@ -282,6 +282,9 @@ struct sock {
 	int			sk_write_pending;
 #ifdef CONFIG_SECURITY
 	void			*sk_security;
+#endif
+#ifdef CONFIG_KRG_CLUSTERIP
+	__u32			sk_krgip_time_delta;
 #endif
 	__u32			sk_mark;
 	/* XXX 4 bytes hole on 64 bit */

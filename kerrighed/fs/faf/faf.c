@@ -17,6 +17,7 @@
 #include <kerrighed/file.h>
 #include <kerrighed/file_stat.h>
 #include <kerrighed/pid.h>
+#include <kerrighed/socket_file_mgr.h>
 #include "faf_internal.h"
 #include "faf_server.h"
 #include "faf_hooks.h"
@@ -297,9 +298,6 @@ int setup_faf_file_if_needed(struct file *file)
 	if (file->f_flags & (O_FAF_CLT | O_FAF_SRV))
 		goto exit;
 
-	if (is_socket(file))
-		goto exit;
-
 	/* Check if we can re-open the file */
 	if (file->f_dentry) {
 		umode_t i_mode = file->f_dentry->d_inode->i_mode;
@@ -340,6 +338,9 @@ int check_activate_faf(struct task_struct *tsk,
 /* 	    file->f_dentry->d_inode->i_mapping && */
 /* 	    file->f_dentry->d_inode->i_mapping->a_ctnr != NULL) */
 /* 		activate_faf = 0; */
+
+	if (is_socket(file) && socket_file_faf_policy(action, tsk, index, file))
+		goto done;
 
 	r = setup_faf_file_if_needed(file);
 	if (r == -EALREADY)

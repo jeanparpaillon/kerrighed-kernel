@@ -232,19 +232,33 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	 * lock select source port, enter ourselves into the hash tables and
 	 * complete initialization after this.
 	 */
+
+#ifdef CONFIG_KRG_CLUSTERIP
+	if (!(sk->sk_userlocks & SOCK_BINDPORT_LOCK))
+		krgip_cluster_ip_tcp_unhash_prepare(sk, &ip_obj, &port_obj);
+#endif
+
 	tcp_set_state(sk, TCP_SYN_SENT);
 	err = inet_hash_connect(&tcp_death_row, sk);
+#ifdef CONFIG_KRG_CLUSTERIP
+	if (!err)
+		err = krgip_cluster_add_established(inet->saddr, inet->sport,
+						    inet->daddr, inet->dport);
+
+	if (err) {
+		/* don't unhash port */
+		port_obj = NULL;
+		goto failure;
+	}
+#else
 	if (err)
 		goto failure;
+#endif
 
 	err = ip_route_newports(&rt, IPPROTO_TCP,
 				inet->sport, inet->dport, sk);
 	if (err)
-#ifdef CONFIG_KRG_CLUSTERIP
-		goto failure_check_rlse;
-#else
 		goto failure;
-#endif
 
 	/* OK, now commit destination to socket.  */
 	sk->sk_gso_type = SKB_GSO_TCPV4;
@@ -261,19 +275,13 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	err = tcp_connect(sk);
 	rt = NULL;
 	if (err)
-#ifdef CONFIG_KRG_CLUSTERIP
-		goto failure_check_rlse;
-#else
 		goto failure;
-#endif
 
+#ifdef CONFIG_KRG_CLUSTERIP
+	krgip_cluster_ip_tcp_unhash_finish(sk, ip_obj, port_obj);
+#endif
 	return 0;
 
-#ifdef CONFIG_KRG_CLUSTERIP
-failure_check_rlse:
-	if (!(sk->sk_userlocks & SOCK_BINDPORT_LOCK))
-		krgip_cluster_ip_tcp_unhash_prepare(sk, &ip_obj, &port_obj);
-#endif
 failure:
 	/*
 	 * This unhashes the socket and releases the local port,
@@ -1590,6 +1598,8 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
 	if (!sk)
 		goto no_tcp_socket;
+	pr_debug("%u.%u.%u.%u:%u skb spotted\n",
+		 SPLIT_IP4_ADDR(inet_sk(sk)->saddr), htons(inet_sk(sk)->daddr));
 
 process:
 	if (sk->sk_state == TCP_TIME_WAIT)
@@ -1616,8 +1626,12 @@ process:
 		else
 #endif
 		{
-			if (!tcp_prequeue(sk, skb))
-			ret = tcp_v4_do_rcv(sk, skb);
+			if (!tcp_prequeue(sk, skb)) {
+				ret = tcp_v4_do_rcv(sk, skb);
+				pr_debug("ret %d\n", ret);
+			} else
+				pr_debug("tcp_prequeue failed\n");
+
 		}
 	} else
 		sk_add_backlog(sk, skb);

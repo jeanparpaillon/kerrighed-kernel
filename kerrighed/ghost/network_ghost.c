@@ -14,23 +14,23 @@ void print_buf(int n, const char *buff, int length, int is_write)
 	switch(length) {
 		case 1:
 		case 2:
-			printk("%s : %i) buflen = %i, buffer = %#.4hx\n",
-			       is_write ? "write : " : "read : ", n, length,
-			       ((short int) *buff) & (length == 1 ? 0xff00 : 0xffff));
+			pr_debug("%s : %i) buflen = %i, buffer = %#.4hx\n",
+				 is_write ? "write : " : "read : ", n, length,
+				 ((short int) *buff) & (length == 1 ? 0xff00 : 0xffff));
 			break;
 		case 3:
 		case 4:
-			printk("%s : %i) buflen = %i, buffer = %#.8x\n",
-			       is_write ? "write : " : "read : ", n, length,
-			       ((int) *buff) & (length == 3 ? 0xffffff00 : 0xffffffff));
+			pr_debug("%s : %i) buflen = %i, buffer = %#.8x\n",
+				 is_write ? "write : " : "read : ", n, length,
+				 ((int) *buff) & (length == 3 ? 0xffffff00 : 0xffffffff));
 			break;
 		case 8:
-			printk("%s : %i) buflen = 8, buffer = %#.16llx\n",
-			       is_write ? "write : " : "read : ", n, (long long int) *buff);
+			pr_debug("%s : %i) buflen = 8, buffer = %#.16llx\n",
+				 is_write ? "write : " : "read : ", n, (long long int) *buff);
 			break;
 		default:
-			printk("%s : %i) buflen = %i, buffer = %#.8x...\n",
-			       is_write ? "write : " : "read : ", n, length, (int) *buff);
+			pr_debug("%s : %i) buflen = %i, buffer = %#.8x...\n",
+				 is_write ? "write : " : "read : ", n, length, (int) *buff);
 			break;
 	};
 }
