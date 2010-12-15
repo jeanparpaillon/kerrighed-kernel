@@ -1,3 +1,9 @@
+/*
+ *  kerrighed/fs/socket_file_mgr.c
+ *
+ *  Copyright (C) 2010, Emmanuel Thierry - Kerlabs
+ */
+
 #include <linux/file.h>
 #include <linux/net.h>
 #include <linux/socket.h>

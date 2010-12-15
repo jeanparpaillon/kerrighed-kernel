@@ -1,3 +1,8 @@
+/*
+ *  include/kerrighed/socket_file_mgr.h
+ *
+ *  Copyright (C) 2010, Emmanuel Thierry - Kerlabs
+ */
 
 #ifndef __SOCKET_FILE_MGR_H__
 #define __SOCKET_FILE_MGR_H__

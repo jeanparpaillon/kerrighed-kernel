@@ -1,7 +1,8 @@
 /*
- *  kerrighed/net/krg_clusterip.c
+ *  kerrighed/net/krg_clusterip_handlers.c
  *
  *  Copyright (C) 2010, Louis Rilling - Kerlabs
+ *  Copyright (C) 2010, Emmanuel Thierry - Kerlabs
  */
 
 #include <linux/socket.h>

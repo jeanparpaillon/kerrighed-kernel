@@ -1,3 +1,8 @@
+/*
+ *  kerrighed/net/checkpoint_ip.h
+ *
+ *  Copyright (C) 2010, Emmanuel Thierry - Kerlabs
+ */
 
 #ifndef __KRGIP_CHECKPOINT_IP_H__
 #define __KRGIP_CHECKPOINT_IP_H__

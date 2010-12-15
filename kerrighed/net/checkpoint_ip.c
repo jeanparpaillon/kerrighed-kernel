@@ -1,3 +1,11 @@
+/*
+ *  kerrighed/net/checkpoint_ip.c
+ *
+ *  Copyright (C) 2010, Emmanuel Thierry - Kerlabs
+ *
+ *  Adapted from Linux-CR project [https://ckpt.wiki.kernel.org]
+ */
+
 #include <linux/in.h>
 #include <linux/namei.h>
 #include <linux/net.h>

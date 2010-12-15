@@ -1,3 +1,8 @@
+/*
+ *  kerrighed/net/checkpoint_utils.h
+ *
+ *  Copyright (C) 2010, Emmanuel Thierry - Kerlabs
+ */
 
 #ifndef __KRGIP_CHECKPOINT_UTILS_H__
 #define __KRGIP_CHECKPOINT_UTILS_H__

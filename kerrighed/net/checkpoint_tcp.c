@@ -1,3 +1,11 @@
+/*
+ *  kerrighed/net/checkpoint_tcp.c
+ *
+ *  Copyright (C) 2010, Emmanuel Thierry - Kerlabs
+ *
+ *  Adapted from Linux-CR project [https://ckpt.wiki.kernel.org]
+ */
+
 #include <linux/net.h>
 #include <linux/tcp.h>
 

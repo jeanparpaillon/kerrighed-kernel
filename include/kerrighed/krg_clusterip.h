@@ -1,3 +1,10 @@
+/*
+ *  include/kerrighed/krg_clusterip.h
+ *
+ *  Copyright (C) 2010, Louis Rilling - Kerlabs
+ *  Copyright (C) 2010, Emmanuel Thierry - Kerlabs
+ */
+
 #ifndef __KRG_CLUSTERIP_H__
 #define __KRG_CLUSTERIP_H__
 

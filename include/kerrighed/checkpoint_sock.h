@@ -1,4 +1,8 @@
-
+/*
+ *  include/kerrighed/checkpoint_sock.h
+ *
+ *  Copyright (C) 2010, Emmanuel Thierry - Kerlabs
+ */
 
 #ifndef __KRGIP_CHECKPOINT_SOCK_H__
 #define __KRGIP_CHECKPOINT_SOCK_H__
