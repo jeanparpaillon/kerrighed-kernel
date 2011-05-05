@@ -68,7 +68,7 @@ enum rpc_rq_type {
 	RPC_RQ_FWD,
 };
 
-enum rpc_rq_state {
+enum {
 	__RPC_STATE_NEW,
 	__RPC_STATE_HANDLE,
 	__RPC_STATE_RUN,
@@ -78,13 +78,15 @@ enum rpc_rq_state {
 	__RPC_STATE_WAIT1,
 };
 
-#define RPC_STATE_NEW    (1<<__RPC_STATE_NEW)
-#define RPC_STATE_HANDLE (1<<__RPC_STATE_HANDLE)
-#define RPC_STATE_RUN    (1<<__RPC_STATE_RUN)
-#define RPC_STATE_CANCEL (1<<__RPC_STATE_CANCEL)
-#define RPC_STATE_END    (1<<__RPC_STATE_END)
-#define RPC_STATE_WAIT   (1<<__RPC_STATE_WAIT)
-#define RPC_STATE_WAIT1  (1<<__RPC_STATE_WAIT1)
+enum rpc_rq_state {
+	RPC_STATE_NEW    = (1<<__RPC_STATE_NEW),
+	RPC_STATE_HANDLE = (1<<__RPC_STATE_HANDLE),
+	RPC_STATE_RUN    = (1<<__RPC_STATE_RUN),
+	RPC_STATE_CANCEL = (1<<__RPC_STATE_CANCEL),
+	RPC_STATE_END    = (1<<__RPC_STATE_END),
+	RPC_STATE_WAIT   = (1<<__RPC_STATE_WAIT),
+	RPC_STATE_WAIT1  = (1<<__RPC_STATE_WAIT1),
+};
 
 #define RPC_STATE_MASK_VALID (RPC_STATE_RUN\
  | RPC_STATE_HANDLE \
